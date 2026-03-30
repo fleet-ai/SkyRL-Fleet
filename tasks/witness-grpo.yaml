@@ -19,7 +19,7 @@ num_nodes: 1
 
 workdir:
   url: https://github.com/fleet-ai/SkyRL-v2.git
-  ref: guanghan/arc-agi-training
+  ref: guanghan/arc-agi-training-v2
 
 envs:
   LOGGER: "wandb"
@@ -33,19 +33,26 @@ envs:
   MODEL: "Qwen/Qwen3.5-9B"
 
 setup: |
+  # --- Python environment & base deps ---
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
   uv venv --python 3.12 --seed
   source .venv/bin/activate
   uv sync --extra fsdp
   uv pip install wandb
 
-  # Clone arc-witness-envs
+  # --- Qwen3.5 deps (transformers 5.3.0, CUDA toolkit, causal-conv1d) ---
+  source scripts/fleet-qwen35-extra-setup.sh
+
+  # --- Clone arc-witness-envs ---
   if [ ! -d "$HOME/arc-witness-envs" ]; then
     git clone https://github.com/Guanghan/arc-witness-envs.git $HOME/arc-witness-envs
   fi
   cd $HOME/arc-witness-envs && uv pip install -e .
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
 
-  # Prepare dataset
+  # --- Prepare dataset ---
   cd ~/sky_workdir
   uv run -- python examples/train_integrations/witness/prepare_witness_dataset.py \
     --game_ids $GAME_IDS \
@@ -57,6 +64,7 @@ run: |
   set -euo pipefail
 
   source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
 
   TMP_DIR="$HOME/skyrl-tmp"
   mkdir -p "$TMP_DIR"
@@ -94,6 +102,7 @@ run: |
       data.val_data="['${DATA_DIR}/validation.parquet']" \
       trainer.algorithm.advantage_estimator="grpo" \
       trainer.policy.model.path="$MODEL" \
+      trainer.flash_attn=false \
       trainer.placement.colocate_all=true \
       trainer.strategy=fsdp2 \
       trainer.placement.policy_num_gpus_per_node="$SKYPILOT_NUM_GPUS_PER_NODE" \
