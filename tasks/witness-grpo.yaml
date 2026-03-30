@@ -21,12 +21,6 @@ workdir:
   url: https://github.com/fleet-ai/SkyRL-v2.git
   ref: guanghan/arc-agi-training
 
-secrets:
-  WANDB_API_KEY: null
-  FLEET_API_KEY: null
-  AWS_ACCESS_KEY_ID: null
-  AWS_SECRET_ACCESS_KEY: null
-
 envs:
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
