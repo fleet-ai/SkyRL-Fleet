@@ -1,3 +1,4 @@
+import os
 import sys
 
 from skyrl.train.config import SkyRLTrainConfig
@@ -22,6 +23,11 @@ def _strip_hydra_prefixes(args: list[str]) -> list[str]:
 
 @ray.remote(num_cpus=1)
 def skyrl_entrypoint(cfg: SkyRLTrainConfig):
+    # Ensure arc-witness-envs is importable in this Ray worker
+    witness_dir = os.environ.get("WITNESS_ENVS_DIR", os.path.expanduser("~/arc-witness-envs"))
+    if witness_dir and witness_dir not in sys.path:
+        sys.path.insert(0, witness_dir)
+
     register(
         id="witness",
         entry_point="examples.train_integrations.witness.env:WitnessEnv",
@@ -33,7 +39,6 @@ def skyrl_entrypoint(cfg: SkyRLTrainConfig):
 def main() -> None:
     cfg = SkyRLTrainConfig.from_cli_overrides(_strip_hydra_prefixes(sys.argv[1:]))
     validate_cfg(cfg)
-
     initialize_ray(cfg)
     ray.get(skyrl_entrypoint.remote(cfg))
 

@@ -37,17 +37,33 @@ def _ensure_arcengine():
     global _arcengine
     if _arcengine is not None:
         return _arcengine
-    witness_repo = os.environ.get(
-        "WITNESS_ENVS_DIR",
+    # First try direct import (works if uv pip install -e . succeeded)
+    try:
+        import arcengine
+        _arcengine = arcengine
+        return _arcengine
+    except ImportError:
+        pass
+    # Fallback: add repo to sys.path
+    for candidate in [
+        os.environ.get("WITNESS_ENVS_DIR", ""),
+        os.path.expanduser("~/arc-witness-envs"),
         os.path.normpath(os.path.join(
             os.path.dirname(__file__), "..", "..", "..", "..", "arc-witness-envs",
         )),
+    ]:
+        if candidate and os.path.isdir(candidate) and candidate not in sys.path:
+            sys.path.insert(0, candidate)
+            try:
+                import arcengine
+                _arcengine = arcengine
+                return _arcengine
+            except ImportError:
+                continue
+    raise ImportError(
+        "Cannot import arcengine. Ensure arc-witness-envs is installed "
+        "(uv pip install -e $HOME/arc-witness-envs) or WITNESS_ENVS_DIR is set."
     )
-    if witness_repo not in sys.path:
-        sys.path.insert(0, witness_repo)
-    import arcengine
-    _arcengine = arcengine
-    return _arcengine
 
 
 # ── Game registry ──────────────────────────────────────────────────────
