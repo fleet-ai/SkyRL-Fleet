@@ -59,8 +59,8 @@ def main():
                         help="Games to include (e.g., tw10 tw04 tw07)")
     parser.add_argument("--reward_mode", default="shaped",
                         choices=["sparse", "shaped", "arc_score"])
-    parser.add_argument("--max_levels_per_game", type=int, default=None,
-                        help="Limit levels per game (None = all)")
+    parser.add_argument("--max_levels", type=int, default=5,
+                        help="Max levels per game (default 5)")
     parser.add_argument("--obs_mode", default="grid",
                         choices=["grid", "ascii"])
     parser.add_argument("--rules_mode", default="rules_unknown",
@@ -78,8 +78,9 @@ def main():
     for game_id in args.game_ids:
         baselines = _load_baselines(witness_repo, game_id)
         total_levels = len(baselines) if baselines else 5
+        total_levels = min(total_levels, args.max_levels)
 
-        # One row per game: each episode plays from level 0 through all levels
+        # One row per game: each episode plays from level 0 through max_levels
         rows.append({
             "data_source": "witness",
             "prompt": make_prompt(game_id, total_levels),
@@ -89,6 +90,7 @@ def main():
             "reward_mode": args.reward_mode,
             "obs_mode": args.obs_mode,
             "rules_mode": args.rules_mode,
+            "max_levels": total_levels,
             "max_steps_multiplier": 3,
         })
 

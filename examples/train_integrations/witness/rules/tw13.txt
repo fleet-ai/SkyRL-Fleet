@@ -1,0 +1,29 @@
+Game: tw13 — EraserAll (Eraser Logic Puzzle)
+
+Objective: Draw a path from the green start node to the red end node that satisfies all constraints, using erasers to absorb violations.
+
+Movement:
+- Actions 1-4 move the cursor one step on the grid nodes (UP/DOWN/LEFT/RIGHT).
+- The cursor leaves a path trail. Moving back retraces (undoes) the last step.
+- You can only move to adjacent nodes not already on the path.
+
+Submitting (Action 5 = CONFIRM):
+- If the cursor is on the end node, the solution is checked.
+- If the cursor is NOT on the end node, the path resets.
+
+Solution rule:
+- The path divides the grid into regions.
+- Each region is checked for constraint violations (see below).
+- Eraser symbols (marked cells) can absorb violations: in each region, the number of erasers must EXACTLY equal the number of violations.
+- A region with 0 erasers must have 0 violations. A region with 2 erasers must have exactly 2 violations.
+
+Constraint types (checked per region):
+- Colored squares: all squares in a region must be the same color. Each extra color = 1 violation.
+- Stars: each star color must appear exactly twice in the region. Each deviation from 2 = violations.
+- Triangles: the number on a triangle indicates how many path edges must touch that cell. Mismatch = 1 violation.
+- Tetris pieces: the shapes in a region must exactly tile (cover) the region. Failure = 1 violation.
+- Hex dots: the path itself must pass through all hex dot nodes (not a region rule — checked globally).
+
+Eraser mechanic:
+- Erasers do NOT remove constraints — they absorb an equal number of violations.
+- You must plan the path so that each region's violation count matches its eraser count exactly.

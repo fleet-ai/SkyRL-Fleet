@@ -1,0 +1,28 @@
+Game: tw04 — SymDraw (Symmetric Line-Drawing Puzzle)
+
+Objective: Control the blue line from its start to its end; a yellow line moves symmetrically and must also reach its own end.
+
+Movement:
+- Actions 1-4 move YOUR (blue) cursor one step (UP/DOWN/LEFT/RIGHT).
+- The yellow cursor moves automatically as a mirror of your move.
+- Moving back retraces (undoes) the last step for both lines.
+
+Symmetry types (varies by level):
+- Horizontal mirror: your LEFT/RIGHT is flipped for yellow (UP/DOWN stays the same).
+- Vertical mirror: your UP/DOWN is flipped for yellow (LEFT/RIGHT stays the same).
+- Rotational (180°): both directions are flipped for yellow.
+
+Constraints:
+- Both lines must make valid moves (stay within the grid).
+- The two lines cannot occupy the same node at the same time.
+- Some edges may be broken (blocked) — neither line can cross them.
+- If a move is invalid for either line, the move is rejected.
+
+Submitting (Action 5 = CONFIRM):
+- Blue line must be on the blue endpoint AND yellow line must be on the yellow endpoint.
+- Both lines must pass through their respective mandatory dots (if any).
+- If any condition fails, both paths reset to their starts.
+
+Solution rule:
+- Find a path that simultaneously guides both lines to their endpoints.
+- Think about how each of your moves affects the mirror line.

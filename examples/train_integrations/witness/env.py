@@ -168,6 +168,7 @@ class WitnessEnv(BaseTextEnv):
         self.max_steps_multiplier = extras.get("max_steps_multiplier", 3)
         self.obs_mode = extras.get("obs_mode", "grid")
         self.rules_mode = extras.get("rules_mode", "rules_unknown")
+        self.max_levels = extras.get("max_levels", None)
 
         # Load game
         game_cls = _load_game_class(self.game_id)
@@ -179,6 +180,8 @@ class WitnessEnv(BaseTextEnv):
         self.levels_completed = 0
         self.level_index = 0
         self.total_levels = len(self.baselines) if self.baselines else getattr(self.game, '_win_score', 5)
+        if self.max_levels is not None:
+            self.total_levels = min(self.total_levels, self.max_levels)
 
         # Get initial frame via RESET
         self.last_frame_data = self.game.perform_action(

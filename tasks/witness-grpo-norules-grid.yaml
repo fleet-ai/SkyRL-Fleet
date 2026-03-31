@@ -37,7 +37,8 @@ envs:
   INFERENCE_BACKEND: "vllm"
   NUM_EPOCHS: 20
   # Witness-specific
-  GAME_IDS: "tw10"
+  GAME_IDS: "tw10 tw09 tw13 tw04"
+  MAX_LEVELS: "5"
   REWARD_MODE: "shaped"
   OBS_MODE: "grid"
   RULES_MODE: "rules_unknown"
@@ -74,6 +75,7 @@ setup: |
     --reward_mode $REWARD_MODE \
     --obs_mode $OBS_MODE \
     --rules_mode $RULES_MODE \
+    --max_levels $MAX_LEVELS \
     --output_dir $HOME/data/witness
 
 run: |
@@ -160,12 +162,12 @@ run: |
       generator.num_inference_engines="$TOTAL_POLICY_GPUS" \
       generator.inference_engine_tensor_parallel_size=1 \
       trainer.epochs=${NUM_EPOCHS} \
-      trainer.eval_batch_size=1 \
+      trainer.eval_batch_size=4 \
       trainer.eval_before_train=true \
       trainer.eval_interval=5 \
       trainer.update_epochs_per_batch=1 \
-      trainer.train_batch_size=1 \
-      trainer.policy_mini_batch_size=1 \
+      trainer.train_batch_size=4 \
+      trainer.policy_mini_batch_size=4 \
       trainer.micro_forward_batch_size_per_gpu=1 \
       trainer.micro_train_batch_size_per_gpu=1 \
       trainer.ckpt_interval=10 \
@@ -187,6 +189,7 @@ run: |
       environment.env_class=witness \
       generator.use_conversation_multi_turn=false \
       generator.n_samples_per_prompt=4 \
+      generator.eval_n_samples_per_prompt=3 \
       generator.gpu_memory_utilization=0.8 \
       trainer.logger="$LOGGER" \
       trainer.project_name="arc-agi-3" \
