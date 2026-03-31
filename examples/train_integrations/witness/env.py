@@ -446,8 +446,31 @@ class WitnessEnv(BaseTextEnv):
         return {
             "game_id": self.game_id,
             "levels_completed": self.levels_completed,
-            "total_steps": self.step_count,
-            "solved": self.levels_completed > 0,
+            "total_levels": self.total_levels,
+            "level_progress": self.levels_completed / max(self.total_levels, 1),
+            "total_turns": self.turns,
+            "solved_any": 1.0 if self.levels_completed > 0 else 0.0,
+            "all_cleared": 1.0 if self.levels_completed >= self.total_levels else 0.0,
+        }
+
+    @staticmethod
+    def aggregate_metrics(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate metrics across episodes for wandb logging."""
+        if not metrics:
+            return {}
+
+        levels = [m.get("levels_completed", 0) for m in metrics]
+        progress = [m.get("level_progress", 0.0) for m in metrics]
+        solved = [m.get("solved_any", 0.0) for m in metrics]
+        cleared = [m.get("all_cleared", 0.0) for m in metrics]
+
+        return {
+            "avg_levels_completed": sum(levels) / len(levels),
+            "max_levels_completed": max(levels),
+            "avg_level_progress": sum(progress) / len(progress),
+            "solve_rate": sum(solved) / len(solved),
+            "all_cleared_rate": sum(cleared) / len(cleared),
+            "num_episodes": len(metrics),
         }
 
     def close(self):
