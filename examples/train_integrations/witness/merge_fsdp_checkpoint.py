@@ -19,7 +19,7 @@ import re
 import sys
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 
 def find_shard_files(checkpoint_dir: str):
@@ -126,25 +126,24 @@ def main():
     # Merge shards
     full_state_dict = merge_sharded_state_dict(shard_files, world_size)
 
-    # Load base model config and tokenizer
-    print(f"  Loading base model config from {args.model_name}...")
+    # Load config only (no weights) and create empty model
+    print(f"  Loading model config...")
 
-    # Check if there's a local config in the checkpoint
     local_config = os.path.join(args.checkpoint_dir, "huggingface", "config.json")
     if os.path.exists(local_config):
         config_source = os.path.join(args.checkpoint_dir, "huggingface")
     else:
         config_source = args.model_name
 
-    model = AutoModelForCausalLM.from_pretrained(
-        config_source,
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
-        # Don't load weights — we'll use our merged state dict
-        _fast_init=True,
-    )
+    config = AutoConfig.from_pretrained(config_source, trust_remote_code=True)
+    print(f"  Creating empty model from config ({config.architectures})...")
 
-    # Load merged weights
+    # Create model without loading any weights
+    with torch.device("meta"):
+        model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
+
+    # Move to CPU and load merged weights
+    model = model.to_empty(device="cpu")
     print("  Loading merged state dict into model...")
     missing, unexpected = model.load_state_dict(full_state_dict, strict=False)
     if missing:
