@@ -67,6 +67,11 @@ def main():
                         choices=["rules_given", "rules_unknown"])
     parser.add_argument("--harness_mode", action="store_true", default=False,
                         help="Enable harness enhancements (default: off)")
+    # Harness sub-switches (only relevant when --harness_mode is set)
+    parser.add_argument("--harness_action_mapper", type=lambda x: x.lower() == "true", default=True)
+    parser.add_argument("--harness_exploration", type=lambda x: x.lower() == "true", default=True)
+    parser.add_argument("--harness_memory", type=lambda x: x.lower() == "true", default=True)
+    parser.add_argument("--harness_priors", type=lambda x: x.lower() == "true", default=True)
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--val_fraction", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
@@ -95,6 +100,10 @@ def main():
             "max_levels": total_levels,
             "max_steps_multiplier": 3,
             "harness_mode": args.harness_mode,
+            "harness_action_mapper": args.harness_action_mapper,
+            "harness_exploration": args.harness_exploration,
+            "harness_memory": args.harness_memory,
+            "harness_priors": args.harness_priors,
         })
 
     # For online RL, train and eval use the same games.
