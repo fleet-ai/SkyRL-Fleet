@@ -41,6 +41,7 @@ envs:
   MAX_TURNS: "200"
   S3_BUCKET: "fleet-worktrial-guanghan"
   EVAL_NAME: "eval_exp11_learned_adaptive_ascii"
+  MODEL: "Qwen/Qwen3.5-9B"
 
 setup: |
   # --- Python environment ---
@@ -61,12 +62,20 @@ setup: |
   # --- ARC-AGI SDK ---
   uv pip install arc-agi
 
-  # --- Download checkpoint from S3 (skip optimizer states) ---
+  # --- Download FSDP sharded checkpoint from S3 (skip optimizer states) ---
   export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
   export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
   echo "Downloading checkpoint from $CHECKPOINT_S3 ..."
-  aws s3 sync "$CHECKPOINT_S3" ~/checkpoint/ --exclude "*/optimizer*" --exclude "*/scheduler*"
-  echo "Checkpoint downloaded: $(du -sh ~/checkpoint/ | cut -f1)"
+  aws s3 sync "$CHECKPOINT_S3" ~/checkpoint_sharded/ --exclude "*/optim*" --exclude "*/scheduler*"
+  echo "Checkpoint downloaded: $(du -sh ~/checkpoint_sharded/ | cut -f1)"
+
+  # --- Find the latest global_step directory ---
+  LATEST_STEP=$(ls -d ~/checkpoint_sharded/global_step_* 2>/dev/null | sort -t_ -k3 -n | tail -1)
+  if [ -z "$LATEST_STEP" ]; then
+    # Maybe the structure is flat (files directly in checkpoint_sharded/)
+    LATEST_STEP=~/checkpoint_sharded
+  fi
+  echo "Using checkpoint step: $LATEST_STEP"
 
 run: |
   set -euo pipefail
@@ -77,18 +86,33 @@ run: |
   export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
   export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 
+  # --- Step 1: Merge FSDP shards into HuggingFace format ---
+  echo "=== Merging FSDP shards to HuggingFace format ==="
+  LATEST_STEP=$(ls -d ~/checkpoint_sharded/global_step_* 2>/dev/null | sort -t_ -k3 -n | tail -1)
+  if [ -z "$LATEST_STEP" ]; then
+    LATEST_STEP=~/checkpoint_sharded
+  fi
+
+  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \
+    --checkpoint_dir "$LATEST_STEP/policy" \
+    --output_dir ~/checkpoint_merged/ \
+    --model_name "$MODEL"
+
+  echo "Merged checkpoint: $(du -sh ~/checkpoint_merged/ | cut -f1)"
+
+  # --- Step 2: Run evaluation ---
   echo "=== ARC-AGI-3 Evaluation ==="
   echo "  Checkpoint: $CHECKPOINT_S3"
   echo "  Max turns: $MAX_TURNS"
   echo "  Output: s3://${S3_BUCKET}/${EVAL_NAME}/"
 
   python examples/train_integrations/witness/evaluate_arc_agi.py \
-    --checkpoint ~/checkpoint/ \
+    --checkpoint ~/checkpoint_merged/ \
     --max_turns "$MAX_TURNS" \
     --tp 1 \
     --output_dir ~/eval_results/
 
-  # Upload results to S3
+  # --- Step 3: Upload results to S3 ---
   echo "=== Uploading results to S3 ==="
   aws s3 sync ~/eval_results/ "s3://${S3_BUCKET}/${EVAL_NAME}/"
   echo "Results uploaded to s3://${S3_BUCKET}/${EVAL_NAME}/"
