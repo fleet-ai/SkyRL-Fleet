@@ -36,7 +36,7 @@ from skyrl_gym.envs.base_text_env import (
     BaseTextEnvStepOutput,
     ConversationType,
 )
-from skyrl_gym.envs.task_gen.tool_call_parser import parse_tool_call
+from skyrl_gym.envs.task_gen.tool_call_parser import parse_tool_call, parse_tool_calls
 from skyrl_gym.envs.task_gen.verifier_sandbox import (
     VerifierSandbox,
     parse_task_output,
@@ -172,28 +172,35 @@ class TaskGenEnv(BaseTextEnv):
         self.openrouter_api_key = os.environ.get("OPENROUTER_API_KEY", "")
         self.fleet_api_key = os.environ.get("FLEET_API_KEY", "")
 
-        # Eval mode: k=8 raw only (no hints); Train mode: k with hints
+        # Eval mode: k=8 raw only (no hints)
         self.is_eval = extras.get("training_phase") == "eval"
         self.eval_k_rollouts = int(env_config.get("eval_k_rollouts", 8)) if env_config else 8
+        # Whether to run hinted evaluation jobs (2nd harness job with verifier feedback).
+        # Default off — hints were net negative in iter#11 (verifier code dump confused evaluator).
+        self.enable_hints = bool(env_config.get("enable_hints", False)) if env_config else False
 
         # Lazy-init Fleet SDK client for harness evaluation
         self._fleet_client = None
 
         # Rollout dump directory (full prompt/verifier/scores per eval)
-        default_rollout_dir = os.path.join(os.path.expanduser("~"), "rollouts")
-        self._rollout_dir = os.environ.get("ROLLOUT_DIR", default_rollout_dir)
+        default_rollout_dir = os.path.join(os.path.expanduser("~"), "reward_rollouts")
+        self._rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR", default_rollout_dir)
         os.makedirs(self._rollout_dir, exist_ok=True)
 
         # Base quality reward for tasks passing sandbox + judge gate.
         # Provides GRPO gradient signal even when all harness evals return 0.
         self.base_quality_reward = float(env_config.get("base_quality_reward", 0.1)) if env_config else 0.1
 
+        # Small per-tool-call reward to incentivize DB exploration (describe_db, query_db).
+        # Default 0.0 = off (no behavior change for existing runs).
+        self.tool_call_reward_per_call = float(env_config.get("tool_call_reward_per_call", 0.0)) if env_config else 0.0
+
         logger.info(
             f"TaskGenEnv: env={self.env_key}, max_turns={self.max_turns}, "
             f"judge={self.judge_model or 'none'}, "
             f"tools={len(self.env_tools)}, k={self.k_rollouts}, eval_k={self.eval_k_rollouts}, "
             f"evaluator={self.evaluator_model}, is_eval={self.is_eval}, "
-            f"base_quality={self.base_quality_reward}"
+            f"base_quality={self.base_quality_reward}, tool_call_reward={self.tool_call_reward_per_call}"
         )
 
     def _format_tool_schema(self, tool: Dict[str, Any]) -> str:
@@ -541,31 +548,48 @@ Generate exactly ONE task. Output it in this format:
         return "\n".join(parts)
 
     def _judge_task(self, prompt: str, verifier: str) -> float:
-        """LLM-as-a-judge gate: returns 0.0 (invalid) or 1.0 (valid).
+        """LLM classifier gate: returns 0.0 (reject) or 1.0 (accept).
 
-        Uses a model to check if the generated (prompt, verifier) pair
-        is valid and coherent. This is the binary gate in the reward formula.
+        Predicts whether the (prompt, verifier) pair will produce meaningful
+        evaluation signal. Optimized for very low false positive rate — only
+        rejects tasks that are near-certain to waste harness compute.
+
+        Checks:
+            1. Phantom tables: verifier references tables not in env schema
+            2. Undefined references: calls to functions/constants not defined
+            3. Vacuous checks: verifier only checks user existence or len>0
         """
         if not self.judge_model or not self.openrouter_api_key:
             return 1.0  # No judge configured, pass through
 
-        # Build concise tool list for context
+        # Build context for the classifier
         tool_names = [t for t in self.env_tools if t != "computer"]
         tools_str = ", ".join(tool_names[:20]) if tool_names else "none discovered"
 
+        schema_block = self.env_schema if self.env_schema else "Schema not available."
+
         judge_prompt = (
-            f'Evaluate this task for the "{self.env_key}" environment.\n\n'
+            "You are a pre-filter that decides whether to run an expensive evaluation harness "
+            "on a generated (prompt, verifier) pair. Your goal: reject tasks that will CERTAINLY "
+            "produce zero useful signal, while accepting anything that MIGHT work.\n\n"
+            "ACCEPT unless you find a clear, concrete defect from this list:\n\n"
+            "1. PHANTOM TABLES — The verifier calls .table(\"X\") where X does not exist in the "
+            "schema below. If the table doesn't exist, the verifier crashes → zero signal.\n\n"
+            "2. UNDEFINED REFERENCES — The verifier calls functions (e.g., find_new_entries()) or "
+            "uses constants (e.g., TASK_FAILED_SCORE) that are not defined in the code and are "
+            "not Python builtins. These cause NameError → zero signal.\n\n"
+            "3. VACUOUS CHECKS — The verifier's ONLY checks are whether a user/account exists or "
+            "whether any table has rows (len > 0), without validating any task-specific outcome. "
+            "These always pass regardless of agent behavior → zero variance → zero signal.\n\n"
+            "IMPORTANT: When in doubt, ACCEPT. A false reject wastes a potentially good task. "
+            "A false accept only wastes one harness call. Err heavily toward ACCEPT.\n\n"
+            f'--- Environment: "{self.env_key}" ---\n\n'
             f"Available tools: {tools_str}\n\n"
-            f"Task prompt:\n{prompt}\n\n"
-            f"Verifier code:\n```python\n{verifier}\n```\n\n"
-            "A valid task must:\n"
-            "1. Have a clear, specific prompt describing what an agent should do\n"
-            "2. Have a verifier that checks the correct outcome via the DB API "
-            '(env.db("seed"), env.db("current"), .table().eq().all())\n'
-            "3. The verifier must check what the prompt actually asks\n"
-            "4. The prompt must not leak the answer or expected values\n"
-            "5. The verifier must return 0.0 on a fresh env (before agent acts)\n\n"
-            "Answer with exactly one word: VALID or INVALID"
+            f"Database schema (these are the ONLY valid tables):\n```\n{schema_block}\n```\n\n"
+            f"--- Generated task ---\n\n"
+            f"Prompt:\n{prompt}\n\n"
+            f"Verifier:\n```python\n{verifier}\n```\n\n"
+            "Answer with exactly one word: ACCEPT or REJECT"
         )
 
         try:
@@ -579,11 +603,14 @@ Generate exactly ONE task. Output it in this format:
                 api_key=self.openrouter_api_key,
             )
             answer = response.choices[0].message.content.strip().upper()
-            is_valid = "VALID" in answer and "INVALID" not in answer
-            logger.info(f"LLM judge [{self.env_key}]: {answer} -> {'VALID' if is_valid else 'INVALID'}")
-            return 1.0 if is_valid else 0.0
+            accepted = "ACCEPT" in answer and "REJECT" not in answer
+            logger.info(
+                f"LLM classifier [{self.env_key}]: {answer} -> "
+                f"{'ACCEPT' if accepted else 'REJECT'}"
+            )
+            return 1.0 if accepted else 0.0
         except Exception as e:
-            logger.warning(f"LLM judge failed, defaulting to valid: {e}")
+            logger.warning(f"LLM classifier failed, defaulting to accept: {e}")
             return 1.0
 
     @staticmethod
@@ -838,21 +865,15 @@ Generate exactly ONE task. Output it in this format:
         start = time.time()
 
         try:
-            # Eval mode: k=8 raw only (no hints) for pass rate measurement
-            # Train mode: k raw + k hinted for hint_gap signal
+            # Eval: k=eval_k_rollouts for pass rate; Train: k=k_rollouts
             eval_k = self.eval_k_rollouts if self.is_eval else self.k_rollouts
 
             # 1. Raw job: k rollouts without hints
             raw_job_id, raw_results = await self._run_harness_job(prompt, verifier, k=eval_k)
             raw_scores = [r[0] for r in raw_results]
 
-            if self.is_eval:
-                # Eval: no hints, reward = alpha * var_raw (hint_gap=0)
-                hinted_scores = []
-                hinted_job_id = None
-                hint_text = ""
-                result = compute_task_reward(raw_scores, raw_scores, validity=1.0)
-            else:
+            if self.enable_hints and not self.is_eval:
+                # Hinted training: k raw + k hinted for hint_gap signal
                 # 2. Build hint from first failing session's stdout/error
                 hint_stdout = None
                 hint_error = None
@@ -885,6 +906,12 @@ Generate exactly ONE task. Output it in this format:
 
                 # 4. Compute reward
                 result = compute_task_reward(raw_scores, hinted_scores, validity=1.0)
+            else:
+                # No hints — reward based on raw variance only
+                hinted_scores = []
+                hinted_job_id = None
+                hint_text = ""
+                result = compute_task_reward(raw_scores, raw_scores, validity=1.0)
 
             duration = time.time() - start
 
@@ -1017,18 +1044,22 @@ Generate exactly ONE task. Output it in this format:
         # 4. Hint-based evaluation via Fleet harness
         eval_result = await self._evaluate_task(prompt, verifier)
 
-        # 5. R = base_quality + eval_signal
+        # 5. R = base_quality + tool_call_reward + eval_signal
         # base_quality: small reward for passing sandbox+judge (structural validity)
+        # tool_call_reward: incentivize DB exploration (describe_db, query_db)
         # eval_signal: judge_gate * compute_task_reward (harness-based quality)
         # This prevents GRPO zero-signal deadlock when all harness evals fail.
         base_quality = self.base_quality_reward
+        tool_call_reward = self.meta_tool_calls * self.tool_call_reward_per_call
         eval_signal = judge_gate * eval_result["total"]
-        reward = base_quality + eval_signal
+        reward = base_quality + tool_call_reward + eval_signal
 
         metadata["reward_breakdown"] = {
             "sandbox": 1.0,
             "judge": judge_gate,
             "base_quality": base_quality,
+            "tool_call_reward": tool_call_reward,
+            "meta_tool_calls": self.meta_tool_calls,
             "eval_signal": eval_signal,
             **eval_result,
             "total": reward,
@@ -1054,82 +1085,25 @@ Generate exactly ONE task. Output it in this format:
 
         # 1. Check for <task> block → evaluation pipeline
         if "<task>" in action:
-            # Gate: require describe_db + query_db + at least one env tool call
-            # before generating a task (unless single-turn or out of turns)
-            if self.max_turns > 1 and not max_turns_reached:
-                missing = []
-                if not self.called_describe_db:
-                    missing.append("`describe_db` (to see the schema)")
-                if not self.called_query_db:
-                    missing.append("`query_db` (to inspect actual data)")
-                if self.mcp_tool_calls < 1:
-                    missing.append("at least one environment API tool (to understand input/output formats)")
-                if missing:
-                    observation = {
-                        "role": "user",
-                        "content": (
-                            "You must explore the environment before generating a task. "
-                            "You still need to call: "
-                            + "; ".join(missing)
-                            + ". NEVER hardcode database IDs — always query to find them first."
-                        ),
-                    }
-                    return BaseTextEnvStepOutput(
-                        observations=[observation],
-                        reward=0.0,
-                        done=False,
-                        metadata={
-                            "env_key": self.env_key,
-                            "turn": self.turns,
-                            "rejected": "no_exploration",
-                        },
-                    )
             return await self._handle_task_generation(action)
 
-        # 2. Check for tool call → execute via Fleet orchestrator or MCP
-        # Enforce exploration sequence: describe_db → query_db → env tool
-        tool_call = parse_tool_call(action)
-        if tool_call and tool_call["name"] in self.callable_tools:
-            if self.max_turns > 1 and not max_turns_reached:
-                name = tool_call["name"]
-                if name == "query_db" and not self.called_describe_db:
-                    return BaseTextEnvStepOutput(
-                        observations=[
-                            {
-                                "role": "user",
-                                "content": "Call `describe_db` first to see the schema before querying data.",
-                            }
-                        ],
-                        reward=0.0,
-                        done=False,
-                        metadata={"env_key": self.env_key, "turn": self.turns, "rejected": "sequence_violation"},
-                    )
-                if name not in _META_TOOLS and not self.called_query_db:
-                    return BaseTextEnvStepOutput(
-                        observations=[
-                            {
-                                "role": "user",
-                                "content": (
-                                    "Call `describe_db` and `query_db` first to understand the schema and data "
-                                    "before calling environment tools."
-                                ),
-                            }
-                        ],
-                        reward=0.0,
-                        done=False,
-                        metadata={"env_key": self.env_key, "turn": self.turns, "rejected": "sequence_violation"},
-                    )
-
-            if tool_call["name"] in _META_TOOLS:
-                self.meta_tool_calls += 1
-                if tool_call["name"] == "describe_db":
-                    self.called_describe_db = True
-                elif tool_call["name"] == "query_db":
-                    self.called_query_db = True
-                obs_content = await self._execute_meta_tool(tool_call)
-            else:
-                self.mcp_tool_calls += 1
-                obs_content = await self._execute_mcp_tool(tool_call)
+        # 2. Check for tool calls → execute all via Fleet orchestrator or MCP
+        tool_calls = parse_tool_calls(action)
+        tool_calls = [tc for tc in tool_calls if tc["name"] in self.callable_tools]
+        if tool_calls:
+            results = []
+            for tc in tool_calls:
+                if tc["name"] in _META_TOOLS:
+                    self.meta_tool_calls += 1
+                    if tc["name"] == "describe_db":
+                        self.called_describe_db = True
+                    elif tc["name"] == "query_db":
+                        self.called_query_db = True
+                    result = await self._execute_meta_tool(tc)
+                else:
+                    self.mcp_tool_calls += 1
+                    result = await self._execute_mcp_tool(tc)
+                results.append(f"[{tc['name']}] {result}")
 
             if max_turns_reached:
                 return BaseTextEnvStepOutput(
@@ -1139,12 +1113,13 @@ Generate exactly ONE task. Output it in this format:
                     metadata={"env_key": self.env_key, "turn": self.turns, "done_reason": "max_turns"},
                 )
 
+            obs_content = "\n\n".join(results)
             observation = {"role": "user", "content": obs_content}
             return BaseTextEnvStepOutput(
                 observations=[observation],
                 reward=0.0,
                 done=False,
-                metadata={"env_key": self.env_key, "turn": self.turns, "tool_call": tool_call},
+                metadata={"env_key": self.env_key, "turn": self.turns, "tool_calls": [tc["name"] for tc in tool_calls]},
             )
 
         # 3. Neither task nor tool call → nudge
@@ -1186,22 +1161,27 @@ Generate exactly ONE task. Output it in this format:
         if self.orch is None:
             return "Error: Fleet environment not provisioned. Generate a <task> directly."
 
-        try:
-            if name == "describe_db":
-                result = await self.orch.describe_db_async(db_name=args.get("db_name", "seed"))
-            elif name == "query_db":
-                sql = args.get("sql", "")
-                if not sql:
-                    return "Error: query_db requires a 'sql' argument."
-                result = await self.orch.query_db_async(sql=sql, db_name=args.get("db_name", "seed"))
-            else:
-                return f"Error: Unknown meta-tool '{name}'."
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if name == "describe_db":
+                    result = await self.orch.describe_db_async(db_name=args.get("db_name", "seed"))
+                elif name == "query_db":
+                    sql = args.get("sql", "")
+                    if not sql:
+                        return "Error: query_db requires a 'sql' argument."
+                    result = await self.orch.query_db_async(sql=sql, db_name=args.get("db_name", "seed"))
+                else:
+                    return f"Error: Unknown meta-tool '{name}'."
 
-            if isinstance(result, dict):
-                return f"Tool result:\n{json.dumps(result, indent=2, default=str)}"
-            return f"Tool result:\n{result}"
-        except Exception as e:
-            return f"Error: {e}"
+                if isinstance(result, dict):
+                    return f"Tool result:\n{json.dumps(result, indent=2, default=str)}"
+                return f"Tool result:\n{result}"
+            except Exception as e:
+                if attempt < max_retries - 1 and ("closed" in str(e).lower() or "transport" in str(e).lower() or "connection" in str(e).lower()):
+                    await asyncio.sleep(1)
+                    continue
+                return f"Error: {e}"
 
     async def _execute_mcp_tool(self, tool_call: Dict[str, Any]) -> str:
         """Execute an MCP tool call via FleetMCPTools."""

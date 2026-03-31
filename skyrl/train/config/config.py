@@ -41,6 +41,8 @@ class BaseConfig(ABC):
 class DataConfig(BaseConfig):
     train_data: List[str] = field(default_factory=lambda: [os.path.expanduser("~/data/gsm8k/train.parquet")])
     val_data: List[str] = field(default_factory=lambda: [os.path.expanduser("~/data/gsm8k/validation.parquet")])
+    env_filter: Optional[str] = None
+    """Comma-separated list of data_source values to include (e.g. 'outlook,github'). None = no filtering."""
 
 
 # ---------------------------------------------------------------------------
@@ -615,6 +617,7 @@ class TrainerConfig(BaseConfig):
     logger: str = "wandb"
     dump_data_batch: bool = False
     dump_eval_results: bool = True
+    dump_training_trajectories: bool = False
     rope_scaling: Optional[Dict[str, Any]] = None
     rope_theta: Optional[float] = None
     loss_chunk_size: Optional[int] = None
