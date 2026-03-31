@@ -215,10 +215,18 @@ class WitnessEnv(BaseTextEnv):
         self.chat_history: ConversationType = []
 
         # Harness: optional enhancement layer (only when harness_mode=true)
+        # Sub-switches allow ablation of individual mechanisms
         self.harness = None
         if self.harness_mode:
             from .harness import WitnessHarness
-            self.harness = WitnessHarness(self.game_id, self.last_grid)
+            self.harness = WitnessHarness(
+                game_id=self.game_id,
+                initial_grid=self.last_grid,
+                enable_action_mapper=extras.get("harness_action_mapper", True),
+                enable_exploration=extras.get("harness_exploration", True),
+                enable_memory=extras.get("harness_memory", True),
+                enable_priors=extras.get("harness_priors", True),
+            )
 
     def _baseline(self) -> int:
         if self.level_index < len(self.baselines):
@@ -230,25 +238,25 @@ class WitnessEnv(BaseTextEnv):
 
     def _render_obs(self) -> str:
         """Render current frame as text observation."""
-        ds = _downsample(self.last_grid)
-
-        if self.obs_mode == "ascii":
-            # Try to use semantic ASCII encoder if available
-            try:
-                from .semantic_ascii import encode_grid
-                return encode_grid(self.last_grid)
-            except ImportError:
-                pass  # Fall back to grid mode
-
-        # Default: raw color grid
-        board = _grid_to_text(ds)
         meta = (
             f"Game: {self.game_id} | Level: {self.level_index}/{self.total_levels} | "
             f"Step: {self.step_count}/{self._max_steps()}"
         )
+
+        if self.obs_mode == "ascii":
+            try:
+                from .semantic_ascii import encode_grid
+                board = encode_grid(self.last_grid)
+            except ImportError:
+                ds = _downsample(self.last_grid)
+                board = _grid_to_text(ds)
+        else:
+            ds = _downsample(self.last_grid)
+            board = _grid_to_text(ds)
+
         obs = f"{meta}\n{board}"
 
-        # Harness: append enriched observations
+        # Harness: append enriched observations (works with both grid and ascii)
         if self.harness:
             extra = self.harness.enrich_observation(self.last_grid, self.step_count, self.level_index)
             if extra:
