@@ -198,7 +198,7 @@ run: |
       generator.gpu_memory_utilization=0.8 \
       trainer.logger="$LOGGER" \
       trainer.project_name="arc-agi-3" \
-      trainer.run_name="witness_${GAME_IDS}_${RULES_MODE}_${OBS_MODE}" \
+      trainer.run_name="witness_${GAME_IDS}_rules_grid" \
       trainer.resume_mode=null \
       trainer.ckpt_path="$HOME/ckpts/witness_ckpt" \
       trainer.dump_data_batch=true \
