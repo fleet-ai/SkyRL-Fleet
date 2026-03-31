@@ -62,11 +62,13 @@ setup: |
   # --- Qwen3.5 deps (transformers 5.3.0, CUDA toolkit, causal-conv1d) ---
   source scripts/fleet-qwen35-extra-setup.sh
 
-  # --- Clone arc-witness-envs ---
+  # --- arcengine SDK (provides ActionInput, GameAction, ARCBaseGame) ---
+  uv pip install arc-agi
+
+  # --- Clone arc-witness-envs (game definitions) ---
   if [ ! -d "$HOME/arc-witness-envs" ]; then
     git clone https://github.com/fleet-guanghan/arc-witness-envs.git $HOME/arc-witness-envs
   fi
-  cd $HOME/arc-witness-envs && uv pip install -e .
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
 
   # --- Prepare dataset ---
