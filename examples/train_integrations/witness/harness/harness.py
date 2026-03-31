@@ -57,9 +57,9 @@ class WitnessHarness:
         self.memory = LevelMemory() if enable_memory else None
         self._action_history: List[int] = []
 
-        # Record initial state
+        # Record initial state (without incrementing step counter)
         if self.exploration:
-            self.exploration.record_visit(initial_grid)
+            self.exploration.record_initial(initial_grid)
 
     def on_step(
         self,

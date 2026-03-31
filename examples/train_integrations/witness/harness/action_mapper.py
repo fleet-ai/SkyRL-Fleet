@@ -23,17 +23,26 @@ _BLOCK_SIZE = 4  # 64/16 grid cells
 
 
 def _find_cursor_cell(grid: np.ndarray) -> Optional[Tuple[int, int]]:
-    """Find the grid cell (row, col) containing the cursor color."""
+    """Find the grid cell containing the cursor (smallest yellow region).
+
+    The cursor is typically 1 pixel, while dots are ~5px and stars are larger.
+    By picking the cell with the fewest yellow pixels, we avoid confusing
+    the cursor with other yellow game elements.
+    """
     h, w = grid.shape
+    best_cell = None
+    min_yellow_pixels = float('inf')
     for r in range(h // _BLOCK_SIZE):
         for c in range(w // _BLOCK_SIZE):
             patch = grid[
                 r * _BLOCK_SIZE:(r + 1) * _BLOCK_SIZE,
                 c * _BLOCK_SIZE:(c + 1) * _BLOCK_SIZE,
             ]
-            if _CURSOR_COLOR in patch:
-                return (r, c)
-    return None
+            yellow_count = int(np.sum(patch == _CURSOR_COLOR))
+            if 0 < yellow_count < min_yellow_pixels:
+                min_yellow_pixels = yellow_count
+                best_cell = (r, c)
+    return best_cell
 
 
 class ActionMapper:
