@@ -1,0 +1,94 @@
+# ARC-AGI-3 Evaluation — learned_adaptive_ascii mode
+#
+# Evaluates a trained checkpoint on 25 official ARC-AGI-3 public games.
+# Uses VLM capability: model receives raw pixel frames as images and
+# must perceive + reason + act in a single generation.
+#
+# Usage:
+#   sky launch tasks/witness-eval.yaml \
+#     --env CHECKPOINT_S3="s3://fleet-worktrial-guanghan/exp11_norules_harness_adaptive_ascii/" \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" \
+#     --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+#     --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+#     -y --down
+
+resources:
+  disk_size: 750
+  ports: 6479
+  any_of:
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: runpod
+    - accelerators: H200:8
+      cloud: lambda
+    - accelerators: H200:8
+      cloud: nebius
+    - accelerators: H200-SXM:8
+      cloud: vast
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-v2.git
+  ref: guanghan/arc-agi-training-v2
+
+envs:
+  # Override these via --env
+  CHECKPOINT_S3: "s3://fleet-worktrial-guanghan/exp11_norules_harness_adaptive_ascii/"
+  MAX_TURNS: "200"
+  S3_BUCKET: "fleet-worktrial-guanghan"
+  EVAL_NAME: "eval_exp11_learned_adaptive_ascii"
+
+setup: |
+  # --- Python environment ---
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb boto3 awscli pillow
+
+  # --- Qwen3.5 deps ---
+  source scripts/fleet-qwen35-extra-setup.sh
+
+  # --- ARC-AGI SDK ---
+  uv pip install arc-agi
+
+  # --- Download checkpoint from S3 (skip optimizer states) ---
+  export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+  export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+  echo "Downloading checkpoint from $CHECKPOINT_S3 ..."
+  aws s3 sync "$CHECKPOINT_S3" ~/checkpoint/ --exclude "*/optimizer*" --exclude "*/scheduler*"
+  echo "Checkpoint downloaded: $(du -sh ~/checkpoint/ | cut -f1)"
+
+run: |
+  set -euo pipefail
+
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+  export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+
+  echo "=== ARC-AGI-3 Evaluation ==="
+  echo "  Checkpoint: $CHECKPOINT_S3"
+  echo "  Max turns: $MAX_TURNS"
+  echo "  Output: s3://${S3_BUCKET}/${EVAL_NAME}/"
+
+  python examples/train_integrations/witness/evaluate_arc_agi.py \
+    --checkpoint ~/checkpoint/ \
+    --max_turns "$MAX_TURNS" \
+    --tp 1 \
+    --output_dir ~/eval_results/
+
+  # Upload results to S3
+  echo "=== Uploading results to S3 ==="
+  aws s3 sync ~/eval_results/ "s3://${S3_BUCKET}/${EVAL_NAME}/"
+  echo "Results uploaded to s3://${S3_BUCKET}/${EVAL_NAME}/"
