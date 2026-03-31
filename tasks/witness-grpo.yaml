@@ -35,7 +35,7 @@ workdir:
 envs:
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
-  NUM_EPOCHS: 20
+  NUM_EPOCHS: 500
   # Witness-specific
   GAME_IDS: "tw10 tw09 tw13 tw04"
   MAX_LEVELS: "5"
@@ -172,7 +172,8 @@ run: |
       trainer.micro_forward_batch_size_per_gpu=1 \
       trainer.micro_train_batch_size_per_gpu=1 \
       trainer.ckpt_interval=10 \
-      trainer.max_prompt_length=512 \
+      trainer.max_prompt_length=2048 \
+      generator.max_input_length=16384 \
       generator.sampling_params.max_generate_length=1024 \
       generator.sampling_params.temperature=0.6 \
       generator.sampling_params.top_p=0.95 \
@@ -188,7 +189,7 @@ run: |
       generator.async_engine=true \
       generator.batched=false \
       environment.env_class=witness \
-      generator.use_conversation_multi_turn=false \
+      generator.use_conversation_multi_turn=true \
       generator.n_samples_per_prompt=4 \
       generator.eval_n_samples_per_prompt=3 \
       generator.gpu_memory_utilization=0.8 \
