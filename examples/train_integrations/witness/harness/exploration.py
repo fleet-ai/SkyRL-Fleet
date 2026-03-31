@@ -30,7 +30,7 @@ class ExplorationTracker:
       - Bonus decays as 1/sqrt(visit_count) — diminishing returns
     """
 
-    def __init__(self, novelty_scale: float = 0.02):
+    def __init__(self, novelty_scale: float = 0.005):
         self._visit_counts: Dict[str, int] = {}
         self._total_steps: int = 0
         self._novelty_scale = novelty_scale
@@ -60,6 +60,11 @@ class ExplorationTracker:
         if self._total_steps == 0:
             return ""
         return f"Explored: {unique} unique states in {self._total_steps} steps"
+
+    def record_initial(self, grid: np.ndarray):
+        """Record initial state without incrementing step counter."""
+        h = _hash_grid(grid)
+        self._visit_counts[h] = self._visit_counts.get(h, 0) + 1
 
     def reset(self):
         """Reset for a new episode (but NOT between levels)."""

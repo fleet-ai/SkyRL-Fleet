@@ -373,6 +373,7 @@ class WitnessEnv(BaseTextEnv):
         truncated = self.step_count >= self._max_steps()
 
         if solved:
+            level_steps = self.step_count  # save before reset
             self.levels_completed = curr_completed
             self.level_index = curr_completed
             # Reset step counter for next level
@@ -382,7 +383,7 @@ class WitnessEnv(BaseTextEnv):
         if self.harness:
             self.harness.on_step(prev_grid, action_id, self.last_grid)
             if solved:
-                self.harness.on_level_solved(self.level_index - 1, self.turns)
+                self.harness.on_level_solved(self.level_index - 1, level_steps)
 
         # Episode ends when: all levels cleared, current level truncated, or max_turns reached
         all_cleared = self.levels_completed >= self.total_levels
