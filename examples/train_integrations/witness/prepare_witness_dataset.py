@@ -94,13 +94,10 @@ def main():
                 "max_steps_multiplier": 3,
             })
 
-    # Shuffle and split
-    rng = np.random.RandomState(args.seed)
-    rng.shuffle(rows)
-
-    n_val = max(1, int(len(rows) * args.val_fraction))
-    val_rows = rows[:n_val]
-    train_rows = rows[n_val:]
+    # For online RL, train on all levels and evaluate on all levels.
+    # No hold-out split — this is not supervised learning.
+    train_rows = rows.copy()
+    val_rows = rows.copy()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
