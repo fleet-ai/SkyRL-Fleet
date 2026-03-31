@@ -173,6 +173,7 @@ class WitnessEnv(BaseTextEnv):
       - max_steps_multiplier: int (default 3)
       - obs_mode: str (default "grid") — "grid" or "ascii"
       - rules_mode: str (default "rules_unknown") — "rules_given" or "rules_unknown"
+      - harness_mode: bool (default False) — enable enhanced observations, exploration rewards, cross-level memory
     """
 
     def __init__(self, env_config: Any, extras: Dict[str, Any] = {}):
@@ -188,6 +189,7 @@ class WitnessEnv(BaseTextEnv):
         self.obs_mode = extras.get("obs_mode", "grid")
         self.rules_mode = extras.get("rules_mode", "rules_unknown")
         self.max_levels = extras.get("max_levels", None)
+        self.harness_mode = extras.get("harness_mode", False)
 
         # Load game
         game_cls = _load_game_class(self.game_id)
@@ -211,6 +213,12 @@ class WitnessEnv(BaseTextEnv):
 
         # Chat history
         self.chat_history: ConversationType = []
+
+        # Harness: optional enhancement layer (only when harness_mode=true)
+        self.harness = None
+        if self.harness_mode:
+            from .harness import WitnessHarness
+            self.harness = WitnessHarness(self.game_id, self.last_grid)
 
     def _baseline(self) -> int:
         if self.level_index < len(self.baselines):
@@ -238,11 +246,21 @@ class WitnessEnv(BaseTextEnv):
             f"Game: {self.game_id} | Level: {self.level_index}/{self.total_levels} | "
             f"Step: {self.step_count}/{self._max_steps()}"
         )
-        return f"{meta}\n{board}"
+        obs = f"{meta}\n{board}"
+
+        # Harness: append enriched observations
+        if self.harness:
+            extra = self.harness.enrich_observation(self.last_grid, self.step_count, self.level_index)
+            if extra:
+                obs += "\n" + extra
+
+        return obs
 
     def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
         """Set up initial prompt with system message and first observation."""
         system_prompt = _build_system_prompt(self.game_id, self.rules_mode, self.total_levels)
+        if self.harness:
+            system_prompt += self.harness.get_system_prompt_addition()
         initial_obs = self._render_obs()
         chat = [
             {"role": "system", "content": system_prompt},
@@ -300,6 +318,9 @@ class WitnessEnv(BaseTextEnv):
         action_id = self._parse_action(action)
         game_action = _get_game_action(action_id)
 
+        # Save previous grid for harness diff
+        prev_grid = self.last_grid.copy() if self.harness else None
+
         # Execute in game
         arc = _ensure_arcengine()
         prev_completed = (
@@ -326,12 +347,22 @@ class WitnessEnv(BaseTextEnv):
             # Reset step counter for next level
             self.step_count = 0
 
+        # Harness: update state + track level completion
+        if self.harness:
+            self.harness.on_step(prev_grid, action_id, self.last_grid)
+            if solved:
+                self.harness.on_level_solved(self.level_index - 1, self.turns)
+
         # Episode ends when: all levels cleared, current level truncated, or max_turns reached
         all_cleared = self.levels_completed >= self.total_levels
         done = all_cleared or truncated
         max_turns_reached = self.turns >= self.max_turns
 
         reward = self._compute_reward(solved, wrong_confirm)
+
+        # Harness: add intrinsic reward bonus
+        if self.harness:
+            reward += self.harness.compute_bonus_reward(self.last_grid, action_id, solved)
 
         # Build message
         if all_cleared:

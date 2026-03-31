@@ -1,0 +1,17 @@
+## Core Priors
+
+P1 OBJECTNESS: The environment has discrete bounded objects (connected same-color pixel regions). Objects persist between steps unless explicitly changed. They have: color, position, size, shape.
+
+P2 AGENTNESS: You control a cursor on the grid. Your actions (1-5) cause state changes. You must discover WHAT each action does by observing before/after states. Goal: reach a winning state (the environment signals level completion).
+
+P3 NUMBERS: Objects can be counted. Quantities may be constraints (exactly N, at least N, at most N).
+
+P4 GEOMETRY: Spatial relationships matter — adjacency, containment, alignment, symmetry. Boundaries may block movement.
+
+## Exploration Strategy
+
+- Simple first: try basic actions before complex strategies
+- Systematic: test each action from new states to learn what it does
+- Errors are signals: wrong CONFIRMs and blocked moves reveal constraint boundaries
+- Avoid cycles: if you've been to a state before, try a DIFFERENT action
+- Look for patterns across levels: rules stay the same, only configurations change

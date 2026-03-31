@@ -65,6 +65,8 @@ def main():
                         choices=["grid", "ascii"])
     parser.add_argument("--rules_mode", default="rules_unknown",
                         choices=["rules_given", "rules_unknown"])
+    parser.add_argument("--harness_mode", action="store_true", default=False,
+                        help="Enable harness enhancements (default: off)")
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--val_fraction", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
@@ -92,6 +94,7 @@ def main():
             "rules_mode": args.rules_mode,
             "max_levels": total_levels,
             "max_steps_multiplier": 3,
+            "harness_mode": args.harness_mode,
         })
 
     # For online RL, train and eval use the same games.
@@ -114,6 +117,7 @@ def main():
     print(f"  Reward mode: {args.reward_mode}")
     print(f"  Obs mode: {args.obs_mode}")
     print(f"  Rules mode: {args.rules_mode}")
+    print(f"  Harness mode: {args.harness_mode}")
     print(f"  Train: {train_path}")
     print(f"  Val:   {val_path}")
 
