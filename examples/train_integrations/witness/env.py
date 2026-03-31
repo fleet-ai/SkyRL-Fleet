@@ -68,45 +68,17 @@ def _load_baselines(game_id: str) -> List[int]:
     return []
 
 
-# ── Concept rules (from arc-witness-agent) ────────────────────────────
-_CONCEPT_RULES_DIR = os.environ.get(
-    "WITNESS_RULES_DIR",
-    os.path.normpath(os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "..", "arc-witness-agent",
-        "memory_store", "concept_rules",
-    )),
-)
+# ── Ground truth rules (extracted from game source code) ──────────────
+_RULES_DIR = os.path.join(os.path.dirname(__file__), "rules")
 
 
-def _load_concept_rules(game_id: str, max_rules: int = 15) -> str:
-    """Load concept rules for a game and format as text for the system prompt."""
-    rules_path = os.path.join(_CONCEPT_RULES_DIR, f"{game_id}.json")
+def _load_ground_truth_rules(game_id: str) -> str:
+    """Load ground truth rules for a game from the rules/ directory."""
+    rules_path = os.path.join(_RULES_DIR, f"{game_id}.txt")
     if not os.path.exists(rules_path):
         return ""
     with open(rules_path) as f:
-        data = json.load(f)
-    rules = data.get("rules", [])
-    if not rules:
-        return ""
-    # Sort by confidence descending, deduplicate by description prefix
-    rules.sort(key=lambda r: r.get("confidence", 0), reverse=True)
-    seen = set()
-    unique = []
-    for r in rules:
-        desc = r.get("description", "").strip()
-        if not desc:
-            continue
-        # Deduplicate by first 60 chars
-        key = desc[:60].lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(desc)
-        if len(unique) >= max_rules:
-            break
-    if not unique:
-        return ""
-    lines = [f"  - {d}" for d in unique]
-    return "Known rules for this game:\n" + "\n".join(lines)
+        return f.read().strip()
 
 
 def _frame_to_grid(frame_data) -> np.ndarray:
@@ -162,7 +134,7 @@ For example: <action>4</action> to move RIGHT."""
 def _build_system_prompt(game_id: str, rules_mode: str, total_levels: int) -> str:
     """Build system prompt based on rules_mode."""
     if rules_mode == "rules_given":
-        rules_text = _load_concept_rules(game_id)
+        rules_text = _load_ground_truth_rules(game_id)
         rules_section = f"{rules_text}\n\n" if rules_text else ""
         goal = f"Use the rules above to solve all {total_levels} levels."
     else:

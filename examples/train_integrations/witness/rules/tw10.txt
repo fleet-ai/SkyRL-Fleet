@@ -1,0 +1,25 @@
+Game: tw10 — ColorFilter (Color Filter Puzzle)
+
+Objective: Draw a path from the green start node to the red end node that correctly separates colored squares into regions.
+
+Movement:
+- Actions 1-4 move the cursor one step on the grid nodes (UP/DOWN/LEFT/RIGHT).
+- The cursor leaves a path trail. Moving back retraces (undoes) the last step.
+- You can only move to adjacent nodes not already on the path.
+
+Submitting (Action 5 = CONFIRM):
+- If the cursor is on the end node, the solution is checked.
+- If the cursor is NOT on the end node, the path resets to start.
+
+Solution rule:
+- The path divides the grid into regions (connected groups of cells on each side of the path).
+- Each region must contain squares of only one PERCEIVED color.
+- Multiple squares of the same perceived color in one region is fine.
+- Empty cells (no colored square) are ignored.
+
+Color filter mechanic:
+- Some cells have a maroon border — these are filter cells.
+- A filter changes the PERCEIVED color of the square inside it.
+- Example: a square with true color A inside a filter that maps to B is perceived as color B.
+- Squares without filters keep their true color as perceived color.
+- When checking the solution, perceived colors (not true colors) determine validity.
