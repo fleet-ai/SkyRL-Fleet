@@ -1,0 +1,22 @@
+Game: tw09 — CylinderWrap (Cylinder Wrap Puzzle)
+
+Objective: Draw a path from the green start node to the red end node that passes through all marked dots.
+
+Movement:
+- Actions 1-4 move the cursor one step on the grid nodes (UP/DOWN/LEFT/RIGHT).
+- The cursor leaves a path trail. Moving back retraces (undoes) the last step.
+- You can only move to adjacent nodes not already on the path.
+
+Cylinder wrap mechanic:
+- The grid wraps horizontally: moving LEFT from column 0 takes you to the rightmost column, and vice versa.
+- Purple markers on the left and right edges indicate the wrap connection.
+- The path can cross from one side to the other through the wrap.
+
+Submitting (Action 5 = CONFIRM):
+- If the cursor is on the end node AND the path passes through all dots, the level is solved.
+- If the cursor is NOT on the end node, or any dot is missed, the path resets to start.
+
+Solution rule:
+- The path must visit every dot (small colored circle) on the grid.
+- Dots change color when visited (covered by the path).
+- Plan your route to visit all dots while navigating from start to end, using the horizontal wrap if needed.
