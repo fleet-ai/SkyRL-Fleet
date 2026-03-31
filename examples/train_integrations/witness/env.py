@@ -95,8 +95,15 @@ def _load_game_class(game_id: str):
     return getattr(mod, cls_name)
 
 
+def _get_witness_repo() -> str:
+    return os.environ.get(
+        "WITNESS_ENVS_DIR",
+        os.path.expanduser("~/arc-witness-envs"),
+    )
+
+
 def _load_baselines(game_id: str) -> List[int]:
-    meta_path = os.path.join(_WITNESS_REPO, "environment_files", game_id, "metadata.json")
+    meta_path = os.path.join(_get_witness_repo(), "environment_files", game_id, "metadata.json")
     if os.path.exists(meta_path):
         with open(meta_path) as f:
             return json.load(f).get("baseline_actions", [])
