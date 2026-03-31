@@ -204,10 +204,29 @@ For example: <action>4</action> to move RIGHT."""
 
 _LEARNED_SYSTEM_PROMPT = """You are playing an interactive puzzle game. You see a 64×64 pixel grid image.
 
-Your task:
-1. OBSERVE the image carefully — identify objects, cursor, grid structure, constraints
-2. DESCRIBE what you see as a compact ASCII representation in your thinking
-3. DECIDE your action based on your analysis
+Your task each turn:
+1. OBSERVE the image carefully
+2. In your thinking, draw an ASCII grid of what you see. Use these symbols:
+   @ = cursor (your position, usually yellow/green dot)
+   # = grid node (intersection point)
+   - = horizontal edge
+   | = vertical edge
+   + = path you've drawn (usually blue)
+   . = empty cell
+   S = start point (green)
+   E = end point (red)
+   A/B = colored squares    T = triangle    P = polyomino
+   * = star    Y = eraser    o = dot (waypoint)
+
+   Example ASCII grid (3x3 cells):
+     0 1 2 3
+   0 S - # - E
+     | . | . |
+   1 # - @ - #
+     | . | . |
+   2 # - # - #
+
+3. Based on your ASCII analysis, DECIDE your next action.
 
 Available actions:
   1 = UP    (move up)
@@ -217,8 +236,7 @@ Available actions:
   5 = CONFIRM (submit your solution)
 
 Your goal: Figure out the puzzle rules by exploring, then solve all {total_levels} levels.
-Respond with ONLY your chosen action in this format: <action>NUMBER</action>
-For example: <action>4</action> to move RIGHT."""
+Respond with ONLY your chosen action in this format: <action>NUMBER</action>"""
 
 
 def _build_system_prompt(game_id: str, rules_mode: str, total_levels: int,
