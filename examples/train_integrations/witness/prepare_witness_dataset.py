@@ -38,15 +38,15 @@ def _load_baselines(witness_repo: str, game_id: str) -> list:
     return []
 
 
-def make_prompt(game_id: str, level_index: int, total_levels: int) -> list:
-    """Create the initial prompt for a game/level."""
+def make_prompt(game_id: str, total_levels: int) -> list:
+    """Create the initial prompt for a game."""
     return [
         {
             "role": "user",
             "content": (
-                f"You are starting puzzle game '{game_id}', "
-                f"level {level_index}/{total_levels}. "
-                f"Explore the grid, discover the rules, and solve the puzzle. "
+                f"You are starting puzzle game '{game_id}' "
+                f"with {total_levels} levels. "
+                f"Explore the grid, discover the rules, and solve all levels. "
                 f"Respond with your action: <action>NUMBER</action>"
             ),
         }
@@ -63,6 +63,8 @@ def main():
                         help="Limit levels per game (None = all)")
     parser.add_argument("--obs_mode", default="grid",
                         choices=["grid", "ascii"])
+    parser.add_argument("--rules_mode", default="rules_unknown",
+                        choices=["rules_given", "rules_unknown"])
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--val_fraction", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
@@ -77,25 +79,20 @@ def main():
         baselines = _load_baselines(witness_repo, game_id)
         total_levels = len(baselines) if baselines else 5
 
-        n_levels = total_levels
-        if args.max_levels_per_game is not None:
-            n_levels = min(n_levels, args.max_levels_per_game)
+        # One row per game: each episode plays from level 0 through all levels
+        rows.append({
+            "data_source": "witness",
+            "prompt": make_prompt(game_id, total_levels),
+            "env_class": "witness",
+            "game_id": game_id,
+            "seed": args.seed,
+            "reward_mode": args.reward_mode,
+            "obs_mode": args.obs_mode,
+            "rules_mode": args.rules_mode,
+            "max_steps_multiplier": 3,
+        })
 
-        for level_idx in range(n_levels):
-            rows.append({
-                "data_source": "witness",
-                "prompt": make_prompt(game_id, level_idx, total_levels),
-                "env_class": "witness",
-                "game_id": game_id,
-                "level_index": level_idx,
-                "seed": args.seed,
-                "reward_mode": args.reward_mode,
-                "obs_mode": args.obs_mode,
-                "max_steps_multiplier": 3,
-            })
-
-    # For online RL, train on all levels and evaluate on all levels.
-    # No hold-out split — this is not supervised learning.
+    # For online RL, train and eval use the same games.
     train_rows = rows.copy()
     val_rows = rows.copy()
 
@@ -114,6 +111,7 @@ def main():
     print(f"  Games: {args.game_ids}")
     print(f"  Reward mode: {args.reward_mode}")
     print(f"  Obs mode: {args.obs_mode}")
+    print(f"  Rules mode: {args.rules_mode}")
     print(f"  Train: {train_path}")
     print(f"  Val:   {val_path}")
 

@@ -5,9 +5,13 @@ Wraps Witness games (tw01-tw13) as a BaseTextEnv for GRPO training.
 The model sees a text representation of the 64x64 grid and outputs
 actions in <action>ACTION_ID</action> format.
 
-Two observation modes:
+Observation modes:
   - "grid": Raw 16x16 downsampled color grid (baseline)
   - "ascii": Semantic ASCII encoding (requires semantic_ascii module)
+
+Rules modes:
+  - "rules_given": Inject known concept rules into system prompt
+  - "rules_unknown": No rules provided, agent must discover them
 """
 
 from __future__ import annotations
@@ -64,6 +68,47 @@ def _load_baselines(game_id: str) -> List[int]:
     return []
 
 
+# ── Concept rules (from arc-witness-agent) ────────────────────────────
+_CONCEPT_RULES_DIR = os.environ.get(
+    "WITNESS_RULES_DIR",
+    os.path.normpath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "..", "..", "arc-witness-agent",
+        "memory_store", "concept_rules",
+    )),
+)
+
+
+def _load_concept_rules(game_id: str, max_rules: int = 15) -> str:
+    """Load concept rules for a game and format as text for the system prompt."""
+    rules_path = os.path.join(_CONCEPT_RULES_DIR, f"{game_id}.json")
+    if not os.path.exists(rules_path):
+        return ""
+    with open(rules_path) as f:
+        data = json.load(f)
+    rules = data.get("rules", [])
+    if not rules:
+        return ""
+    # Sort by confidence descending, deduplicate by description prefix
+    rules.sort(key=lambda r: r.get("confidence", 0), reverse=True)
+    seen = set()
+    unique = []
+    for r in rules:
+        desc = r.get("description", "").strip()
+        if not desc:
+            continue
+        # Deduplicate by first 60 chars
+        key = desc[:60].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(desc)
+        if len(unique) >= max_rules:
+            break
+    if not unique:
+        return ""
+    lines = [f"  - {d}" for d in unique]
+    return "Known rules for this game:\n" + "\n".join(lines)
+
+
 def _frame_to_grid(frame_data) -> np.ndarray:
     """Extract 64x64 numpy array from game frame data."""
     if frame_data and frame_data.frame:
@@ -100,7 +145,7 @@ def _grid_to_text(grid: np.ndarray) -> str:
 
 
 # ── System prompt ──────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are playing a puzzle game on a grid. You see the board as a grid of color numbers.
+_BASE_SYSTEM_PROMPT = """You are playing a puzzle game on a grid.
 
 Available actions:
   1 = UP    (move up)
@@ -109,9 +154,21 @@ Available actions:
   4 = RIGHT (move right)
   5 = CONFIRM (submit your solution)
 
-Your goal: figure out the puzzle rules by exploring, then solve it.
+{rules_section}Your goal: {goal}
 Respond with ONLY your chosen action in this format: <action>NUMBER</action>
 For example: <action>4</action> to move RIGHT."""
+
+
+def _build_system_prompt(game_id: str, rules_mode: str, total_levels: int) -> str:
+    """Build system prompt based on rules_mode."""
+    if rules_mode == "rules_given":
+        rules_text = _load_concept_rules(game_id)
+        rules_section = f"{rules_text}\n\n" if rules_text else ""
+        goal = f"Use the rules above to solve all {total_levels} levels."
+    else:
+        rules_section = ""
+        goal = f"Figure out the puzzle rules by exploring, then solve all {total_levels} levels."
+    return _BASE_SYSTEM_PROMPT.format(rules_section=rules_section, goal=goal)
 
 
 class WitnessEnv(BaseTextEnv):
@@ -124,6 +181,7 @@ class WitnessEnv(BaseTextEnv):
       - reward_mode: str (default "shaped")
       - max_steps_multiplier: int (default 3)
       - obs_mode: str (default "grid") — "grid" or "ascii"
+      - rules_mode: str (default "rules_unknown") — "rules_given" or "rules_unknown"
     """
 
     def __init__(self, env_config: Any, extras: Dict[str, Any] = {}):
@@ -137,6 +195,7 @@ class WitnessEnv(BaseTextEnv):
         self.reward_mode = extras.get("reward_mode", "shaped")
         self.max_steps_multiplier = extras.get("max_steps_multiplier", 3)
         self.obs_mode = extras.get("obs_mode", "grid")
+        self.rules_mode = extras.get("rules_mode", "rules_unknown")
 
         # Load game
         game_cls = _load_game_class(self.game_id)
@@ -188,9 +247,10 @@ class WitnessEnv(BaseTextEnv):
 
     def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
         """Set up initial prompt with system message and first observation."""
+        system_prompt = _build_system_prompt(self.game_id, self.rules_mode, self.total_levels)
         initial_obs = self._render_obs()
         chat = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"New puzzle. Here is the initial board:\n\n{initial_obs}"},
         ]
         self.chat_history = chat.copy()
@@ -267,17 +327,25 @@ class WitnessEnv(BaseTextEnv):
         if solved:
             self.levels_completed = curr_completed
             self.level_index = curr_completed
+            # Reset step counter for next level
+            self.step_count = 0
 
-        done = solved or truncated
+        # Episode ends when: all levels cleared, current level truncated, or max_turns reached
+        all_cleared = self.levels_completed >= self.total_levels
+        done = all_cleared or truncated
         max_turns_reached = self.turns >= self.max_turns
 
         reward = self._compute_reward(solved, wrong_confirm)
 
         # Build message
-        if solved:
-            msg = f"Level solved in {self.step_count} steps! (baseline: {self._baseline()})"
+        if all_cleared:
+            msg = f"All {self.total_levels} levels cleared! Total turns: {self.turns}"
+        elif solved:
+            msg = (f"Level {self.level_index - 1} solved in {self.turns} turns! "
+                   f"(baseline: {self.baselines[self.level_index - 1] if self.level_index - 1 < len(self.baselines) else '?'}). "
+                   f"Starting level {self.level_index}/{self.total_levels}.")
         elif truncated:
-            msg = f"Truncated at {self.step_count} steps."
+            msg = f"Level {self.level_index} truncated at {self.step_count} steps."
         elif wrong_confirm:
             msg = "Wrong solution, try again."
         else:
@@ -287,10 +355,11 @@ class WitnessEnv(BaseTextEnv):
             return BaseTextEnvStepOutput(
                 observations=[], reward=reward, done=True, metadata={
                     "game_id": self.game_id,
-                    "solved": solved,
+                    "all_cleared": all_cleared,
                     "truncated": truncated,
                     "step_count": self.step_count,
                     "levels_completed": self.levels_completed,
+                    "total_levels": self.total_levels,
                 }
             )
 
