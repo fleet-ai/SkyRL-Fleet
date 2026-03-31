@@ -67,13 +67,6 @@ setup: |
   fi
   cd $HOME/arc-witness-envs && uv pip install -e .
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
-
-  # --- Clone arc-witness-agent (for concept rules) ---
-  if [ ! -d "$HOME/arc-witness-agent" ]; then
-    git clone https://github.com/fleet-guanghan/arc-witness-agent.git $HOME/arc-witness-agent
-  fi
-  export WITNESS_RULES_DIR=$HOME/arc-witness-agent/memory_store/concept_rules
-
   # --- Prepare dataset ---
   cd ~/sky_workdir
   python examples/train_integrations/witness/prepare_witness_dataset.py \
@@ -93,7 +86,6 @@ run: |
   mkdir -p "$TMP_DIR"
   export TMPDIR="$TMP_DIR"
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
-  export WITNESS_RULES_DIR=$HOME/arc-witness-agent/memory_store/concept_rules
   export HYDRA_FULL_ERROR=1
 
   # --- GCP NCCL/gIB handling (from fleet-common-run.sh) ---
