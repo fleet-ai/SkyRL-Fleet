@@ -88,7 +88,7 @@ run: |
 
   # --- Step 1: Merge FSDP shards into HuggingFace format ---
   echo "=== Merging FSDP shards to HuggingFace format ==="
-  LATEST_STEP=$(ls -d ~/checkpoint_sharded/global_step_* 2>/dev/null | sort -t_ -k3 -n | tail -1)
+  LATEST_STEP=$(ls -d ~/checkpoint_sharded/global_step_* 2>/dev/null | sort -t_ -k3 -n | tail -1 || true)
   if [ -z "$LATEST_STEP" ]; then
     LATEST_STEP=~/checkpoint_sharded
   fi
