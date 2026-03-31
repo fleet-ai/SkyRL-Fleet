@@ -60,6 +60,9 @@ setup: |
   done
   uv pip install wandb boto3 awscli
 
+  # --- arcengine SDK (provides ActionInput, GameAction, ARCBaseGame) ---
+  uv pip install arc-agi
+
   # --- Qwen3.5 deps (transformers 5.3.0, CUDA toolkit, causal-conv1d) ---
   source scripts/fleet-qwen35-extra-setup.sh
 
