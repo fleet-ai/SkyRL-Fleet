@@ -57,7 +57,7 @@ setup: |
   for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
     [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
   done
-  uv pip install wandb
+  uv pip install wandb boto3 awscli
 
   # --- Qwen3.5 deps (transformers 5.3.0, CUDA toolkit, causal-conv1d) ---
   source scripts/fleet-qwen35-extra-setup.sh
