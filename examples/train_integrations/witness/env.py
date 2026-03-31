@@ -7,7 +7,8 @@ actions in <action>ACTION_ID</action> format.
 
 Observation modes:
   - "grid": Raw 16x16 downsampled color grid (baseline)
-  - "ascii": Semantic ASCII encoding (requires semantic_ascii module)
+  - "ascii": Fixed 16x16 semantic ASCII encoding
+  - "adaptive_ascii": Game-aligned adaptive ASCII (auto-detects grid structure)
 
 Rules modes:
   - "rules_given": Inject known concept rules into system prompt
@@ -266,10 +267,17 @@ class WitnessEnv(BaseTextEnv):
             f"Step: {self.step_count}/{self._max_steps()}"
         )
 
-        if self.obs_mode == "ascii":
+        if self.obs_mode == "adaptive_ascii":
             try:
                 from .semantic_ascii import encode_grid
                 board = encode_grid(self.last_grid)
+            except ImportError:
+                ds = _downsample(self.last_grid)
+                board = _grid_to_text(ds)
+        elif self.obs_mode == "ascii":
+            try:
+                from .semantic_ascii import encode_grid_fixed
+                board = encode_grid_fixed(self.last_grid)
             except ImportError:
                 ds = _downsample(self.last_grid)
                 board = _grid_to_text(ds)
