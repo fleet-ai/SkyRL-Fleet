@@ -21,6 +21,12 @@ import sys
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
+# Qwen3.5 is a VLM (Qwen3_5ForConditionalGeneration), not a CausalLM
+try:
+    from transformers import AutoModelForImageTextToText
+except ImportError:
+    AutoModelForImageTextToText = None
+
 
 def find_shard_files(checkpoint_dir: str):
     """Find all model shard files and determine world_size."""
@@ -136,11 +142,16 @@ def main():
         config_source = args.model_name
 
     config = AutoConfig.from_pretrained(config_source, trust_remote_code=True)
-    print(f"  Creating empty model from config ({config.architectures})...")
+    arch = getattr(config, 'architectures', ['unknown'])
+    print(f"  Creating empty model from config ({arch})...")
+
+    # Detect model type: VLM (Qwen3_5ForConditionalGeneration) vs CausalLM
+    is_vlm = any("Conditional" in a or "ImageText" in a for a in (arch or []))
+    AutoModelClass = AutoModelForImageTextToText if (is_vlm and AutoModelForImageTextToText) else AutoModelForCausalLM
 
     # Create model without loading any weights
     with torch.device("meta"):
-        model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
+        model = AutoModelClass.from_config(config, trust_remote_code=True)
 
     # Move to CPU and load merged weights
     model = model.to_empty(device="cpu")
