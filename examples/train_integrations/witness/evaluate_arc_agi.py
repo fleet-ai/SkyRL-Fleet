@@ -140,6 +140,25 @@ def trim_history(chat: list, max_turns: int = MAX_HISTORY_TURNS) -> list:
     return [system] + recent
 
 
+def _make_game_action(action_id: int):
+    """Convert int action_id to arcengine GameAction enum."""
+    from arcengine import GameAction
+    mapping = {
+        1: GameAction.ACTION1,
+        2: GameAction.ACTION2,
+        3: GameAction.ACTION3,
+        4: GameAction.ACTION4,
+        5: GameAction.ACTION5,
+    }
+    # For ACTION6+, try direct enum access
+    if action_id in mapping:
+        return mapping[action_id]
+    try:
+        return GameAction(action_id)
+    except (ValueError, KeyError):
+        return GameAction.ACTION1  # fallback
+
+
 def evaluate_game(
     arcade,
     game_id: str,
@@ -149,7 +168,6 @@ def evaluate_game(
     args,
 ) -> Dict[str, Any]:
     """Evaluate model on a single ARC-AGI-3 game."""
-    from arcengine import GameAction
 
     start_time = time.time()
 
@@ -180,15 +198,24 @@ def evaluate_game(
         # Frame → image
         image = frame_to_image(frame)
 
-        # Build user message (multimodal)
+        # Build user message
+        user_text = (
+            f"Game: {game_id} | Level: {levels_completed}/{total_levels} | "
+            f"Step: {total_actions}/{args.max_turns}\n"
+            f"Previous action: {prev_action_name}\n"
+            f"Analyze the frame, then choose your action."
+        )
+
+        # For chat template: use image_url format (Qwen VL convention)
+        import base64
+        import io
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        img_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
         user_content = [
-            {"type": "image", "image": image},
-            {"type": "text", "text": (
-                f"Game: {game_id} | Level: {levels_completed}/{total_levels} | "
-                f"Step: {total_actions}/{args.max_turns}\n"
-                f"Previous action: {prev_action_name}\n"
-                f"Analyze the frame, then choose your action."
-            )},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+            {"type": "text", "text": user_text},
         ]
 
         if not chat:
@@ -205,9 +232,10 @@ def evaluate_game(
             prompt_ids = tokenizer.apply_chat_template(
                 chat, add_generation_prompt=True, tokenize=True
             )
-            from vllm import TokensPrompt
+
+            # Pass image as multi_modal_data for vLLM
             outputs = llm.generate(
-                [TokensPrompt(prompt_token_ids=prompt_ids)],
+                [{"prompt_token_ids": prompt_ids, "multi_modal_data": {"image": [image]}}],
                 sampling_params,
             )
             response = outputs[0].outputs[0].text
@@ -221,7 +249,7 @@ def evaluate_game(
         prev_action_name = ACTION_NAMES.get(action_id, f"ACTION{action_id}")
 
         # Execute
-        game_action = GameAction(action_id)
+        game_action = _make_game_action(action_id)
         obs = env.step(game_action)
         frame = extract_frame(obs)
         total_actions += 1
