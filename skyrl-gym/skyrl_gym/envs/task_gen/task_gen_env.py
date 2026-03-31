@@ -98,7 +98,7 @@ class TaskGenEnv(BaseTextEnv):
         self.called_query_db = False
 
         # Environment context from dataset (extras)
-        self.env_key = extras.get("env_key", "unknown")
+        self.env_key = extras.get("env_key") or extras.get("data_source", "unknown")
         self.env_version = extras.get("env_version", "")
         self.data_key = extras.get("data_key", "")
         self.data_version = extras.get("data_version", "")
@@ -183,7 +183,8 @@ class TaskGenEnv(BaseTextEnv):
         self._fleet_client = None
 
         # Rollout dump directory (full prompt/verifier/scores per eval)
-        self._rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR", "/workspace/reward_rollouts")
+        default_rollout_dir = os.path.join(os.path.expanduser("~"), "reward_rollouts")
+        self._rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR", default_rollout_dir)
         os.makedirs(self._rollout_dir, exist_ok=True)
 
         # Base quality reward for tasks passing sandbox + judge gate.
@@ -815,9 +816,13 @@ Generate exactly ONE task. Output it in this format:
             env_variables=self.env_variables or {},
         )
 
-        import_response = fleet.import_single_task(task)
+        try:
+            import_response = fleet.import_single_task(task)
+        except Exception as e:
+            logger.error(f"[{task_key}] Failed to import task to Fleet: {e}")
+            return (None, [(0.0, None, None)] * k)
         if import_response is None:
-            logger.error(f"[{task_key}] Failed to import task to Fleet")
+            logger.error(f"[{task_key}] Failed to import task to Fleet (returned None, api_key set: {bool(self.fleet_api_key)})")
             return (None, [(0.0, None, None)] * k)
 
         job_response = fleet.create_job(

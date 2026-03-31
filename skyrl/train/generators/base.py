@@ -44,6 +44,8 @@ class GeneratorOutput(TypedDict):
     env_metrics: Optional[List[Dict[str, Any]]]
     # Applicable only for step-wise training
     is_last_step: Optional[List[bool]]
+    # Hint augmentation: True for samples generated with hint feedback
+    is_hinted: Optional[List[bool]]
 
 
 class MetricsOutput(TypedDict):
