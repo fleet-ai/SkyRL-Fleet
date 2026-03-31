@@ -9,6 +9,7 @@ Observation modes:
   - "grid": Raw 16x16 downsampled color grid (baseline)
   - "ascii": Fixed 16x16 semantic ASCII encoding
   - "adaptive_ascii": Game-aligned adaptive ASCII (auto-detects grid structure)
+  - "learned_adaptive_ascii": Raw pixel image (VLM perceives + generates ASCII in thinking)
 
 Rules modes:
   - "rules_given": Inject known concept rules into system prompt
@@ -159,6 +160,33 @@ def _grid_to_text(grid: np.ndarray) -> str:
     return "\n".join(lines)
 
 
+# ── ARC color palette for VLM mode ─────────────────────────────────────
+_ARC_PALETTE = [
+    (255, 255, 255), (128, 128, 128), (192, 192, 192), (64, 64, 64),
+    (32, 32, 32), (0, 0, 0), (200, 0, 200), (200, 128, 200),
+    (255, 0, 0), (0, 0, 255), (128, 128, 255), (255, 255, 0),
+    (255, 165, 0), (128, 64, 64), (0, 200, 0), (128, 0, 128),
+]
+
+
+def _frame_to_base64_png(grid: np.ndarray, scale: int = 8) -> str:
+    """Convert 64×64 int grid to base64-encoded PNG (upscaled for VLM visibility)."""
+    import base64
+    import io
+    from PIL import Image
+
+    h, w = grid.shape
+    rgb = np.zeros((h, w, 3), dtype=np.uint8)
+    for r in range(h):
+        for c in range(w):
+            rgb[r, c] = _ARC_PALETTE[min(int(grid[r, c]), len(_ARC_PALETTE) - 1)]
+    img = Image.fromarray(rgb).resize((h * scale, w * scale), Image.NEAREST)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 # ── System prompt ──────────────────────────────────────────────────────
 _BASE_SYSTEM_PROMPT = """You are playing a puzzle game on a grid.
 
@@ -174,8 +202,30 @@ Respond with ONLY your chosen action in this format: <action>NUMBER</action>
 For example: <action>4</action> to move RIGHT."""
 
 
-def _build_system_prompt(game_id: str, rules_mode: str, total_levels: int) -> str:
-    """Build system prompt based on rules_mode."""
+_LEARNED_SYSTEM_PROMPT = """You are playing an interactive puzzle game. You see a 64×64 pixel grid image.
+
+Your task:
+1. OBSERVE the image carefully — identify objects, cursor, grid structure, constraints
+2. DESCRIBE what you see as a compact ASCII representation in your thinking
+3. DECIDE your action based on your analysis
+
+Available actions:
+  1 = UP    (move up)
+  2 = DOWN  (move down)
+  3 = LEFT  (move left)
+  4 = RIGHT (move right)
+  5 = CONFIRM (submit your solution)
+
+Your goal: Figure out the puzzle rules by exploring, then solve all {total_levels} levels.
+Respond with ONLY your chosen action in this format: <action>NUMBER</action>
+For example: <action>4</action> to move RIGHT."""
+
+
+def _build_system_prompt(game_id: str, rules_mode: str, total_levels: int,
+                         obs_mode: str = "grid") -> str:
+    """Build system prompt based on rules_mode and obs_mode."""
+    if obs_mode == "learned_adaptive_ascii":
+        return _LEARNED_SYSTEM_PROMPT.format(total_levels=total_levels)
     if rules_mode == "rules_given":
         rules_text = _load_ground_truth_rules(game_id)
         rules_section = f"{rules_text}\n\n" if rules_text else ""
@@ -260,13 +310,31 @@ class WitnessEnv(BaseTextEnv):
     def _max_steps(self) -> int:
         return self._baseline() * self.max_steps_multiplier
 
-    def _render_obs(self) -> str:
-        """Render current frame as text observation."""
+    def _render_obs(self):
+        """Render current frame as observation.
+
+        Returns str for text modes, or list (multimodal content) for learned_adaptive_ascii.
+        """
         meta = (
             f"Game: {self.game_id} | Level: {self.level_index}/{self.total_levels} | "
             f"Step: {self.step_count}/{self._max_steps()}"
         )
 
+        # Learned mode: return multimodal content (image + text)
+        if self.obs_mode == "learned_adaptive_ascii":
+            image_b64 = _frame_to_base64_png(self.last_grid)
+            text = f"{meta}\nAnalyze the frame, then choose your action."
+            # Append harness info to text
+            if self.harness:
+                extra = self.harness.enrich_observation(self.last_grid, self.step_count, self.level_index)
+                if extra:
+                    text += "\n" + extra
+            return [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                {"type": "text", "text": text},
+            ]
+
+        # Text modes: return str
         if self.obs_mode == "adaptive_ascii":
             try:
                 from .semantic_ascii import encode_grid
@@ -287,7 +355,7 @@ class WitnessEnv(BaseTextEnv):
 
         obs = f"{meta}\n{board}"
 
-        # Harness: append enriched observations (works with both grid and ascii)
+        # Harness: append enriched observations
         if self.harness:
             extra = self.harness.enrich_observation(self.last_grid, self.step_count, self.level_index)
             if extra:
@@ -297,13 +365,24 @@ class WitnessEnv(BaseTextEnv):
 
     def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
         """Set up initial prompt with system message and first observation."""
-        system_prompt = _build_system_prompt(self.game_id, self.rules_mode, self.total_levels)
+        system_prompt = _build_system_prompt(
+            self.game_id, self.rules_mode, self.total_levels, self.obs_mode
+        )
         if self.harness:
             system_prompt += self.harness.get_system_prompt_addition()
+
         initial_obs = self._render_obs()
+
+        if isinstance(initial_obs, list):
+            # Multimodal (learned_adaptive_ascii): content is a list of items
+            user_content = initial_obs
+        else:
+            # Text modes: wrap in string
+            user_content = f"New puzzle. Here is the initial board:\n\n{initial_obs}"
+
         chat = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"New puzzle. Here is the initial board:\n\n{initial_obs}"},
+            {"role": "user", "content": user_content},
         ]
         self.chat_history = chat.copy()
         return chat, {}
@@ -431,12 +510,25 @@ class WitnessEnv(BaseTextEnv):
             )
 
         # Multi-turn: return observation for next action
-        obs_text = self._render_obs()
-        if msg:
-            obs_text = f"{msg}\n\n{obs_text}"
-        obs_text += f"\nYou played: {_ACTION_NAMES.get(action_id, '?')}. Choose your next action."
+        obs_content = self._render_obs()
+        action_name = _ACTION_NAMES.get(action_id, '?')
 
-        new_obs = {"role": "user", "content": obs_text}
+        if isinstance(obs_content, list):
+            # Multimodal (learned_adaptive_ascii): append msg to the text item
+            for item in obs_content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    prefix = f"{msg}\n" if msg else ""
+                    item["text"] = f"{prefix}{item['text']}\nYou played: {action_name}. Choose your next action."
+                    break
+            new_obs = {"role": "user", "content": obs_content}
+        else:
+            # Text modes
+            obs_text = obs_content
+            if msg:
+                obs_text = f"{msg}\n\n{obs_text}"
+            obs_text += f"\nYou played: {action_name}. Choose your next action."
+            new_obs = {"role": "user", "content": obs_text}
+
         self.chat_history.append(new_obs)
 
         return BaseTextEnvStepOutput(

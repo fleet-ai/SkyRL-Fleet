@@ -62,7 +62,7 @@ def main():
     parser.add_argument("--max_levels", type=int, default=5,
                         help="Max levels per game (default 5)")
     parser.add_argument("--obs_mode", default="grid",
-                        choices=["grid", "ascii", "adaptive_ascii"])
+                        choices=["grid", "ascii", "adaptive_ascii", "learned_adaptive_ascii"])
     parser.add_argument("--rules_mode", default="rules_unknown",
                         choices=["rules_given", "rules_unknown"])
     parser.add_argument("--harness_mode", action="store_true", default=False,
