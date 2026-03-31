@@ -26,16 +26,29 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput, ConversationType
 
-# ── Ensure arc-witness-envs is importable ──────────────────────────────
-_WITNESS_REPO = os.environ.get(
-    "WITNESS_ENVS_DIR",
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "arc-witness-envs"),
-)
-_WITNESS_REPO = os.path.normpath(_WITNESS_REPO)
-if _WITNESS_REPO not in sys.path:
-    sys.path.insert(0, _WITNESS_REPO)
+# ── Lazy import for arcengine (arc-witness-envs) ─────────────────────
+# Deferred to avoid ModuleNotFoundError when this module is imported
+# in Ray workers that only need the class for aggregate_metrics.
+_arcengine = None
 
-from arcengine import ActionInput, GameAction
+
+def _ensure_arcengine():
+    """Lazily import arcengine, adding arc-witness-envs to sys.path if needed."""
+    global _arcengine
+    if _arcengine is not None:
+        return _arcengine
+    witness_repo = os.environ.get(
+        "WITNESS_ENVS_DIR",
+        os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "..", "arc-witness-envs",
+        )),
+    )
+    if witness_repo not in sys.path:
+        sys.path.insert(0, witness_repo)
+    import arcengine
+    _arcengine = arcengine
+    return _arcengine
+
 
 # ── Game registry ──────────────────────────────────────────────────────
 _GAME_REGISTRY = {
@@ -45,16 +58,22 @@ _GAME_REGISTRY = {
 
 _ACTION_NAMES = {1: "UP", 2: "DOWN", 3: "LEFT", 4: "RIGHT", 5: "CONFIRM"}
 _NAME_TO_ID = {v: k for k, v in _ACTION_NAMES.items()}
-_ID_TO_GAME_ACTION = {
-    1: GameAction.ACTION1,
-    2: GameAction.ACTION2,
-    3: GameAction.ACTION3,
-    4: GameAction.ACTION4,
-    5: GameAction.ACTION5,
-}
+
+def _get_game_action(action_id: int):
+    """Map action_id (1-5) to arcengine GameAction, lazy-loaded."""
+    arc = _ensure_arcengine()
+    mapping = {
+        1: arc.GameAction.ACTION1,
+        2: arc.GameAction.ACTION2,
+        3: arc.GameAction.ACTION3,
+        4: arc.GameAction.ACTION4,
+        5: arc.GameAction.ACTION5,
+    }
+    return mapping.get(action_id, arc.GameAction.ACTION1)
 
 
 def _load_game_class(game_id: str):
+    _ensure_arcengine()  # ensure arc-witness-envs is on sys.path
     mod_name, cls_name = _GAME_REGISTRY[game_id]
     mod = importlib.import_module(mod_name)
     return getattr(mod, cls_name)
@@ -184,8 +203,9 @@ class WitnessEnv(BaseTextEnv):
             self.total_levels = min(self.total_levels, self.max_levels)
 
         # Get initial frame via RESET
+        arc = _ensure_arcengine()
         self.last_frame_data = self.game.perform_action(
-            ActionInput(id=GameAction.RESET), raw=True
+            arc.ActionInput(id=arc.GameAction.RESET), raw=True
         )
         self.last_grid = _frame_to_grid(self.last_frame_data)
 
@@ -278,14 +298,15 @@ class WitnessEnv(BaseTextEnv):
 
         # Parse action
         action_id = self._parse_action(action)
-        game_action = _ID_TO_GAME_ACTION.get(action_id, GameAction.ACTION1)
+        game_action = _get_game_action(action_id)
 
         # Execute in game
+        arc = _ensure_arcengine()
         prev_completed = (
             self.last_frame_data.levels_completed if self.last_frame_data else 0
         )
         self.last_frame_data = self.game.perform_action(
-            ActionInput(id=game_action), raw=True
+            arc.ActionInput(id=game_action), raw=True
         )
         self.last_grid = _frame_to_grid(self.last_frame_data)
         self.step_count += 1
