@@ -66,7 +66,13 @@ setup: |
   export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
   export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
   echo "Downloading checkpoint from $CHECKPOINT_S3 ..."
-  aws s3 sync "$CHECKPOINT_S3" ~/checkpoint_sharded/ --exclude "*/optim*" --exclude "*/scheduler*" --exclude "*/data.pt" --exclude "*/trainer_state.pt"
+  # Try to download only merged_hf/ first (much smaller, ~18GB vs 71GB)
+  aws s3 sync "$CHECKPOINT_S3" ~/checkpoint_sharded/ --exclude "*" --include "*/merged_hf/*" --include "merged_hf/*" 2>/dev/null
+  # If no merged_hf found, download FSDP shards (skip optimizer/trainer state)
+  if ! ls ~/checkpoint_sharded/*/merged_hf/*.safetensors ~/checkpoint_sharded/merged_hf/*.safetensors 2>/dev/null | head -1 > /dev/null; then
+    echo "No merged_hf found, downloading FSDP shards..."
+    aws s3 sync "$CHECKPOINT_S3" ~/checkpoint_sharded/ --exclude "*/optim*" --exclude "*/scheduler*" --exclude "*/data.pt" --exclude "*/trainer_state.pt"
+  fi
   echo "Checkpoint downloaded: $(du -sh ~/checkpoint_sharded/ | cut -f1)"
 
   # --- Find the latest global_step directory ---
@@ -86,19 +92,30 @@ run: |
   export AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
   export AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 
-  # --- Step 1: Merge FSDP shards into HuggingFace format ---
-  echo "=== Merging FSDP shards to HuggingFace format ==="
+  # --- Step 1: Find HuggingFace checkpoint ---
+  # SkyRL exports merged HF checkpoints in merged_hf/ during training.
+  # Prefer that over manual FSDP shard merging.
   LATEST_STEP=$(ls -d ~/checkpoint_sharded/global_step_* 2>/dev/null | sort -t_ -k3 -n | tail -1 || true)
   if [ -z "$LATEST_STEP" ]; then
     LATEST_STEP=~/checkpoint_sharded
   fi
 
-  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \
-    --checkpoint_dir "$LATEST_STEP/policy" \
-    --output_dir ~/checkpoint_merged/ \
-    --model_name "$MODEL"
+  if [ -d "$LATEST_STEP/merged_hf" ]; then
+    CHECKPOINT_DIR="$LATEST_STEP/merged_hf"
+    echo "Found pre-merged HF checkpoint: $CHECKPOINT_DIR"
+  elif [ -d "~/checkpoint_sharded/merged_hf" ]; then
+    CHECKPOINT_DIR=~/checkpoint_sharded/merged_hf
+    echo "Found pre-merged HF checkpoint: $CHECKPOINT_DIR"
+  else
+    echo "No merged_hf found, attempting FSDP merge..."
+    python examples/train_integrations/witness/merge_fsdp_checkpoint.py \
+      --checkpoint_dir "$LATEST_STEP/policy" \
+      --output_dir ~/checkpoint_merged/ \
+      --model_name "$MODEL"
+    CHECKPOINT_DIR=~/checkpoint_merged
+  fi
 
-  echo "Merged checkpoint: $(du -sh ~/checkpoint_merged/ | cut -f1)"
+  echo "Using checkpoint: $CHECKPOINT_DIR ($(du -sh $CHECKPOINT_DIR | cut -f1))"
 
   # --- Step 2: Run evaluation ---
   echo "=== ARC-AGI-3 Evaluation ==="
@@ -107,7 +124,7 @@ run: |
   echo "  Output: s3://${S3_BUCKET}/${EVAL_NAME}/"
 
   python examples/train_integrations/witness/evaluate_arc_agi.py \
-    --checkpoint ~/checkpoint_merged/ \
+    --checkpoint "$CHECKPOINT_DIR" \
     --max_turns "$MAX_TURNS" \
     --tp 1 \
     --output_dir ~/eval_results/
