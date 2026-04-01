@@ -120,12 +120,7 @@ run: |
   # Ensure VLM processor config exists (needed by vLLM for image processing)
   if [ ! -f "$CHECKPOINT_DIR/preprocessor_config.json" ]; then
     echo "Downloading missing preprocessor_config.json from $MODEL..."
-    python -c "
-from transformers import AutoProcessor
-p = AutoProcessor.from_pretrained('$MODEL', trust_remote_code=True)
-p.save_pretrained('$CHECKPOINT_DIR')
-print('Saved processor config')
-"
+    python -c "from transformers import AutoProcessor; p = AutoProcessor.from_pretrained('${MODEL}', trust_remote_code=True); p.save_pretrained('${CHECKPOINT_DIR}'); print('Saved processor config')"
   fi
 
   # --- Step 2: Run evaluation ---
