@@ -143,40 +143,43 @@ def main():
 
     config = AutoConfig.from_pretrained(config_source, trust_remote_code=True)
     arch = getattr(config, 'architectures', ['unknown'])
-    print(f"  Creating empty model from config ({arch})...")
+    print(f"  Model architecture: {arch}")
+    print(f"  Saving merged state dict directly (bypassing model instantiation)...")
 
-    # Detect model type: VLM (Qwen3_5ForConditionalGeneration) vs CausalLM
-    is_vlm = any("Conditional" in a or "ImageText" in a for a in (arch or []))
-    AutoModelClass = AutoModelForImageTextToText if (is_vlm and AutoModelForImageTextToText) else AutoModelForCausalLM
+    # Instead of creating a model and loading state dict (which fails with DTensor),
+    # save the merged state dict directly as safetensors + copy config/tokenizer.
+    from safetensors.torch import save_file
 
-    # Create model without loading any weights
-    with torch.device("meta"):
-        model = AutoModelClass.from_config(config, trust_remote_code=True)
-
-    # Move to CPU and load merged weights
-    model = model.to_empty(device="cpu")
-    print("  Loading merged state dict into model...")
-    missing, unexpected = model.load_state_dict(full_state_dict, strict=False)
-    if missing:
-        print(f"  WARNING: {len(missing)} missing keys: {missing[:5]}...")
-    if unexpected:
-        print(f"  WARNING: {len(unexpected)} unexpected keys: {unexpected[:5]}...")
-
-    # Save in HuggingFace format
     os.makedirs(args.output_dir, exist_ok=True)
-    print(f"  Saving merged model to {args.output_dir}...")
-    model.save_pretrained(args.output_dir, safe_serialization=True)
 
-    # Save tokenizer
-    tokenizer_source = os.path.join(args.checkpoint_dir, "huggingface")
-    if os.path.exists(os.path.join(tokenizer_source, "tokenizer.json")):
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=True)
+    # Save weights
+    safetensors_path = os.path.join(args.output_dir, "model.safetensors")
+    save_file(full_state_dict, safetensors_path)
+    print(f"  Saved weights to {safetensors_path}")
+
+    # Copy config from local or download from HF
+    import shutil
+    local_hf_dir = os.path.join(args.checkpoint_dir, "huggingface")
+    if os.path.exists(local_hf_dir):
+        for fname in os.listdir(local_hf_dir):
+            src = os.path.join(local_hf_dir, fname)
+            dst = os.path.join(args.output_dir, fname)
+            if os.path.isfile(src):
+                shutil.copy2(src, dst)
+        print(f"  Copied config/tokenizer from {local_hf_dir}")
     else:
+        # Download config and tokenizer from HF
+        config.save_pretrained(args.output_dir)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
-    tokenizer.save_pretrained(args.output_dir)
+        tokenizer.save_pretrained(args.output_dir)
+        print(f"  Downloaded config/tokenizer from {args.model_name}")
 
-    print(f"  Merged checkpoint saved: {args.output_dir}")
-    print(f"  Size: {sum(os.path.getsize(os.path.join(args.output_dir, f)) for f in os.listdir(args.output_dir)) / 1e9:.1f} GB")
+    total_size = sum(
+        os.path.getsize(os.path.join(args.output_dir, f))
+        for f in os.listdir(args.output_dir)
+        if os.path.isfile(os.path.join(args.output_dir, f))
+    )
+    print(f"  Merged checkpoint saved: {args.output_dir} ({total_size / 1e9:.1f} GB)")
 
 
 if __name__ == "__main__":
