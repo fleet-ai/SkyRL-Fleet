@@ -350,16 +350,56 @@ def main():
     )
     print("Model loaded.\n")
 
-    # Discover games
+    # Discover games (layered fallback)
     print("Discovering ARC-AGI-3 games...")
     from arc_agi import Arcade, OperationMode
-    arcade = Arcade(operation_mode=OperationMode.OFFLINE)
 
     if args.games:
+        # User specified games explicitly
+        arcade = Arcade()
         game_ids = args.games
+        print(f"  Using user-specified games: {game_ids}")
     else:
-        game_ids = [e.game_id for e in arcade.get_environments()]
-    print(f"  Found {len(game_ids)} games: {game_ids[:5]}{'...' if len(game_ids) > 5 else ''}\n")
+        # Try 1: Default mode (auto-downloads assets if needed)
+        game_ids = []
+        try:
+            arcade = Arcade()
+            game_ids = [e.game_id for e in arcade.get_environments()]
+            print(f"  Default mode: found {len(game_ids)} games")
+        except Exception as e:
+            print(f"  Default mode failed: {e}")
+
+        # Try 2: Offline with local arc-witness-envs
+        if not game_ids:
+            try:
+                env_dir = os.path.expanduser("~/arc-witness-envs/environment_files")
+                if os.path.isdir(env_dir):
+                    arcade = Arcade(
+                        operation_mode=OperationMode.OFFLINE,
+                        environments_dir=env_dir,
+                    )
+                    game_ids = [e.game_id for e in arcade.get_environments()]
+                    print(f"  Local arc-witness-envs: found {len(game_ids)} games")
+            except Exception as e:
+                print(f"  Local fallback failed: {e}")
+
+        # Try 3: Hardcoded known game IDs as last resort
+        if not game_ids:
+            game_ids = [
+                "tw01", "tw02", "tw03", "tw04", "tw05", "tw06", "tw07",
+                "tw08", "tw09", "tw10", "tw11", "tw12", "tw13",
+            ]
+            try:
+                env_dir = os.path.expanduser("~/arc-witness-envs/environment_files")
+                arcade = Arcade(
+                    operation_mode=OperationMode.OFFLINE,
+                    environments_dir=env_dir,
+                )
+            except Exception:
+                arcade = Arcade()
+            print(f"  Using hardcoded fallback: {len(game_ids)} games")
+
+    print(f"  Final game list ({len(game_ids)}): {game_ids[:5]}{'...' if len(game_ids) > 5 else ''}\n")
 
     # Evaluate each game
     print("Evaluating...")
