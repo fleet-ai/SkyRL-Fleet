@@ -49,6 +49,7 @@ envs:
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
   # TP=2 -> 4 engines (each uses 2 GPUs) on 8 inference GPUs total
   NUM_INFERENCE_ENGINES: 4
+  MAX_STALENESS_STEPS: 1
 
 setup: |
   bash scripts/fleet-common-setup.sh \

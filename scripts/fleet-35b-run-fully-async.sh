@@ -58,7 +58,7 @@ bash scripts/fleet-common-run.sh \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=8 \
   trainer.eval_before_train=false \
-  trainer.eval_interval=10 \
+  trainer.eval_interval=10000 \
   trainer.update_epochs_per_batch=1 \
   trainer.train_batch_size=${MINI_BATCH_SIZE} \
   trainer.use_hybrid_env_sampling=true \
@@ -84,7 +84,7 @@ bash scripts/fleet-common-run.sh \
   generator.async_engine=true \
   generator.batched=false \
   generator.use_conversation_multi_turn=true \
-  generator.n_samples_per_prompt=8 \
+  generator.n_samples_per_prompt=4 \
   generator.eval_n_samples_per_prompt=3 \
   generator.enforce_eager=false \
   generator.gpu_memory_utilization=0.65 \
