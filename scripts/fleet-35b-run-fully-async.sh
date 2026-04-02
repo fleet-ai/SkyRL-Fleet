@@ -47,7 +47,7 @@ bash scripts/fleet-common-run.sh \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.algorithm.off_policy_correction.tis_ratio_type=token \
   trainer.policy.model.path="Qwen/Qwen3.5-35B-A3B" \
-  trainer.flash_attn=false \
+  trainer.flash_attn=true \
   trainer.loss_chunk_size=4096 \
   trainer.use_sample_packing=false \
   generator.chat_template_kwargs='{enable_thinking:true}' \
