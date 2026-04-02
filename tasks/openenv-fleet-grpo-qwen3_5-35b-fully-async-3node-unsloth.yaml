@@ -53,8 +53,8 @@ envs:
 setup: |
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client
+    --extra-setup scripts/fleet-qwen35-unsloth-extra-setup.sh
   source .venv/bin/activate
-  source scripts/fleet-qwen35-unsloth-extra-setup.sh
 
 run: |
   bash scripts/fleet-35b-run-fully-async-unsloth.sh
