@@ -31,7 +31,7 @@ export NUM_PARALLEL_GENERATION_WORKERS="${NUM_PARALLEL_GENERATION_WORKERS:-8}"
 
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
-  --set-ulimit --no-pytorch-alloc-conf \
+  --set-ulimit \
   --nccl-heartbeat 1800 \
   --entrypoint examples.train.fully_async.main_fully_async -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=900 \
