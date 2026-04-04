@@ -40,7 +40,7 @@ bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=1800 \
-  environment.skyrl_gym.fleet_task.partial_reward=false \
+  environment.skyrl_gym.fleet_task.partial_reward=true \
   environment.skyrl_gym.fleet_task.enable_hints=false \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.policy.model.path="Qwen/Qwen3.5-9B" \
