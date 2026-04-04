@@ -144,7 +144,7 @@ async def synthesize_hint(
     verifier_stdout: Optional[str],
     verifier_error: Optional[str],
     tool_error_messages: Optional[List[str]],
-    model: str = "openrouter/anthropic/claude-sonnet-4-20250514",
+    model: str = "openrouter/anthropic/claude-sonnet-4",
     timeout: float = 30.0,
     static_fallback_fn=None,
 ) -> Tuple[str, str]:
@@ -207,7 +207,7 @@ Based on the trajectory and feedback above, provide 2-5 sentences of specific, a
 
 async def synthesize_hints_batch(
     hint_requests: List[Dict[str, Any]],
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "openrouter/anthropic/claude-sonnet-4",
     timeout: float = 30.0,
     max_concurrency: int = 20,
     static_fallback_fn=None,

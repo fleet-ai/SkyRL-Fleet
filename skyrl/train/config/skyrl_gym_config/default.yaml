@@ -25,7 +25,7 @@ fleet_task:
   n_hint_samples: 2
   enable_context_tools: false
   use_llm_hints: false
-  hint_model: "openrouter/anthropic/claude-sonnet-4-20250514"
+  hint_model: "openrouter/anthropic/claude-sonnet-4"
   hint_llm_timeout: 30.0
 
 task_gen:
