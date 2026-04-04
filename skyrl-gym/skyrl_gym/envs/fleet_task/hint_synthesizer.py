@@ -1,7 +1,8 @@
 """LLM-synthesized hints for failed trajectories.
 
 Analyzes the full failed trajectory + verifier errors and produces actionable
-guidance via Claude Sonnet. Falls back to static build_hint_text() on failure.
+guidance via an LLM (via litellm/OpenRouter). Falls back to static
+build_hint_text() on failure.
 """
 
 import asyncio
@@ -143,20 +144,20 @@ async def synthesize_hint(
     verifier_stdout: Optional[str],
     verifier_error: Optional[str],
     tool_error_messages: Optional[List[str]],
-    model: str = "claude-sonnet-4-20250514",
+    model: str = "openrouter/anthropic/claude-sonnet-4-20250514",
     timeout: float = 30.0,
     static_fallback_fn=None,
 ) -> Tuple[str, str]:
-    """Synthesize a hint from a failed trajectory using an LLM.
+    """Synthesize a hint from a failed trajectory using an LLM via litellm.
 
     Returns:
         (hint_text, hint_category) where category is one of
         CATEGORY_LLM, CATEGORY_STATIC, CATEGORY_LLM_FAILED.
     """
     try:
-        import anthropic
+        from litellm import acompletion
     except ImportError:
-        logger.warning("anthropic package not installed, falling back to static hints")
+        logger.warning("litellm not installed, falling back to static hints")
         if static_fallback_fn:
             return static_fallback_fn(verifier_stdout, verifier_error, tool_error_messages), CATEGORY_STATIC
         return "The previous attempt failed. Try a different approach.", CATEGORY_STATIC
@@ -176,20 +177,19 @@ async def synthesize_hint(
 Based on the trajectory and feedback above, provide 2-5 sentences of specific, actionable guidance for the agent's next attempt."""
 
     try:
-        client = anthropic.AsyncAnthropic(
-            api_key=os.environ.get("ANTHROPIC_API_KEY"),
-        )
         response = await asyncio.wait_for(
-            client.messages.create(
+            acompletion(
                 model=model,
                 max_tokens=300,
                 temperature=0.3,
-                system=HINT_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_message}],
+                messages=[
+                    {"role": "system", "content": HINT_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
             ),
             timeout=timeout,
         )
-        hint_text = response.content[0].text.strip()
+        hint_text = response.choices[0].message.content.strip()
         if hint_text:
             return hint_text, CATEGORY_LLM
         else:

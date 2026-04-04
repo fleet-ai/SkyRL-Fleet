@@ -832,7 +832,7 @@ class SkyRLGymGenerator(GeneratorInterface):
         from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
 
         use_llm_hints = hint_cfg.get("use_llm_hints", False) if hasattr(hint_cfg, "get") else False
-        hint_model = hint_cfg.get("hint_model", "claude-sonnet-4-20250514") if hasattr(hint_cfg, "get") else "claude-sonnet-4-20250514"
+        hint_model = hint_cfg.get("hint_model", "openrouter/anthropic/claude-sonnet-4-20250514") if hasattr(hint_cfg, "get") else "openrouter/anthropic/claude-sonnet-4-20250514"
         hint_timeout = hint_cfg.get("hint_llm_timeout", 30.0) if hasattr(hint_cfg, "get") else 30.0
 
         # 1. Group outputs by instance_id
