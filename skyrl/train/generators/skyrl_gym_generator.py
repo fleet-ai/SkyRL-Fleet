@@ -565,10 +565,14 @@ class SkyRLGymGenerator(GeneratorInterface):
 
             per_step_rewards.append((step_reward, agent_loop_state.response_end_idx))
 
+        # Close the environment first so final_reward and verifier feedback
+        # are captured into the env before we read metrics. Otherwise
+        # env_metrics is missing final_reward / verifier_stdout / tool_errors,
+        # which breaks downstream hint recovery metrics (they read
+        # m.get("final_reward", 0.0) and get 0 for every hinted rollout).
+        await self._env_close(env)
         # Get environment-specific metrics after the episode is done
         env_metrics = env.get_metrics()
-        # Close the environment
-        await self._env_close(env)
 
         prompt_ids = agent_loop_state.input_ids[:initial_prompt_length]
         rollout_logprobs = None
@@ -1044,10 +1048,11 @@ class SkyRLGymGenerator(GeneratorInterface):
                 prompt_len = len(prompt_token_ids[i])
                 truncated_indices.append(sample_indices[: prompt_len + len(response)])
 
+            # Close the environment first so final_reward and verifier
+            # feedback are populated before get_metrics() reads them.
+            await self._env_close(env)
             # Get environment-specific metrics
             env_metrics.append(env.get_metrics())
-            # Close the environment
-            await self._env_close(env)
 
         rollout_metrics = get_rollout_metrics(responses, rewards, env_metrics, env_classes)
 

@@ -1112,23 +1112,12 @@ Generate exactly ONE task. Output it in this format:
         # 4. Hint-based evaluation via Fleet harness
         eval_result = await self._evaluate_task(prompt, verifier)
 
-        # 5. R = base_quality + tool_call_reward + eval_signal
-        # base_quality: small reward for passing sandbox+judge (structural validity)
-        # tool_call_reward: incentivize DB exploration (query_db)
-        # eval_signal: judge_gate * compute_task_reward (harness-based quality)
-        # This prevents GRPO zero-signal deadlock when all harness evals fail.
-        base_quality = self.base_quality_reward
-        tool_call_reward = self.meta_tool_calls * self.tool_call_reward_per_call
-        eval_signal = judge_gate * eval_result["total"]
-        reward = base_quality + tool_call_reward + eval_signal
+        # Binary reward: 1.0 if mixed solver results, 0.0 otherwise
+        reward = eval_result["total"]
 
         metadata["reward_breakdown"] = {
             "sandbox": 1.0,
             "judge": judge_gate,
-            "base_quality": base_quality,
-            "tool_call_reward": tool_call_reward,
-            "meta_tool_calls": self.meta_tool_calls,
-            "eval_signal": eval_signal,
             **eval_result,
             "total": reward,
         }
@@ -1257,8 +1246,15 @@ Generate exactly ONE task. Output it in this format:
             try:
                 result = await self.orch.query_db_async(sql=sql, db_name=args.get("db_name", "seed"))
                 if isinstance(result, dict):
-                    return f"Tool result:\n{json.dumps(result, indent=2, default=str)}"
-                return f"Tool result:\n{result}"
+                    # Truncate rows to save context — model only needs a sample
+                    if "rows" in result and isinstance(result["rows"], list) and len(result["rows"]) > 5:
+                        result["rows"] = result["rows"][:5]
+                        result["message"] = f"Query returned more rows; showing first 5."
+                    formatted = json.dumps(result, indent=2, default=str)
+                    if len(formatted) > 3000:
+                        formatted = formatted[:3000] + "\n... (truncated)"
+                    return f"Tool result:\n{formatted}"
+                return f"Tool result:\n{str(result)[:3000]}"
             except Exception as e:
                 if attempt < max_retries - 1 and ("closed" in str(e).lower() or "transport" in str(e).lower() or "connection" in str(e).lower()):
                     await asyncio.sleep(1)
