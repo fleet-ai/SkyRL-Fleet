@@ -80,6 +80,8 @@ bash scripts/fleet-common-run.sh \
   'generator.eval_sampling_params.stop=["</tool_call>", "</task>"]' \
   trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
+  trainer.algorithm.kl_loss_coef=1.0 \
+  trainer.algorithm.entropy_loss_coef=0.001 \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \
   generator.run_engines_locally=true \

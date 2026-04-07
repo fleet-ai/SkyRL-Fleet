@@ -1112,12 +1112,16 @@ Generate exactly ONE task. Output it in this format:
         # 4. Hint-based evaluation via Fleet harness
         eval_result = await self._evaluate_task(prompt, verifier)
 
-        # Binary reward: 1.0 if mixed solver results, 0.0 otherwise
-        reward = eval_result["total"]
+        # R = base_quality + binary_eval_signal
+        # base_quality (0.1): gradient for passing sandbox+judge gates
+        # binary_eval_signal (1.0 if mixed, 0.0 otherwise): difficulty frontier
+        base_quality = self.base_quality_reward
+        reward = base_quality + eval_result["total"]
 
         metadata["reward_breakdown"] = {
             "sandbox": 1.0,
             "judge": judge_gate,
+            "base_quality": base_quality,
             **eval_result,
             "total": reward,
         }
