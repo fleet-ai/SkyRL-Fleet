@@ -29,6 +29,14 @@ Always consult the changelog before modifying Fleet training paths (`fsdp_worker
 
 All training flags live in these scripts. Never duplicate flags in SkyPilot YAMLs or fleet-research scripts.
 
+## Task-Gen Metrics
+
+When reporting task-gen training metrics, distinguish between:
+- **pass@8 / avg_raw_reward**: includes `base_quality=0.1` for passing sandbox+judge. Misleading — inflated by gate-passing alone.
+- **binary variance reward**: the actual learning signal. `1.0` when solver rollouts are mixed (at least 1 pass + 1 fail), `0.0` otherwise. This is what matters.
+
+Report binary variance reward count (how many tasks got `reward >= 1.0`) separately from gate-pass count. Check `EVAL` log lines for `total=1.0000` vs `total=0.0000`.
+
 ## Branch
 
 Primary development branch: `fleet/all`
