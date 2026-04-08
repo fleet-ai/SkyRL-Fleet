@@ -23,7 +23,7 @@ python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --max-steps 200 \
     --max-turns 50 \
     --max-generate-length 4096 \
-    --max-input-length 96000 \
+    --max-input-length 61440 \
     --n-samples-per-prompt 8 \
     --eval-every 20 \
     --temperature 0.9 \
