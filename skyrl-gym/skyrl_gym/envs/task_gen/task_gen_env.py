@@ -1191,6 +1191,13 @@ Generate exactly ONE task. Output it in this format:
                 )
 
             obs_content = "\n\n".join(results)
+            remaining = self.max_turns - self.turns
+            if remaining <= 2 and self.called_query_db:
+                obs_content += (
+                    f"\n\n⚠️ You have {remaining} turn(s) left. "
+                    "You MUST output your <task> block on your next turn or you will get reward 0. "
+                    "Stop exploring and generate the task NOW."
+                )
             observation = {"role": "user", "content": obs_content}
             return BaseTextEnvStepOutput(
                 observations=[observation],
