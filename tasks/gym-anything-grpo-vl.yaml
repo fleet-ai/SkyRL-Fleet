@@ -31,7 +31,7 @@ num_nodes: 1
 
 workdir:
   url: https://github.com/fleet-ai/SkyRL-v2.git
-  ref: main
+  ref: feat/gym-anything-integration
 
 envs:
   WANDB_API_KEY: ""

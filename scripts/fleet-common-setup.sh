@@ -58,14 +58,17 @@ echo "Extra setup: ${EXTRA_SETUP:-none}"
 
 # --- Environment validation ---
 echo "Validating environment variables..."
-if [ -z "${FLEET_API_KEY:-}" ]; then
-  echo "ERROR: FLEET_API_KEY is required"; exit 1
-fi
-if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-  echo "ERROR: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for S3 dataset download"; exit 1
-fi
 if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ] && [ "${MODALITY:-}" != "gym_anything" ]; then
   echo "ERROR: MODALITY must be 'tool_use', 'computer_use', or 'gym_anything', got: ${MODALITY:-unset}"; exit 1
+fi
+if [ "${MODALITY:-}" != "gym_anything" ]; then
+  # Fleet-hosted envs need API key and AWS for S3 dataset download
+  if [ -z "${FLEET_API_KEY:-}" ]; then
+    echo "ERROR: FLEET_API_KEY is required"; exit 1
+  fi
+  if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+    echo "ERROR: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for S3 dataset download"; exit 1
+  fi
 fi
 echo "Environment validation passed"
 
