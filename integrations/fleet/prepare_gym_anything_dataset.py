@@ -17,8 +17,7 @@ import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+from datasets import Dataset
 
 
 def prepare_dataset(
@@ -69,8 +68,19 @@ def prepare_dataset(
     print(f"Environments: {len(env_tasks)}")
 
     os.makedirs(output_dir, exist_ok=True)
-    _write_parquet(train_records, os.path.join(output_dir, "train.parquet"))
-    _write_parquet(eval_records, os.path.join(output_dir, "validation.parquet"))
+
+    if train_records:
+        train_ds = Dataset.from_list(train_records)
+        train_path = os.path.join(output_dir, "train.parquet")
+        train_ds.to_parquet(train_path)
+        print(f"  {train_path}: {len(train_records)} records")
+
+    if eval_records:
+        eval_ds = Dataset.from_list(eval_records)
+        eval_path = os.path.join(output_dir, "validation.parquet")
+        eval_ds.to_parquet(eval_path)
+        print(f"  {eval_path}: {len(eval_records)} records")
+
     print(f"Written to {output_dir}/")
 
 
@@ -87,24 +97,6 @@ def _task_to_record(task: Dict[str, Any]) -> Dict[str, Any]:
         "max_turns": task.get("max_turns", 50),
         "data_source": task.get("env_name", "unknown"),
     }
-
-
-def _write_parquet(records: List[Dict[str, Any]], path: str):
-    """Write records to parquet with SkyRL-compatible schema."""
-    if not records:
-        # Write empty parquet with correct schema
-        records = []
-
-    # Serialize prompt as JSON string (SkyRL convention)
-    rows = []
-    for r in records:
-        row = dict(r)
-        row["prompt"] = json.dumps(row["prompt"])
-        rows.append(row)
-
-    table = pa.table({k: [r.get(k) for r in rows] for k in rows[0].keys()}) if rows else pa.table({})
-    pq.write_table(table, path)
-    print(f"  {path}: {len(rows)} records")
 
 
 def main():
