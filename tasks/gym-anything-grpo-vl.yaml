@@ -16,7 +16,7 @@ resources:
   disk_size: 1000
   ports: 6479
   any_of:
-    - accelerators: H200:8
+    - accelerators: H200-SXM:8
       cloud: runpod
     - accelerators: H200:8
       cloud: gcp
