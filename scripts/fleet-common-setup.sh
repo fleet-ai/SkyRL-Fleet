@@ -64,8 +64,8 @@ fi
 if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
   echo "ERROR: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for S3 dataset download"; exit 1
 fi
-if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ]; then
-  echo "ERROR: MODALITY must be 'tool_use' or 'computer_use', got: ${MODALITY:-unset}"; exit 1
+if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ] && [ "${MODALITY:-}" != "gym_anything" ]; then
+  echo "ERROR: MODALITY must be 'tool_use', 'computer_use', or 'gym_anything', got: ${MODALITY:-unset}"; exit 1
 fi
 echo "Environment validation passed"
 
@@ -112,21 +112,40 @@ uv pip install --force-reinstall --no-cache-dir --no-deps "git+https://github.co
 # --- Dataset download ---
 mkdir -p "${DATA_ROOT}/data/fleet"
 TASKS_FILE="${DATA_ROOT}/data/fleet/tasks_${MODALITY}.json"
-S3_PATH="s3://${S3_DATASET_BUCKET}/${DATA_VERSION}/openenv/all_${MODALITY}.json"
-echo "Downloading dataset from $S3_PATH..."
-aws s3 cp "$S3_PATH" "$TASKS_FILE"
-TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))['tasks']))")
-echo "Downloaded $TASK_COUNT tasks for modality: $MODALITY"
+
+if [ "$MODALITY" = "gym_anything" ]; then
+  # gym-anything: clone repo and build task index locally
+  GA_ROOT="${DATA_ROOT}/gym-anything"
+  if [ ! -d "$GA_ROOT" ]; then
+    echo "Cloning gym-anything..."
+    git clone --depth 1 https://github.com/cmu-l3/gym-anything.git "$GA_ROOT"
+  fi
+  pip install -e "${GA_ROOT}[all]" 2>/dev/null || pip install -e "${GA_ROOT}" || true
+  echo "Building gym-anything task index..."
+  python skyrl-gym/skyrl_gym/envs/gym_anything/build_task_index.py --gym-anything-root "$GA_ROOT" --output "$TASKS_FILE" --split train
+  TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))))")
+  echo "Built $TASK_COUNT gym-anything tasks"
+else
+  S3_PATH="s3://${S3_DATASET_BUCKET}/${DATA_VERSION}/openenv/all_${MODALITY}.json"
+  echo "Downloading dataset from $S3_PATH..."
+  aws s3 cp "$S3_PATH" "$TASKS_FILE"
+  TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))['tasks']))")
+  echo "Downloaded $TASK_COUNT tasks for modality: $MODALITY"
+fi
 
 # --- Prepare dataset (parquet files) ---
 if [ "$SKIP_PREPARE" = true ]; then
   echo "Skipping prepare_dataset (--skip-prepare). Caller handles preparation."
 else
   DATA_DIR="${DATA_ROOT}/data/fleet/${MODALITY}"
-  PREPARE_CMD="python -m integrations.fleet.prepare_dataset --tasks-json $TASKS_FILE --output-dir $DATA_DIR --modality $MODALITY --env-class $ENV_CLASS"
-  [ -n "${ENV_KEYS:-}" ] && PREPARE_CMD="$PREPARE_CMD --env-filter $ENV_KEYS"
-  [ -n "${DIFFICULTY:-}" ] && PREPARE_CMD="$PREPARE_CMD --difficulty-filter $DIFFICULTY"
-  eval "$PREPARE_CMD"
+  if [ "$MODALITY" = "gym_anything" ]; then
+    python -m integrations.fleet.prepare_gym_anything_dataset --tasks-json "$TASKS_FILE" --output-dir "$DATA_DIR"
+  else
+    PREPARE_CMD="python -m integrations.fleet.prepare_dataset --tasks-json $TASKS_FILE --output-dir $DATA_DIR --modality $MODALITY --env-class $ENV_CLASS"
+    [ -n "${ENV_KEYS:-}" ] && PREPARE_CMD="$PREPARE_CMD --env-filter $ENV_KEYS"
+    [ -n "${DIFFICULTY:-}" ] && PREPARE_CMD="$PREPARE_CMD --difficulty-filter $DIFFICULTY"
+    eval "$PREPARE_CMD"
+  fi
 fi
 
 echo "=== Fleet Common Setup Complete ==="
