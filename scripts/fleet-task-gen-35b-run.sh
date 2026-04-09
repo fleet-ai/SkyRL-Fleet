@@ -82,6 +82,7 @@ bash scripts/fleet-common-run.sh \
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.kl_loss_coef=1.0 \
   trainer.algorithm.entropy_loss_coef=0.001 \
+  trainer.algorithm.zero_variance_filter=true \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \
   generator.run_engines_locally=true \

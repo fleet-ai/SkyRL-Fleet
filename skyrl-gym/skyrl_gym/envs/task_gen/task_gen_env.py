@@ -533,26 +533,26 @@ The verifier must check exactly what the prompt asks — no more, no less. Befor
                 """
 ## Exploration Tools
 
-The database schema is provided above. Use `query_db` to inspect actual data and environment tools to understand API behavior.
+The database schema is provided above. Use BOTH `query_db` AND environment API tools during exploration.
 
 ### Database Tools
 <tool_call>{"name": "query_db", "arguments": {"sql": "SELECT * FROM table_name LIMIT 5"}}</tool_call>
 Runs a read-only SQL query against the seed database.
 
-### Environment Tools
+### Environment API Tools
 <tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>
-Calls the tool and returns its result. Use this to understand input/output formats.
+Calls the environment API tool and returns its result. **You MUST call at least one API tool** (e.g., searchEvents, getAvailability) during exploration to understand what the solver agent will experience. The solver uses these API tools, not SQL — if you only explore via SQL, you won't know whether the API tools actually work for your task.
 
 ### Workflow
-1. **Inspect data**: Call `query_db` with SELECT queries to inspect real data (values, ranges, row counts, patterns). The schema above shows table and column names.
-2. **Try tools**: Call environment API tools to understand their behavior, input/output formats, and edge cases.
-3. **Draft a task idea**: Think about what prompt + verifier you could write based on the data you've seen.
-4. **Validate your draft**: Before outputting the task, run `query_db` to verify your assumptions:
-   - Does the data your prompt references actually exist? (e.g., "Update Jamie's email" — is there a Jamie?)
-   - Will the verifier return 0.0 on a fresh DB? (Check seed state)
-   - Are there edge cases? (e.g., multiple matches, null values, empty tables)
-5. **Iterate**: If your queries reveal problems (wrong assumptions, ambiguous data, too many/few matches), revise your task idea and verify again. Do NOT output the task until you've confirmed the data supports it.
-6. **Output**: Only when confident, output the final task in the format below."""
+1. **Inspect data**: Call `query_db` to inspect real data (values, ranges, row counts).
+2. **Try API tools**: Call at least one environment API tool to understand its behavior, input/output format, and what data it returns. This is critical — your task must be achievable using these tools.
+3. **Draft a task idea**: Based on the data AND tool behavior you've observed.
+4. **Validate**: Before outputting, verify:
+   - Does the data your prompt references actually exist? (Query to confirm.)
+   - Is the task achievable using the available API tools? (You tested them.)
+   - Does your verifier check for a DB mutation (e.g., new order, new cart item)? If so, does the task actually cause that mutation?
+   - Will the verifier return 0 on the unmodified DB? (If it uses `find_new_entries`, the task MUST involve a write action like buy/reserve/create — NOT just search/list.)
+5. **Output**: Only when confident, output the final task in the format below."""
             )
 
         # --- D. Few-shot examples removed ---
@@ -1062,20 +1062,49 @@ Generate exactly ONE task. Output it in this format:
         except Exception as e:
             logger.warning(f"[{task_id}] Failed to save rollout: {e}")
 
+    async def _dryrun_verifier(self, verifier: str) -> Tuple[bool, str]:
+        """Run verifier against seed DB (no agent actions). Returns (ok, error_msg).
+
+        A correct verifier should return 0 on unmodified DB (task not done yet).
+        Returns 1 → broken (permissive). Crashes → broken.
+        """
+        if self.orch is None:
+            return True, ""  # Can't dry-run without orchestrator, skip
+        try:
+            from fleet._async.tasks import Task as AsyncFleetTask
+            task = AsyncFleetTask(
+                key=f"dryrun_{self.env_key}",
+                prompt="dry-run",
+                env_id=self.env_key,
+                verifier_func=verifier,
+            )
+            result = await task.verify_detailed_async(self.orch._fleet_env)
+            if result.success:
+                return False, "Verifier returned 1 on the unmodified database — it passes even when no agent has acted. Your verifier must return 0 on seed state. Check that your task involves a write/mutation action and your verifier checks for that mutation (e.g., find_new_entries)."
+            return True, ""
+        except Exception as e:
+            err_msg = str(e)
+            # Truncate long tracebacks
+            if len(err_msg) > 500:
+                err_msg = err_msg[:500] + "..."
+            return False, f"Verifier crashed on seed DB: {err_msg}"
+
     async def _handle_task_generation(self, action: str) -> BaseTextEnvStepOutput:
         """Evaluate a generated task through the full pipeline.
 
         Pipeline:
             1. Parse <task> output -> fail = reward 0
             2. Sandbox validation -> fail = reward 0
-            3. LLM-as-a-judge -> gate (0/1), fail = reward 0
-            4. Hint-based evaluation via Fleet harness (k raw + k hinted rollouts)
-            5. R = base_quality + judge_gate * compute_task_reward(raw, hinted)
+            3. Verifier dry-run on seed DB -> if broken, return feedback (retry)
+            4. LLM-as-a-judge -> gate (0/1), fail = reward 0
+            5. Hint-based evaluation via Fleet harness (k raw + k hinted rollouts)
+            6. R = base_quality + binary_eval_signal
 
         base_quality (default 0.1) rewards structural validity (sandbox+judge pass),
         providing GRPO gradient signal even when harness evals return all zeros.
         """
         metadata: Dict[str, Any] = {"env_key": self.env_key, "turn": self.turns}
+        max_turns_reached = self.turns >= self.max_turns
 
         # 1. Parse
         parsed = parse_task_output(action)
@@ -1098,10 +1127,26 @@ Generate exactly ONE task. Output it in this format:
             "error": validation.error,
         }
         if not validation.valid:
+            if not max_turns_reached:
+                remaining = self.max_turns - self.turns
+                obs = {"role": "user", "content": f"Sandbox rejected your verifier: {', '.join(validation.checks_failed)}. Fix and resubmit. {remaining} turn(s) left."}
+                return BaseTextEnvStepOutput(observations=[obs], reward=0.0, done=False, metadata=metadata)
             metadata["reward_breakdown"] = {"sandbox": 0.0, "total": 0.0}
             return BaseTextEnvStepOutput(observations=[], reward=0.0, done=True, metadata=metadata)
 
-        # 3. LLM-as-a-judge gate
+        # 3. Verifier dry-run on seed DB
+        dryrun_ok, dryrun_error = await self._dryrun_verifier(verifier)
+        metadata["dryrun_ok"] = dryrun_ok
+        if not dryrun_ok:
+            logger.info(f"TaskGenEnv [{self.env_key}]: Verifier dry-run failed: {dryrun_error[:200]}")
+            if not max_turns_reached:
+                remaining = self.max_turns - self.turns
+                obs = {"role": "user", "content": f"⚠️ Verifier dry-run FAILED: {dryrun_error}\n\nFix your verifier and resubmit. {remaining} turn(s) left."}
+                return BaseTextEnvStepOutput(observations=[obs], reward=0.0, done=False, metadata=metadata)
+            metadata["reward_breakdown"] = {"dryrun": 0.0, "total": 0.0}
+            return BaseTextEnvStepOutput(observations=[], reward=0.0, done=True, metadata=metadata)
+
+        # 4. LLM-as-a-judge gate
         judge_gate = self._judge_task(prompt, verifier)
         metadata["judge_gate"] = judge_gate
 
@@ -1109,17 +1154,16 @@ Generate exactly ONE task. Output it in this format:
             metadata["reward_breakdown"] = {"sandbox": 1.0, "judge": 0.0, "total": 0.0}
             return BaseTextEnvStepOutput(observations=[], reward=0.0, done=True, metadata=metadata)
 
-        # 4. Hint-based evaluation via Fleet harness
+        # 5. Hint-based evaluation via Fleet harness
         eval_result = await self._evaluate_task(prompt, verifier)
 
-        # R = base_quality + binary_eval_signal
-        # base_quality (0.1): gradient for passing sandbox+judge gates
-        # binary_eval_signal (1.0 if mixed, 0.0 otherwise): difficulty frontier
+        # 6. R = base_quality + binary_eval_signal
         base_quality = self.base_quality_reward
         reward = base_quality + eval_result["total"]
 
         metadata["reward_breakdown"] = {
             "sandbox": 1.0,
+            "dryrun": 1.0,
             "judge": judge_gate,
             "base_quality": base_quality,
             **eval_result,
@@ -1192,11 +1236,11 @@ Generate exactly ONE task. Output it in this format:
 
             obs_content = "\n\n".join(results)
             remaining = self.max_turns - self.turns
-            if remaining <= 2 and self.called_query_db:
+            if remaining <= 3 and self.called_query_db:
                 obs_content += (
                     f"\n\n⚠️ You have {remaining} turn(s) left. "
-                    "You MUST output your <task> block on your next turn or you will get reward 0. "
-                    "Stop exploring and generate the task NOW."
+                    "You MUST output your <task> block NOW. "
+                    "Stop exploring and generate the task."
                 )
             observation = {"role": "user", "content": obs_content}
             return BaseTextEnvStepOutput(
