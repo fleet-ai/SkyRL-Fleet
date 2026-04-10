@@ -311,6 +311,7 @@ class GymAnythingTaskEnv(BaseTextEnv):
     def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
         """Initialize gym-anything environment and return initial observation."""
         import os
+        import gym_anything
         from gym_anything import from_config
 
         # Close previous env if any
@@ -319,9 +320,25 @@ class GymAnythingTaskEnv(BaseTextEnv):
         # Force Docker runner (default auto-detect prefers QEMU on Linux)
         os.environ.setdefault("GYM_ANYTHING_RUNNER", "docker")
 
+        # gym-anything resolves Dockerfile paths relative to CWD, but during
+        # training CWD is the SkyRL repo. Change to gym-anything's package root
+        # so preset Dockerfiles are found.
+        ga_pkg_dir = Path(gym_anything.__file__).parent.parent.parent
+        prev_cwd = os.getcwd()
+        try:
+            os.chdir(ga_pkg_dir)
+        except Exception:
+            pass
+
         # Create gym-anything environment
         env_dir = Path(self.env_dir)
         self.ga_env = from_config(env_dir, task_id=self.task_id)
+
+        # Restore CWD
+        try:
+            os.chdir(prev_cwd)
+        except Exception:
+            pass
 
         # Read resolution from env spec
         screen_spec = next(
