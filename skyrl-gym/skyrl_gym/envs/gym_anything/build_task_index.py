@@ -89,16 +89,26 @@ def build_index(ga_root: Path, split: str = None, verified_only: bool = True) ->
 
         env_id = env_json.get("id", env_dir.name) if env_json else env_dir.name
 
-        # Skip non-Linux environments (Android, Windows need special runners)
+        # Skip environments that can't run with Docker runner
         if env_json:
             os_type = env_json.get("os_type", "")
             runner = env_json.get("runner", "")
             tags = env_json.get("tags", [])
+            base = env_json.get("base", "")
+            # Skip non-Linux OS
             if os_type in ("windows", "android"):
                 continue
+            # Skip runners that need QEMU/AVD
             if runner in ("avd", "avd_native", "qemu"):
                 continue
             if "android" in tags or "windows" in tags:
+                continue
+            # Skip base presets not available for Docker
+            docker_presets = {
+                "x11-lite", "ubuntu-gnome", "ubuntu-gnome-systemd",
+                "ubuntu-gnome-systemd_highres", "ubuntu-gnome-systemd_highres_gimp",
+            }
+            if base and base not in docker_presets:
                 continue
 
         # Scan tasks
