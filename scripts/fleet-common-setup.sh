@@ -124,6 +124,14 @@ if [ "$MODALITY" = "gym_anything" ]; then
     git clone --depth 1 https://github.com/cmu-l3/gym-anything.git "$GA_ROOT"
   fi
   pip install -e "${GA_ROOT}[all]" 2>/dev/null || pip install -e "${GA_ROOT}" || true
+  # Patch gym-anything runner selection: when GYM_ANYTHING_RUNNER=docker,
+  # force DockerRunner instead of falling through to QEMU/LocalRunner.
+  # This fixes the "pass  # Fall through to docker runner" no-op at line ~114.
+  GA_ENV_PY=$(python3 -c "import gym_anything.env; print(gym_anything.env.__file__)")
+  if [ -n "$GA_ENV_PY" ]; then
+    sed -i 's/if runner_override == "docker":/if runner_override == "docker":\n            logger.info("Using DockerRunner (GYM_ANYTHING_RUNNER=docker)")\n            return DockerRunner(spec)/' "$GA_ENV_PY"
+    echo "Patched gym-anything DockerRunner selection"
+  fi
   echo "Building gym-anything task index..."
   python skyrl-gym/skyrl_gym/envs/gym_anything/build_task_index.py --gym-anything-root "$GA_ROOT" --output "$TASKS_FILE" --split train
   TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))))")
