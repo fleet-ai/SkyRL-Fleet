@@ -66,6 +66,19 @@ setup: |
   if ! docker info &>/dev/null; then
     sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
   fi
+  # Install sysbox-runc (required by gym-anything envs with systemd containers)
+  if ! command -v sysbox-runc &>/dev/null; then
+    echo "Installing sysbox-runc..."
+    SYSBOX_VER="0.6.7"
+    wget -q "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VER}/sysbox-ce_${SYSBOX_VER}-0.linux_amd64.deb" -O /tmp/sysbox.deb
+    sudo apt-get install -y jq rsync || true
+    sudo dpkg -i /tmp/sysbox.deb || sudo apt-get install -f -y
+    rm -f /tmp/sysbox.deb
+    # Verify sysbox is registered with Docker
+    sudo systemctl restart docker || true
+    sleep 3
+    docker info 2>&1 | grep -i sysbox && echo "sysbox-runc registered" || echo "WARN: sysbox-runc not in Docker runtimes"
+  fi
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client \
     --extra-setup scripts/fleet-qwen35-extra-setup.sh \
