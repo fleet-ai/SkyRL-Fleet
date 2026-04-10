@@ -41,7 +41,7 @@ envs:
   OPENROUTER_API_KEY: ""
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
-  DATA_VERSION: "v55"
+  DATA_VERSION: "v6"
   ENV_KEYS: ""
   DIFFICULTY: ""
   MODALITY: "tool_use"

@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo roo
 # Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v55}"
+export DATA_VERSION="${DATA_VERSION:-v6}"
 export MODALITY="${MODALITY:-tool_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-20}"
 export MAX_TURNS="${MAX_TURNS:-50}"
@@ -29,8 +29,8 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 
 : "${FLEET_API_KEY:?Set FLEET_API_KEY before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
-: "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY before running (needed for LLM hint synthesis)}"
-export OPENROUTER_API_KEY
+# OPENROUTER_API_KEY only needed when enable_hints=true (LLM hint synthesis)
+export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
 
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
@@ -38,9 +38,7 @@ bash scripts/fleet-common-run.sh \
   --nccl-heartbeat 1800 -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=900 \
   environment.skyrl_gym.fleet_task.partial_reward=true \
-  environment.skyrl_gym.fleet_task.enable_hints=true \
-  environment.skyrl_gym.fleet_task.n_hint_samples=2 \
-  environment.skyrl_gym.fleet_task.use_llm_hints=true \
+  environment.skyrl_gym.fleet_task.enable_hints=false \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.policy.model.path="Qwen/Qwen3.5-35B-A3B" \
   trainer.flash_attn=false \
