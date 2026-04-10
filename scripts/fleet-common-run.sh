@@ -253,9 +253,11 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
     "environment.env_class=$ENV_CLASS"
   )
 
-  # fleet_task-specific: pass tasks_file path
+  # env-class-specific: pass tasks_file path
   if [ "$ENV_CLASS" = "fleet_task" ]; then
     CMD_ARGS+=("environment.skyrl_gym.fleet_task.tasks_file=$TASKS_FILE")
+  elif [ "$ENV_CLASS" = "gym_anything" ]; then
+    CMD_ARGS+=("environment.skyrl_gym.gym_anything.tasks_file=$TASKS_FILE")
   fi
 
   CMD_ARGS+=(

@@ -58,14 +58,17 @@ echo "Extra setup: ${EXTRA_SETUP:-none}"
 
 # --- Environment validation ---
 echo "Validating environment variables..."
-if [ -z "${FLEET_API_KEY:-}" ]; then
-  echo "ERROR: FLEET_API_KEY is required"; exit 1
+if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ] && [ "${MODALITY:-}" != "gym_anything" ]; then
+  echo "ERROR: MODALITY must be 'tool_use', 'computer_use', or 'gym_anything', got: ${MODALITY:-unset}"; exit 1
 fi
-if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-  echo "ERROR: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for S3 dataset download"; exit 1
-fi
-if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ]; then
-  echo "ERROR: MODALITY must be 'tool_use' or 'computer_use', got: ${MODALITY:-unset}"; exit 1
+if [ "${MODALITY:-}" != "gym_anything" ]; then
+  # Fleet-hosted envs need API key and AWS for S3 dataset download
+  if [ -z "${FLEET_API_KEY:-}" ]; then
+    echo "ERROR: FLEET_API_KEY is required"; exit 1
+  fi
+  if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+    echo "ERROR: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for S3 dataset download"; exit 1
+  fi
 fi
 echo "Environment validation passed"
 
@@ -112,21 +115,56 @@ uv pip install --force-reinstall --no-cache-dir --no-deps "git+https://github.co
 # --- Dataset download ---
 mkdir -p "${DATA_ROOT}/data/fleet"
 TASKS_FILE="${DATA_ROOT}/data/fleet/tasks_${MODALITY}.json"
-S3_PATH="s3://${S3_DATASET_BUCKET}/${DATA_VERSION}/openenv/all_${MODALITY}.json"
-echo "Downloading dataset from $S3_PATH..."
-aws s3 cp "$S3_PATH" "$TASKS_FILE"
-TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))['tasks']))")
-echo "Downloaded $TASK_COUNT tasks for modality: $MODALITY"
+
+if [ "$MODALITY" = "gym_anything" ]; then
+  # gym-anything: clone repo and build task index locally
+  GA_ROOT="${DATA_ROOT}/gym-anything"
+  if [ ! -d "$GA_ROOT" ]; then
+    echo "Cloning gym-anything..."
+    git clone --depth 1 https://github.com/cmu-l3/gym-anything.git "$GA_ROOT"
+  fi
+  pip install -e "${GA_ROOT}[all]" 2>/dev/null || pip install -e "${GA_ROOT}" || true
+  # Patch gym-anything: force DockerRunner when GYM_ANYTHING_RUNNER=docker.
+  GA_ENV_PY=$(python3 -c "import gym_anything.env; print(gym_anything.env.__file__)")
+  if [ -n "$GA_ENV_PY" ]; then
+    sed -i 's/if runner_override == "docker":/if runner_override == "docker":\n            logger.info("Using DockerRunner (GYM_ANYTHING_RUNNER=docker)")\n            return DockerRunner(spec)/' "$GA_ENV_PY"
+    echo "Patched gym-anything DockerRunner selection"
+  fi
+  # Pre-build the base preset Docker image once (avoids parallel build deadlock)
+  echo "Pre-building gym-anything base preset image..."
+  BASE_PRESET_DIR="${GA_ROOT}/src/gym_anything/presets/ubuntu_gnome_systemd_highres"
+  if [ -f "$BASE_PRESET_DIR/Dockerfile" ]; then
+    docker build -t ga/base:ubuntu_gnome_systemd_highres -f "$BASE_PRESET_DIR/Dockerfile" "$BASE_PRESET_DIR" 2>&1 | tail -20 || echo "WARN: base preset build failed"
+  fi
+  echo "Building gym-anything task index..."
+  ALLOWLIST_ARG=""
+  if [ -n "${GYM_ANYTHING_ENV_ALLOWLIST:-}" ]; then
+    ALLOWLIST_ARG="--env-allowlist $GYM_ANYTHING_ENV_ALLOWLIST"
+  fi
+  python skyrl-gym/skyrl_gym/envs/gym_anything/build_task_index.py --gym-anything-root "$GA_ROOT" --output "$TASKS_FILE" --split train $ALLOWLIST_ARG
+  TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))))")
+  echo "Built $TASK_COUNT gym-anything tasks"
+else
+  S3_PATH="s3://${S3_DATASET_BUCKET}/${DATA_VERSION}/openenv/all_${MODALITY}.json"
+  echo "Downloading dataset from $S3_PATH..."
+  aws s3 cp "$S3_PATH" "$TASKS_FILE"
+  TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))['tasks']))")
+  echo "Downloaded $TASK_COUNT tasks for modality: $MODALITY"
+fi
 
 # --- Prepare dataset (parquet files) ---
 if [ "$SKIP_PREPARE" = true ]; then
   echo "Skipping prepare_dataset (--skip-prepare). Caller handles preparation."
 else
   DATA_DIR="${DATA_ROOT}/data/fleet/${MODALITY}"
-  PREPARE_CMD="python -m integrations.fleet.prepare_dataset --tasks-json $TASKS_FILE --output-dir $DATA_DIR --modality $MODALITY --env-class $ENV_CLASS"
-  [ -n "${ENV_KEYS:-}" ] && PREPARE_CMD="$PREPARE_CMD --env-filter $ENV_KEYS"
-  [ -n "${DIFFICULTY:-}" ] && PREPARE_CMD="$PREPARE_CMD --difficulty-filter $DIFFICULTY"
-  eval "$PREPARE_CMD"
+  if [ "$MODALITY" = "gym_anything" ]; then
+    python -m integrations.fleet.prepare_gym_anything_dataset --tasks-json "$TASKS_FILE" --output-dir "$DATA_DIR"
+  else
+    PREPARE_CMD="python -m integrations.fleet.prepare_dataset --tasks-json $TASKS_FILE --output-dir $DATA_DIR --modality $MODALITY --env-class $ENV_CLASS"
+    [ -n "${ENV_KEYS:-}" ] && PREPARE_CMD="$PREPARE_CMD --env-filter $ENV_KEYS"
+    [ -n "${DIFFICULTY:-}" ] && PREPARE_CMD="$PREPARE_CMD --difficulty-filter $DIFFICULTY"
+    eval "$PREPARE_CMD"
+  fi
 fi
 
 echo "=== Fleet Common Setup Complete ==="

@@ -604,8 +604,8 @@ def main():
         "--env-class",
         type=str,
         default="fleet_task",
-        choices=["fleet_task", "task_gen"],
-        help="SkyRL env_class per record (default: fleet_task, use task_gen for task generation)",
+        choices=["fleet_task", "task_gen", "gym_anything"],
+        help="SkyRL env_class per record (default: fleet_task)",
     )
 
     args = parser.parse_args()

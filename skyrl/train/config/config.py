@@ -554,6 +554,7 @@ class SkyRLGymConfig(BaseConfig):
     search: SearchEnvConfig = field(default_factory=SearchEnvConfig)
     fleet_task: Optional[Dict[str, Any]] = None
     task_gen: Optional[Dict[str, Any]] = None
+    gym_anything: Optional[Dict[str, Any]] = None
 
 
 @dataclass

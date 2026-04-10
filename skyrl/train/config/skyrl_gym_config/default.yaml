@@ -36,3 +36,8 @@ task_gen:
   eval_k_rollouts: 8
   alpha: 1.0
   max_eval_steps: 20
+
+gym_anything:
+  tasks_file: null
+  use_cache: true
+  cache_level: "post_start"
