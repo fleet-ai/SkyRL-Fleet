@@ -66,10 +66,6 @@ setup: |
   if ! docker info &>/dev/null; then
     sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
   fi
-  # Install QEMU for environments that need it (some envs require QEMU even with Docker)
-  if ! command -v qemu-system-x86_64 &>/dev/null; then
-    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils
-  fi
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client \
     --extra-setup scripts/fleet-qwen35-extra-setup.sh \
