@@ -320,13 +320,13 @@ class GymAnythingTaskEnv(BaseTextEnv):
         # Force Docker runner (default auto-detect prefers QEMU on Linux)
         os.environ.setdefault("GYM_ANYTHING_RUNNER", "docker")
 
-        # gym-anything resolves Dockerfile paths relative to CWD, but during
-        # training CWD is the SkyRL repo. Change to gym-anything's package root
-        # so preset Dockerfiles are found.
-        ga_pkg_dir = Path(gym_anything.__file__).parent.parent.parent
+        # gym-anything resolves Dockerfile paths relative to CWD. Presets use
+        # paths like "gym_anything/presets/.../Dockerfile" which resolves from
+        # the `src/` directory (the parent of the gym_anything package).
+        ga_src_dir = Path(gym_anything.__file__).parent.parent  # .../src/
         prev_cwd = os.getcwd()
         try:
-            os.chdir(ga_pkg_dir)
+            os.chdir(ga_src_dir)
         except Exception:
             pass
 
