@@ -89,6 +89,18 @@ def build_index(ga_root: Path, split: str = None, verified_only: bool = True) ->
 
         env_id = env_json.get("id", env_dir.name) if env_json else env_dir.name
 
+        # Skip non-Linux environments (Android, Windows need special runners)
+        if env_json:
+            os_type = env_json.get("os_type", "")
+            runner = env_json.get("runner", "")
+            tags = env_json.get("tags", [])
+            if os_type in ("windows", "android"):
+                continue
+            if runner in ("avd", "avd_native", "qemu"):
+                continue
+            if "android" in tags or "windows" in tags:
+                continue
+
         # Scan tasks
         tasks_dir = env_dir / "tasks"
         if not tasks_dir.exists():

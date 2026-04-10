@@ -310,10 +310,14 @@ class GymAnythingTaskEnv(BaseTextEnv):
 
     def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
         """Initialize gym-anything environment and return initial observation."""
+        import os
         from gym_anything import from_config
 
         # Close previous env if any
         self.close()
+
+        # Force Docker runner (default auto-detect prefers QEMU on Linux)
+        os.environ.setdefault("GYM_ANYTHING_RUNNER", "docker")
 
         # Create gym-anything environment
         env_dir = Path(self.env_dir)

@@ -55,12 +55,20 @@ envs:
   GYM_ANYTHING_RUNNER: "docker"
 
 setup: |
-  # Install sysbox-runc for systemd support inside gym-anything containers
-  if ! command -v sysbox-runc &>/dev/null; then
-    echo "Installing sysbox-runc..."
-    wget -q https://downloads.nestybox.com/sysbox/releases/v0.6.6/sysbox-ce_0.6.6-0.linux_amd64.deb -O /tmp/sysbox.deb
-    sudo dpkg -i /tmp/sysbox.deb 2>/dev/null || sudo apt-get install -f -y
-    rm -f /tmp/sysbox.deb
+  # Install Docker if not available (GCP DL images don't include it)
+  if ! command -v docker &>/dev/null; then
+    echo "Installing Docker..."
+    curl -fsSL https://get.docker.com | sudo sh
+    sudo usermod -aG docker $USER
+    sudo systemctl enable --now docker
+  fi
+  # Ensure current user can run Docker without sudo
+  if ! docker info &>/dev/null; then
+    sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+  fi
+  # Install QEMU for environments that need it (some envs require QEMU even with Docker)
+  if ! command -v qemu-system-x86_64 &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils
   fi
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client \
