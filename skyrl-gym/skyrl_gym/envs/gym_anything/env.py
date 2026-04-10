@@ -340,15 +340,8 @@ class GymAnythingTaskEnv(BaseTextEnv):
         # Force Docker runner (default auto-detect prefers QEMU on Linux)
         os.environ.setdefault("GYM_ANYTHING_RUNNER", "docker")
 
-        # gym-anything resolves Dockerfile paths relative to CWD. Presets use
-        # paths like "gym_anything/presets/.../Dockerfile" which resolves from
-        # the `src/` directory (the parent of the gym_anything package).
+        # gym-anything's package src/ directory (used to resolve Dockerfile paths).
         ga_src_dir = Path(gym_anything.__file__).parent.parent  # .../src/
-        prev_cwd = os.getcwd()
-        try:
-            os.chdir(ga_src_dir)
-        except Exception:
-            pass
 
         # Create gym-anything environment
         env_dir = Path(self.env_dir)
@@ -376,12 +369,6 @@ class GymAnythingTaskEnv(BaseTextEnv):
                     self.ga_env.env_spec.security.use_systemd = False
             except Exception:
                 pass
-
-        # Restore CWD
-        try:
-            os.chdir(prev_cwd)
-        except Exception:
-            pass
 
         # Read resolution from env spec
         screen_spec = next(

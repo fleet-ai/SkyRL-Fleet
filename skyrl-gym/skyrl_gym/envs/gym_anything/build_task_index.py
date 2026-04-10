@@ -57,7 +57,7 @@ def _load_verified_tasks(ga_root: Path) -> set:
     return set(data.get("tasks", []))
 
 
-def build_index(ga_root: Path, split: str = None, verified_only: bool = True) -> list:
+def build_index(ga_root: Path, split: str = None, verified_only: bool = True, env_allowlist: set = None) -> list:
     envs_dir = ga_root / "benchmarks" / "cua_world" / "environments"
     if not envs_dir.exists():
         print(f"Error: {envs_dir} does not exist", file=sys.stderr)
@@ -75,6 +75,8 @@ def build_index(ga_root: Path, split: str = None, verified_only: bool = True) ->
     tasks = []
     for env_dir in sorted(envs_dir.iterdir()):
         if not env_dir.is_dir():
+            continue
+        if env_allowlist is not None and env_dir.name not in env_allowlist:
             continue
 
         # Load env.json
@@ -171,10 +173,12 @@ def main():
     parser.add_argument("--output", default="tasks_gym_anything.json", help="Output JSON path")
     parser.add_argument("--split", default=None, help="Filter by split (train/test)")
     parser.add_argument("--no-verified-filter", action="store_true", help="Include unverified tasks")
+    parser.add_argument("--env-allowlist", default=None, help="Comma-separated list of env names to include")
     args = parser.parse_args()
 
     ga_root = Path(args.gym_anything_root)
-    tasks = build_index(ga_root, args.split, verified_only=not args.no_verified_filter)
+    allowlist = set(args.env_allowlist.split(",")) if args.env_allowlist else None
+    tasks = build_index(ga_root, args.split, verified_only=not args.no_verified_filter, env_allowlist=allowlist)
 
     with open(args.output, "w") as f:
         json.dump(tasks, f, indent=2)

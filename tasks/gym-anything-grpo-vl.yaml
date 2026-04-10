@@ -53,6 +53,8 @@ envs:
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
   # gym-anything needs Docker; sysbox-runc is optional (for systemd inside containers)
   GYM_ANYTHING_RUNNER: "docker"
+  # Small env allowlist for first run — full image build per env takes ~15-30min
+  GYM_ANYTHING_ENV_ALLOWLIST: "libreoffice_calc_env,libreoffice_writer_env,gimp_env,blender3d_env,vscode_env"
 
 setup: |
   # Install Docker if not available (GCP DL images don't include it)

@@ -130,8 +130,18 @@ if [ "$MODALITY" = "gym_anything" ]; then
     sed -i 's/if runner_override == "docker":/if runner_override == "docker":\n            logger.info("Using DockerRunner (GYM_ANYTHING_RUNNER=docker)")\n            return DockerRunner(spec)/' "$GA_ENV_PY"
     echo "Patched gym-anything DockerRunner selection"
   fi
+  # Pre-build the base preset Docker image once (avoids parallel build deadlock)
+  echo "Pre-building gym-anything base preset image..."
+  BASE_PRESET_DIR="${GA_ROOT}/src/gym_anything/presets/ubuntu_gnome_systemd_highres"
+  if [ -f "$BASE_PRESET_DIR/Dockerfile" ]; then
+    docker build -t ga/base:ubuntu_gnome_systemd_highres -f "$BASE_PRESET_DIR/Dockerfile" "$BASE_PRESET_DIR" 2>&1 | tail -20 || echo "WARN: base preset build failed"
+  fi
   echo "Building gym-anything task index..."
-  python skyrl-gym/skyrl_gym/envs/gym_anything/build_task_index.py --gym-anything-root "$GA_ROOT" --output "$TASKS_FILE" --split train
+  ALLOWLIST_ARG=""
+  if [ -n "${GYM_ANYTHING_ENV_ALLOWLIST:-}" ]; then
+    ALLOWLIST_ARG="--env-allowlist $GYM_ANYTHING_ENV_ALLOWLIST"
+  fi
+  python skyrl-gym/skyrl_gym/envs/gym_anything/build_task_index.py --gym-anything-root "$GA_ROOT" --output "$TASKS_FILE" --split train $ALLOWLIST_ARG
   TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))))")
   echo "Built $TASK_COUNT gym-anything tasks"
 else
