@@ -32,6 +32,26 @@ logger = logging.getLogger(__name__)
 # Global cache for task index files
 _TASK_INDEX_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 
+# Cache sysbox-runc availability check
+_SYSBOX_AVAILABLE: Optional[bool] = None
+
+
+def _sysbox_available() -> bool:
+    """Check whether sysbox-runc is registered with Docker (cached)."""
+    global _SYSBOX_AVAILABLE
+    if _SYSBOX_AVAILABLE is not None:
+        return _SYSBOX_AVAILABLE
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.Runtimes}}"],
+            capture_output=True, timeout=5,
+        )
+        _SYSBOX_AVAILABLE = b"sysbox-runc" in result.stdout
+    except Exception:
+        _SYSBOX_AVAILABLE = False
+    return _SYSBOX_AVAILABLE
+
 
 def load_task_index(tasks_file: str) -> List[Dict[str, Any]]:
     """Load task index JSON. Format: list of {env_dir, task_id, env_id, description, ...}."""
@@ -333,6 +353,29 @@ class GymAnythingTaskEnv(BaseTextEnv):
         # Create gym-anything environment
         env_dir = Path(self.env_dir)
         self.ga_env = from_config(env_dir, task_id=self.task_id)
+
+        # Resolve Dockerfile to absolute path. The preset stores it as a
+        # relative path (gym_anything/presets/.../Dockerfile) which only
+        # works if CWD == src/. Make it absolute so it works from any CWD.
+        try:
+            df = self.ga_env.env_spec.dockerfile
+            if df and not os.path.isabs(df):
+                abs_df = ga_src_dir / df
+                if abs_df.exists():
+                    self.ga_env.env_spec.dockerfile = str(abs_df)
+        except Exception:
+            pass
+
+        # If sysbox-runc isn't available, strip the runtime override so Docker
+        # falls back to default runc. Most envs don't strictly need systemd.
+        if not _sysbox_available():
+            try:
+                if hasattr(self.ga_env.env_spec.security, "runtime"):
+                    self.ga_env.env_spec.security.runtime = None
+                if hasattr(self.ga_env.env_spec.security, "use_systemd"):
+                    self.ga_env.env_spec.security.use_systemd = False
+            except Exception:
+                pass
 
         # Restore CWD
         try:

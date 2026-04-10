@@ -69,15 +69,21 @@ setup: |
   # Install sysbox-runc (required by gym-anything envs with systemd containers)
   if ! command -v sysbox-runc &>/dev/null; then
     echo "Installing sysbox-runc..."
-    SYSBOX_VER="0.6.7"
-    wget -q "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VER}/sysbox-ce_${SYSBOX_VER}-0.linux_amd64.deb" -O /tmp/sysbox.deb
-    sudo apt-get install -y jq rsync || true
+    sudo apt-get install -y jq rsync fuse || true
+    SYSBOX_URL="https://github.com/nestybox/sysbox/releases/download/v0.6.7/sysbox-ce_0.6.7.linux_amd64.deb"
+    wget -q "$SYSBOX_URL" -O /tmp/sysbox.deb
+    ls -la /tmp/sysbox.deb
+    file /tmp/sysbox.deb
     sudo dpkg -i /tmp/sysbox.deb || sudo apt-get install -f -y
     rm -f /tmp/sysbox.deb
-    # Verify sysbox is registered with Docker
     sudo systemctl restart docker || true
-    sleep 3
-    docker info 2>&1 | grep -i sysbox && echo "sysbox-runc registered" || echo "WARN: sysbox-runc not in Docker runtimes"
+    sleep 5
+    docker info 2>&1 | grep -i runtime
+    if docker info 2>&1 | grep -qi sysbox; then
+      echo "sysbox-runc registered with Docker"
+    else
+      echo "WARN: sysbox-runc not in Docker runtimes — env wrapper will strip runtime from spec"
+    fi
   fi
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client \
