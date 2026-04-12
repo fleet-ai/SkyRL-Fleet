@@ -64,8 +64,8 @@ fi
 if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
   echo "ERROR: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for S3 dataset download"; exit 1
 fi
-if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ]; then
-  echo "ERROR: MODALITY must be 'tool_use' or 'computer_use', got: ${MODALITY:-unset}"; exit 1
+if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ] && [ "${MODALITY:-}" != "browser_use" ]; then
+  echo "ERROR: MODALITY must be 'tool_use', 'computer_use', or 'browser_use', got: ${MODALITY:-unset}"; exit 1
 fi
 echo "Environment validation passed"
 
