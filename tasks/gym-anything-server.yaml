@@ -1,0 +1,72 @@
+# Gym-Anything Remote Environment Server
+# Runs Docker+sysbox containers for desktop software environments.
+# Training VMs connect to this server over HTTP.
+#
+# Usage:
+#   sky launch tasks/gym-anything-server.yaml -y
+#   # Note the IP, then launch training with --env GYM_ANYTHING_REMOTE_URL=http://<ip>:5000
+
+name: gym-anything-server
+
+resources:
+  cpus: 96+
+  memory: 192+
+  disk_size: 500
+  ports: 5000
+  cloud: gcp
+  image_id: projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64
+
+num_nodes: 1
+
+setup: |
+  set -euo pipefail
+
+  # Install Docker
+  if ! command -v docker &>/dev/null; then
+    curl -fsSL https://get.docker.com | sudo sh
+    sudo usermod -aG docker $USER
+    sudo systemctl enable --now docker
+  fi
+  sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+
+  # Install sysbox-runc (clean Ubuntu 24.04 — no fuse issues)
+  if ! command -v sysbox-runc &>/dev/null; then
+    echo "Installing sysbox-runc..."
+    wget -q "https://github.com/nestybox/sysbox/releases/download/v0.6.7/sysbox-ce_0.6.7.linux_amd64.deb" -O /tmp/sysbox.deb
+    sudo dpkg -i /tmp/sysbox.deb || sudo apt-get install -f -y
+    rm -f /tmp/sysbox.deb
+    sudo systemctl restart docker
+    sleep 3
+  fi
+  docker info 2>&1 | grep -i runtime
+
+  # Install Python + gym-anything
+  sudo apt-get update -qq && sudo apt-get install -y python3-pip python3-venv git
+  python3 -m venv ~/ga-venv
+  source ~/ga-venv/bin/activate
+
+  # Clone and install gym-anything
+  if [ ! -d ~/gym-anything ]; then
+    git clone https://github.com/cmu-l3/gym-anything.git ~/gym-anything
+  fi
+  pip install -e ~/gym-anything
+  pip install httpx quart quart-cors hypercorn
+
+  # Pre-build the base preset image (shared by ~200 envs)
+  echo "Pre-building base preset Docker image..."
+  docker build -t ga/base:ubuntu_gnome_systemd_highres \
+    -f ~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/Dockerfile \
+    ~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/
+
+  echo "=== Gym-Anything Server Setup Complete ==="
+
+run: |
+  source ~/ga-venv/bin/activate
+  cd ~/gym-anything
+
+  echo "Starting gym-anything master server on port 5000..."
+  python -m gym_anything.remote.master \
+    --host 0.0.0.0 \
+    --port 5000 \
+    --workers local \
+    --benchmark-root ~/gym-anything/benchmarks/cua_world/environments
