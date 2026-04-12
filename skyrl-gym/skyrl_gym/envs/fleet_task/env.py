@@ -5,7 +5,7 @@ Uses OpenEnv's FleetTaskEnv as the abstraction layer for Fleet environments,
 keeping a clean separation between SkyRL's training interface and Fleet's
 environment management.
 
-Multi-modal support: When the task modality is "computer_use", step() returns
+Multi-modal support: When the task modality is "computer_use" or "browser_use", step() returns
 multimodal observations in OpenAI format (image_url content blocks). Upstream
 SkyRL's generator already handles these via extract_images_from_conversation()
 and passes them as multi_modal_data to vLLM — no upstream changes needed.
@@ -371,7 +371,7 @@ class FleetTaskEnv(BaseTextEnv):
 
         # VL: adapt computer tool for Qwen's normalized coordinate space
         modality = self.task_config.get("task_modality", "tool_use")
-        if modality == "computer_use":
+        if modality in ("computer_use", "browser_use"):
             self._adapt_computer_tool_for_qwen()
 
         # Build initial prompt with task instruction
@@ -433,7 +433,7 @@ class FleetTaskEnv(BaseTextEnv):
 
         # Computer-use hints for VL models
         computer_use_hints = ""
-        if modality == "computer_use":
+        if modality in ("computer_use", "browser_use"):
             computer_use_hints = (
                 "\n## Browser Interaction Strategy\n"
                 "You are controlling a web browser via screenshots. Follow this loop:\n\n"
@@ -528,7 +528,7 @@ class FleetTaskEnv(BaseTextEnv):
         Parses the action for tool calls, executes via OpenEnv's FleetTaskEnv,
         and returns observation. Reward is computed by the verifier on completion.
 
-        For computer_use modality, observations may include multimodal content
+        For computer_use/browser_use modality, observations may include multimodal content
         (image_url blocks with base64 screenshots). Upstream SkyRL's generator
         handles these via extract_images_from_conversation().
         """

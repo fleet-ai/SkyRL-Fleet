@@ -44,6 +44,7 @@ from datasets import Dataset
 HELD_OUT_ENVS = {
     "tool_use": [],  # v0.3: all envs split normally (outlook now included in train)
     "computer_use": [],
+    "browser_use": [],
 }
 
 # Excluded environments (removed from both train and eval)
@@ -52,6 +53,7 @@ HELD_OUT_ENVS = {
 EXCLUDED_ENVS = {
     "tool_use": ["dropbox"],
     "computer_use": ["dropbox"],
+    "browser_use": ["dropbox"],
 }
 
 # Tasks excluded due to missing CURRENT_DATE in env_variables (v0.4.0)
@@ -561,7 +563,7 @@ def main():
         "--modality",
         type=str,
         default="tool_use",
-        choices=["tool_use", "computer_use", "all"],
+        choices=["tool_use", "computer_use", "browser_use", "all"],
         help="Task modality filter ('all' for no filter)",
     )
     parser.add_argument(

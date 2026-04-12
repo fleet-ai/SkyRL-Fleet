@@ -1,7 +1,7 @@
 # Fleet VL/CUA GRPO Training via SkyPilot - Qwen3.5-9B (Vision-Language)
 # Usage: sky launch tasks/openenv-fleet-grpo-vl.yaml --env FLEET_API_KEY=<key> --env WANDB_API_KEY=<key>
 #
-# VL (Vision-Language) training for computer_use environments with screenshots.
+# VL (Vision-Language) training for browser_use environments with screenshots.
 # Based on working config from SkyRL PR #288 (feat/vl-support-clean).
 #
 # Model: Qwen/Qwen3.5-9B (9B params, natively multimodal, GatedDeltaNet)
@@ -39,10 +39,10 @@ envs:
   FLEET_API_KEY: ""
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
-  DATA_VERSION: "v52"
+  DATA_VERSION: "v6"
   ENV_KEYS: ""
   DIFFICULTY: ""
-  MODALITY: "computer_use"
+  MODALITY: "browser_use"
   MAX_TURNS: 50
   MAX_INPUT_LENGTH: 96000
   MAX_GENERATE_LENGTH: 4096

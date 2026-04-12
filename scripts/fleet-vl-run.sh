@@ -7,7 +7,7 @@
 #
 # Model: Qwen/Qwen3.5-9B (9B params, natively multimodal, GatedDeltaNet)
 # TP=1 (single GPU per engine, 8 engines on 8x H200)
-# Modality: computer_use (screenshots + coordinate normalization)
+# Modality: browser_use (screenshots + coordinate normalization)
 #
 # Required env vars: FLEET_API_KEY, WANDB_API_KEY
 # Optional: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (for S3 checkpoints)
@@ -17,8 +17,8 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo roo
 # Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v52}"
-export MODALITY="${MODALITY:-computer_use}"
+export DATA_VERSION="${DATA_VERSION:-v6}"
+export MODALITY="${MODALITY:-browser_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-10}"
 export MAX_TURNS="${MAX_TURNS:-50}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-96000}"
