@@ -45,7 +45,6 @@ bash scripts/fleet-common-run.sh \
   trainer.loss_chunk_size=4096 \
   trainer.use_sample_packing=false \
   +generator.chat_template_kwargs='{enable_thinking:true}' \
-  +generator.inference_engine.engine_init_kwargs.gdn_prefill_backend=triton \
   generator.inference_engine_tensor_parallel_size=2 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=8 \
