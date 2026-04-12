@@ -24,6 +24,7 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 export S3_CHECKPOINT_BUCKET="${S3_CHECKPOINT_BUCKET:-skyrl-checkpoints}"
 export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 
+export GYM_ANYTHING_REMOTE_URL="${GYM_ANYTHING_REMOTE_URL:?Set GYM_ANYTHING_REMOTE_URL before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
 
 bash scripts/fleet-common-run.sh \
@@ -32,6 +33,7 @@ bash scripts/fleet-common-run.sh \
   --env-class gym_anything -- \
   environment.skyrl_gym.gym_anything.use_cache=true \
   environment.skyrl_gym.gym_anything.cache_level=post_start \
+  environment.skyrl_gym.gym_anything.remote_url="${GYM_ANYTHING_REMOTE_URL}" \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.policy.model.path="Qwen/Qwen3.5-9B" \
   trainer.flash_attn=false \

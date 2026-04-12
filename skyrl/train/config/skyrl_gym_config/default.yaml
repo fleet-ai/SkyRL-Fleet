@@ -39,5 +39,6 @@ task_gen:
 
 gym_anything:
   tasks_file: null
+  remote_url: null  # e.g. http://gym-anything-server:5000
   use_cache: true
   cache_level: "post_start"

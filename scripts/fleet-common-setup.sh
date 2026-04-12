@@ -117,25 +117,14 @@ mkdir -p "${DATA_ROOT}/data/fleet"
 TASKS_FILE="${DATA_ROOT}/data/fleet/tasks_${MODALITY}.json"
 
 if [ "$MODALITY" = "gym_anything" ]; then
-  # gym-anything: clone repo and build task index locally
+  # gym-anything remote mode: training VM only needs the client (RemoteGymEnv)
+  # and the task index. Docker containers run on a separate server.
   GA_ROOT="${DATA_ROOT}/gym-anything"
   if [ ! -d "$GA_ROOT" ]; then
-    echo "Cloning gym-anything..."
+    echo "Cloning gym-anything (for task index + client)..."
     git clone --depth 1 https://github.com/cmu-l3/gym-anything.git "$GA_ROOT"
   fi
-  pip install -e "${GA_ROOT}[all]" 2>/dev/null || pip install -e "${GA_ROOT}" || true
-  # Patch gym-anything: force DockerRunner when GYM_ANYTHING_RUNNER=docker.
-  GA_ENV_PY=$(python3 -c "import gym_anything.env; print(gym_anything.env.__file__)")
-  if [ -n "$GA_ENV_PY" ]; then
-    sed -i 's/if runner_override == "docker":/if runner_override == "docker":\n            logger.info("Using DockerRunner (GYM_ANYTHING_RUNNER=docker)")\n            return DockerRunner(spec)/' "$GA_ENV_PY"
-    echo "Patched gym-anything DockerRunner selection"
-  fi
-  # Pre-build the base preset Docker image once (avoids parallel build deadlock)
-  echo "Pre-building gym-anything base preset image..."
-  BASE_PRESET_DIR="${GA_ROOT}/src/gym_anything/presets/ubuntu_gnome_systemd_highres"
-  if [ -f "$BASE_PRESET_DIR/Dockerfile" ]; then
-    docker build -t ga/base:ubuntu_gnome_systemd_highres -f "$BASE_PRESET_DIR/Dockerfile" "$BASE_PRESET_DIR" 2>&1 | tail -20 || echo "WARN: base preset build failed"
-  fi
+  pip install -e "${GA_ROOT}" || true
   echo "Building gym-anything task index..."
   ALLOWLIST_ARG=""
   if [ -n "${GYM_ANYTHING_ENV_ALLOWLIST:-}" ]; then

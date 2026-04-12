@@ -1,27 +1,29 @@
 # Gym-Anything GRPO Training — Qwen3.5-9B (Desktop CUA)
 # Trains on 200+ desktop software environments from gym-anything/CUA-World.
 #
-# Usage: sky launch tasks/gym-anything-grpo-vl.yaml --env WANDB_API_KEY=<key>
+# Usage:
+#   # 1. Start gym-anything remote server (CPU VM with Docker + sysbox):
+#   #    python -m gym_anything.remote.master --host 0.0.0.0 --port 5000
+#   #
+#   # 2. Launch training (GPU VM):
+#   sky launch tasks/gym-anything-grpo-vl.yaml \
+#     --env WANDB_API_KEY=<key> \
+#     --env GYM_ANYTHING_REMOTE_URL=http://<server-ip>:5000
 #
-# Model: Qwen/Qwen3.5-9B (9B params, natively multimodal, GatedDeltaNet)
-# GPUs: 8x H200 (single node, TP=1)
-# Environments: Docker containers running real desktop software (Blender, GIMP, LibreOffice, etc.)
-#
-# NOTE: Requires Docker on the training node. RunPod preferred (Docker pre-installed).
-# First run per environment takes 5-30min for Docker build; subsequent runs use cache.
+# The training VM talks to gym-anything over HTTP — no Docker/sysbox needed here.
 
 name: fleet-gym-anything-grpo-qwen3-5-9b
 
 resources:
-  disk_size: 1000
+  disk_size: 750
   ports: 6479
   any_of:
-    - accelerators: H200-SXM:8
-      cloud: runpod
     - accelerators: H200:8
       cloud: gcp
       use_spot: true
       image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200-SXM:8
+      cloud: runpod
     - accelerators: H200:8
       cloud: lambda
     - accelerators: H200:8
@@ -51,26 +53,10 @@ envs:
   S3_DATASET_BUCKET: "fleet-internal-datasets"
   S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
-  # gym-anything needs Docker; sysbox-runc is optional (for systemd inside containers)
-  GYM_ANYTHING_RUNNER: "docker"
-  # Small env allowlist for first run. All use ubuntu-gnome-systemd_highres
-  # base preset (pre-built once) and don't require sysbox-runc.
-  GYM_ANYTHING_ENV_ALLOWLIST: "libreoffice_calc_env,libreoffice_writer_env,apache_openoffice_env,abravibe_env,activity_browser_env"
+  # gym-anything remote server URL (runs Docker+sysbox containers)
+  GYM_ANYTHING_REMOTE_URL: ""
 
 setup: |
-  # Install Docker if not available (GCP DL images don't include it)
-  if ! command -v docker &>/dev/null; then
-    echo "Installing Docker..."
-    curl -fsSL https://get.docker.com | sudo sh
-    sudo usermod -aG docker $USER
-    sudo systemctl enable --now docker
-  fi
-  # Ensure current user can run Docker without sudo
-  if ! docker info &>/dev/null; then
-    sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
-  fi
-  # Skip sysbox install — fuse postinst fails on GCP DL images, and the
-  # env wrapper falls back to default runc when sysbox isn't available.
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client \
     --extra-setup scripts/fleet-qwen35-extra-setup.sh \
