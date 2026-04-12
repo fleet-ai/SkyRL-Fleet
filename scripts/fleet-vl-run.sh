@@ -82,6 +82,7 @@ bash scripts/fleet-common-run.sh \
   generator.n_samples_per_prompt=4 \
   generator.eval_n_samples_per_prompt=3 \
   generator.gpu_memory_utilization=0.80 \
+  generator.trajectory_timeout_seconds=900 \
   trainer.logger="$LOGGER" \
   trainer.project_name="fleet-browser-use-grpo" \
   trainer.run_name="fleet_qwen35_${MODALITY}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \
