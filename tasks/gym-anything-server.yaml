@@ -14,7 +14,6 @@ resources:
   disk_size: 500
   ports: 5000
   cloud: gcp
-  image_id: projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64
 
 num_nodes: 1
 
