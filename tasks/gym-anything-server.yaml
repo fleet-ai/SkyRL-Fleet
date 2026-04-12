@@ -68,5 +68,4 @@ run: |
   python -m gym_anything.remote.master \
     --host 0.0.0.0 \
     --port 5000 \
-    --workers local \
-    --benchmark-root ~/gym-anything/benchmarks/cua_world/environments
+    --workers 4
