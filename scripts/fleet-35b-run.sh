@@ -48,7 +48,7 @@ bash scripts/fleet-common-run.sh \
   generator.inference_engine_tensor_parallel_size=2 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=8 \
-  trainer.eval_before_train=false \
+  trainer.eval_before_train=true \
   trainer.eval_interval=20 \
   trainer.update_epochs_per_batch=1 \
   trainer.train_batch_size=16 \
