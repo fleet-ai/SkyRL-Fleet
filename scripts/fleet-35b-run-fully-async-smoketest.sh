@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
-# Single source of truth for Qwen3.5-35B-A3B GRPO training config.
-# Called by the SkyPilot YAML and by fleet-research run.sh.
-#
-# Required env vars: FLEET_API_KEY, WANDB_API_KEY, OPENROUTER_API_KEY
-# Optional: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (for S3 checkpoints)
+# Smoke-test variant of the Qwen3.5-35B-A3B fully async GRPO training config.
+# Keeps the same end-to-end pipeline, but reduces generation/training volume for quick turnaround.
 set -euo pipefail
-cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo root)
+cd "$(dirname "$0")/.."
 
-# Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v6}"
+export DATA_VERSION="${DATA_VERSION:-v55}"
 export MODALITY="${MODALITY:-tool_use}"
-export NUM_EPOCHS="${NUM_EPOCHS:-20}"
-export MAX_TURNS="${MAX_TURNS:-50}"
+export NUM_EPOCHS="${NUM_EPOCHS:-1}"
+export MAX_TURNS="${MAX_TURNS:-4}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-72000}"
-export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"
+export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-256}"
 export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-8}"
 export ENV_KEYS="${ENV_KEYS:-}"
 export DIFFICULTY="${DIFFICULTY:-}"
@@ -26,38 +22,47 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 export S3_DATASET_BUCKET="${S3_DATASET_BUCKET:-fleet-internal-datasets}"
 export S3_CHECKPOINT_BUCKET="${S3_CHECKPOINT_BUCKET:-skyrl-checkpoints}"
 export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
+export MINI_BATCH_SIZE="${MINI_BATCH_SIZE:-4}"
+export MAX_STALENESS_STEPS="${MAX_STALENESS_STEPS:-2}"
+export NUM_PARALLEL_GENERATION_WORKERS="${NUM_PARALLEL_GENERATION_WORKERS:-8}"
 
 : "${FLEET_API_KEY:?Set FLEET_API_KEY before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
-# OPENROUTER_API_KEY only needed when enable_hints=true (LLM hint synthesis)
-export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
 
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
-  --set-ulimit --no-pytorch-alloc-conf \
-  --nccl-heartbeat 1800 -- \
+  --set-ulimit \
+  --nccl-heartbeat 1800 \
+  --entrypoint examples.train.fully_async.main_fully_async -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=900 \
   environment.skyrl_gym.fleet_task.partial_reward=true \
-  environment.skyrl_gym.fleet_task.enable_hints=false \
+  environment.skyrl_gym.fleet_task.enable_hints=true \
+  environment.skyrl_gym.fleet_task.n_hint_samples=2 \
+  trainer.fully_async.max_staleness_steps=${MAX_STALENESS_STEPS} \
+  trainer.fully_async.num_parallel_generation_workers=${NUM_PARALLEL_GENERATION_WORKERS} \
   trainer.algorithm.advantage_estimator=grpo \
+  trainer.algorithm.off_policy_correction.tis_ratio_type=token \
   trainer.policy.model.path="Qwen/Qwen3.5-35B-A3B" \
   trainer.flash_attn=false \
   trainer.loss_chunk_size=4096 \
   trainer.use_sample_packing=false \
-  +generator.chat_template_kwargs='{enable_thinking:true}' \
+  generator.chat_template_kwargs='{enable_thinking:true}' \
+  trainer.placement.colocate_all=false \
+  trainer.placement.policy_num_nodes=1 \
+  trainer.placement.ref_num_nodes=1 \
   generator.inference_engine_tensor_parallel_size=2 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=8 \
   trainer.eval_before_train=false \
-  trainer.eval_interval=10 \
+  trainer.eval_interval=1000000 \
   trainer.update_epochs_per_batch=1 \
-  trainer.train_batch_size=16 \
+  trainer.train_batch_size=${MINI_BATCH_SIZE} \
   trainer.use_hybrid_env_sampling=true \
   trainer.min_samples_per_env=1 \
-  trainer.policy_mini_batch_size=16 \
+  trainer.policy_mini_batch_size=${MINI_BATCH_SIZE} \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
-  trainer.ckpt_interval=10 \
+  trainer.ckpt_interval=1000000 \
   trainer.max_ckpts_to_keep=1 \
   trainer.max_prompt_length=2048 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
@@ -75,17 +80,17 @@ bash scripts/fleet-common-run.sh \
   generator.async_engine=true \
   generator.batched=false \
   generator.use_conversation_multi_turn=true \
-  generator.n_samples_per_prompt=8 \
-  generator.eval_n_samples_per_prompt=3 \
+  generator.n_samples_per_prompt=2 \
+  generator.eval_n_samples_per_prompt=1 \
   generator.enforce_eager=false \
   generator.gpu_memory_utilization=0.65 \
   generator.inject_context_status=true \
   generator.context_warning_threshold=0.90 \
   trainer.logger="$LOGGER" \
   trainer.project_name="fleet-tool-use-grpo" \
-  trainer.run_name="fleet_qwen35_35b_${MODALITY}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \
+  trainer.run_name="fleet_qwen35_35b_fully_async_smoketest_${MODALITY}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \
   trainer.resume_mode=latest \
-  trainer.ckpt_path="$HOME/ckpts/fleet_qwen35_35b_${MODALITY}" \
+  trainer.ckpt_path="$HOME/ckpts/fleet_qwen35_35b_fully_async_smoketest_${MODALITY}" \
   trainer.export_path="$HOME/exports" \
   trainer.dump_data_batch=true \
   "$@"
