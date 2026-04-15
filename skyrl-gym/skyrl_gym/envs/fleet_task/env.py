@@ -423,8 +423,15 @@ class FleetTaskEnv(BaseTextEnv):
             tools_section = (
                 f"## Available Tools\n{tools_summary}\n"
                 f"## Discovery Tools\n"
-                f"Use these tools to find and inspect available tools before calling them:\n"
-                f"{meta_schemas}"
+                f"You MUST use these to discover and inspect tools before calling them.\n"
+                f"The tool summaries above only show names and descriptions — you need "
+                f"get_tool_schema to see the full parameter schema before you can call any tool.\n\n"
+                f"Typical workflow:\n"
+                f"1. Read the task and identify which service(s) you need\n"
+                f"2. Use search_tools or list_service_tools to find the right tool\n"
+                f"3. Use get_tool_schema to see its exact parameters\n"
+                f"4. Call the tool with the correct arguments\n\n"
+                f"{meta_schemas}\n"
             )
         else:
             tools_section = (
