@@ -224,6 +224,15 @@ class FleetTaskEnv(BaseTextEnv):
                     "ContextManager not available, disabling context tools"
                 )
 
+        # Meta-tools: on-demand tool schema retrieval (uses OpenEnv's MetaToolHandler)
+        self.enable_meta_tools = (
+            env_config.get("enable_meta_tools", False)
+            if hasattr(env_config, "get")
+            else False
+        )
+        self.meta_tool_handler = None
+        self.tool_index = None
+
     def _adapt_computer_tool_for_qwen(self):
         """Adapt computer tool description for Qwen VL's [0, 1000] coordinate space.
 
@@ -369,6 +378,25 @@ class FleetTaskEnv(BaseTextEnv):
                 f"Task {self.task_key}: no tools found. Fleet env requires tools."
             )
 
+        # Build meta-tool index if enabled (must happen after tools are loaded)
+        if self.enable_meta_tools:
+            try:
+                from envs.fleet_env import MetaToolHandler, ToolIndex
+
+                self.tool_index = ToolIndex(self.tools)
+                self.meta_tool_handler = MetaToolHandler(self.tool_index)
+                # Add meta-tool definitions to the tool list
+                self.tools = self.tools + self.meta_tool_handler.get_tool_schemas()
+                logger.info(
+                    f"Meta-tools enabled: {self.tool_index.tool_count} tools indexed "
+                    f"across {len(self.tool_index.service_names)} services"
+                )
+            except ImportError:
+                logger.warning(
+                    "MetaToolHandler not available, disabling meta-tools"
+                )
+                self.enable_meta_tools = False
+
         # VL: adapt computer tool for Qwen's normalized coordinate space
         modality = self.task_config.get("task_modality", "tool_use")
         if modality in ("computer_use", "browser_use"):
@@ -386,7 +414,22 @@ class FleetTaskEnv(BaseTextEnv):
             )
 
         # Build system prompt with tool definitions
-        tools_json = json.dumps(self.tools, indent=2)
+        if self.enable_meta_tools and self.tool_index:
+            # Compact summary + meta-tool schemas instead of full JSON dump
+            tools_summary = self.tool_index.build_summary()
+            meta_schemas = json.dumps(
+                self.meta_tool_handler.get_tool_schemas(), indent=2
+            )
+            tools_section = (
+                f"## Available Tools\n{tools_summary}\n"
+                f"## Discovery Tools\n"
+                f"Use these tools to find and inspect available tools before calling them:\n"
+                f"{meta_schemas}"
+            )
+        else:
+            tools_section = (
+                f"## Available Tools\n{json.dumps(self.tools, indent=2)}"
+            )
         current_date = datetime.now().strftime("%Y-%m-%d")
 
         # Build environment context section from env_variables
@@ -455,6 +498,24 @@ class FleetTaskEnv(BaseTextEnv):
         ]
         tool_names_str = ", ".join(tool_names)
 
+        # Build tool call format instructions
+        if self.enable_meta_tools and self.tool_index:
+            tool_call_hint = (
+                f"## Tool Call Format\n"
+                f"Before calling a tool for the first time, use get_tool_schema(name) "
+                f"to see its parameters. Format each call as:\n"
+                f'<tool_call>{{"name": "<tool_name>", "arguments": '
+                f"{{...}}}}</tool_call>\n\n"
+            )
+        else:
+            tool_call_hint = (
+                f"## Tool Call Format\n"
+                f"Use the tools listed above by name ({tool_names_str}). "
+                f"Format each call as:\n"
+                f'<tool_call>{{"name": "<tool_name_from_above>", "arguments": '
+                f"{{...}}}}</tool_call>\n\n"
+            )
+
         system_content = (
             f"You are a helpful agent. Complete the task by calling tools.\n\n"
             f"## Current Date\n"
@@ -462,12 +523,8 @@ class FleetTaskEnv(BaseTextEnv):
             f"a year, assume the current year ({datetime.now().year}) or a "
             f"future date.\n"
             f"{env_context}{env_hints}{computer_use_hints}\n"
-            f"## Available Tools\n{tools_json}\n\n"
-            f"## Tool Call Format\n"
-            f"Use the tools listed above by name ({tool_names_str}). "
-            f"Format each call as:\n"
-            f'<tool_call>{{"name": "<tool_name_from_above>", "arguments": '
-            f"{{...}}}}</tool_call>\n\n"
+            f"{tools_section}\n\n"
+            f"{tool_call_hint}"
             f"## Error Handling\n"
             f"If a tool call returns an error:\n"
             f"- Read the error message carefully\n"
@@ -575,6 +632,16 @@ class FleetTaskEnv(BaseTextEnv):
                 tool_call["name"],
                 tool_call.get("arguments", {}),
                 self.chat_history,
+            )
+        # Handle meta-tools locally (no MCP call)
+        elif (
+            tool_call
+            and self.meta_tool_handler
+            and self.meta_tool_handler.is_meta_tool(tool_call["name"])
+        ):
+            tool_result = self.meta_tool_handler.execute(
+                tool_call["name"],
+                tool_call.get("arguments", {}),
             )
         # Execute tool call if present via OpenEnv
         elif tool_call and self.openenv_task_env:
