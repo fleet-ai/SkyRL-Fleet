@@ -431,6 +431,9 @@ class FleetTaskEnv(BaseTextEnv):
                 f"2. Use search_tools or list_service_tools to find the right tool\n"
                 f"3. Use get_tool_schema to see its exact parameters\n"
                 f"4. Call the tool with the correct arguments\n\n"
+                f"IMPORTANT: Once you have retrieved a tool's schema, do NOT call "
+                f"get_tool_schema for that tool again. The schema is already in your "
+                f"conversation history — refer back to it instead of re-requesting it.\n\n"
                 f"{meta_schemas}\n"
             )
         else:
