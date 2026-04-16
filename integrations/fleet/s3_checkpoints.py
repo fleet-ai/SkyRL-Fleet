@@ -248,16 +248,43 @@ def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
     FSDP requires checkpoint shards on every node. The S3 download only runs
     on the head node, so we rsync the checkpoint directory to all workers.
 
-    Uses SKYPILOT_NODE_IPS to discover worker IPs. No-op on single-node.
+    Discovers worker IPs from SKYPILOT_NODE_IPS (shell env) or Ray cluster
+    nodes (when running inside a Ray task). No-op on single-node.
     """
     import subprocess
+    import socket
 
-    node_ips = os.environ.get("SKYPILOT_NODE_IPS", "").strip().split("\n")
+    # Try SKYPILOT_NODE_IPS first (set by SkyPilot run script)
+    node_ips_str = os.environ.get("SKYPILOT_NODE_IPS", "").strip()
+    if node_ips_str:
+        node_ips = [ip.strip() for ip in node_ips_str.split("\n") if ip.strip()]
+    else:
+        # Fall back to Ray cluster node discovery
+        try:
+            import ray
+            nodes = ray.nodes()
+            node_ips = sorted(set(
+                n["NodeManagerAddress"] for n in nodes
+                if n.get("Alive", False)
+            ))
+            logger.info(f"Discovered {len(node_ips)} nodes from Ray cluster")
+        except Exception as e:
+            logger.warning(f"Could not discover nodes: {e}")
+            return
+
     if len(node_ips) <= 1:
         return  # single node, nothing to broadcast
 
-    worker_ips = [ip.strip() for ip in node_ips[1:] if ip.strip()]
+    # Head IP is the current node
+    head_ip = socket.gethostbyname(socket.gethostname())
+    worker_ips = [ip for ip in node_ips if ip != head_ip]
+
     if not worker_ips:
+        # Try: head is first in the list
+        worker_ips = node_ips[1:]
+
+    if not worker_ips:
+        logger.info("No worker nodes found, skipping checkpoint broadcast")
         return
 
     for worker_ip in worker_ips:
