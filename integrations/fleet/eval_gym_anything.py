@@ -285,7 +285,19 @@ async def run_task(
 
             elapsed = time.time() - start
             logger.info(f"{task_key}: reward={reward:.2f}, turns={turns}, time={elapsed:.0f}s")
-            return {"task_key": task_key, "env_name": task.get("env_name", ""), "reward": reward, "turns": turns, "elapsed": elapsed}
+
+            # Build trajectory (strip base64 images to keep size manageable)
+            trajectory = []
+            for msg in messages:
+                m = dict(msg)
+                if isinstance(m.get("content"), list):
+                    m["content"] = [
+                        c if c.get("type") != "image_url" else {"type": "image_url", "image_url": {"url": "[screenshot]"}}
+                        for c in m["content"]
+                    ]
+                trajectory.append(m)
+
+            return {"task_key": task_key, "env_name": task.get("env_name", ""), "reward": reward, "turns": turns, "elapsed": elapsed, "trajectory": trajectory}
 
         except Exception as e:
             elapsed = time.time() - start

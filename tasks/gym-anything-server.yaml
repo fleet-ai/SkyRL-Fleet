@@ -62,14 +62,16 @@ setup: |
 run: |
   source ~/ga-venv/bin/activate
 
-  # Start worker from src/ so Dockerfile relative paths resolve
+  # Start 8 workers from src/ so Dockerfile relative paths resolve
   cd ~/gym-anything/src
-  nohup python -m gym_anything.remote.worker \
-    --master-url http://localhost:5000 \
-    --max-envs 30 \
-    --host 127.0.0.1 \
-    > ~/worker.log 2>&1 &
-  echo "Worker started (PID $!)"
+  for i in $(seq 1 8); do
+    nohup python -m gym_anything.remote.worker \
+      --master-url http://localhost:5000 \
+      --max-envs 20 \
+      --host 127.0.0.1 \
+      > ~/worker_${i}.log 2>&1 &
+    echo "Worker $i started (PID $!)"
+  done
 
   # Start master server (foreground)
   cd ~/gym-anything
