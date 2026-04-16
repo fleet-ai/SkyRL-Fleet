@@ -242,6 +242,44 @@ def wrap_trainer_with_s3_upload(
     return trainer
 
 
+def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
+    """Broadcast checkpoint from head node to all worker nodes via rsync.
+
+    FSDP requires checkpoint shards on every node. The S3 download only runs
+    on the head node, so we rsync the checkpoint directory to all workers.
+
+    Uses SKYPILOT_NODE_IPS to discover worker IPs. No-op on single-node.
+    """
+    import subprocess
+
+    node_ips = os.environ.get("SKYPILOT_NODE_IPS", "").strip().split("\n")
+    if len(node_ips) <= 1:
+        return  # single node, nothing to broadcast
+
+    worker_ips = [ip.strip() for ip in node_ips[1:] if ip.strip()]
+    if not worker_ips:
+        return
+
+    for worker_ip in worker_ips:
+        logger.info(f"Broadcasting checkpoint to worker {worker_ip}...")
+        try:
+            subprocess.run(
+                [
+                    "rsync", "-az",
+                    "-e", "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30",
+                    f"{ckpt_path}/",
+                    f"gcpuser@{worker_ip}:{ckpt_path}/",
+                ],
+                check=True,
+                timeout=600,  # 10 min max for ~140GB checkpoint
+            )
+            logger.info(f"Checkpoint broadcast to {worker_ip} complete")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Checkpoint broadcast to {worker_ip} timed out")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Checkpoint broadcast to {worker_ip} failed: {e}")
+
+
 def download_checkpoint_from_s3(
     ckpt_path: str,
     run_name: str,
