@@ -287,12 +287,14 @@ def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
         logger.info("No worker nodes found, skipping checkpoint broadcast")
         return
 
-    # Find SSH key — SkyPilot uses ~/.ssh/sky-key on provisioned VMs
-    ssh_key = os.path.expanduser("~/.ssh/sky-key")
-    if not os.path.exists(ssh_key):
-        # Fallback: try default key
-        ssh_key = os.path.expanduser("~/.ssh/id_rsa")
-    ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if os.path.exists(ssh_key) else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+    # Find SSH key — SkyPilot uses ~/.ssh/sky-cluster-key on provisioned VMs
+    ssh_key = None
+    for key_path in ["~/.ssh/sky-cluster-key", "~/.ssh/sky-key", "~/.ssh/id_rsa"]:
+        expanded = os.path.expanduser(key_path)
+        if os.path.exists(expanded):
+            ssh_key = expanded
+            break
+    ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
 
     for worker_ip in worker_ips:
         logger.info(f"Broadcasting checkpoint to worker {worker_ip} (ssh key: {ssh_key})...")
