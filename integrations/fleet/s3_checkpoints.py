@@ -63,9 +63,72 @@ class S3CheckpointUploader:
         self._pending: set = set()
         self._lock = threading.Lock()
 
+    def _gather_from_workers(self, local_dir: str) -> None:
+        """Gather checkpoint shards from worker nodes before S3 upload.
+
+        FSDP saves each rank's shards locally on its node. The head has ranks 0-N,
+        workers have ranks N+1-M. We rsync worker shards to the head so the S3
+        upload gets all shards.
+        """
+        import subprocess
+        import socket
+
+        node_ips_str = os.environ.get("SKYPILOT_NODE_IPS", "").strip()
+        if node_ips_str:
+            node_ips = [ip.strip() for ip in node_ips_str.split("\n") if ip.strip()]
+        else:
+            try:
+                import ray
+                nodes = ray.nodes()
+                node_ips = sorted(set(
+                    n["NodeManagerAddress"] for n in nodes
+                    if n.get("Alive", False)
+                ))
+            except Exception:
+                return
+
+        if len(node_ips) <= 1:
+            return
+
+        head_ip = socket.gethostbyname(socket.gethostname())
+        worker_ips = [ip for ip in node_ips if ip != head_ip]
+        if not worker_ips:
+            worker_ips = node_ips[1:]
+        if not worker_ips:
+            return
+
+        ssh_key = None
+        for key_path in ["~/.ssh/sky-cluster-key", "~/.ssh/sky-key", "~/.ssh/id_rsa"]:
+            expanded = os.path.expanduser(key_path)
+            if os.path.exists(expanded):
+                ssh_key = expanded
+                break
+        ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+
+        for worker_ip in worker_ips:
+            logger.info(f"Gathering checkpoint shards from worker {worker_ip}...")
+            try:
+                subprocess.run(
+                    [
+                        "rsync", "-az",
+                        "-e", ssh_cmd,
+                        f"gcpuser@{worker_ip}:{local_dir}/",
+                        f"{local_dir}/",
+                    ],
+                    check=True,
+                    timeout=600,
+                )
+                logger.info(f"Gathered shards from {worker_ip}")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Gathering from {worker_ip} timed out")
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Gathering from {worker_ip} failed: {e}")
+
     def _upload_sync(self, local_dir: str) -> bool:
         """Synchronous upload that runs in thread pool."""
         try:
+            # Gather shards from worker nodes before uploading
+            self._gather_from_workers(local_dir)
             import boto3
             from botocore.config import Config
             from boto3.s3.transfer import TransferConfig
