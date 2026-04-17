@@ -89,6 +89,55 @@ setup: |
   pip install -e ~/gym-anything
   pip install httpx quart quart-cors hypercorn psutil flask flask-cors
 
+  # ── Hotfix 1: VNC auto-restart on failure ──
+  # tigervnc@.service fails on first boot in Docker due to systemd timing.
+  # Adding Restart=on-failure makes it retry and succeed.
+  UNIT=~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/tigervnc@.service
+  if ! grep -q "Restart=on-failure" "$UNIT"; then
+    sed -i '/\[Service\]/a Restart=on-failure\nRestartSec=2' "$UNIT"
+    echo "Patched tigervnc@.service with Restart=on-failure"
+  fi
+
+  # ── Hotfix 2: DockerRunner.exec() missing timeout param ──
+  # env.py passes timeout= to runner.exec() but DockerRunner doesn't accept it.
+  # Pre_task hooks fail with TypeError on every task.
+  python3 -c "
+path = '$HOME/gym-anything/src/gym_anything/runtime/runners/docker.py'
+with open(path) as f:
+    c = f.read()
+old = 'def exec(self, cmd: str, env: Optional[Dict[str, str]] = None, user: Optional[str] = None, use_pty: bool = True) -> int:'
+new = 'def exec(self, cmd: str, env: Optional[Dict[str, str]] = None, user: Optional[str] = None, use_pty: bool = True, timeout: Optional[int] = None) -> int:'
+if old in c:
+    c = c.replace(old, new)
+    with open(path, 'w') as f:
+        f.write(c)
+    print('Patched DockerRunner.exec() with timeout param')
+else:
+    print('DockerRunner.exec() already patched or signature changed')
+"
+
+  # ── Hotfix 3: Force inline screenshots in HTTP responses ──
+  # By default, screenshots are saved to disk only (inline=false in env.json).
+  # Remote clients need png_b64 in the JSON response.
+  python3 -c "
+path = '$HOME/gym-anything/src/gym_anything/remote/worker.py'
+with open(path) as f:
+    c = f.read()
+target = 'env = from_config(env_dir, task_id=task_id)'
+patch = '''env = from_config(env_dir, task_id=task_id)
+                # Hotfix: force inline screenshots in HTTP responses
+                for obs_spec in env.env_spec.observation:
+                    if obs_spec.type == \"rgb_screen\":
+                        obs_spec.inline = True'''
+if 'obs_spec.inline = True' not in c:
+    c = c.replace(target, patch, 1)
+    with open(path, 'w') as f:
+        f.write(c)
+    print('Patched worker.py: inline screenshots enabled')
+else:
+    print('Worker.py already patched')
+"
+
   # ── Symlink fix: env dirs resolve relative to src/ ──
   # gym-anything resolves env_dir paths like "benchmarks/cua_world/environments/..."
   # relative to CWD. Workers run from ~/gym-anything/src/ (for Dockerfile resolution).
