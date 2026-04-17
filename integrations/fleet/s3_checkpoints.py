@@ -105,8 +105,10 @@ class S3CheckpointUploader:
                 break
         ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
 
+        timeout = _estimate_rsync_timeout(local_dir)
+
         for worker_ip in worker_ips:
-            logger.info(f"Gathering checkpoint shards from worker {worker_ip}...")
+            logger.info(f"Gathering checkpoint shards from worker {worker_ip} (timeout={timeout}s)...")
             try:
                 subprocess.run(
                     [
@@ -116,11 +118,11 @@ class S3CheckpointUploader:
                         f"{local_dir}/",
                     ],
                     check=True,
-                    timeout=600,
+                    timeout=timeout,
                 )
                 logger.info(f"Gathered shards from {worker_ip}")
             except subprocess.TimeoutExpired:
-                logger.warning(f"Gathering from {worker_ip} timed out")
+                logger.warning(f"Gathering from {worker_ip} timed out ({timeout}s)")
             except subprocess.CalledProcessError as e:
                 logger.warning(f"Gathering from {worker_ip} failed: {e}")
 
@@ -305,7 +307,30 @@ def wrap_trainer_with_s3_upload(
     return trainer
 
 
-def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
+def _estimate_rsync_timeout(path: str, min_timeout: int = 300) -> int:
+    """Estimate rsync timeout based on directory size.
+
+    Assumes ~100MB/s conservative transfer speed + 60s buffer.
+
+    Args:
+        path: Directory to measure.
+        min_timeout: Minimum timeout in seconds (default 5 min).
+
+    Returns:
+        Timeout in seconds.
+    """
+    try:
+        total_size = sum(
+            f.stat().st_size for f in Path(path).rglob("*") if f.is_file()
+        )
+        timeout = max(min_timeout, int(total_size / (100 * 1024 * 1024)) + 60)
+        logger.info(f"Estimated rsync timeout for {total_size / 1e9:.1f}GB: {timeout}s")
+        return timeout
+    except Exception:
+        return min_timeout
+
+
+def broadcast_checkpoint_to_workers(ckpt_path: str, timeout: Optional[int] = None) -> None:
     """Broadcast checkpoint from head node to all worker nodes via rsync.
 
     FSDP requires checkpoint shards on every node. The S3 download only runs
@@ -313,6 +338,10 @@ def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
 
     Discovers worker IPs from SKYPILOT_NODE_IPS (shell env) or Ray cluster
     nodes (when running inside a Ray task). No-op on single-node.
+
+    Args:
+        ckpt_path: Local checkpoint directory to broadcast.
+        timeout: Rsync timeout in seconds. If None, auto-calculated from checkpoint size.
     """
     import subprocess
     import socket
@@ -359,8 +388,11 @@ def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
             break
     ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
 
+    if timeout is None:
+        timeout = _estimate_rsync_timeout(ckpt_path)
+
     for worker_ip in worker_ips:
-        logger.info(f"Broadcasting checkpoint to worker {worker_ip} (ssh key: {ssh_key})...")
+        logger.info(f"Broadcasting checkpoint to worker {worker_ip} (ssh key: {ssh_key}, timeout={timeout}s)...")
         try:
             # Create parent directory on worker (rsync can't create it)
             subprocess.run(
@@ -376,7 +408,7 @@ def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
                     f"gcpuser@{worker_ip}:{ckpt_path}/",
                 ],
                 check=True,
-                timeout=1800,  # 30 min for large checkpoints (model + optimizer can be 300GB+)
+                timeout=timeout,
             )
             logger.info(f"Checkpoint broadcast to {worker_ip} complete")
         except subprocess.TimeoutExpired:
