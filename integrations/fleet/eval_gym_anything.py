@@ -280,9 +280,20 @@ async def run_task(
                 step_obs = step_result.get("observation", {})
                 ss = step_obs.get("screen", {}).get("png_b64", "")
                 if ss:
+                    ss_url = f"data:image/png;base64,{ss}"
                     messages.append({"role": "user", "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{ss}"}},
+                        {"type": "image_url", "image_url": {"url": ss_url}},
                     ]})
+                    # Save screenshot immediately if enabled
+                    if save_screenshots:
+                        try:
+                            import base64 as b64mod
+                            ss_dir = Path(screenshot_base_dir) / task_key.replace("/", "__")
+                            ss_dir.mkdir(parents=True, exist_ok=True)
+                            ss_path = ss_dir / f"turn_{turn:03d}.png"
+                            ss_path.write_bytes(b64mod.b64decode(ss))
+                        except Exception as e:
+                            logger.debug(f"Screenshot save failed: {e}")
                 else:
                     messages.append({"role": "user", "content": "[screenshot unavailable]"})
 
