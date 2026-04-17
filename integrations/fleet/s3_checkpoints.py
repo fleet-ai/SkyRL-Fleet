@@ -63,9 +63,74 @@ class S3CheckpointUploader:
         self._pending: set = set()
         self._lock = threading.Lock()
 
+    def _gather_from_workers(self, local_dir: str) -> None:
+        """Gather checkpoint shards from worker nodes before S3 upload.
+
+        FSDP saves each rank's shards locally on its node. The head has ranks 0-N,
+        workers have ranks N+1-M. We rsync worker shards to the head so the S3
+        upload gets all shards.
+        """
+        import subprocess
+        import socket
+
+        node_ips_str = os.environ.get("SKYPILOT_NODE_IPS", "").strip()
+        if node_ips_str:
+            node_ips = [ip.strip() for ip in node_ips_str.split("\n") if ip.strip()]
+        else:
+            try:
+                import ray
+                nodes = ray.nodes()
+                node_ips = sorted(set(
+                    n["NodeManagerAddress"] for n in nodes
+                    if n.get("Alive", False)
+                ))
+            except Exception:
+                return
+
+        if len(node_ips) <= 1:
+            return
+
+        head_ip = socket.gethostbyname(socket.gethostname())
+        worker_ips = [ip for ip in node_ips if ip != head_ip]
+        if not worker_ips:
+            worker_ips = node_ips[1:]
+        if not worker_ips:
+            return
+
+        ssh_key = None
+        for key_path in ["~/.ssh/sky-cluster-key", "~/.ssh/sky-key", "~/.ssh/id_rsa"]:
+            expanded = os.path.expanduser(key_path)
+            if os.path.exists(expanded):
+                ssh_key = expanded
+                break
+        ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+
+        timeout = _estimate_rsync_timeout(local_dir)
+
+        for worker_ip in worker_ips:
+            logger.info(f"Gathering checkpoint shards from worker {worker_ip} (timeout={timeout}s)...")
+            try:
+                subprocess.run(
+                    [
+                        "rsync", "-az",
+                        "-e", ssh_cmd,
+                        f"gcpuser@{worker_ip}:{local_dir}/",
+                        f"{local_dir}/",
+                    ],
+                    check=True,
+                    timeout=timeout,
+                )
+                logger.info(f"Gathered shards from {worker_ip}")
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Gathering from {worker_ip} timed out ({timeout}s)")
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Gathering from {worker_ip} failed: {e}")
+
     def _upload_sync(self, local_dir: str) -> bool:
         """Synchronous upload that runs in thread pool."""
         try:
+            # Gather shards from worker nodes before uploading
+            self._gather_from_workers(local_dir)
             import boto3
             from botocore.config import Config
             from boto3.s3.transfer import TransferConfig
@@ -240,6 +305,116 @@ def wrap_trainer_with_s3_upload(
     trainer._s3_uploader = uploader
 
     return trainer
+
+
+def _estimate_rsync_timeout(path: str, min_timeout: int = 300) -> int:
+    """Estimate rsync timeout based on directory size.
+
+    Assumes ~100MB/s conservative transfer speed + 60s buffer.
+
+    Args:
+        path: Directory to measure.
+        min_timeout: Minimum timeout in seconds (default 5 min).
+
+    Returns:
+        Timeout in seconds.
+    """
+    try:
+        total_size = sum(
+            f.stat().st_size for f in Path(path).rglob("*") if f.is_file()
+        )
+        timeout = max(min_timeout, int(total_size / (100 * 1024 * 1024)) + 60)
+        logger.info(f"Estimated rsync timeout for {total_size / 1e9:.1f}GB: {timeout}s")
+        return timeout
+    except Exception:
+        return min_timeout
+
+
+def broadcast_checkpoint_to_workers(ckpt_path: str, timeout: Optional[int] = None) -> None:
+    """Broadcast checkpoint from head node to all worker nodes via rsync.
+
+    FSDP requires checkpoint shards on every node. The S3 download only runs
+    on the head node, so we rsync the checkpoint directory to all workers.
+
+    Discovers worker IPs from SKYPILOT_NODE_IPS (shell env) or Ray cluster
+    nodes (when running inside a Ray task). No-op on single-node.
+
+    Args:
+        ckpt_path: Local checkpoint directory to broadcast.
+        timeout: Rsync timeout in seconds. If None, auto-calculated from checkpoint size.
+    """
+    import subprocess
+    import socket
+
+    # Try SKYPILOT_NODE_IPS first (set by SkyPilot run script)
+    node_ips_str = os.environ.get("SKYPILOT_NODE_IPS", "").strip()
+    if node_ips_str:
+        node_ips = [ip.strip() for ip in node_ips_str.split("\n") if ip.strip()]
+    else:
+        # Fall back to Ray cluster node discovery
+        try:
+            import ray
+            nodes = ray.nodes()
+            node_ips = sorted(set(
+                n["NodeManagerAddress"] for n in nodes
+                if n.get("Alive", False)
+            ))
+            logger.info(f"Discovered {len(node_ips)} nodes from Ray cluster")
+        except Exception as e:
+            logger.warning(f"Could not discover nodes: {e}")
+            return
+
+    if len(node_ips) <= 1:
+        return  # single node, nothing to broadcast
+
+    # Head IP is the current node
+    head_ip = socket.gethostbyname(socket.gethostname())
+    worker_ips = [ip for ip in node_ips if ip != head_ip]
+
+    if not worker_ips:
+        # Try: head is first in the list
+        worker_ips = node_ips[1:]
+
+    if not worker_ips:
+        logger.info("No worker nodes found, skipping checkpoint broadcast")
+        return
+
+    # Find SSH key — SkyPilot uses ~/.ssh/sky-cluster-key on provisioned VMs
+    ssh_key = None
+    for key_path in ["~/.ssh/sky-cluster-key", "~/.ssh/sky-key", "~/.ssh/id_rsa"]:
+        expanded = os.path.expanduser(key_path)
+        if os.path.exists(expanded):
+            ssh_key = expanded
+            break
+    ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+
+    if timeout is None:
+        timeout = _estimate_rsync_timeout(ckpt_path)
+
+    for worker_ip in worker_ips:
+        logger.info(f"Broadcasting checkpoint to worker {worker_ip} (ssh key: {ssh_key}, timeout={timeout}s)...")
+        try:
+            # Create parent directory on worker (rsync can't create it)
+            subprocess.run(
+                ["ssh"] + ssh_cmd.split()[1:] + [f"gcpuser@{worker_ip}", f"mkdir -p {ckpt_path}"],
+                check=True,
+                timeout=30,
+            )
+            subprocess.run(
+                [
+                    "rsync", "-az",
+                    "-e", ssh_cmd,
+                    f"{ckpt_path}/",
+                    f"gcpuser@{worker_ip}:{ckpt_path}/",
+                ],
+                check=True,
+                timeout=timeout,
+            )
+            logger.info(f"Checkpoint broadcast to {worker_ip} complete")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Checkpoint broadcast to {worker_ip} timed out")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Checkpoint broadcast to {worker_ip} failed: {e}")
 
 
 def download_checkpoint_from_s3(
