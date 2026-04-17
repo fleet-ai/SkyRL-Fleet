@@ -299,6 +299,12 @@ def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
     for worker_ip in worker_ips:
         logger.info(f"Broadcasting checkpoint to worker {worker_ip} (ssh key: {ssh_key})...")
         try:
+            # Create parent directory on worker (rsync can't create it)
+            subprocess.run(
+                ["ssh"] + ssh_cmd.split()[1:] + [f"gcpuser@{worker_ip}", f"mkdir -p {ckpt_path}"],
+                check=True,
+                timeout=30,
+            )
             subprocess.run(
                 [
                     "rsync", "-az",
