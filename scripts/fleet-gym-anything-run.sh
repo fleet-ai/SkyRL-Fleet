@@ -30,7 +30,9 @@ export GYM_ANYTHING_REMOTE_URL="${GYM_ANYTHING_REMOTE_URL:?Set GYM_ANYTHING_REMO
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf \
-  --env-class gym_anything -- \
+  --env-class gym_anything \
+  --data-dir-name gym_anything -- \
+  environment.skyrl_gym.gym_anything.tasks_file="$HOME/data/fleet/tasks_gym_anything.json" \
   environment.skyrl_gym.gym_anything.use_cache=true \
   environment.skyrl_gym.gym_anything.cache_level=post_start \
   environment.skyrl_gym.gym_anything.remote_url="${GYM_ANYTHING_REMOTE_URL}" \

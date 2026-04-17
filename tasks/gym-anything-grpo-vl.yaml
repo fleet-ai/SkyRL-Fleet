@@ -57,10 +57,27 @@ envs:
   GYM_ANYTHING_REMOTE_URL: ""
 
 setup: |
+  # Standard SkyRL setup (venv, deps, model-specific extras)
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client \
     --extra-setup scripts/fleet-qwen35-extra-setup.sh \
-    --env-class gym_anything
+    --skip-prepare
+
+  source .venv/bin/activate
+
+  # gym-anything client (RemoteGymEnv only, no Docker needed)
+  if [ ! -d ~/gym-anything ]; then
+    git clone --depth 1 https://github.com/cmu-l3/gym-anything.git ~/gym-anything
+  fi
+  pip install -e ~/gym-anything || true
+
+  # Download pre-built dataset from S3
+  mkdir -p ~/data/fleet/gym_anything
+  aws s3 cp s3://fleet-internal-datasets/gym-anything/tasks.json ~/data/fleet/tasks_gym_anything.json --region us-east-1
+  aws s3 cp s3://fleet-internal-datasets/gym-anything/train.parquet ~/data/fleet/gym_anything/train.parquet --region us-east-1
+  aws s3 cp s3://fleet-internal-datasets/gym-anything/validation.parquet ~/data/fleet/gym_anything/validation.parquet --region us-east-1
+  echo "Train: $(python3 -c 'import pyarrow.parquet as pq; print(len(pq.read_table("'$HOME'/data/fleet/gym_anything/train.parquet")))') tasks"
+  echo "Eval: $(python3 -c 'import pyarrow.parquet as pq; print(len(pq.read_table("'$HOME'/data/fleet/gym_anything/validation.parquet")))') tasks"
 
 run: |
   bash scripts/fleet-gym-anything-run.sh
