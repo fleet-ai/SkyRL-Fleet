@@ -376,7 +376,7 @@ def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
                     f"gcpuser@{worker_ip}:{ckpt_path}/",
                 ],
                 check=True,
-                timeout=600,  # 10 min max for ~140GB checkpoint
+                timeout=1800,  # 30 min for large checkpoints (model + optimizer can be 300GB+)
             )
             logger.info(f"Checkpoint broadcast to {worker_ip} complete")
         except subprocess.TimeoutExpired:
