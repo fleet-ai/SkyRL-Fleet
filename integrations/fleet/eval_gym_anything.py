@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import litellm
+litellm.suppress_debug_info = True
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -170,6 +171,8 @@ async def run_task(
     max_turns: int,
     temperature: float,
     sem: asyncio.Semaphore,
+    save_screenshots: bool = False,
+    screenshot_base_dir: str = "/tmp/gym_anything_screenshots",
 ) -> Dict[str, Any]:
     """Run a single task: create env, multi-turn rollout, return result."""
     import requests
@@ -286,15 +289,37 @@ async def run_task(
             elapsed = time.time() - start
             logger.info(f"{task_key}: reward={reward:.2f}, turns={turns}, time={elapsed:.0f}s")
 
-            # Build trajectory (strip base64 images to keep size manageable)
+            # Build trajectory
             trajectory = []
+            screenshot_dir = None
+            if save_screenshots:
+                screenshot_dir = Path(screenshot_base_dir) / task_key.replace("/", "__")
+                screenshot_dir.mkdir(parents=True, exist_ok=True)
+
+            ss_idx = 0
             for msg in messages:
                 m = dict(msg)
                 if isinstance(m.get("content"), list):
-                    m["content"] = [
-                        c if c.get("type") != "image_url" else {"type": "image_url", "image_url": {"url": "[screenshot]"}}
-                        for c in m["content"]
-                    ]
+                    new_content = []
+                    for c in m["content"]:
+                        if c.get("type") == "image_url":
+                            url = c.get("image_url", {}).get("url", "")
+                            if save_screenshots and screenshot_dir and url.startswith("data:image"):
+                                # Save screenshot to disk
+                                import base64 as b64mod
+                                b64_data = url.split("base64,")[1] if "base64," in url else ""
+                                if b64_data:
+                                    ss_path = screenshot_dir / f"turn_{ss_idx:03d}.png"
+                                    ss_path.write_bytes(b64mod.b64decode(b64_data))
+                                    new_content.append({"type": "image_url", "image_url": {"url": str(ss_path)}})
+                                    ss_idx += 1
+                                else:
+                                    new_content.append({"type": "image_url", "image_url": {"url": "[screenshot]"}})
+                            else:
+                                new_content.append({"type": "image_url", "image_url": {"url": "[screenshot]"}})
+                        else:
+                            new_content.append(c)
+                    m["content"] = new_content
                 trajectory.append(m)
 
             return {"task_key": task_key, "env_name": task.get("env_name", ""), "reward": reward, "turns": turns, "elapsed": elapsed, "trajectory": trajectory}
@@ -322,12 +347,14 @@ async def run_eval(
     concurrency: int,
     temperature: float,
     output_path: str,
+    save_screenshots: bool = False,
+    screenshot_base_dir: str = "/tmp/gym_anything_screenshots",
 ):
     sem = asyncio.Semaphore(concurrency)
     results = []
 
     # Run all tasks concurrently (bounded by semaphore)
-    coros = [run_task(t, server_url, model, max_turns, temperature, sem) for t in tasks]
+    coros = [run_task(t, server_url, model, max_turns, temperature, sem, save_screenshots, screenshot_base_dir) for t in tasks]
     for i, coro in enumerate(asyncio.as_completed(coros), 1):
         result = await coro
         results.append(result)
@@ -377,6 +404,8 @@ def main():
     parser.add_argument("--output", default="eval_results.jsonl")
     parser.add_argument("--limit", type=int, default=None, help="Limit to first N tasks (for testing)")
     parser.add_argument("--env-filter", default=None, help="Comma-separated env names to include")
+    parser.add_argument("--save-screenshots", action="store_true", help="Save screenshots to disk per task")
+    parser.add_argument("--screenshot-dir", default="/tmp/gym_anything_screenshots", help="Directory for saved screenshots")
     args = parser.parse_args()
 
     with open(args.tasks) as f:
@@ -394,7 +423,7 @@ def main():
     # Clear output file
     open(args.output, "w").close()
 
-    asyncio.run(run_eval(tasks, args.server, args.model, args.max_turns, args.concurrency, args.temperature, args.output))
+    asyncio.run(run_eval(tasks, args.server, args.model, args.max_turns, args.concurrency, args.temperature, args.output, args.save_screenshots, args.screenshot_dir))
 
 
 if __name__ == "__main__":
