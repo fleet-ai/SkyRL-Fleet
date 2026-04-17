@@ -1,10 +1,47 @@
 # Gym-Anything Remote Environment Server
 # Runs Docker+sysbox containers for desktop software environments.
-# Training VMs connect to this server over HTTP.
+# Training/eval VMs connect to this server over HTTP.
 #
-# Usage:
-#   sky launch tasks/gym-anything-server.yaml -y
-#   # Note the IP, then launch training with --env GYM_ANYTHING_REMOTE_URL=http://<ip>:5000
+# == Quick Start ==
+#
+#   # Launch server
+#   sky launch tasks/gym-anything-server.yaml --cloud gcp -y
+#
+#   # Get external IP
+#   ssh <cluster> "curl -s http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip -H Metadata-Flavor:Google"
+#
+#   # Verify
+#   curl http://<ip>:5000/health
+#
+#   # Run Gemini eval (from local machine or another VM)
+#   OPENROUTER_API_KEY=... python -m integrations.fleet.eval_gym_anything \
+#     --model openrouter/google/gemini-2.5-flash \
+#     --tasks tasks.json --server http://<ip>:5000 --max-turns 25 --concurrency 40
+#
+#   # Or launch RL training
+#   sky launch tasks/gym-anything-grpo-vl.yaml \
+#     --env GYM_ANYTHING_REMOTE_URL=http://<ip>:5000 ...
+#
+# == Architecture ==
+#
+#   This VM runs Docker+sysbox containers with full systemd → Xvfb → desktop apps.
+#   GPU training/eval VMs talk to it over HTTP via gym_anything.remote.RemoteGymEnv.
+#   The server never needs a GPU.
+#
+# == Image Caching ==
+#
+#   First run per env builds a Docker image (5-30 min). Images are cached in Docker
+#   on this VM. For faster startup, pre-built images can be pulled from GCR:
+#     gcr.io/fleet-compute-489000/gym-anything/<env_name>:0.1
+#
+#   The setup script pulls pre-built images if GCR is accessible. If not (or for
+#   new envs), images are built on first use.
+#
+# == Requirements ==
+#
+#   - Clean Ubuntu (NOT GCP DL image) — sysbox-runc install fails on DL images
+#   - 96+ CPUs, 192+ GB RAM recommended (each container uses ~4 CPU, 4-8 GB)
+#   - 500 GB disk (Docker images are ~5-6 GB each, ~135 envs)
 
 name: gym-anything-server
 
@@ -20,49 +57,80 @@ num_nodes: 1
 setup: |
   set -euo pipefail
 
-  # Install Docker
+  # ── Docker ──
   if ! command -v docker &>/dev/null; then
+    echo "Installing Docker..."
     curl -fsSL https://get.docker.com | sudo sh
     sudo usermod -aG docker $USER
     sudo systemctl enable --now docker
   fi
   sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
 
-  # Install sysbox-runc (clean Ubuntu 24.04 — no fuse issues)
+  # ── sysbox-runc (systemd inside containers) ──
   if ! command -v sysbox-runc &>/dev/null; then
-    echo "Installing sysbox-runc..."
+    echo "Installing sysbox-runc v0.6.7..."
     wget -q "https://github.com/nestybox/sysbox/releases/download/v0.6.7/sysbox-ce_0.6.7.linux_amd64.deb" -O /tmp/sysbox.deb
     sudo dpkg -i /tmp/sysbox.deb || sudo apt-get install -f -y
     rm -f /tmp/sysbox.deb
     sudo systemctl restart docker
     sleep 3
   fi
+  echo "Docker runtimes:"
   docker info 2>&1 | grep -i runtime
 
-  # Install Python + gym-anything
+  # ── Python + gym-anything ──
   sudo apt-get update -qq && sudo apt-get install -y python3-pip python3-venv git
   python3 -m venv ~/ga-venv
   source ~/ga-venv/bin/activate
 
-  # Clone and install gym-anything
   if [ ! -d ~/gym-anything ]; then
     git clone https://github.com/cmu-l3/gym-anything.git ~/gym-anything
   fi
   pip install -e ~/gym-anything
   pip install httpx quart quart-cors hypercorn psutil flask flask-cors
 
-  # Pre-build the base preset image (shared by ~200 envs)
-  echo "Pre-building base preset Docker image..."
+  # ── Symlink fix: env dirs resolve relative to src/ ──
+  # gym-anything resolves env_dir paths like "benchmarks/cua_world/environments/..."
+  # relative to CWD. Workers run from ~/gym-anything/src/ (for Dockerfile resolution).
+  # Symlink benchmarks into src/ so both paths resolve from the same CWD.
+  if [ -d ~/gym-anything/src/benchmarks ] && [ ! -L ~/gym-anything/src/benchmarks ]; then
+    sudo rm -rf ~/gym-anything/src/benchmarks
+  fi
+  ln -sf ~/gym-anything/benchmarks ~/gym-anything/src/benchmarks
+
+  # ── Pre-build base preset image ──
+  echo "Building base preset image (shared by ~200 envs)..."
   docker build -t ga/base:ubuntu_gnome_systemd_highres \
     -f ~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/Dockerfile \
     ~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/
+
+  # ── Pull pre-built env images from GCR (if available) ──
+  echo "Pulling pre-built env images from GCR..."
+  gcloud auth configure-docker gcr.io --quiet 2>/dev/null || true
+  GCR_PREFIX="gcr.io/fleet-compute-489000/gym-anything"
+  PULLED=0
+  for env_dir in ~/gym-anything/benchmarks/cua_world/environments/*/; do
+    env_name=$(basename "$env_dir")
+    [ ! -f "$env_dir/env.json" ] && continue
+    tag="ga/${env_name}:0.1"
+    # Skip if already have this image locally
+    docker image inspect "$tag" >/dev/null 2>&1 && continue
+    # Try pulling from GCR
+    gcr_tag="${GCR_PREFIX}/${env_name}:0.1"
+    if docker pull "$gcr_tag" 2>/dev/null; then
+      docker tag "$gcr_tag" "$tag"
+      PULLED=$((PULLED + 1))
+    fi
+  done
+  echo "Pulled $PULLED pre-built images from GCR"
+  echo "Total env images: $(docker images | grep '^ga/' | grep -v checkpoint | grep -v base | wc -l)"
 
   echo "=== Gym-Anything Server Setup Complete ==="
 
 run: |
   source ~/ga-venv/bin/activate
 
-  # Start 8 workers from src/ so Dockerfile relative paths resolve
+  # Start 8 workers from src/ (Dockerfile + benchmarks paths both resolve here)
   cd ~/gym-anything/src
   for i in $(seq 1 8); do
     nohup python -m gym_anything.remote.worker \
