@@ -242,6 +242,86 @@ def wrap_trainer_with_s3_upload(
     return trainer
 
 
+def broadcast_checkpoint_to_workers(ckpt_path: str) -> None:
+    """Broadcast checkpoint from head node to all worker nodes via rsync.
+
+    FSDP requires checkpoint shards on every node. The S3 download only runs
+    on the head node, so we rsync the checkpoint directory to all workers.
+
+    Discovers worker IPs from SKYPILOT_NODE_IPS (shell env) or Ray cluster
+    nodes (when running inside a Ray task). No-op on single-node.
+    """
+    import subprocess
+    import socket
+
+    # Try SKYPILOT_NODE_IPS first (set by SkyPilot run script)
+    node_ips_str = os.environ.get("SKYPILOT_NODE_IPS", "").strip()
+    if node_ips_str:
+        node_ips = [ip.strip() for ip in node_ips_str.split("\n") if ip.strip()]
+    else:
+        # Fall back to Ray cluster node discovery
+        try:
+            import ray
+            nodes = ray.nodes()
+            node_ips = sorted(set(
+                n["NodeManagerAddress"] for n in nodes
+                if n.get("Alive", False)
+            ))
+            logger.info(f"Discovered {len(node_ips)} nodes from Ray cluster")
+        except Exception as e:
+            logger.warning(f"Could not discover nodes: {e}")
+            return
+
+    if len(node_ips) <= 1:
+        return  # single node, nothing to broadcast
+
+    # Head IP is the current node
+    head_ip = socket.gethostbyname(socket.gethostname())
+    worker_ips = [ip for ip in node_ips if ip != head_ip]
+
+    if not worker_ips:
+        # Try: head is first in the list
+        worker_ips = node_ips[1:]
+
+    if not worker_ips:
+        logger.info("No worker nodes found, skipping checkpoint broadcast")
+        return
+
+    # Find SSH key — SkyPilot uses ~/.ssh/sky-cluster-key on provisioned VMs
+    ssh_key = None
+    for key_path in ["~/.ssh/sky-cluster-key", "~/.ssh/sky-key", "~/.ssh/id_rsa"]:
+        expanded = os.path.expanduser(key_path)
+        if os.path.exists(expanded):
+            ssh_key = expanded
+            break
+    ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+
+    for worker_ip in worker_ips:
+        logger.info(f"Broadcasting checkpoint to worker {worker_ip} (ssh key: {ssh_key})...")
+        try:
+            # Create parent directory on worker (rsync can't create it)
+            subprocess.run(
+                ["ssh"] + ssh_cmd.split()[1:] + [f"gcpuser@{worker_ip}", f"mkdir -p {ckpt_path}"],
+                check=True,
+                timeout=30,
+            )
+            subprocess.run(
+                [
+                    "rsync", "-az",
+                    "-e", ssh_cmd,
+                    f"{ckpt_path}/",
+                    f"gcpuser@{worker_ip}:{ckpt_path}/",
+                ],
+                check=True,
+                timeout=600,  # 10 min max for ~140GB checkpoint
+            )
+            logger.info(f"Checkpoint broadcast to {worker_ip} complete")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Checkpoint broadcast to {worker_ip} timed out")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Checkpoint broadcast to {worker_ip} failed: {e}")
+
+
 def download_checkpoint_from_s3(
     ckpt_path: str,
     run_name: str,
