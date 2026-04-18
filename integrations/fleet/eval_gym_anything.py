@@ -205,7 +205,7 @@ async def run_task(
             )
             resp.raise_for_status()
             reset_result = resp.json()
-            if "error" in reset_result and reset_result["error"]:
+            if reset_result.get("error"):
                 return {"task_key": task_key, "env_name": task.get("env_name", ""), "reward": 0.0, "turns": 0, "error": reset_result["error"], "elapsed": time.time() - start}
 
             obs = reset_result.get("observation") or {}
@@ -249,11 +249,11 @@ async def run_task(
                         requests.post,
                         f"{server_url}/envs/{env_id}/step",
                         json={"actions": [{"action": "screenshot"}], "mark_done": True},
-                        timeout=120,
+                        timeout=300,
                     )
                     resp.raise_for_status()
                     step_result = resp.json()
-                    verifier = step_result.get("info", {}).get("verifier", {})
+                    verifier = (step_result.get("info") or {}).get("verifier") or {}
                     reward = verifier.get("score", 0) / 100.0
                     break
 
@@ -266,13 +266,13 @@ async def run_task(
                     requests.post,
                     f"{server_url}/envs/{env_id}/step",
                     json={"actions": actions, "mark_done": mark_done},
-                    timeout=120,
+                    timeout=300,
                 )
                 resp.raise_for_status()
                 step_result = resp.json()
 
                 if mark_done:
-                    verifier = step_result.get("info", {}).get("verifier", {})
+                    verifier = (step_result.get("info") or {}).get("verifier") or {}
                     reward = verifier.get("score", 0) / 100.0
                     break
 
