@@ -208,15 +208,29 @@ async def run_task(
             if reset_result.get("error"):
                 return {"task_key": task_key, "env_name": task.get("env_name", ""), "reward": 0.0, "turns": 0, "error": reset_result["error"], "elapsed": time.time() - start}
 
-            obs = reset_result.get("observation") or {}
-            screenshot_b64 = obs.get("screen", {}).get("png_b64") or obs.get("screen", {}).get("path")
+            # Wait for app to load past splash screens before first screenshot
+            await asyncio.sleep(10)
+
+            # Capture fresh screenshot after wait (the reset screenshot may be stale)
+            try:
+                resp = await asyncio.to_thread(
+                    requests.post,
+                    f"{server_url}/envs/{env_id}/step",
+                    json={"actions": [{"action": "screenshot"}]},
+                    timeout=300,
+                )
+                resp.raise_for_status()
+                obs = (resp.json().get("observation") or {}).get("screen") or {}
+            except Exception:
+                obs = (reset_result.get("observation") or {}).get("screen") or {}
 
             # Build initial messages
+            png_b64 = obs.get("png_b64", "") if isinstance(obs, dict) else ""
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": [
                     {"type": "text", "text": f"Task: {description}"},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{obs.get('screen', {}).get('png_b64', '')}"}} if obs.get("screen", {}).get("png_b64") else {"type": "text", "text": "[screenshot unavailable]"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png_b64}"}} if png_b64 else {"type": "text", "text": "[screenshot unavailable]"},
                 ]},
             ]
 

@@ -272,6 +272,14 @@ class GymAnythingTaskEnv(BaseTextEnv):
         # Reset environment (starts Docker container on remote server)
         obs = self.ga_env.reset(use_cache=self.use_cache, cache_level=self.cache_level)
 
+        # Wait for app to load past splash screens, then capture fresh screenshot
+        import time as _time
+        _time.sleep(10)
+        try:
+            obs = self.ga_env.capture_observation()
+        except Exception:
+            pass  # fall back to reset obs
+
         self.turns = 0
         self.last_reward = None
 
