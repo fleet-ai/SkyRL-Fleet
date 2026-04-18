@@ -121,23 +121,7 @@ run: |
   # Smoke test: verify screenshots are non-blank and desktop is responsive
   echo "Running smoke test..."
   pip install requests -q 2>/dev/null
-  python3 -c "
-import requests, base64, hashlib, sys, time
-url = 'http://localhost:5000'
-prefix = '$HOME/gym-anything/benchmarks/cua_world/environments'
-env_dir = f'{prefix}/stellarium_env'
-r = requests.post(f'{url}/envs/create', json={'env_dir': env_dir, 'task_id': 'observe_solar_eclipse'}, timeout=60)
-env_id = r.json()['env_id']
-r = requests.post(f'{url}/envs/{env_id}/reset', json={'use_cache': True, 'cache_level': 'post_start'}, timeout=600)
-obs = (r.json().get('observation') or {}).get('screen') or {}
-ss = obs.get('png_b64', '')
-if len(ss) < 100000:
-    print(f'FAIL: screenshot {len(ss)} chars (need >100000)')
-    requests.post(f'{url}/envs/{env_id}/close', timeout=10)
-    sys.exit(1)
-print(f'PASS: screenshot {len(ss)} chars')
-requests.post(f'{url}/envs/{env_id}/close', timeout=10)
-" || { echo "SMOKE TEST FAILED"; kill $MASTER_PID; exit 1; }
+  python3 ~/gym-anything/scripts/smoke_test.py http://localhost:5000 || { echo "SMOKE TEST FAILED"; kill $MASTER_PID; exit 1; }
   echo "Smoke test passed."
 
   # Keep master in foreground
