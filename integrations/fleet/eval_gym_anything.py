@@ -208,7 +208,7 @@ async def run_task(
             if "error" in reset_result and reset_result["error"]:
                 return {"task_key": task_key, "env_name": task.get("env_name", ""), "reward": 0.0, "turns": 0, "error": reset_result["error"], "elapsed": time.time() - start}
 
-            obs = reset_result.get("observation", {})
+            obs = reset_result.get("observation") or {}
             screenshot_b64 = obs.get("screen", {}).get("png_b64") or obs.get("screen", {}).get("path")
 
             # Build initial messages
@@ -277,8 +277,8 @@ async def run_task(
                     break
 
                 # Get screenshot for next turn
-                step_obs = step_result.get("observation", {})
-                ss = step_obs.get("screen", {}).get("png_b64", "")
+                step_obs = step_result.get("observation") or {}
+                ss = (step_obs.get("screen") or {}).get("png_b64", "")
                 if ss:
                     ss_url = f"data:image/png;base64,{ss}"
                     messages.append({"role": "user", "content": [
