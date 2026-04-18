@@ -20,7 +20,7 @@ export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
 export DATA_VERSION="${DATA_VERSION:-v6}"
 export MODALITY="${MODALITY:-browser_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-10}"
-export MAX_TURNS="${MAX_TURNS:-50}"
+export MAX_TURNS="${MAX_TURNS:-64}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-96000}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"
 export ENV_KEYS="${ENV_KEYS:-}"
@@ -53,7 +53,7 @@ bash scripts/fleet-common-run.sh \
   generator.inference_engine_tensor_parallel_size=1 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=12 \
-  trainer.eval_before_train=true \
+  trainer.eval_before_train=false \
   trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
   trainer.train_batch_size=16 \
@@ -70,7 +70,7 @@ bash scripts/fleet-common-run.sh \
   generator.sampling_params.top_p=0.95 \
   'generator.sampling_params.stop=["</tool_call>"]' \
   'generator.eval_sampling_params.stop=["</tool_call>"]' \
-  trainer.policy.optimizer_config.lr=1.0e-6 \
+  trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \
