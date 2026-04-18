@@ -102,6 +102,7 @@ run: |
       --master-url http://localhost:5000 \
       --max-envs 20 \
       --host 127.0.0.1 \
+      --timeout 300 \
       > ~/worker_${i}.log 2>&1 &
     echo "Worker $i started (PID $!)"
   done
