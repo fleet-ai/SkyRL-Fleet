@@ -2,46 +2,17 @@
 # Runs Docker+sysbox containers for desktop software environments.
 # Training/eval VMs connect to this server over HTTP.
 #
-# == Quick Start ==
-#
-#   # Launch server
+# Usage:
 #   sky launch tasks/gym-anything-server.yaml --cloud gcp -y
-#
-#   # Get external IP
+#   # Get external IP:
 #   ssh <cluster> "curl -s http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip -H Metadata-Flavor:Google"
-#
-#   # Verify
+#   # Verify:
 #   curl http://<ip>:5000/health
 #
-#   # Run Gemini eval (from local machine or another VM)
-#   OPENROUTER_API_KEY=... python -m integrations.fleet.eval_gym_anything \
-#     --model openrouter/google/gemini-2.5-flash \
-#     --tasks tasks.json --server http://<ip>:5000 --max-turns 25 --concurrency 40
-#
-#   # Or launch RL training
-#   sky launch tasks/gym-anything-grpo-vl.yaml \
-#     --env GYM_ANYTHING_REMOTE_URL=http://<ip>:5000 ...
-#
-# == Architecture ==
-#
-#   This VM runs Docker+sysbox containers with full systemd → Xvfb → desktop apps.
-#   GPU training/eval VMs talk to it over HTTP via gym_anything.remote.RemoteGymEnv.
-#   The server never needs a GPU.
-#
-# == Image Caching ==
-#
-#   First run per env builds a Docker image (5-30 min). Images are cached in Docker
-#   on this VM. For faster startup, pre-built images can be pulled from GCR:
-#     gcr.io/fleet-compute-489000/gym-anything/<env_name>:0.1
-#
-#   The setup script pulls pre-built images if GCR is accessible. If not (or for
-#   new envs), images are built on first use.
-#
-# == Requirements ==
-#
-#   - Clean Ubuntu (NOT GCP DL image) — sysbox-runc install fails on DL images
-#   - 96+ CPUs, 192+ GB RAM recommended (each container uses ~4 CPU, 4-8 GB)
-#   - 500 GB disk (Docker images are ~5-6 GB each, ~135 envs)
+# Uses fleet-ai/gym-anything fork (fleet/fixes branch) which includes:
+#   1. tigervnc@.service Restart=on-failure (VNC fails on Docker first boot)
+#   2. DockerRunner.exec() accepts timeout kwarg (pre_task hooks crash without it)
+#   3. Remote worker inlines screenshots in HTTP responses (png_b64)
 
 name: gym-anything-server
 
@@ -66,7 +37,7 @@ setup: |
   fi
   sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
 
-  # ── sysbox-runc (systemd inside containers) ──
+  # ── sysbox-runc ──
   if ! command -v sysbox-runc &>/dev/null; then
     echo "Installing sysbox-runc v0.6.7..."
     wget -q "https://github.com/nestybox/sysbox/releases/download/v0.6.7/sysbox-ce_0.6.7.linux_amd64.deb" -O /tmp/sysbox.deb
@@ -75,85 +46,32 @@ setup: |
     sudo systemctl restart docker
     sleep 3
   fi
-  echo "Docker runtimes:"
   docker info 2>&1 | grep -i runtime
 
-  # ── Python + gym-anything ──
+  # ── Python + gym-anything (fleet fork with fixes) ──
   sudo apt-get update -qq && sudo apt-get install -y python3-pip python3-venv git
   python3 -m venv ~/ga-venv
   source ~/ga-venv/bin/activate
 
   if [ ! -d ~/gym-anything ]; then
-    git clone https://github.com/cmu-l3/gym-anything.git ~/gym-anything
+    git clone -b fleet/fixes https://github.com/fleet-ai/gym-anything.git ~/gym-anything
   fi
   pip install -e ~/gym-anything
   pip install httpx quart quart-cors hypercorn psutil flask flask-cors
 
-  # ── Hotfix 1: VNC auto-restart on failure ──
-  # tigervnc@.service fails on first boot in Docker due to systemd timing.
-  # Adding Restart=on-failure makes it retry and succeed.
-  UNIT=~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/tigervnc@.service
-  if ! grep -q "Restart=on-failure" "$UNIT"; then
-    sed -i '/\[Service\]/a Restart=on-failure\nRestartSec=2' "$UNIT"
-    echo "Patched tigervnc@.service with Restart=on-failure"
-  fi
-
-  # ── Hotfix 2: DockerRunner.exec() missing timeout param ──
-  # env.py passes timeout= to runner.exec() but DockerRunner doesn't accept it.
-  # Pre_task hooks fail with TypeError on every task.
-  python3 -c "
-path = '$HOME/gym-anything/src/gym_anything/runtime/runners/docker.py'
-with open(path) as f:
-    c = f.read()
-old = 'def exec(self, cmd: str, env: Optional[Dict[str, str]] = None, user: Optional[str] = None, use_pty: bool = True) -> int:'
-new = 'def exec(self, cmd: str, env: Optional[Dict[str, str]] = None, user: Optional[str] = None, use_pty: bool = True, timeout: Optional[int] = None) -> int:'
-if old in c:
-    c = c.replace(old, new)
-    with open(path, 'w') as f:
-        f.write(c)
-    print('Patched DockerRunner.exec() with timeout param')
-else:
-    print('DockerRunner.exec() already patched or signature changed')
-"
-
-  # ── Hotfix 3: Force inline screenshots in HTTP responses ──
-  # By default, screenshots are saved to disk only (inline=false in env.json).
-  # Remote clients need png_b64 in the JSON response.
-  python3 -c "
-path = '$HOME/gym-anything/src/gym_anything/remote/worker.py'
-with open(path) as f:
-    c = f.read()
-target = 'env = from_config(env_dir, task_id=task_id)'
-patch = '''env = from_config(env_dir, task_id=task_id)
-                # Hotfix: force inline screenshots in HTTP responses
-                for obs_spec in env.env_spec.observation:
-                    if obs_spec.type == \"rgb_screen\":
-                        obs_spec.inline = True'''
-if 'obs_spec.inline = True' not in c:
-    c = c.replace(target, patch, 1)
-    with open(path, 'w') as f:
-        f.write(c)
-    print('Patched worker.py: inline screenshots enabled')
-else:
-    print('Worker.py already patched')
-"
-
-  # ── Symlink fix: env dirs resolve relative to src/ ──
-  # gym-anything resolves env_dir paths like "benchmarks/cua_world/environments/..."
-  # relative to CWD. Workers run from ~/gym-anything/src/ (for Dockerfile resolution).
-  # Symlink benchmarks into src/ so both paths resolve from the same CWD.
+  # ── Symlink benchmarks into src/ ──
   if [ -d ~/gym-anything/src/benchmarks ] && [ ! -L ~/gym-anything/src/benchmarks ]; then
     sudo rm -rf ~/gym-anything/src/benchmarks
   fi
   ln -sf ~/gym-anything/benchmarks ~/gym-anything/src/benchmarks
 
-  # ── Pre-build base preset image ──
-  echo "Building base preset image (shared by ~200 envs)..."
+  # ── Build base preset image ──
+  echo "Building base preset image..."
   docker build -t ga/base:ubuntu_gnome_systemd_highres \
     -f ~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/Dockerfile \
     ~/gym-anything/src/gym_anything/presets/ubuntu_gnome_systemd_highres/
 
-  # ── Pull pre-built env images from GCR (if available) ──
+  # ── Pull pre-built env images from GCR ──
   echo "Pulling pre-built env images from GCR..."
   gcloud auth configure-docker gcr.io --quiet 2>/dev/null || true
   GCR_PREFIX="gcr.io/fleet-compute-489000/gym-anything"
@@ -162,9 +80,7 @@ else:
     env_name=$(basename "$env_dir")
     [ ! -f "$env_dir/env.json" ] && continue
     tag="ga/${env_name}:0.1"
-    # Skip if already have this image locally
     docker image inspect "$tag" >/dev/null 2>&1 && continue
-    # Try pulling from GCR
     gcr_tag="${GCR_PREFIX}/${env_name}:0.1"
     if docker pull "$gcr_tag" 2>/dev/null; then
       docker tag "$gcr_tag" "$tag"
@@ -172,14 +88,14 @@ else:
     fi
   done
   echo "Pulled $PULLED pre-built images from GCR"
-  echo "Total env images: $(docker images | grep '^ga/' | grep -v checkpoint | grep -v base | wc -l)"
+  echo "Total images: $(docker images | grep '^ga/' | grep -v checkpoint | grep -v base | wc -l)"
 
-  echo "=== Gym-Anything Server Setup Complete ==="
+  echo "=== Setup Complete ==="
 
 run: |
   source ~/ga-venv/bin/activate
 
-  # Start 8 workers from src/ (Dockerfile + benchmarks paths both resolve here)
+  # Start 8 workers from src/
   cd ~/gym-anything/src
   for i in $(seq 1 8); do
     nohup python -m gym_anything.remote.worker \
@@ -190,9 +106,9 @@ run: |
     echo "Worker $i started (PID $!)"
   done
 
-  # Start master server (foreground)
+  # Start master server
   cd ~/gym-anything
-  echo "Starting gym-anything master server on port 5000..."
+  echo "Starting master on port 5000..."
   python -m gym_anything.remote.master \
     --host 0.0.0.0 \
     --port 5000

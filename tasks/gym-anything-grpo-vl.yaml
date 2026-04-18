@@ -67,7 +67,7 @@ setup: |
 
   # gym-anything client (RemoteGymEnv only, no Docker needed)
   if [ ! -d ~/gym-anything ]; then
-    git clone --depth 1 https://github.com/cmu-l3/gym-anything.git ~/gym-anything
+    git clone -b fleet/fixes --depth 1 https://github.com/fleet-ai/gym-anything.git ~/gym-anything
   fi
   pip install -e ~/gym-anything || true
 
