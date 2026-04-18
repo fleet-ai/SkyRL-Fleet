@@ -417,6 +417,7 @@ def main():
     parser.add_argument("--env-filter", default=None, help="Comma-separated env names to include")
     parser.add_argument("--save-screenshots", action="store_true", help="Save screenshots to disk per task")
     parser.add_argument("--screenshot-dir", default="/tmp/gym_anything_screenshots", help="Directory for saved screenshots")
+    parser.add_argument("--skip-smoke-test", action="store_true", help="Skip server smoke test")
     args = parser.parse_args()
 
     with open(args.tasks) as f:
@@ -428,6 +429,25 @@ def main():
 
     if args.limit:
         tasks = tasks[:args.limit]
+
+    # Smoke test: verify server produces valid screenshots before committing to full eval
+    if not args.skip_smoke_test:
+        logger.info("Running smoke test against server...")
+        try:
+            import subprocess
+            result = subprocess.run(
+                [sys.executable, "scripts/gym-anything-smoke-test.py", args.server, "--timeout", "600"],
+                timeout=1800,
+            )
+            if result.returncode != 0:
+                logger.error("Smoke test FAILED. Server not ready. Use --skip-smoke-test to override.")
+                sys.exit(1)
+            logger.info("Smoke test passed.")
+        except FileNotFoundError:
+            logger.warning("Smoke test script not found, skipping. Run from SkyRL repo root.")
+        except subprocess.TimeoutExpired:
+            logger.error("Smoke test timed out after 30 min.")
+            sys.exit(1)
 
     logger.info(f"Evaluating {len(tasks)} tasks with {args.model}, max_turns={args.max_turns}, concurrency={args.concurrency}")
 

@@ -27,6 +27,14 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 export GYM_ANYTHING_REMOTE_URL="${GYM_ANYTHING_REMOTE_URL:?Set GYM_ANYTHING_REMOTE_URL before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
 
+# Smoke test: verify gym-anything server produces valid screenshots
+echo "Running gym-anything smoke test..."
+python scripts/gym-anything-smoke-test.py "${GYM_ANYTHING_REMOTE_URL}" --timeout 600 || {
+  echo "ERROR: gym-anything smoke test failed. Server not ready."
+  exit 1
+}
+echo "Smoke test passed, starting training..."
+
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf \
