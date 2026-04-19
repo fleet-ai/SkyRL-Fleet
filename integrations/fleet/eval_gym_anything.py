@@ -430,6 +430,7 @@ def main():
     parser.add_argument("--output", default="eval_results.jsonl")
     parser.add_argument("--limit", type=int, default=None, help="Limit to first N tasks (for testing)")
     parser.add_argument("--env-filter", default=None, help="Comma-separated env names to include")
+    parser.add_argument("--validated-envs", default=None, help="Path to validated_envs.txt (one env name per line). Only tasks for these envs will run.")
     parser.add_argument("--save-screenshots", action="store_true", help="Save screenshots to disk per task")
     parser.add_argument("--screenshot-dir", default="/tmp/gym_anything_screenshots", help="Directory for saved screenshots")
     parser.add_argument("--skip-smoke-test", action="store_true", help="Skip server smoke test")
@@ -437,6 +438,13 @@ def main():
 
     with open(args.tasks) as f:
         tasks = json.load(f)
+
+    if args.validated_envs:
+        with open(args.validated_envs) as f:
+            valid_set = set(line.strip() for line in f if line.strip())
+        before = len(tasks)
+        tasks = [t for t in tasks if t.get("env_name") in valid_set]
+        logger.info(f"Filtered to {len(tasks)} tasks from {len(valid_set)} validated envs (was {before})")
 
     if args.env_filter:
         allowed = set(args.env_filter.split(","))

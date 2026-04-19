@@ -13,6 +13,8 @@
 #   1. tigervnc@.service Restart=on-failure (VNC fails on Docker first boot)
 #   2. DockerRunner.exec() accepts timeout kwarg (pre_task hooks crash without it)
 #   3. Remote worker inlines screenshots in HTTP responses (png_b64)
+#   4. _wait_for_desktop() polls screenshot content (>15KB), not just wmctrl
+#   5. validate_envs.py — comprehensive env validator (runs in background after startup)
 
 name: gym-anything-server
 
@@ -55,6 +57,8 @@ setup: |
 
   if [ ! -d ~/gym-anything ]; then
     git clone -b fleet/fixes https://github.com/fleet-ai/gym-anything.git ~/gym-anything
+  else
+    cd ~/gym-anything && git fetch origin && git reset --hard origin/fleet/fixes && cd -
   fi
   pip install -e ~/gym-anything
   pip install httpx quart quart-cors hypercorn psutil flask flask-cors
@@ -123,6 +127,11 @@ run: |
   pip install requests -q 2>/dev/null
   python3 ~/gym-anything/scripts/smoke_test.py http://localhost:5000 || { echo "SMOKE TEST FAILED"; kill $MASTER_PID; exit 1; }
   echo "Smoke test passed."
+
+  # Run comprehensive env validation in background
+  echo "Starting background env validation (results → ~/validated_envs.txt)..."
+  nohup python3 ~/gym-anything/scripts/validate_envs.py http://localhost:5000 --concurrency 8 --output ~/validated_envs.txt --json-output ~/validation_results.json > ~/validate_envs.log 2>&1 &
+  echo "Validation PID: $! (monitor with: tail -f ~/validate_envs.log)"
 
   # Keep master in foreground
   wait $MASTER_PID
