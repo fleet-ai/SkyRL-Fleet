@@ -24,7 +24,7 @@ TEST_ENVS = [
     {"env_name": "firefox_env", "task_id": "a11y_compliance_audit"},
 ]
 
-MIN_SCREENSHOT_CHARS = 100_000  # ~75KB decoded. Blank desktops are <10KB.
+MIN_SCREENSHOT_CHARS = 50_000  # ~37KB decoded. Blank desktops are <10KB, real desktops are 50KB+.
 
 
 def check_health(server_url: str) -> bool:
