@@ -21,7 +21,7 @@ export DATA_VERSION="${DATA_VERSION:-v6}"
 export MODALITY="${MODALITY:-browser_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-10}"
 export MAX_TURNS="${MAX_TURNS:-64}"
-export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-80000}"
+export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-64000}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"
 export ENV_KEYS="${ENV_KEYS:-}"
 export DIFFICULTY="${DIFFICULTY:-}"
@@ -72,6 +72,7 @@ bash scripts/fleet-common-run.sh \
   'generator.eval_sampling_params.stop=["</tool_call>"]' \
   trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
+  trainer.algorithm.zero_variance_filter=true \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \
   generator.run_engines_locally=true \
