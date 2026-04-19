@@ -80,7 +80,7 @@ def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
 
 
 def scale_coord(x: int, y: int, w: int = 1920, h: int = 1080) -> Tuple[int, int]:
-    return int(x / 1000 * w), int(y / 1000 * h)
+    return int(x / 999 * w), int(y / 999 * h)
 
 
 def tool_call_to_actions(tc: Dict[str, Any]) -> Tuple[List[Dict], bool]:
@@ -424,7 +424,7 @@ def main():
     parser.add_argument("--model", default="gemini/gemini-2.5-flash", help="litellm model string")
     parser.add_argument("--tasks", required=True, help="Path to task index JSON")
     parser.add_argument("--server", required=True, help="gym-anything server URL")
-    parser.add_argument("--max-turns", type=int, default=25)
+    parser.add_argument("--max-turns", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=20)
     parser.add_argument("--temperature", type=float, default=0.5)
     parser.add_argument("--output", default="eval_results.jsonl")
