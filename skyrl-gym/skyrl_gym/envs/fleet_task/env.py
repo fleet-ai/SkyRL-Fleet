@@ -379,23 +379,39 @@ class FleetTaskEnv(BaseTextEnv):
             )
 
         # Build meta-tool index if enabled (must happen after tools are loaded)
+        # Auto-threshold: only activate meta-tools when tool schemas would
+        # consume >50% of the context window. Below that, direct schemas fit
+        # fine and discovery overhead hurts more than it helps.
         if self.enable_meta_tools:
-            try:
-                from envs.fleet_env import MetaToolHandler, ToolIndex
+            schema_chars = len(json.dumps(self.tools))
+            schema_tokens_est = schema_chars / 3.5  # rough char-to-token ratio
+            max_input = int(os.environ.get("MAX_INPUT_LENGTH", 72000))
+            schema_pct = schema_tokens_est / max_input
 
-                self.tool_index = ToolIndex(self.tools)
-                self.meta_tool_handler = MetaToolHandler(self.tool_index)
-                # Add meta-tool definitions to the tool list
-                self.tools = self.tools + self.meta_tool_handler.get_tool_schemas()
+            if schema_pct < 0.50:
                 logger.info(
-                    f"Meta-tools enabled: {self.tool_index.tool_count} tools indexed "
-                    f"across {len(self.tool_index.service_names)} services"
-                )
-            except ImportError:
-                logger.warning(
-                    "MetaToolHandler not available, disabling meta-tools"
+                    f"Meta-tools auto-disabled: tool schemas ~{schema_tokens_est:.0f} tokens "
+                    f"({schema_pct:.0%} of {max_input} context). Below 50% threshold."
                 )
                 self.enable_meta_tools = False
+            else:
+                try:
+                    from envs.fleet_env import MetaToolHandler, ToolIndex
+
+                    self.tool_index = ToolIndex(self.tools)
+                    self.meta_tool_handler = MetaToolHandler(self.tool_index)
+                    # Add meta-tool definitions to the tool list
+                    self.tools = self.tools + self.meta_tool_handler.get_tool_schemas()
+                    logger.info(
+                        f"Meta-tools enabled: {self.tool_index.tool_count} tools indexed "
+                        f"across {len(self.tool_index.service_names)} services "
+                        f"(schema ~{schema_tokens_est:.0f} tokens, {schema_pct:.0%} of context)"
+                    )
+                except ImportError:
+                    logger.warning(
+                        "MetaToolHandler not available, disabling meta-tools"
+                    )
+                    self.enable_meta_tools = False
 
         # VL: adapt computer tool for Qwen's normalized coordinate space
         modality = self.task_config.get("task_modality", "tool_use")
@@ -423,30 +439,15 @@ class FleetTaskEnv(BaseTextEnv):
             tools_section = (
                 f"## Available Tools\n{tools_summary}\n"
                 f"## Discovery Tools\n"
-                f"You MUST use these to discover and inspect tools before calling them.\n"
-                f"The tool summaries above only show names and descriptions — you need "
-                f"get_tool_schema to see the full parameter schema before you can call any tool.\n\n"
-                f"NEVER call a tool directly from the summary above. Always search first, "
-                f"read the full descriptions to pick the right tool, then get its schema.\n\n"
-                f"Example workflow:\n"
-                f"  Task: 'Find items matching a criteria and check their details'\n\n"
-                f"  WRONG — calling a tool directly from the summary:\n"
-                f"    You see \"get_item_data\" in the summary and call it with {{\"id\": \"abc123\"}}.\n"
-                f"    Result: massive binary response (50K+ tokens), context overflow, trajectory dies.\n"
-                f"    The tool downloaded raw file content, but you only needed metadata.\n"
-                f"    A similar tool \"list_item_details\" returns just names, sizes, and dates.\n\n"
-                f"  RIGHT — search, compare, then pick:\n"
-                f"    Step 1: search_tools(\"item details\")\n"
-                f"      → Returns full descriptions for similar tools:\n"
-                f"        - list_item_details: 'List metadata (names, sizes, dates) for items'\n"
-                f"        - get_item_data: 'Download raw content of an item. Returns binary data...'\n"
-                f"    Step 2: Read the descriptions — you need metadata, not raw content\n"
-                f"    Step 3: get_tool_schema(\"list_item_details\") → see exact parameters\n"
-                f"    Step 4: Call list_item_details({{\"id\": \"abc123\"}})\n"
-                f"      → Result: compact metadata response, task continues\n\n"
-                f"IMPORTANT: Once you have retrieved a tool's schema, do NOT call "
-                f"get_tool_schema for that tool again. The schema is already in your "
-                f"conversation history — refer back to it instead of re-requesting it.\n\n"
+                f"Use search_tools to find tools for your task. Results include parameter "
+                f"signatures so you can call tools directly.\n\n"
+                f"Workflow:\n"
+                f"  1. search_tools(\"keyword\") → returns matching tools with descriptions and parameter signatures\n"
+                f"  2. Read the descriptions to pick the right tool\n"
+                f"  3. Call the tool directly using the parameter signature from the search results\n"
+                f"  4. Use get_tool_schema only if you need detailed parameter descriptions\n\n"
+                f"IMPORTANT: Always search first — similar tool names can have very different behavior. "
+                f"Compare descriptions before picking.\n\n"
                 f"{meta_schemas}\n"
             )
         else:
