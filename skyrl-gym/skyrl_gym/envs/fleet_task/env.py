@@ -379,19 +379,18 @@ class FleetTaskEnv(BaseTextEnv):
             )
 
         # Build meta-tool index if enabled (must happen after tools are loaded)
-        # Auto-threshold: only activate meta-tools when tool schemas would
-        # consume >50% of the context window. Below that, direct schemas fit
-        # fine and discovery overhead hurts more than it helps.
+        # Auto-threshold: only activate meta-tools when the env has enough tools
+        # that schemas would dominate the context window. Based on eval data:
+        #   >100 tools (~50K+ prompt tokens, >50% of 72K): meta-tools help
+        #   <100 tools (~25K or less): direct schemas fit, discovery overhead hurts
+        META_TOOLS_MIN_TOOL_COUNT = 100
         if self.enable_meta_tools:
-            schema_chars = len(json.dumps(self.tools))
-            schema_tokens_est = schema_chars / 3.5  # rough char-to-token ratio
-            max_input = int(os.environ.get("MAX_INPUT_LENGTH", 72000))
-            schema_pct = schema_tokens_est / max_input
+            tool_count = len(self.tools)
 
-            if schema_pct < 0.50:
+            if tool_count < META_TOOLS_MIN_TOOL_COUNT:
                 logger.info(
-                    f"Meta-tools auto-disabled: tool schemas ~{schema_tokens_est:.0f} tokens "
-                    f"({schema_pct:.0%} of {max_input} context). Below 50% threshold."
+                    f"Meta-tools auto-disabled: {tool_count} tools "
+                    f"(below {META_TOOLS_MIN_TOOL_COUNT} threshold)."
                 )
                 self.enable_meta_tools = False
             else:
@@ -404,8 +403,7 @@ class FleetTaskEnv(BaseTextEnv):
                     self.tools = self.tools + self.meta_tool_handler.get_tool_schemas()
                     logger.info(
                         f"Meta-tools enabled: {self.tool_index.tool_count} tools indexed "
-                        f"across {len(self.tool_index.service_names)} services "
-                        f"(schema ~{schema_tokens_est:.0f} tokens, {schema_pct:.0%} of context)"
+                        f"across {len(self.tool_index.service_names)} services"
                     )
                 except ImportError:
                     logger.warning(
