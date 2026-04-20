@@ -3,7 +3,7 @@
 # Training/eval VMs connect to this server over HTTP.
 #
 # Usage:
-#   sky launch tasks/gym-anything-server.yaml --cloud gcp -y
+#   sky launch tasks/gym-anything-server.yaml --env OPENROUTER_API_KEY=$OPENROUTER_API_KEY --cloud gcp -y
 #   # Get external IP:
 #   ssh <cluster> "curl -s http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip -H Metadata-Flavor:Google"
 #   # Verify:
@@ -98,6 +98,13 @@ setup: |
 
 run: |
   source ~/ga-venv/bin/activate
+
+  # VLM checklist verifier config (paper Eq. 2)
+  export VLM_BACKEND=openai
+  export VLM_MODEL=google/gemini-3-flash-preview
+  export OPENAI_API_KEY="${OPENROUTER_API_KEY}"
+  export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+  export VLM_CHECKLIST_OVERRIDE=1
 
   # Start 8 workers from src/
   cd ~/gym-anything/src
