@@ -351,9 +351,7 @@ def prepare_training_data(
 
         # Ensure logprobs and response_ids are in sync before building training data
         if len(logprobs) != len(response_ids):
-            logger.warning(
-                f"Datum {idx}: logprobs ({len(logprobs)}) != response_ids ({len(response_ids)}), fixing"
-            )
+            logger.warning(f"Datum {idx}: logprobs ({len(logprobs)}) != response_ids ({len(response_ids)}), fixing")
             if len(logprobs) > len(response_ids):
                 logprobs = logprobs[: len(response_ids)]
             else:
@@ -449,8 +447,11 @@ async def collect_fleet_rollout(
     env = FleetTaskEnv(env_config=env_config, extras=extras)
 
     try:
-        # Initialize environment in thread pool - isolates MCP connections
-        chat_history, metadata = await _run_in_executor(env.init, [])
+        # Use async methods directly to stay on the same event loop as Fleet env provisioning.
+        # Sync wrappers (env.init) call asyncio.run() which creates a NEW event loop,
+        # causing "Event loop is closed" errors when the verifier tries to use Fleet env
+        # resources bound to the original loop.
+        chat_history, metadata = await env.init_async([])
         env_key = metadata.get("env_key", "unknown")
 
         # Tokenize initial prompt
@@ -530,9 +531,9 @@ async def collect_fleet_rollout(
                 all_logprobs.extend([0.0] * len(output_ids))
             loss_mask.extend([1] * len(output_ids))
 
-            # Step environment in thread pool - isolates MCP connections
+            # Use async step directly to stay on the same event loop as Fleet env
             step_start = time.time()
-            step_output = await _run_in_executor(env.step, output_text)
+            step_output = await env.step_async(output_text)
             step_time = time.time() - step_start
             total_step_time += step_time
             total_tokens += len(output_ids)
@@ -568,7 +569,7 @@ async def collect_fleet_rollout(
         )
 
     finally:
-        env.close()
+        await env.close_async()
 
 
 async def collect_batch_rollouts(
