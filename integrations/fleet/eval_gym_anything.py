@@ -31,15 +31,15 @@ litellm.suppress_debug_info = True
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# Tool definition matching the paper's OSWorld harness (agents/shared/prompts.py)
-TOOL_DEF = {
+# Tool definition from the paper's repo (agents/shared/prompts.py TOOL_DEFINITIONS)
+TOOL_DEF_JSON = json.dumps({
     "type": "function",
     "function": {
         "name": "computer_use",
         "description": """Use a mouse and keyboard to interact with a computer, and take screenshots.
 * This is an interface to a desktop GUI. You do not have access to a terminal or applications menu. You must click on desktop icons to start applications.
 * Some applications may take time to start or process actions, so you may need to wait and take successive screenshots to see the results of your actions. E.g. if you click on Firefox and a window doesn't open, try wait and taking another screenshot.
-* The screen's resolution is {width}x{height}.
+* The screen's resolution is 1280x720.
 * Whenever you intend to move the cursor to click on an element like an icon, you should consult a screenshot to determine the coordinates of the element before moving the cursor.
 * If you tried clicking on a program or link but it failed to load even after waiting, try adjusting your cursor position so that the tip of the cursor visually falls on the element that you want to click.
 * Make sure to click any buttons, links, icons, etc with the cursor tip in the center of the element. Don't click boxes on their edges unless asked.""",
@@ -75,69 +75,45 @@ TOOL_DEF = {
             "type": "object"
         }
     }
-}
+})
 
+# System prompt from the paper's Gemini harness (agents/shared/prompts.py GEMINI_SYSTEM_PROMPT_SINGLE_STEP)
+SYSTEM_PROMPT = """<SYSTEM_CAPABILITY>
+* You are utilising an virtual machine with internet access.
+* You can feel free to do anything.
+* Each turn you will be provided current screenshot of the screen.
+* If you want to run a specific gui application, make sure to set the display variable to :1.
+* When using your computer function calls, they take a while to run and send back to you.
+* Enclose your tool call inside <tool_call></tool_call> tags.
+* Important: Only use one tool call per turn.
 
-def build_system_prompt(width: int = 1920, height: int = 1080) -> str:
-    """Build system prompt matching the paper's Qwen3VL/OSWorld harness."""
-    tool_def = json.loads(json.dumps(TOOL_DEF))
-    tool_def["function"]["description"] = tool_def["function"]["description"].format(width=width, height=height)
-    return """# Tools
+You have access to the following tools:
+""" + TOOL_DEF_JSON + """
 
-You may call one or more functions to assist with the user query.
+Example tool call usage:
 
-You are provided with function signatures within <tools></tools> XML tags:
-<tools>
-""" + json.dumps(tool_def) + """
-</tools>
+```
+....thinking....
+....response....
 
-For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
 <tool_call>
-{"name": <function-name>, "arguments": <args-json-object>}
+{"name": "computer_use", "arguments": {"action": "click", "coordinate": [100, 200]}}
 </tool_call>
+```
 
-# Response format
+The above example would make 1 tool call and click at coordinate [100, 200].
 
-Response format for every step:
-1) Action: a short imperative describing what to do in the UI.
-2) A single <tool_call>...</tool_call> block containing only the JSON: {"name": <function-name>, "arguments": <args-json-object>}.
+</SYSTEM_CAPABILITY>"""
 
-Rules:
-- Output exactly in the order: Action, <tool_call>.
-- Be brief: one sentence for Action.
-- Do not output anything else outside those parts.
-- If finishing, use action=terminate in the tool call."""
+# Coordinate scaling: model outputs [0, 1000], scale to 1920x1080 pixels
+# Matches the paper's Gemini harness: scale_dims_ratio = (1920/1000, 1080/1000)
+SCALE_X = 1920.0 / 1000.0
+SCALE_Y = 1080.0 / 1000.0
 
 
-def smart_resize(height: int, width: int, factor: int = 32, max_pixels: int = 16 * 16 * 4 * 1280) -> Tuple[int, int]:
-    """Resize image dimensions to fit within max_pixels while keeping dims divisible by factor.
-    Matches the paper's Qwen3VL image preprocessing."""
-    import math
-    if height * width > max_pixels:
-        scale = math.sqrt(max_pixels / (height * width))
-        height = int(height * scale)
-        width = int(width * scale)
-    height = max(factor, round(height / factor) * factor)
-    width = max(factor, round(width / factor) * factor)
-    return height, width
-
-
-def resize_screenshot_b64(png_b64: str) -> str:
-    """Resize a base64 PNG screenshot using smart_resize. Returns new base64 string."""
-    from io import BytesIO
-    try:
-        from PIL import Image
-    except ImportError:
-        return png_b64  # If PIL not available, return original
-    img_bytes = base64.b64decode(png_b64)
-    img = Image.open(BytesIO(img_bytes))
-    w, h = img.size
-    new_h, new_w = smart_resize(h, w)
-    if (new_w, new_h) != (w, h):
-        img = img.resize((new_w, new_h))
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("ascii")
+def scale_coord(x: float, y: float) -> Tuple[int, int]:
+    """Scale [0, 1000] normalized coordinates to 1920x1080 pixel coordinates."""
+    return int(x * SCALE_X), int(y * SCALE_Y)
 
 
 def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
@@ -168,7 +144,8 @@ def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
 def tool_call_to_actions(tc: Dict[str, Any]) -> Tuple[List[Dict], bool]:
     """Convert parsed tool call to gym-anything action dicts. Returns (actions, is_terminal).
 
-    Coordinates are raw pixel values (matching the paper's harness) — no scaling needed.
+    Model outputs coordinates in [0, 1000] normalized space (matching paper's Gemini harness).
+    scale_coord() converts to 1920x1080 pixel coordinates for the server.
     """
     args = tc.get("arguments", {})
     action = args.get("action", "")
@@ -189,28 +166,35 @@ def tool_call_to_actions(tc: Dict[str, Any]) -> Tuple[List[Dict], bool]:
         actions.append({"keyboard": {"text": args.get("text", "")}})
         return actions, False
     if action in ("click", "left_click"):
-        coord = args.get("coordinate", [960, 540])
-        return [{"mouse": {"left_click": [int(coord[0]), int(coord[1])]}}], False
+        coord = args.get("coordinate", [500, 500])
+        x, y = scale_coord(coord[0], coord[1])
+        return [{"mouse": {"left_click": [x, y]}}], False
     if action == "right_click":
-        coord = args.get("coordinate", [960, 540])
-        return [{"mouse": {"right_click": [int(coord[0]), int(coord[1])]}}], False
+        coord = args.get("coordinate", [500, 500])
+        x, y = scale_coord(coord[0], coord[1])
+        return [{"mouse": {"right_click": [x, y]}}], False
     if action == "double_click":
-        coord = args.get("coordinate", [960, 540])
-        return [{"mouse": {"double_click": [int(coord[0]), int(coord[1])]}}], False
+        coord = args.get("coordinate", [500, 500])
+        x, y = scale_coord(coord[0], coord[1])
+        return [{"mouse": {"double_click": [x, y]}}], False
     if action in ("drag", "left_click_drag"):
-        c1 = args.get("coordinate", [960, 540])
+        c1 = args.get("coordinate", [500, 500])
         c2 = args.get("coordinate2", c1)
-        return [{"mouse": {"left_click_drag": [[int(c1[0]), int(c1[1])], [int(c2[0]), int(c2[1])]]}}], False
+        x1, y1 = scale_coord(c1[0], c1[1])
+        x2, y2 = scale_coord(c2[0], c2[1])
+        return [{"mouse": {"left_click_drag": [[x1, y1], [x2, y2]]}}], False
     if action == "scroll":
         actions = []
         if "coordinate" in args:
             coord = args["coordinate"]
-            actions.append({"mouse": {"move": [int(coord[0]), int(coord[1])]}})
+            x, y = scale_coord(coord[0], coord[1])
+            actions.append({"mouse": {"move": [x, y]}})
         actions.append({"mouse": {"scroll": int(args.get("pixels", 0))}})
         return actions, False
     if action == "mouse_move":
-        coord = args.get("coordinate", [960, 540])
-        return [{"mouse": {"move": [int(coord[0]), int(coord[1])]}}], False
+        coord = args.get("coordinate", [500, 500])
+        x, y = scale_coord(coord[0], coord[1])
+        return [{"mouse": {"move": [x, y]}}], False
 
     return [{"action": "screenshot"}], False
 
@@ -308,19 +292,13 @@ async def run_task(
             except Exception:
                 obs = (reset_result.get("observation") or {}).get("screen") or {}
 
-            # Build initial messages (paper's harness: system prompt with pixel coords, instruction on first turn)
+            # Build initial messages (paper's Gemini harness: GEMINI_SYSTEM_PROMPT_SINGLE_STEP)
             png_b64 = obs.get("png_b64", "") if isinstance(obs, dict) else ""
-            if png_b64:
-                png_b64 = resize_screenshot_b64(png_b64)
-            system_prompt = build_system_prompt(1920, 1080)
-            instruction = f"""Please generate the next move according to the UI screenshot, instruction and previous actions.
+            instruction = f"""Please generate the next move according to the UI screenshot and instruction.
 
-Instruction: {description}
-
-Previous actions:
-None"""
+Instruction: {description}"""
             messages = [
-                {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": [
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{png_b64}"}} if png_b64 else {"type": "text", "text": "[screenshot unavailable]"},
                     {"type": "text", "text": instruction},
@@ -383,11 +361,10 @@ None"""
                     reward = verifier.get("score", 0) / 100.0
                     break
 
-                # Get screenshot for next turn (resize to match paper's preprocessing)
+                # Get screenshot for next turn (send original 1920x1080, no resize)
                 step_obs = step_result.get("observation") or {}
                 ss = (step_obs.get("screen") or {}).get("png_b64", "")
                 if ss:
-                    # Save original before resize
                     if save_screenshots:
                         try:
                             import base64 as b64mod
@@ -397,11 +374,9 @@ None"""
                             ss_path.write_bytes(b64mod.b64decode(ss))
                         except Exception as e:
                             logger.debug(f"Screenshot save failed: {e}")
-                    ss_resized = resize_screenshot_b64(ss)
-                    ss_url = f"data:image/png;base64,{ss_resized}"
-                    # Subsequent turns: only screenshot, no instruction (paper's harness pattern)
+                    # Subsequent turns: only screenshot (paper's Gemini harness pattern)
                     messages.append({"role": "user", "content": [
-                        {"type": "image_url", "image_url": {"url": ss_url}},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{ss}"}},
                     ]})
                 else:
                     messages.append({"role": "user", "content": "[screenshot unavailable]"})
@@ -520,7 +495,7 @@ def main():
     parser.add_argument("--server", required=True, help="gym-anything server URL")
     parser.add_argument("--max-turns", type=int, default=200)
     parser.add_argument("--concurrency", type=int, default=20)
-    parser.add_argument("--temperature", type=float, default=0.5)
+    parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--output", default="eval_results.jsonl")
     parser.add_argument("--limit", type=int, default=None, help="Limit to first N tasks (for testing)")
     parser.add_argument("--env-filter", default=None, help="Comma-separated env names to include")
