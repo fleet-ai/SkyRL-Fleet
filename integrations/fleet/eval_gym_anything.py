@@ -31,7 +31,10 @@ litellm.suppress_debug_info = True
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# Tool definition from the paper's repo (agents/shared/prompts.py TOOL_DEFINITIONS)
+# Tool definition from the paper's repo (agents/shared/prompts.py TOOL_DEFINITIONS).
+# Resolution is hardcoded to 1280x720 in the prompt (matching the paper), even though the
+# actual screen is 1920x1080. The model outputs [0,1000] normalized coordinates regardless
+# of the stated resolution — scaling to pixels happens in scale_coord().
 TOOL_DEF_JSON = json.dumps({
     "type": "function",
     "function": {
