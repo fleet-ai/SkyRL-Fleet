@@ -19,8 +19,8 @@
 name: gym-anything-server
 
 resources:
-  cpus: 96+
-  memory: 192+
+  cpus: 176+
+  memory: 512+
   disk_size: 500
   ports: 5000
   cloud: gcp
