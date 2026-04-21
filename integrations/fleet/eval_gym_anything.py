@@ -108,32 +108,15 @@ The above example would make 1 tool call and click at coordinate [100, 200].
 
 </SYSTEM_CAPABILITY>"""
 
-# Coordinate handling: the prompt states 1280x720 resolution but the actual screen is
-# 1920x1080. Via OpenRouter, Gemini outputs coordinates inconsistently — sometimes in the
-# prompt's 1280x720 range, sometimes in the actual 1920x1080 range. We detect which range
-# the model is using and scale accordingly, then clamp to screen bounds.
-SCREEN_W = 1920
-SCREEN_H = 1080
-PROMPT_W = 1280
-PROMPT_H = 720
+# Coordinate scaling: Gemini outputs [0, 1000] normalized coordinates regardless of the
+# resolution stated in the prompt. Scale to 1920x1080 pixel coordinates.
+# This matches the paper's Gemini harness: scale_dims_ratio = (1920/1000, 1080/1000)
+# in parse_qwen3vl_response() -> convert_point_format_qwen3vl().
 
 
 def scale_coord(x: float, y: float) -> Tuple[int, int]:
-    """Scale model coordinates to 1920x1080 pixel coordinates.
-
-    If coordinates exceed the prompt resolution (1280x720), assume the model
-    is already outputting in the actual screen resolution and pass through.
-    Otherwise scale from 1280x720 to 1920x1080.
-    """
-    if x > PROMPT_W or y > PROMPT_H:
-        # Model is outputting in actual screen resolution, pass through
-        px, py = int(x), int(y)
-    else:
-        # Model is outputting in prompt resolution, scale up
-        px = int(x * SCREEN_W / PROMPT_W)
-        py = int(y * SCREEN_H / PROMPT_H)
-    # Clamp to screen bounds
-    return min(max(px, 0), SCREEN_W - 1), min(max(py, 0), SCREEN_H - 1)
+    """Scale [0, 1000] normalized coordinates to 1920x1080 pixels."""
+    return int(x * 1920 / 1000), int(y * 1080 / 1000)
 
 
 def parse_tool_call(text: str) -> Optional[Dict[str, Any]]:
