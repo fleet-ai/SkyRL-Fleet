@@ -497,7 +497,7 @@ def main():
     parser.add_argument("--tasks", required=True, help="Path to task index JSON")
     parser.add_argument("--server", required=True, help="gym-anything server URL")
     parser.add_argument("--max-turns", type=int, default=200)
-    parser.add_argument("--concurrency", type=int, default=20)
+    parser.add_argument("--concurrency", type=int, default=25)
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--output", default="eval_results.jsonl")
     parser.add_argument("--limit", type=int, default=None, help="Limit to first N tasks (for testing)")
