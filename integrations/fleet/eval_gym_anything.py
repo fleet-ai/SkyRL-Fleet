@@ -108,14 +108,17 @@ The above example would make 1 tool call and click at coordinate [100, 200].
 
 </SYSTEM_CAPABILITY>"""
 
-# Coordinate scaling: model outputs [0, 1000], scale to 1920x1080 pixels
-# Matches the paper's Gemini harness: scale_dims_ratio = (1920/1000, 1080/1000)
-SCALE_X = 1920.0 / 1000.0
-SCALE_Y = 1080.0 / 1000.0
+# Coordinate scaling: the prompt tells the model the screen is 1280x720, but the actual
+# screen is 1920x1080. The model outputs coordinates in the 1280x720 space, so we scale
+# by 1920/1280 = 1.5x and 1080/720 = 1.5x to convert to actual pixel coordinates.
+# Note: the paper's harness uses scale_dims_ratio=(1920/1000, 1080/1000), suggesting their
+# model outputs [0,1000]. Via OpenRouter, Gemini outputs in the stated 1280x720 range instead.
+SCALE_X = 1920.0 / 1280.0
+SCALE_Y = 1080.0 / 720.0
 
 
 def scale_coord(x: float, y: float) -> Tuple[int, int]:
-    """Scale [0, 1000] normalized coordinates to 1920x1080 pixel coordinates."""
+    """Scale coordinates from prompt resolution (1280x720) to actual screen (1920x1080)."""
     return int(x * SCALE_X), int(y * SCALE_Y)
 
 
