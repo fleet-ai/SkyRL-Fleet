@@ -1,7 +1,7 @@
 # Train 4-env baseline (no meta-tools, full JSON schema dumps)
 # Apples-to-apples partner for train-4env-meta-flat.
 # Envs: rops-mail, forums-homes, fira, reddit
-# 2-node H200:8.
+# Single-node H200:8.
 
 name: train-4env-baseline
 
@@ -14,7 +14,7 @@ resources:
   use_spot: true
   image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
 
-num_nodes: 2
+num_nodes: 1
 
 workdir:
   url: https://github.com/fleet-ai/SkyRL-Fleet.git
@@ -43,7 +43,7 @@ envs:
   S3_DATASET_BUCKET: "fleet-internal-datasets"
   S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
-  NUM_INFERENCE_ENGINES: 16
+  NUM_INFERENCE_ENGINES: 8
 
 setup: |
   bash scripts/fleet-common-setup.sh \

@@ -1,6 +1,6 @@
 # Train 4-env with meta-tools (flat summary, uniform across envs)
 # Envs: rops-mail (hero), fira (learning signal), forums-homes, reddit
-# 2-node H200:8 for ~2x rollout throughput vs single-node.
+# Single-node H200:8. epochs=1 doesn't amortize 2-node comm overhead.
 # Uses feat/meta-tools-flat on both OpenEnv and SkyRL-Fleet.
 
 name: train-4env-meta-flat
@@ -14,7 +14,7 @@ resources:
   use_spot: true
   image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
 
-num_nodes: 2
+num_nodes: 1
 
 workdir:
   url: https://github.com/fleet-ai/SkyRL-Fleet.git
@@ -43,7 +43,7 @@ envs:
   S3_DATASET_BUCKET: "fleet-internal-datasets"
   S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
-  NUM_INFERENCE_ENGINES: 16
+  NUM_INFERENCE_ENGINES: 8
 
 setup: |
   bash scripts/fleet-common-setup.sh \
