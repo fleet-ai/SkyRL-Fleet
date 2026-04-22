@@ -378,38 +378,26 @@ class FleetTaskEnv(BaseTextEnv):
                 f"Task {self.task_key}: no tools found. Fleet env requires tools."
             )
 
-        # Build meta-tool index if enabled (must happen after tools are loaded)
-        # Auto-threshold: only activate meta-tools when the env has enough tools
-        # that schemas would dominate the context window. Based on eval data:
-        #   >100 tools (~50K+ prompt tokens, >50% of 72K): meta-tools help
-        #   <100 tools (~25K or less): direct schemas fit, discovery overhead hurts
-        META_TOOLS_MIN_TOOL_COUNT = 100
+        # Build meta-tool index if enabled (must happen after tools are loaded).
+        # Applied uniformly regardless of tool count: an earlier auto-threshold
+        # fork caused training instability because the model saw two different
+        # prompt formats across envs in the same batch.
         if self.enable_meta_tools:
-            tool_count = len(self.tools)
+            try:
+                from envs.fleet_env import MetaToolHandler, ToolIndex
 
-            if tool_count < META_TOOLS_MIN_TOOL_COUNT:
+                self.tool_index = ToolIndex(self.tools)
+                self.meta_tool_handler = MetaToolHandler(self.tool_index)
+                self.tools = self.tools + self.meta_tool_handler.get_tool_schemas()
                 logger.info(
-                    f"Meta-tools auto-disabled: {tool_count} tools "
-                    f"(below {META_TOOLS_MIN_TOOL_COUNT} threshold)."
+                    f"Meta-tools enabled: {self.tool_index.tool_count} tools indexed "
+                    f"across {len(self.tool_index.service_names)} services"
+                )
+            except ImportError:
+                logger.warning(
+                    "MetaToolHandler not available, disabling meta-tools"
                 )
                 self.enable_meta_tools = False
-            else:
-                try:
-                    from envs.fleet_env import MetaToolHandler, ToolIndex
-
-                    self.tool_index = ToolIndex(self.tools)
-                    self.meta_tool_handler = MetaToolHandler(self.tool_index)
-                    # Add meta-tool definitions to the tool list
-                    self.tools = self.tools + self.meta_tool_handler.get_tool_schemas()
-                    logger.info(
-                        f"Meta-tools enabled: {self.tool_index.tool_count} tools indexed "
-                        f"across {len(self.tool_index.service_names)} services"
-                    )
-                except ImportError:
-                    logger.warning(
-                        "MetaToolHandler not available, disabling meta-tools"
-                    )
-                    self.enable_meta_tools = False
 
         # VL: adapt computer tool for Qwen's normalized coordinate space
         modality = self.task_config.get("task_modality", "tool_use")
@@ -429,23 +417,21 @@ class FleetTaskEnv(BaseTextEnv):
 
         # Build system prompt with tool definitions
         if self.enable_meta_tools and self.tool_index:
-            # Compact summary + meta-tool schemas instead of full JSON dump
+            # Flat summary lists every tool with its parameter signature, so
+            # the agent can plan the whole task in one pass and call tools
+            # directly. search_tools / get_tool_schema remain available for
+            # keyword lookup and detailed parameter descriptions when needed.
             tools_summary = self.tool_index.build_summary()
             meta_schemas = json.dumps(
                 self.meta_tool_handler.get_tool_schemas(), indent=2
             )
             tools_section = (
                 f"## Available Tools\n{tools_summary}\n"
-                f"## Discovery Tools\n"
-                f"Use search_tools to find tools for your task. Results include parameter "
-                f"signatures so you can call tools directly.\n\n"
-                f"Workflow:\n"
-                f"  1. search_tools(\"keyword\") → returns matching tools with descriptions and parameter signatures\n"
-                f"  2. Read the descriptions to pick the right tool\n"
-                f"  3. Call the tool directly using the parameter signature from the search results\n"
-                f"  4. Use get_tool_schema only if you need detailed parameter descriptions\n\n"
-                f"IMPORTANT: Always search first — similar tool names can have very different behavior. "
-                f"Compare descriptions before picking.\n\n"
+                f"## Discovery Tools (optional)\n"
+                f"All tools are already listed above with their parameter signatures. "
+                f"Call them directly. Use these only when useful:\n"
+                f"  - search_tools(keyword) — narrow the list by keyword\n"
+                f"  - get_tool_schema(name) — detailed parameter descriptions for a single tool\n\n"
                 f"{meta_schemas}\n"
             )
         else:
@@ -524,8 +510,8 @@ class FleetTaskEnv(BaseTextEnv):
         if self.enable_meta_tools and self.tool_index:
             tool_call_hint = (
                 f"## Tool Call Format\n"
-                f"Before calling a tool for the first time, use get_tool_schema(name) "
-                f"to see its parameters. Format each call as:\n"
+                f"Call any tool listed above using its parameter signature. "
+                f"Format each call as:\n"
                 f'<tool_call>{{"name": "<tool_name>", "arguments": '
                 f"{{...}}}}</tool_call>\n\n"
             )
