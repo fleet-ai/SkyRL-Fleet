@@ -61,7 +61,7 @@ setup: |
     cd ~/gym-anything && git fetch origin && git reset --hard origin/fleet/fixes && cd -
   fi
   pip install -e ~/gym-anything
-  pip install httpx quart quart-cors hypercorn psutil flask flask-cors
+  pip install httpx quart quart-cors hypercorn psutil flask flask-cors openai
 
   # ── Symlink benchmarks into src/ ──
   if [ -d ~/gym-anything/src/benchmarks ] && [ ! -L ~/gym-anything/src/benchmarks ]; then
