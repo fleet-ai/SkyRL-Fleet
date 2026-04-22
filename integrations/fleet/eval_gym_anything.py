@@ -82,10 +82,9 @@ TOOL_DEF_JSON = json.dumps({
 
 # System prompt from the paper's Gemini harness (agents/shared/prompts.py GEMINI_SYSTEM_PROMPT_SINGLE_STEP)
 SYSTEM_PROMPT = """<SYSTEM_CAPABILITY>
-* You are utilising an virtual machine with internet access.
-* You can feel free to do anything.
-* Each turn you will be provided current screenshot of the screen.
-* If you want to run a specific gui application, make sure to set the display variable to :1.
+* You are utilising a virtual machine with internet access.
+* Each turn you will be provided a screenshot of the current screen.
+* You MUST interact with the application using the GUI only. Do NOT open a terminal, command line, or shell. Do NOT use keyboard shortcuts to open a terminal (like Ctrl+Alt+T or Alt+F2). All actions must be performed through the graphical interface.
 * When using your computer function calls, they take a while to run and send back to you.
 * Enclose your tool call inside <tool_call></tool_call> tags.
 * Important: Only use one tool call per turn.
@@ -93,19 +92,22 @@ SYSTEM_PROMPT = """<SYSTEM_CAPABILITY>
 You have access to the following tools:
 """ + TOOL_DEF_JSON + """
 
-Example tool call usage:
+RESPONSE FORMAT (you MUST follow this every turn):
+1. Observation: Describe what you see on the screen right now (1-2 sentences).
+2. Reasoning: What should you do next and why? If you are about to terminate, verify that the task is fully complete.
+3. Tool call: A single <tool_call>...</tool_call> block.
 
-```
-....thinking....
-....response....
+Example:
 
+Observation: I see the GeoGebra window with an empty canvas and a toolbar at the top.
+Reasoning: I need to enter the derivative function. I'll click on the input bar at the bottom.
 <tool_call>
-{"name": "computer_use", "arguments": {"action": "click", "coordinate": [100, 200]}}
+{"name": "computer_use", "arguments": {"action": "click", "coordinate": [500, 680]}}
 </tool_call>
-```
 
-The above example would make 1 tool call and click at coordinate [100, 200].
-
+IMPORTANT:
+- Before using action=terminate, take a screenshot and carefully verify the task is complete. Do NOT terminate early.
+- Never open a terminal or type shell commands. Use only the application's GUI.
 </SYSTEM_CAPABILITY>"""
 
 # Coordinate scaling: Gemini outputs [0, 1000] normalized coordinates regardless of the
@@ -314,9 +316,19 @@ Instruction: {description}"""
             for turn in range(max_turns):
                 turns = turn + 1
 
+                # Prune conversation history to last N turns to avoid context degradation.
+                # Keep: system prompt (messages[0]) + first user message with instruction (messages[1])
+                # + last HISTORY_N*2 messages (each turn = 1 assistant + 1 user).
+                HISTORY_N = 20
+                max_history_msgs = HISTORY_N * 2
+                if len(messages) > max_history_msgs + 2:
+                    pruned = messages[:2] + messages[-(max_history_msgs):]
+                else:
+                    pruned = messages
+
                 # Call model
                 try:
-                    response_text = await call_model(messages, model, temperature)
+                    response_text = await call_model(pruned, model, temperature)
                 except Exception as e:
                     logger.warning(f"{task_key} turn {turn}: model call failed: {e}")
                     break
