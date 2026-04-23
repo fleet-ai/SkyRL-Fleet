@@ -37,6 +37,15 @@ When reporting task-gen training metrics, distinguish between:
 
 Report binary variance reward count (how many tasks got `reward >= 1.0`) separately from gate-pass count. Check `EVAL` log lines for `total=1.0000` vs `total=0.0000`.
 
+## Run Monitoring
+
+When running any eval, training, or long-running job:
+- **Analyze outputs continuously during the run**, not just at the end. Read actual model outputs, traces, and logs to understand WHY things fail — don't just report aggregate numbers.
+- **Categorize failures immediately** with evidence from traces. Report counts and specific examples.
+- **Be proactive about fixes**: if you see a systematic failure, investigate and fix it — don't just report it and wait.
+- **Compare against baseline on every check-in**: if metrics are trending below baseline, investigate immediately — don't wait for the run to finish.
+- **Never hypothesize without evidence**: don't say "may have caused" — read the data and say what actually happened.
+
 ## Branch
 
 Primary development branch: `fleet/all`
