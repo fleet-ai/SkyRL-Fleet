@@ -108,7 +108,7 @@ run: |
 
   # Start 8 workers from src/
   cd ~/gym-anything/src
-  for i in $(seq 1 8); do
+  for i in $(seq 1 12); do
     nohup python -m gym_anything.remote.worker \
       --master-url http://localhost:5000 \
       --max-envs 20 \
