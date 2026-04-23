@@ -385,13 +385,37 @@ class FleetTaskEnv(BaseTextEnv):
         if self.enable_meta_tools:
             try:
                 from envs.fleet_env import MetaToolHandler, ToolIndex
+                from envs.fleet_env.meta_tools_cache import load_cache
 
-                self.tool_index = ToolIndex(self.tools)
+                env_key_for_cache = (
+                    self.task_config.get("env_key")
+                    or self.task_config.get("env_id")
+                    or ""
+                )
+                env_version_for_cache = (
+                    self.task_config.get("env_version")
+                    or self.task_config.get("version")
+                    or ""
+                )
+                summary_records = (
+                    load_cache(env_key_for_cache, env_version_for_cache)
+                    if env_key_for_cache
+                    else None
+                )
+                self.tool_index = ToolIndex(
+                    self.tools, summary_records=summary_records
+                )
                 self.meta_tool_handler = MetaToolHandler(self.tool_index)
                 self.tools = self.tools + self.meta_tool_handler.get_tool_schemas()
+                cache_note = (
+                    f"with {len(summary_records)} LLM summary records"
+                    if summary_records
+                    else "with parser fallback (no cache)"
+                )
                 logger.info(
                     f"Meta-tools enabled: {self.tool_index.tool_count} tools indexed "
-                    f"across {len(self.tool_index.service_names)} services"
+                    f"across {len(self.tool_index.service_names)} services "
+                    f"({cache_note} for {env_key_for_cache}/{env_version_for_cache})"
                 )
             except ImportError:
                 logger.warning(
