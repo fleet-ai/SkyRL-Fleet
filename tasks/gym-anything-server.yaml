@@ -19,8 +19,8 @@
 name: gym-anything-server
 
 resources:
-  cpus: 128+
-  memory: 384+
+  cpus: 360+
+  memory: 1024+
   disk_size: 500
   ports: 5000
   cloud: gcp
@@ -108,7 +108,7 @@ run: |
 
   # Start 8 workers from src/
   cd ~/gym-anything/src
-  for i in $(seq 1 12); do
+  for i in $(seq 1 16); do
     nohup python -m gym_anything.remote.worker \
       --master-url http://localhost:5000 \
       --max-envs 20 \
