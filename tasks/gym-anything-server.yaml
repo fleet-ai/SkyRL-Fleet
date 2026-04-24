@@ -22,7 +22,9 @@ resources:
   cpus: 128+
   memory: 384+
   disk_size: 500
-  ports: 5000
+  ports:
+    - 5000
+    - 5050
   cloud: gcp
 
 num_nodes: 1
@@ -143,5 +145,11 @@ run: |
   # Generate eval task list (4 per validated env) — available after validation completes
   nohup bash -c 'while [ ! -f ~/validated_envs.txt ]; do sleep 30; done; cd ~/gym-anything && python scripts/generate_eval_tasks.py --validated-envs ~/validated_envs.txt --env-dir benchmarks/cua_world/environments -o ~/eval_tasks.json && echo "Eval tasks generated: $(wc -l < ~/eval_tasks.json) lines"' > ~/generate_eval_tasks.log 2>&1 &
 
+  # Launch trajectory dashboard on port 5050
+  cd ~/gym-anything
+  nohup python -m gym_anything.dashboards.trajectory.app --runs-root all_runs --host 0.0.0.0 --port 5050 > ~/dashboard.log 2>&1 &
+  echo "Dashboard running on :5050"
+
   # Keep master in foreground
+  cd ~/gym-anything/src
   wait $MASTER_PID
