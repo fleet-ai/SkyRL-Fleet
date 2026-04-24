@@ -61,7 +61,7 @@ setup: |
     cd ~/gym-anything && git fetch origin && git reset --hard origin/fleet/fixes && cd -
   fi
   pip install -e ~/gym-anything
-  pip install httpx quart quart-cors hypercorn psutil flask flask-cors openai
+  pip install httpx quart quart-cors hypercorn psutil flask flask-cors openai litellm anthropic Pillow
 
   # ── Symlink benchmarks into src/ ──
   if [ -d ~/gym-anything/src/benchmarks ] && [ ! -L ~/gym-anything/src/benchmarks ]; then
@@ -139,6 +139,9 @@ run: |
   echo "Starting background env validation (results → ~/validated_envs.txt)..."
   nohup python3 ~/gym-anything/scripts/validate_envs.py http://localhost:5000 --concurrency 8 --output ~/validated_envs.txt --json-output ~/validation_results.json > ~/validate_envs.log 2>&1 &
   echo "Validation PID: $! (monitor with: tail -f ~/validate_envs.log)"
+
+  # Generate eval task list (4 per validated env) — available after validation completes
+  nohup bash -c 'while [ ! -f ~/validated_envs.txt ]; do sleep 30; done; cd ~/gym-anything && python scripts/generate_eval_tasks.py --validated-envs ~/validated_envs.txt --env-dir benchmarks/cua_world/environments -o ~/eval_tasks.json && echo "Eval tasks generated: $(wc -l < ~/eval_tasks.json) lines"' > ~/generate_eval_tasks.log 2>&1 &
 
   # Keep master in foreground
   wait $MASTER_PID
