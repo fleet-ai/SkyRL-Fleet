@@ -85,9 +85,9 @@ setup: |
   for env_dir in ~/gym-anything/benchmarks/cua_world/environments/*/; do
     env_name=$(basename "$env_dir")
     [ ! -f "$env_dir/env.json" ] && continue
-    tag="ga/${env_name}:0.1"
-    docker image inspect "$tag" >/dev/null 2>&1 && continue
     gcr_tag="${GCR_PREFIX}/${env_name}:0.1"
+    tag="ga/${env_name}:0.1"
+    # Always pull from GCR — overwrite any base preset tags that may exist
     if docker pull "$gcr_tag" 2>/dev/null; then
       docker tag "$gcr_tag" "$tag"
       PULLED=$((PULLED + 1))
