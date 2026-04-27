@@ -145,8 +145,13 @@ run: |
   # Generate eval task list (4 per validated env) — available after validation completes
   nohup bash -c 'while [ ! -f ~/validated_envs.txt ]; do sleep 30; done; cd ~/gym-anything && python scripts/generate_eval_tasks.py --validated-envs ~/validated_envs.txt --env-dir benchmarks/cua_world/environments -o ~/eval_tasks.json && echo "Eval tasks generated: $(wc -l < ~/eval_tasks.json) lines"' > ~/generate_eval_tasks.log 2>&1 &
 
-  # Launch trajectory dashboard on port 5050
+  # Pre-warm all validated envs (creates checkpoints so eval tasks boot in 30-90s instead of 5-25 min)
+  echo "Pre-warming envs in background (~2-3 hours)..."
   cd ~/gym-anything
+  nohup python -u scripts/prewarm_envs.py --validated-envs ~/validated_envs.txt --env-dir benchmarks/cua_world/environments --concurrency 4 > ~/prewarm.log 2>&1 &
+  echo "Pre-warm PID: $! (monitor with: tail -f ~/prewarm.log)"
+
+  # Launch trajectory dashboard on port 5050
   nohup python -m gym_anything.dashboards.trajectory.app --runs-root all_runs --host 0.0.0.0 --port 5050 > ~/dashboard.log 2>&1 &
   echo "Dashboard running on :5050"
 
