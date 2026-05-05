@@ -37,9 +37,35 @@ When reporting task-gen training metrics, distinguish between:
 
 Report binary variance reward count (how many tasks got `reward >= 1.0`) separately from gate-pass count. Check `EVAL` log lines for `total=1.0000` vs `total=0.0000`.
 
-## Run Monitoring
+## Long-Running Jobs — Success Criteria + Monitoring (MANDATORY)
 
-When running any eval, training, or long-running job:
+Before launching ANY job that runs >1 hour:
+
+1. **Define success criteria** — what does "done" look like? Examples:
+   - Eval: "7,545 tasks complete, results on S3, <20% error rate"
+   - Training: "loss decreasing, checkpoints saving every N steps, eval scores improving"
+   - Validation: "all envs tested, validated_envs.txt written, checkpoints created"
+
+2. **Verify durability** — can the job survive server death?
+   - Results must sync to S3 continuously (every 5 min), not just at completion
+   - Job must be resumable — pull from S3 on restart, skip completed work
+   - Never rely on a final upload step for critical data
+
+3. **Verify disk** — will the job fit?
+   - Calculate: tasks × data per task vs available disk
+   - Set up cleanup if needed BEFORE launching, not after disk fills
+
+4. **Monitor proactively** — check every hour:
+   - Is the process alive?
+   - Are metrics on track vs baseline? (read traces, not just numbers)
+   - Is disk filling? Is S3 sync working?
+   - If anything is off, investigate immediately — don't wait
+
+5. **Never lose work** — if the server dies, the job resumes from S3. Period.
+
+## Run Analysis
+
+When monitoring any eval, training, or long-running job:
 - **Analyze outputs continuously during the run**, not just at the end. Read actual model outputs, traces, and logs to understand WHY things fail — don't just report aggregate numbers.
 - **Categorize failures immediately** with evidence from traces. Report counts and specific examples.
 - **Be proactive about fixes**: if you see a systematic failure, investigate and fix it — don't just report it and wait.
