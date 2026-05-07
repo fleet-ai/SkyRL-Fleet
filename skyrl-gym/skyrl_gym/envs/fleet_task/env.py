@@ -180,6 +180,36 @@ class FleetTaskEnv(BaseTextEnv):
             else False
         )
 
+        # Verifier kind: replaces the env's binary/partial reward at close time.
+        # - "binary"        — default; use existing OpenEnv verifier (0/1 or partial 0..1)
+        # - "rubric_judge"  — call rubric judge ensemble post-rollout, override last_reward
+        # - "pure_judge"    — call pure judge ensemble post-rollout, override last_reward
+        # Binary score is preserved in metrics["binary_audit_score"] regardless.
+        self.verifier_kind = (
+            env_config.get("verifier_kind", "binary")
+            if hasattr(env_config, "get")
+            else "binary"
+        )
+        # Override list-of-dicts judge model config (provider, model, weight, ...)
+        self.judge_models_cfg = (
+            env_config.get("judge_models", None)
+            if hasattr(env_config, "get")
+            else None
+        )
+        # System prompt override (path or raw text). Loaded lazily by JudgeClient.
+        self.judge_system_prompt = (
+            env_config.get("judge_system_prompt", None)
+            if hasattr(env_config, "get")
+            else None
+        )
+        # Per-task rubric (only used when verifier_kind == "rubric_judge")
+        self.rubric_json: Optional[str] = extras.get("rubric_json") if extras else None
+        # Lazy judge client (constructed on first use to avoid import overhead)
+        self._judge_client = None
+        # Audit fields populated at close time
+        self._binary_audit_score: Optional[float] = None
+        self._judge_audit: Optional[Dict[str, Any]] = None
+
         # Hint config
         self.enable_hints = (
             env_config.get("enable_hints", False)
@@ -887,6 +917,11 @@ class FleetTaskEnv(BaseTextEnv):
 
         Runs verifier via OpenEnv's close_async() to get actual reward for
         orphaned rollouts (context overflow, early termination by SkyRL).
+
+        If verifier_kind ∈ {rubric_judge, pure_judge}, also calls the configured
+        judge ensemble after the binary verifier and overrides last_reward with
+        the judge score. The binary score is preserved in self._binary_audit_score
+        and exposed via get_metrics() as "binary_audit_score".
         """
         if self.openenv_task_env:
             try:
@@ -898,6 +933,39 @@ class FleetTaskEnv(BaseTextEnv):
                 logger.warning(f"Failed to close Fleet environment: {e}")
             self.openenv_task_env = None
 
+        # Judge override (rubric / pure) — runs AFTER the binary verifier so we
+        # always have an audit baseline even if the judge fails.
+        if self.verifier_kind in ("rubric_judge", "pure_judge"):
+            self._binary_audit_score = self.last_reward  # save before overwrite
+            try:
+                if self._judge_client is None:
+                    from .judge_client import JudgeClient
+
+                    mode = "rubric" if self.verifier_kind == "rubric_judge" else "pure"
+                    self._judge_client = JudgeClient(
+                        mode=mode,
+                        models=self.judge_models_cfg,
+                        system_prompt=self.judge_system_prompt,
+                    )
+                audit = await self._judge_client.score_with_audit(
+                    task_spec=self.task_config,
+                    chat_history=self.chat_history,
+                    rubric_json=self.rubric_json,
+                )
+                self._judge_audit = audit
+                if audit.get("judge_score") is not None:
+                    self.last_reward = audit["judge_score"]
+                else:
+                    logger.warning(
+                        f"Judge returned no score for {self.task_key}; "
+                        f"falling back to binary={self._binary_audit_score}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Judge call failed for {self.task_key}: {e}; "
+                    f"keeping binary={self._binary_audit_score}"
+                )
+
     def get_metrics(self) -> Dict[str, Any]:
         """Return environment metrics for this episode."""
         metrics = {
@@ -908,9 +976,17 @@ class FleetTaskEnv(BaseTextEnv):
             "tool_calls": self.tool_calls,
             "tool_errors": self.tool_errors,
             "is_hinted": bool(self.extras.get("hint")),
+            "verifier_kind": self.verifier_kind,
         }
         if self.last_reward is not None:
             metrics["final_reward"] = self.last_reward
+        # Audit channel: under judge modes, expose the binary verifier's score
+        # (what we WOULD have used) and the per-model judge breakdown so wandb
+        # / S3 can monitor (judge, binary) correlation for reward-hacking detection.
+        if self._binary_audit_score is not None:
+            metrics["binary_audit_score"] = self._binary_audit_score
+        if self._judge_audit is not None:
+            metrics["judge_audit"] = self._judge_audit
         # Include verifier feedback for hint generation
         if self._verifier_stdout is not None:
             metrics["verifier_stdout"] = self._verifier_stdout
