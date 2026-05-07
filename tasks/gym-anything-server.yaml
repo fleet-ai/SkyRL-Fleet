@@ -79,7 +79,9 @@ setup: |
 
   # ── Pull pre-built env images from GCR ──
   echo "Pulling pre-built env images from GCR..."
-  gcloud auth configure-docker gcr.io --quiet 2>/dev/null || true
+  # Auth Docker using VM metadata token (works without interactive login)
+  TOKEN=$(curl -sf -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  echo "$TOKEN" | docker login -u oauth2accesstoken --password-stdin gcr.io 2>/dev/null || true
   GCR_PREFIX="gcr.io/fleet-compute-489000/gym-anything"
   PULLED=0
   for env_dir in ~/gym-anything/benchmarks/cua_world/environments/*/; do
