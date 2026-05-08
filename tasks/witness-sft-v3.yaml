@@ -48,11 +48,11 @@ workdir:
   ref: guanghan/sft-b6
 
 # Mount the v3 SFT pairs from the local artifacts dir into the cloud node.
-# Path on the launching machine is fixed; adjust if launching from elsewhere.
+# Mechanism: SkyPilot rsyncs the local path -> remote path over SSH after
+# provisioning, before the run section starts. Local path is fixed; adjust
+# if launching from a different machine.
 file_mounts:
-  /home/sky/data/sft_pairs_judged.jsonl:
-    source: ~/Documents/obsidian/research-directions/artifacts/arc-witness-runs/sft_data/v3/sft_pairs_judged.jsonl
-    mode: COPY
+  /home/sky/data/sft_pairs_judged.jsonl: ~/Documents/obsidian/research-directions/artifacts/arc-witness-runs/sft_data/v3/sft_pairs_judged.jsonl
 
 envs:
   LOGGER: "wandb"
