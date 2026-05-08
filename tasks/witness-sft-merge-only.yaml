@@ -1,0 +1,84 @@
+# Recovery yaml: download FSDP shards from S3, merge to HF format, upload back.
+#
+# Use case: SFT training succeeded and trainer eagerly synced raw FSDP shards
+# to s3://${S3_BUCKET}/${RUN_NAME}/fsdp/, but the bash merge step failed (e.g.
+# safetensors / DTensor incompatibility). Re-running this is cheap (CPU-only,
+# ~10 min, ~$0.50) compared to retraining ($25-30).
+#
+# Usage:
+#   cd SkyRL-Fleet
+#   sky launch tasks/witness-sft-merge-only.yaml \
+#     --env AWS_ACCESS_KEY_ID=<key> \
+#     --env AWS_SECRET_ACCESS_KEY=<key> \
+#     -y --down
+
+resources:
+  disk_size: 200          # ~35GB FSDP shards + 18GB merged + slack
+  any_of:
+    # CPU-only; merge is just torch.cat + safetensors.save_file. No GPU needed.
+    - cpus: 16+
+      memory: 64+         # FSDP shards load to CPU RAM (~35GB peak)
+      cloud: gcp
+      use_spot: true
+    - cpus: 16+
+      memory: 64+
+      cloud: aws
+      use_spot: true
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/sft-b6
+
+envs:
+  S3_BUCKET: "fleet-guanghan"
+  RUN_NAME: "witness_sft_v3"
+  MODEL: "Qwen/Qwen3.5-9B"
+
+setup: |
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  # Minimal deps: don't need fsdp / vllm / etc. Just torch + safetensors + transformers.
+  uv pip install --quiet torch safetensors "transformers>=4.40" boto3 awscli
+
+run: |
+  set -euo pipefail
+  source .venv/bin/activate
+
+  S3_BASE="s3://${S3_BUCKET}/${RUN_NAME}"
+  WORK="$HOME/merge_work"
+  mkdir -p "$WORK"
+
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 1 — Download FSDP shards from S3"
+  echo "================================================================="
+  aws s3 sync "${S3_BASE}/fsdp/global_step_63_final/" "$WORK/fsdp/" --no-progress
+  echo "Downloaded:"
+  ls -la "$WORK/fsdp/policy/" | head -25
+
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 2 — Run merge_fsdp_checkpoint.py (patched)"
+  echo "================================================================="
+  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \
+    --checkpoint_dir "$WORK/fsdp/policy" \
+    --output_dir    "$WORK/merged" \
+    --model_name    "$MODEL"
+
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 3 — Upload merged HF model to S3"
+  echo "================================================================="
+  echo "Merged contents:"
+  ls -la "$WORK/merged/"
+
+  aws s3 sync "$WORK/merged/" "${S3_BASE}/merged/"
+
+  echo
+  echo "[$(date '+%H:%M:%S')] ✓ Done."
+  echo "  Merged HF model: ${S3_BASE}/merged/"
+  echo "  Total size: $(aws s3 ls ${S3_BASE}/merged/ --recursive --summarize | tail -1)"
