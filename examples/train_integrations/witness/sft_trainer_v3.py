@@ -162,6 +162,13 @@ def build_cfg(args) -> SkyRLTrainConfig:
     # yamls (e.g. tasks/witness-grpo-*.yaml: num_inference_engines = TOTAL_POLICY_GPUS).
     # See utils/utils.py:341-350.
     cfg.generator.inference_engine.num_engines = args.num_gpus
+    # SkyRL's HFModelWrapper asserts attn_implementation == "flash_attention_2"
+    # when use_sample_packing=True (default). We don't enable flash-attn 2
+    # because the GRPO yamls explicitly disable it on Qwen3.5-9B (transformers
+    # 5.3 + Qwen3.5 VLM combo has flash-attn issues). So we mirror the GRPO
+    # yamls and disable sample packing too — for ~63 SFT steps the perf
+    # cost from padding is negligible. See model_wrapper.py:124-127.
+    cfg.trainer.use_sample_packing = False
     cfg.trainer.micro_train_batch_size_per_gpu = args.micro_batch_size
     cfg.trainer.policy.optimizer_config.lr = args.lr
     cfg.trainer.strategy = args.strategy  # "fsdp2" for multi-GPU, "fsdp" for single
