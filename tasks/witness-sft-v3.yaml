@@ -66,8 +66,10 @@ envs:
   JUDGE_SCORE_MIN: "2"
   WANDB_PROJECT: "arc-agi-3"
   WANDB_RUN_NAME: "witness_sft_v3_judged"
-  # S3 destination (matches witness-eval.yaml convention)
-  S3_BUCKET: "fleet-worktrial-guanghan"
+  # S3 destination — new bucket fleet-guanghan (separate from prior
+  # work-trial bucket so SFT/RL artifacts don't co-mingle).
+  # Create once before launch:  aws s3 mb s3://fleet-guanghan --region us-east-1
+  S3_BUCKET: "fleet-guanghan"
   RUN_NAME: "witness_sft_v3"
 
 setup: |
