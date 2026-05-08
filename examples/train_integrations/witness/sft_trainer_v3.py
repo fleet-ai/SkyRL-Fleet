@@ -169,6 +169,18 @@ def build_cfg(args) -> SkyRLTrainConfig:
     # yamls and disable sample packing too — for ~63 SFT steps the perf
     # cost from padding is negligible. See model_wrapper.py:124-127.
     cfg.trainer.use_sample_packing = False
+    # CRITICAL: chunk the lm_head forward to avoid materializing full (B, S, V)
+    # logits tensor. Qwen3.5-9B has vocab ~150k; at B=8, S=4096, bf16 the full
+    # logits tensor is ~9.6 GB per forward — likely OOM on 9B+optim_states FSDP.
+    # With chunked path (model_wrapper.py:388-432), lm_head is replaced with
+    # identity, hidden states stream through `_chunked_lm_head_forward` and
+    # log_probs are computed in chunks of `loss_chunk_size`. Mirrors GRPO yaml.
+    cfg.trainer.loss_chunk_size = 4096
+    # Mirror GRPO yaml convention. Doesn't actually affect cross_entropy path
+    # (ppo_utils.py:948 cross_entropy_loss is just (-log_probs * loss_mask).sum()
+    # — ignores loss_reduction), but harmless and keeps config in lockstep with
+    # the rest of the witness training stack.
+    cfg.trainer.algorithm.loss_reduction = "sequence_mean"
     cfg.trainer.micro_train_batch_size_per_gpu = args.micro_batch_size
     cfg.trainer.policy.optimizer_config.lr = args.lr
     cfg.trainer.strategy = args.strategy  # "fsdp2" for multi-GPU, "fsdp" for single
