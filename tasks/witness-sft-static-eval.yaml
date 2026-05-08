@@ -1,0 +1,128 @@
+# Tier 1 static evaluation — SFT'd vs base on v3 pairs.
+#
+# Loads SFT'd Qwen3.5-9B (from s3://fleet-guanghan/witness_sft_v3/merged/) and
+# base Qwen3.5-9B side by side, computes:
+#   - Teacher-forced CE per token on training set (judge>=2, 173 pairs)
+#   - Teacher-forced CE per token on filtered set (judge<2, 74 pairs)
+#   - Per-game / per-tag breakdowns
+#   - (Optional) format validity from greedy generation samples
+#
+# Cost: ~$5-8 (H100x1 spot, ~30-45 min wall — most time is loading 35GB SFT
+# model + base model from HF Hub, plus running 247 forward passes per model).
+#
+# Usage:
+#   cd SkyRL-Fleet
+#   sky launch tasks/witness-sft-static-eval.yaml \
+#     --env AWS_ACCESS_KEY_ID=<key> \
+#     --env AWS_SECRET_ACCESS_KEY=<key> \
+#     -y --down
+
+resources:
+  disk_size: 200
+  any_of:
+    - accelerators: H100:1
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H100:1
+      cloud: runpod
+    - accelerators: H100:1
+      cloud: lambda
+    - accelerators: A100-80GB:1
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/sft-b6
+
+# Mount the v3 eval data from local artifacts dir (~2 MB)
+file_mounts:
+  /home/sky/data/sft_pairs_judged.jsonl: ~/Documents/obsidian/research-directions/artifacts/arc-witness-runs/sft_data/v3/sft_pairs_judged.jsonl
+
+envs:
+  SFT_MODEL_S3:    "s3://fleet-guanghan/witness_sft_v3/merged/"
+  BASE_MODEL:      "Qwen/Qwen3.5-9B"
+  EVAL_RESULTS_S3: "s3://fleet-guanghan/witness_sft_v3/eval/tier1/"
+  DO_GENERATION:   "1"        # 1=run format-validity generation; 0=skip (CE-only is faster)
+  GEN_N:           "20"       # number of prompts to greedily generate per model
+
+setup: |
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  # Minimal deps: torch + transformers (Qwen3.5 needs 5.3.0 for VLM arch)
+  uv pip install --quiet torch numpy boto3 awscli
+  uv pip install --quiet "transformers==5.3.0"
+
+run: |
+  source .venv/bin/activate
+
+  WORK="$HOME/eval_work"
+  mkdir -p "$WORK"
+
+  # Persistent log via trap (same pattern as merge / recover yamls)
+  EVAL_LOG="$WORK/tier1_run.log"
+  exec > >(tee -a "$EVAL_LOG") 2>&1
+  trap 'echo "[trap] uploading log on exit"; aws s3 cp "$EVAL_LOG" "${EVAL_RESULTS_S3}tier1_run.log" 2>&1 || true' EXIT
+  echo "[$(date '+%H:%M:%S')] log persistence active"
+
+  set -uo pipefail
+
+  # ── Step 1: Download SFT'd model from S3 ──
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 1 — Download SFT'd HF model"
+  echo "================================================================="
+  SFT_LOCAL="$WORK/sft_model"
+  mkdir -p "$SFT_LOCAL"
+  aws s3 sync "$SFT_MODEL_S3" "$SFT_LOCAL/" --no-progress
+  echo "Downloaded:"
+  ls -la "$SFT_LOCAL" | head -10
+
+  # ── Step 2: Run eval ──
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 2 — Static eval (SFT vs base)"
+  echo "================================================================="
+
+  GEN_FLAG=""
+  if [ "$DO_GENERATION" = "1" ]; then
+    GEN_FLAG="--do_generation"
+  fi
+
+  RESULTS="$WORK/tier1_results.json"
+  python examples/train_integrations/witness/sft_static_eval.py \
+    --sft_model_path "$SFT_LOCAL" \
+    --base_model_name "$BASE_MODEL" \
+    --eval_pairs /home/sky/data/sft_pairs_judged.jsonl \
+    --output_json "$RESULTS" \
+    --gen_n "$GEN_N" \
+    $GEN_FLAG
+  RC=$?
+
+  # ── Step 3: Upload results ──
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 3 — Upload results"
+  echo "================================================================="
+  if [ -f "$RESULTS" ]; then
+    aws s3 cp "$RESULTS" "${EVAL_RESULTS_S3}tier1_results.json"
+    echo "[s3] uploaded results to ${EVAL_RESULTS_S3}tier1_results.json"
+  else
+    echo "[ERROR] Results file not found at $RESULTS (RC=$RC)"
+  fi
+
+  if [ "$RC" -eq 0 ]; then
+    echo "[$(date '+%H:%M:%S')] ✓ Tier 1 eval succeeded"
+    echo "  Results: ${EVAL_RESULTS_S3}tier1_results.json"
+    echo "  Log:     ${EVAL_RESULTS_S3}tier1_run.log"
+  else
+    echo "[$(date '+%H:%M:%S')] ✗ Eval FAILED (rc=$RC)"
+    exit "$RC"
+  fi
