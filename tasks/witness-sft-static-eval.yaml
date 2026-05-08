@@ -57,7 +57,7 @@ setup: |
   uv venv --python 3.12 --seed
   source .venv/bin/activate
   # Minimal deps: torch + transformers (Qwen3.5 needs 5.3.0 for VLM arch)
-  uv pip install --quiet torch numpy boto3 awscli
+  uv pip install --quiet torch numpy boto3 awscli accelerate
   uv pip install --quiet "transformers==5.3.0"
 
 run: |
