@@ -42,8 +42,10 @@ setup: |
   fi
   uv venv --python 3.12 --seed
   source .venv/bin/activate
-  # Minimal deps: don't need fsdp / vllm / etc. Just torch + safetensors + transformers.
-  uv pip install --quiet torch safetensors "transformers>=4.40" boto3 awscli
+  # Need transformers 5.3.0 specifically — Qwen3.5 is a VLM
+  # (Qwen3_5ForConditionalGeneration); 4.x doesn't know this architecture and
+  # AutoModelForImageTextToText is missing.
+  uv pip install --quiet torch safetensors "transformers==5.3.0" numpy boto3 awscli
 
 run: |
   set -euo pipefail

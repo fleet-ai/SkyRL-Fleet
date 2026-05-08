@@ -132,34 +132,45 @@ def main():
     # Merge shards
     full_state_dict = merge_sharded_state_dict(shard_files, world_size)
 
-    # MATERIALIZE every tensor: convert DTensor to local, force contiguous fresh
-    # storage. Without this, safetensors._find_shared_tensors fails with
-    # "Attempted to access the data pointer on an invalid python storage" because
-    # FSDP-saved shards may load back as DTensor wrappers / views with detached
-    # storage handles. (Affects FSDP2 saves with ShardedStateDictConfig.)
-    print(f"  Materializing {len(full_state_dict)} tensors to plain CPU storage...")
+    # NUMPY ROUND-TRIP MATERIALIZATION
+    # ─────────────────────────────────
+    # Tensors loaded from FSDP ShardedStateDictConfig may be DTensor wrappers
+    # whose process-group is no longer bound (we load offline without a PG),
+    # OR plain tensors whose storage handle is invalidated. Either way,
+    # `tensor.storage().data_ptr()` raises "Attempted to access the data pointer
+    # on an invalid python storage", which crashes safetensors' shared-tensor
+    # detection (`_find_shared_tensors`).
+    #
+    # Going through numpy guarantees we end up with a torch.Tensor whose
+    # storage was freshly allocated by torch.from_numpy (not inherited from
+    # any FSDP/DTensor lineage). `.numpy()` requires a plain CPU Tensor — so
+    # we first peel off any DTensor wrapper via `_local_tensor`.
+    print(f"  Materializing {len(full_state_dict)} tensors via numpy round-trip...")
+    n_dtensor = n_failed = 0
     materialized = {}
-    n_dtensor = 0
     for k, v in full_state_dict.items():
-        # DTensor → local tensor on rank 0
-        if hasattr(v, "full_tensor"):
-            try:
-                v = v.full_tensor()
-                n_dtensor += 1
-            except Exception:
-                # Already gathered; fall back
-                pass
-        elif hasattr(v, "to_local"):
-            try:
-                v = v.to_local()
-                n_dtensor += 1
-            except Exception:
-                pass
-        # Force fresh contiguous CPU storage (clone breaks any storage aliasing
-        # that confuses safetensors' shared-tensor detection)
-        materialized[k] = v.detach().cpu().contiguous().clone()
+        # Peel DTensor wrapper if present
+        if "DTensor" in type(v).__name__ or hasattr(v, "_local_tensor"):
+            n_dtensor += 1
+            if hasattr(v, "_local_tensor"):
+                v = v._local_tensor
+            elif hasattr(v, "to_local"):
+                try:
+                    v = v.to_local()
+                except Exception:
+                    pass
+
+        # Detach + cpu, then numpy round-trip for fresh storage
+        try:
+            arr = v.detach().cpu().numpy()
+            materialized[k] = torch.from_numpy(arr.copy())  # .copy() ensures fresh np.ndarray
+        except Exception as e:
+            print(f"    WARNING: numpy round-trip failed for {k!r}: {e}; using raw tensor")
+            materialized[k] = v
+            n_failed += 1
     full_state_dict = materialized
-    print(f"  Materialized {len(full_state_dict)} tensors ({n_dtensor} were DTensor)")
+    print(f"  Materialized {len(full_state_dict)} tensors "
+          f"({n_dtensor} were DTensor-wrapped, {n_failed} fell back to raw)")
 
     # Load config
     print(f"  Loading model config...")
@@ -173,35 +184,57 @@ def main():
     config = AutoConfig.from_pretrained(config_source, trust_remote_code=True)
     arch = getattr(config, 'architectures', ['unknown'])
     print(f"  Model architecture: {arch}")
-    print(f"  Saving merged state dict directly (bypassing model instantiation)...")
 
-    # Instead of creating a model and loading state dict (which fails with DTensor),
-    # save the merged state dict directly as safetensors + copy config/tokenizer.
-    from safetensors.torch import save_file
+    # MODEL-BASED SAVE
+    # ────────────────
+    # We use HF's `model.save_pretrained(safe_serialization=True)` rather than
+    # raw `safetensors.save_file(state_dict)`. HF's path uses
+    # `_tied_weights_keys` config metadata to handle tied embeddings
+    # (Qwen3.5's lm_head <-> embed_tokens), bypassing safetensors'
+    # `_find_shared_tensors` (which calls .storage().data_ptr() and is
+    # what crashed the previous attempt).
+    #
+    # Building the model on the meta device first means we don't allocate
+    # 18 GB just to overwrite it with our state_dict.
+    print(f"  Building empty model on meta device + loading merged state_dict...")
+    is_vlm = hasattr(config, "vision_config") and getattr(config, "vision_config") is not None
+    if is_vlm and AutoModelForImageTextToText is not None:
+        model_class = AutoModelForImageTextToText
+        print(f"  (VLM detected — using AutoModelForImageTextToText)")
+    else:
+        model_class = AutoModelForCausalLM
+
+    with torch.device("meta"):
+        model = model_class.from_config(config, trust_remote_code=True)
+
+    # to_empty allocates real (empty) storage on cpu, then load_state_dict fills it
+    model.to_empty(device="cpu")
+    missing, unexpected = model.load_state_dict(full_state_dict, strict=False)
+    print(f"  load_state_dict: missing={len(missing)} unexpected={len(unexpected)}")
+    if missing:
+        print(f"    first missing keys: {missing[:5]}")
+    if unexpected:
+        print(f"    first unexpected keys: {unexpected[:5]}")
 
     os.makedirs(args.output_dir, exist_ok=True)
+    print(f"  Saving via model.save_pretrained(safe_serialization=True) ...")
+    model.save_pretrained(args.output_dir, safe_serialization=True)
 
-    # Save weights
-    safetensors_path = os.path.join(args.output_dir, "model.safetensors")
-    save_file(full_state_dict, safetensors_path)
-    print(f"  Saved weights to {safetensors_path}")
-
-    # Copy config from local or download from HF
+    # Copy tokenizer from local or download from HF
     import shutil
     local_hf_dir = os.path.join(args.checkpoint_dir, "huggingface")
     if os.path.exists(local_hf_dir):
+        # Copy any tokenizer files not produced by save_pretrained
         for fname in os.listdir(local_hf_dir):
             src = os.path.join(local_hf_dir, fname)
             dst = os.path.join(args.output_dir, fname)
-            if os.path.isfile(src):
+            if os.path.isfile(src) and not os.path.exists(dst):
                 shutil.copy2(src, dst)
-        print(f"  Copied config/tokenizer from {local_hf_dir}")
+        print(f"  Copied tokenizer from {local_hf_dir}")
     else:
-        # Download config and tokenizer from HF
-        config.save_pretrained(args.output_dir)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
         tokenizer.save_pretrained(args.output_dir)
-        print(f"  Downloaded config/tokenizer from {args.model_name}")
+        print(f"  Downloaded tokenizer from {args.model_name}")
 
     total_size = sum(
         os.path.getsize(os.path.join(args.output_dir, f))
