@@ -132,7 +132,36 @@ def main():
     # Merge shards
     full_state_dict = merge_sharded_state_dict(shard_files, world_size)
 
-    # Load config only (no weights) and create empty model
+    # MATERIALIZE every tensor: convert DTensor to local, force contiguous fresh
+    # storage. Without this, safetensors._find_shared_tensors fails with
+    # "Attempted to access the data pointer on an invalid python storage" because
+    # FSDP-saved shards may load back as DTensor wrappers / views with detached
+    # storage handles. (Affects FSDP2 saves with ShardedStateDictConfig.)
+    print(f"  Materializing {len(full_state_dict)} tensors to plain CPU storage...")
+    materialized = {}
+    n_dtensor = 0
+    for k, v in full_state_dict.items():
+        # DTensor → local tensor on rank 0
+        if hasattr(v, "full_tensor"):
+            try:
+                v = v.full_tensor()
+                n_dtensor += 1
+            except Exception:
+                # Already gathered; fall back
+                pass
+        elif hasattr(v, "to_local"):
+            try:
+                v = v.to_local()
+                n_dtensor += 1
+            except Exception:
+                pass
+        # Force fresh contiguous CPU storage (clone breaks any storage aliasing
+        # that confuses safetensors' shared-tensor detection)
+        materialized[k] = v.detach().cpu().contiguous().clone()
+    full_state_dict = materialized
+    print(f"  Materialized {len(full_state_dict)} tensors ({n_dtensor} were DTensor)")
+
+    # Load config
     print(f"  Loading model config...")
 
     local_config = os.path.join(args.checkpoint_dir, "huggingface", "config.json")
