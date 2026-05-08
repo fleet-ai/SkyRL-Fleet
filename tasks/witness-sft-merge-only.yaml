@@ -48,12 +48,24 @@ setup: |
   uv pip install --quiet torch safetensors "transformers==5.3.0" numpy boto3 awscli
 
 run: |
-  set -euo pipefail
   source .venv/bin/activate
 
   S3_BASE="s3://${S3_BUCKET}/${RUN_NAME}"
   WORK="$HOME/merge_work"
   mkdir -p "$WORK"
+
+  # ── PERSISTENT LOG ──────────────────────────────────────────────────
+  # Capture ALL stdout+stderr to local file from this point on, AND
+  # upload to S3 on EVERY exit path (including crash / signal / set -e).
+  # Without this, run.log was lost whenever the merge step crashed
+  # because `aws s3 cp` only ran on success path.
+  MERGE_LOG_LOCAL="$WORK/merge_run.log"
+  exec > >(tee -a "$MERGE_LOG_LOCAL") 2>&1
+  trap 'echo "[trap] uploading log on exit"; aws s3 cp "$MERGE_LOG_LOCAL" "${S3_BASE}/merge_run.log" 2>&1 || true' EXIT
+  echo "[$(date '+%H:%M:%S')] log persistence active; will upload to ${S3_BASE}/merge_run.log on any exit"
+
+  # set -e AFTER log capture is wired so trap survives early failures
+  set -uo pipefail
 
   echo "================================================================="
   echo "[$(date '+%H:%M:%S')] Step 1 — Download FSDP shards from S3"
