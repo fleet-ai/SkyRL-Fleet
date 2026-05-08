@@ -45,52 +45,137 @@ def find_shard_files(checkpoint_dir: str):
     return files, world_size
 
 
+def _peel_dtensor(t):
+    """Return (local_tensor, full_shape, placements_or_None, was_dtensor).
+
+    For a DTensor, .shape reports the GLOBAL shape across all ranks while
+    ._local_tensor holds just this rank's slice. We need both to merge
+    correctly: shape tells us the target shape, placements tell us which
+    dim is sharded.
+    """
+    is_dtensor = "DTensor" in type(t).__name__ or hasattr(t, "_local_tensor")
+    if is_dtensor:
+        full_shape = tuple(t.shape)
+        placements = getattr(t, "placements", None) or getattr(getattr(t, "_spec", None), "placements", None)
+        local = t._local_tensor if hasattr(t, "_local_tensor") else t
+        return local, full_shape, placements, True
+    return t, tuple(t.shape), None, False
+
+
+def _shard_dim_from_placements(placements):
+    """Find the dim that's sharded. Returns int or None if fully replicated."""
+    if placements is None:
+        return None
+    for p in placements:
+        # Shard placements have a `.dim` attribute; Replicate / Partial don't.
+        if hasattr(p, "dim"):
+            return int(p.dim)
+        # Fallback: check class name
+        if "Shard" in type(p).__name__ and hasattr(p, "_dim"):
+            return int(p._dim)
+    return None
+
+
 def merge_sharded_state_dict(shard_files: list, world_size: int) -> dict:
     """
     Load FSDP sharded state dicts and merge into a full state dict.
 
-    FSDP ShardedStateDictConfig saves each rank's shard of each parameter.
-    We concatenate them along the sharding dimension to reconstruct the full tensor.
+    FSDP2 ShardedStateDictConfig saves each rank's piece as a DTensor whose
+    .shape reports the GLOBAL param shape but ._local_tensor is just this
+    rank's slice. To reconstruct the full tensor we need to concat the local
+    pieces along the dim indicated by the DTensor's placements (typically
+    dim 0 for FSDP, but can vary).
+
+    Special cases:
+      - Replicated params (Replicate placement): all ranks have identical
+        local tensors → take rank 0's local.
+      - Sharded params (Shard(dim=N) placement): concat local tensors along
+        dim N, then truncate to global_shape if FSDP padded.
     """
     print(f"  Loading {len(shard_files)} shards (world_size={world_size})...")
 
-    # Load all shards
     shards = []
     for f in sorted(shard_files):
         print(f"    Loading {os.path.basename(f)}...")
-        shard = torch.load(f, map_location="cpu", weights_only=False)
-        shards.append(shard)
+        shards.append(torch.load(f, map_location="cpu", weights_only=False))
 
     if not shards:
         raise ValueError("No shards loaded")
 
-    # Get all parameter names from first shard
     param_names = list(shards[0].keys())
     print(f"  Found {len(param_names)} parameters")
 
     full_state_dict = {}
+    n_replicated = n_sharded = n_fallback = n_dtensor_total = 0
     for name in param_names:
-        tensors = [s[name] for s in shards if name in s]
+        raw = [s[name] for s in shards if name in s]
+        peeled = [_peel_dtensor(t) for t in raw]
+        is_dtensor_any = any(p[3] for p in peeled)
+        if is_dtensor_any:
+            n_dtensor_total += 1
 
-        if len(tensors) == 1:
-            # Not sharded — same across all ranks
-            full_state_dict[name] = tensors[0]
-        elif all(t.shape == tensors[0].shape for t in tensors):
-            # All same shape — likely replicated, take first
-            full_state_dict[name] = tensors[0]
-        else:
-            # Different shapes — try to concatenate along sharding dim
-            # FSDP typically shards along dim 0
+        # Use first DTensor's metadata as authoritative
+        full_shape = peeled[0][1]
+        placements = peeled[0][2]
+        shard_dim = _shard_dim_from_placements(placements)
+
+        local_tensors = [p[0] for p in peeled]
+
+        if len(raw) == 1:
+            # Single shard — just use it
+            full_state_dict[name] = local_tensors[0]
+            continue
+
+        # Decide replicated vs sharded
+        # Replicated if: no shard_dim found AND all locals same shape AND match full_shape
+        local_shapes = [tuple(t.shape) for t in local_tensors]
+        all_same_local_shape = all(s == local_shapes[0] for s in local_shapes)
+
+        if shard_dim is None and all_same_local_shape and local_shapes[0] == full_shape:
+            # Truly replicated — every rank holds the full tensor
+            full_state_dict[name] = local_tensors[0]
+            n_replicated += 1
+        elif shard_dim is not None:
+            # Sharded along known dim — concat
             try:
-                full_state_dict[name] = torch.cat(tensors, dim=0)
-            except RuntimeError:
+                merged = torch.cat(local_tensors, dim=shard_dim)
+                # Truncate FSDP padding if any
+                if tuple(merged.shape) != full_shape:
+                    slices = tuple(slice(0, s) for s in full_shape)
+                    merged = merged[slices].contiguous()
+                full_state_dict[name] = merged
+                n_sharded += 1
+            except RuntimeError as e:
+                print(f"    WARNING: cat failed for {name} along dim {shard_dim}: {e}; using rank 0")
+                full_state_dict[name] = local_tensors[0]
+                n_fallback += 1
+        else:
+            # No placement info but locals differ — try cat dim 0 (most common)
+            # then truncate to full_shape
+            try:
+                merged = torch.cat(local_tensors, dim=0)
+                if tuple(merged.shape) == full_shape:
+                    full_state_dict[name] = merged
+                    n_sharded += 1
+                    continue
                 # Try dim 1
-                try:
-                    full_state_dict[name] = torch.cat(tensors, dim=1)
-                except RuntimeError:
-                    print(f"    WARNING: Cannot merge {name}, using first shard")
-                    full_state_dict[name] = tensors[0]
+                merged = torch.cat(local_tensors, dim=1)
+                if tuple(merged.shape) == full_shape:
+                    full_state_dict[name] = merged
+                    n_sharded += 1
+                    continue
+                print(f"    WARNING: {name} no placement + cat dim 0/1 doesn't match "
+                      f"target {full_shape}; got {merged.shape}; using rank 0")
+                full_state_dict[name] = local_tensors[0]
+                n_fallback += 1
+            except RuntimeError:
+                print(f"    WARNING: {name} no placement + cat fails; using rank 0")
+                full_state_dict[name] = local_tensors[0]
+                n_fallback += 1
 
+    print(f"  Merge stats: dtensor={n_dtensor_total}/{len(param_names)}  "
+          f"replicated={n_replicated}  sharded_concat={n_sharded}  "
+          f"fallback_rank0={n_fallback}")
     return full_state_dict
 
 
@@ -149,8 +234,9 @@ def main():
     n_dtensor = n_via_numpy = n_via_copy_into = n_failed = 0
     materialized = {}
 
-    def _peel_dtensor(t):
-        """Strip DTensor wrapper, returning best-effort plain Tensor."""
+    def _strip_wrapper(t):
+        """Strip DTensor wrapper if any (merge already does this for FSDP-saved
+        params, but defensive in case any wrapper survived)."""
         if "DTensor" in type(t).__name__ or hasattr(t, "_local_tensor"):
             if hasattr(t, "_local_tensor"):
                 return t._local_tensor, True
@@ -167,7 +253,7 @@ def main():
         return t, False
 
     for k, v in full_state_dict.items():
-        v, was_dtensor = _peel_dtensor(v)
+        v, was_dtensor = _strip_wrapper(v)
         if was_dtensor:
             n_dtensor += 1
 
