@@ -46,12 +46,93 @@ DEFAULT_RUBRIC_JUDGES = [
 ]
 DEFAULT_PURE_JUDGES = [
     {"provider": "openai",    "model": "gpt-5.5",           "weight": 1.0, "max_tokens": 4096,
-     "reasoning_effort": "low"},
+     "reasoning_effort": "low",
+     # Pure judges use env-state probe tools by default; rubric judges typically don't.
+     "use_tools": True},
 ]
 MAX_RETRIES = 3
 RETRY_BASE_SLEEP = 2.0
 TRAJ_HEAD_CAP = 60_000
 TRAJ_TAIL_CAP = 30_000
+MAX_TOOL_CALLS_PER_JUDGE = 5  # cap per RaR / VAGEN — bound probe budget
+
+# ---- tool schemas exposed to the pure judge ----
+TOOL_SCHEMAS = [
+    {
+        "name": "read_env_state",
+        "description": (
+            "GET against the running Fleet env's read-only HTTP API. Returns JSON. "
+            "Use to verify entities exist and fields are set correctly. "
+            "Examples: '/api/bookings/4332', '/r/python/posts', '/users/me/inbox?unread=true'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "api_path": {"type": "string", "description": "Path under the env's API root"}
+            },
+            "required": ["api_path"],
+        },
+    },
+    {
+        "name": "inspect_trajectory_turn",
+        "description": (
+            "Re-read a specific trajectory turn verbatim. The summary in the user "
+            "message is truncated; this returns the raw turn at the given index."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "turn_index": {"type": "integer", "description": "0-based turn index"}
+            },
+            "required": ["turn_index"],
+        },
+    },
+    {
+        "name": "check_field",
+        "description": (
+            "Convenience: read_env_state(api_path), drill into json_path, compare to expected. "
+            "Returns {actual, match}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "api_path": {"type": "string"},
+                "json_path": {
+                    "type": "string",
+                    "description": "Dotted path with optional [N] indexing, e.g. 'data.items[0].id'",
+                },
+                "expected": {"description": "value to compare against"},
+            },
+            "required": ["api_path", "json_path", "expected"],
+        },
+    },
+    {
+        "name": "read_expected_outcome",
+        "description": (
+            "Returns the task's expected outcome (prose summary, optional structured fields, "
+            "and the verifier_code excerpt) so the judge knows the success criteria."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+]
+
+
+def _to_openai_tool_schemas() -> List[Dict[str, Any]]:
+    """Convert our tool schema list to OpenAI's chat.completions tool format."""
+    out = []
+    for t in TOOL_SCHEMAS:
+        out.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            },
+        })
+    return out
 
 SYSTEM_PROMPT_RUBRIC_FALLBACK = (
     "You are a strict evaluator scoring an AI agent's trajectory against a provided rubric. "
@@ -186,37 +267,127 @@ TRAJECTORY (compact summary)
 {traj}
 """
 
+    async def _dispatch_tool(self, tool_name: str, tool_args: Dict[str, Any]) -> Any:
+        """Call one of the env_probe_callbacks the wrapper handed us."""
+        cb = self.env_probe_callbacks.get(tool_name)
+        if cb is None:
+            return {"error": f"tool {tool_name} not implemented in this run"}
+        try:
+            return await cb(**tool_args)
+        except TypeError as e:
+            return {"error": f"bad tool args for {tool_name}: {e}"}
+        except Exception as e:
+            return {"error": f"{tool_name} raised {type(e).__name__}: {e}"}
+
+    async def _call_one_anthropic(
+        self, model_cfg: Dict[str, Any], user_message: str
+    ) -> Optional[Dict[str, Any]]:
+        """Anthropic tool-use loop. Returns the parsed final JSON, or None on failure."""
+        client = self._ensure_anthropic()
+        model = model_cfg["model"]
+        max_tokens = model_cfg.get("max_tokens", 2048)
+        use_tools = model_cfg.get("use_tools", False) and bool(self.env_probe_callbacks)
+        messages = [{"role": "user", "content": user_message}]
+        n_tool_calls = 0
+        for _ in range(MAX_TOOL_CALLS_PER_JUDGE + 2):  # rough loop bound
+            kwargs = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": self.system_prompt,
+                "messages": messages,
+            }
+            if use_tools:
+                kwargs["tools"] = TOOL_SCHEMAS
+            msg = await client.messages.create(**kwargs)
+            if msg.stop_reason == "tool_use":
+                # Extract tool_use blocks, dispatch each, append results
+                tool_results = []
+                for block in msg.content:
+                    if getattr(block, "type", None) == "tool_use":
+                        if n_tool_calls >= MAX_TOOL_CALLS_PER_JUDGE:
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": json.dumps({"error": "tool budget exhausted; finalize the verdict"}),
+                            })
+                        else:
+                            n_tool_calls += 1
+                            result = await self._dispatch_tool(block.name, block.input or {})
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": json.dumps(result)[:6000],
+                            })
+                # Append assistant turn (with tool_use blocks) and user turn (with results)
+                messages.append({"role": "assistant", "content": msg.content})
+                messages.append({"role": "user", "content": tool_results})
+                continue
+            # End — extract text and parse
+            text_parts = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
+            return _parse_json_blob("".join(text_parts))
+        logger.warning(f"anthropic tool-use loop exceeded bounds for {model}")
+        return None
+
+    async def _call_one_openai(
+        self, model_cfg: Dict[str, Any], user_message: str
+    ) -> Optional[Dict[str, Any]]:
+        """OpenAI tool-use loop. Returns parsed final JSON, or None."""
+        client = self._ensure_openai()
+        model = model_cfg["model"]
+        max_tokens = model_cfg.get("max_tokens", 2048)
+        use_tools = model_cfg.get("use_tools", False) and bool(self.env_probe_callbacks)
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        n_tool_calls = 0
+        for _ in range(MAX_TOOL_CALLS_PER_JUDGE + 2):
+            kwargs: Dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "max_completion_tokens": max_tokens,
+            }
+            if "reasoning_effort" in model_cfg:
+                kwargs["reasoning_effort"] = model_cfg["reasoning_effort"]
+            if use_tools:
+                kwargs["tools"] = _to_openai_tool_schemas()
+            resp = await client.chat.completions.create(**kwargs)
+            choice = resp.choices[0]
+            tool_calls = getattr(choice.message, "tool_calls", None)
+            if tool_calls:
+                # Append assistant message + tool result messages, loop
+                messages.append(choice.message.model_dump(exclude_unset=True))
+                for tc in tool_calls:
+                    if n_tool_calls >= MAX_TOOL_CALLS_PER_JUDGE:
+                        result = {"error": "tool budget exhausted; finalize the verdict"}
+                    else:
+                        n_tool_calls += 1
+                        try:
+                            tool_args = json.loads(tc.function.arguments or "{}")
+                        except json.JSONDecodeError:
+                            tool_args = {}
+                        result = await self._dispatch_tool(tc.function.name, tool_args)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(result)[:6000],
+                    })
+                continue
+            return _parse_json_blob(choice.message.content)
+        logger.warning(f"openai tool-use loop exceeded bounds for {model}")
+        return None
+
     async def _call_one(
         self, model_cfg: Dict[str, Any], user_message: str
     ) -> Optional[Dict[str, Any]]:
         provider = model_cfg["provider"]
         model = model_cfg["model"]
-        max_tokens = model_cfg.get("max_tokens", 2048)
         for attempt in range(MAX_RETRIES):
             try:
                 if provider == "anthropic":
-                    client = self._ensure_anthropic()
-                    msg = await client.messages.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        system=self.system_prompt,
-                        messages=[{"role": "user", "content": user_message}],
-                    )
-                    return _parse_json_blob(msg.content[0].text)
+                    return await self._call_one_anthropic(model_cfg, user_message)
                 elif provider == "openai":
-                    client = self._ensure_openai()
-                    kwargs = {
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": self.system_prompt},
-                            {"role": "user", "content": user_message},
-                        ],
-                        "max_completion_tokens": max_tokens,
-                    }
-                    if "reasoning_effort" in model_cfg:
-                        kwargs["reasoning_effort"] = model_cfg["reasoning_effort"]
-                    resp = await client.chat.completions.create(**kwargs)
-                    return _parse_json_blob(resp.choices[0].message.content)
+                    return await self._call_one_openai(model_cfg, user_message)
                 else:
                     logger.error(f"unknown provider: {provider}")
                     return None

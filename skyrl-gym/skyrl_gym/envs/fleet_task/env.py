@@ -915,28 +915,37 @@ class FleetTaskEnv(BaseTextEnv):
     async def close_async(self):
         """Close the Fleet environment (async version).
 
-        Runs verifier via OpenEnv's close_async() to get actual reward for
-        orphaned rollouts (context overflow, early termination by SkyRL).
-
-        If verifier_kind ∈ {rubric_judge, pure_judge}, also calls the configured
-        judge ensemble after the binary verifier and overrides last_reward with
-        the judge score. The binary score is preserved in self._binary_audit_score
-        and exposed via get_metrics() as "binary_audit_score".
+        Order matters when verifier_kind ∈ {rubric_judge, pure_judge}:
+            1. Run the binary verifier WITHOUT tearing down the env
+               (so env_state probe tools have a live URL to read from).
+            2. Run the judge with env_probe_callbacks pointing at the live env.
+               Judge can issue tool calls (read_env_state / inspect_trajectory_turn /
+               check_field / read_expected_outcome) and receive responses inline.
+            3. Override self.last_reward with judge_score, preserve binary in
+               self._binary_audit_score for the audit channel.
+            4. Finally tear down the OpenEnv instance.
+        For verifier_kind == "binary" or "partial", we use the original
+        (single-call) close path.
         """
-        if self.openenv_task_env:
+        if not self.openenv_task_env:
+            return
+
+        if self.verifier_kind in ("rubric_judge", "pure_judge"):
+            # --- 1. Snapshot env URL + auth BEFORE any teardown
+            env_url, api_key = self._snapshot_env_url_auth()
+
+            # --- 2. Run verifier without teardown
             try:
-                await self.openenv_task_env.close_async()
-                if self.openenv_task_env.final_reward is not None:
-                    self.last_reward = self.openenv_task_env.final_reward
+                await self._run_verifier_keep_alive()
                 self._capture_verifier_feedback()
             except Exception as e:
-                logger.warning(f"Failed to close Fleet environment: {e}")
-            self.openenv_task_env = None
+                logger.warning(f"Verifier failed for {self.task_key}: {e}")
+            self._binary_audit_score = self.last_reward
 
-        # Judge override (rubric / pure) — runs AFTER the binary verifier so we
-        # always have an audit baseline even if the judge fails.
-        if self.verifier_kind in ("rubric_judge", "pure_judge"):
-            self._binary_audit_score = self.last_reward  # save before overwrite
+            # --- 3. Build env-probe callbacks (live HTTP for read_env_state, etc.)
+            callbacks = self._build_env_probe_callbacks(env_url, api_key)
+
+            # --- 4. Call judge with callbacks
             try:
                 if self._judge_client is None:
                     from .judge_client import JudgeClient
@@ -946,15 +955,20 @@ class FleetTaskEnv(BaseTextEnv):
                         mode=mode,
                         models=self.judge_models_cfg,
                         system_prompt=self.judge_system_prompt,
+                        env_probe_callbacks=callbacks,
                     )
+                else:
+                    # update callbacks for this episode (env URL changes per task)
+                    self._judge_client.env_probe_callbacks = callbacks
                 audit = await self._judge_client.score_with_audit(
                     task_spec=self.task_config,
                     chat_history=self.chat_history,
                     rubric_json=self.rubric_json,
                 )
                 self._judge_audit = audit
-                if audit.get("judge_score") is not None:
-                    self.last_reward = audit["judge_score"]
+                score = audit.get("judge_score")
+                if score is not None:
+                    self.last_reward = max(0.0, min(1.0, float(score)))
                 else:
                     logger.warning(
                         f"Judge returned no score for {self.task_key}; "
@@ -965,6 +979,163 @@ class FleetTaskEnv(BaseTextEnv):
                     f"Judge call failed for {self.task_key}: {e}; "
                     f"keeping binary={self._binary_audit_score}"
                 )
+
+            # --- 5. Now tear down (verifier already ran; close_async will skip it)
+            try:
+                await self.openenv_task_env.close_async()
+            except Exception as e:
+                logger.warning(f"Failed to close Fleet environment: {e}")
+            self.openenv_task_env = None
+        else:
+            # Original path (binary / partial) — single close call
+            try:
+                await self.openenv_task_env.close_async()
+                if self.openenv_task_env.final_reward is not None:
+                    self.last_reward = self.openenv_task_env.final_reward
+                self._capture_verifier_feedback()
+            except Exception as e:
+                logger.warning(f"Failed to close Fleet environment: {e}")
+            self.openenv_task_env = None
+
+    def _snapshot_env_url_auth(self) -> tuple[Optional[str], Optional[str]]:
+        """Capture the live Fleet env's root URL + API key before teardown.
+
+        OpenEnv's FleetTaskEnv stores the orchestrator at self._orch and the
+        running Fleet env at self._orch._fleet_env, with a urls.root attribute.
+        After close_async() these get cleared. We snapshot before the verifier
+        runs (which doesn't tear down — only close_async tears down).
+        """
+        env_url = None
+        try:
+            orch = getattr(self.openenv_task_env, "_orch", None)
+            if orch is not None:
+                fleet_env = getattr(orch, "_fleet_env", None)
+                if fleet_env is not None:
+                    env_url = str(fleet_env.urls.root)
+        except Exception as e:
+            logger.warning(f"Could not snapshot env URL for probes: {e}")
+        return env_url, self.api_key
+
+    async def _run_verifier_keep_alive(self) -> None:
+        """Run the OpenEnv verifier WITHOUT calling close_async() (keeps env up).
+
+        Mirrors the verifier-only branch of OpenEnv.FleetTaskEnv.close_async,
+        marking _rollout_completed_emitted so the subsequent close skips the verifier.
+        """
+        env = self.openenv_task_env
+        # Only run if rollout was started and verifier hasn't already run
+        rollout_started = getattr(env, "_rollout_started", False)
+        already_emitted = getattr(env, "_rollout_completed_emitted", False)
+        already_computed = getattr(env, "_reward_computed", False)
+        if rollout_started and not already_emitted and not already_computed:
+            env.final_reward = await env._compute_reward()
+            env._reward_computed = True
+            # mark emitted so close_async won't re-run the verifier
+            env._rollout_completed_emitted = True
+        if env.final_reward is not None:
+            self.last_reward = env.final_reward
+
+    def _build_env_probe_callbacks(
+        self, env_url: Optional[str], api_key: Optional[str]
+    ) -> Dict[str, Any]:
+        """Build the dict of probe callables exposed to the judge as tool calls.
+
+        Returns:
+          {
+            "read_env_state":         async (api_path: str) -> JSON | error str
+            "inspect_trajectory_turn":async (turn_index: int) -> dict | error
+            "check_field":            async (api_path, json_path, expected) -> {actual, match}
+            "read_expected_outcome":  async () -> {prose, structured}
+          }
+        """
+        chat_history_snapshot = list(self.chat_history)
+        task_config_snapshot = dict(self.task_config) if self.task_config else {}
+
+        async def _read_env_state(api_path: str):
+            if not env_url or not api_path:
+                return {"error": "env URL unavailable (probably already torn down)"}
+            try:
+                import httpx
+
+                base = env_url.rstrip("/")
+                url = base + ("/" + api_path.lstrip("/"))
+                headers = {}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(url, headers=headers)
+                if resp.status_code >= 400:
+                    return {"error": f"HTTP {resp.status_code}", "body": resp.text[:600]}
+                ct = resp.headers.get("content-type", "")
+                if "json" in ct:
+                    return resp.json()
+                return {"raw": resp.text[:4000]}
+            except Exception as e:
+                return {"error": f"probe failed: {type(e).__name__}: {e}"}
+
+        async def _inspect_trajectory_turn(turn_index: int):
+            try:
+                idx = int(turn_index)
+            except (TypeError, ValueError):
+                return {"error": f"invalid turn_index: {turn_index!r}"}
+            if idx < 0 or idx >= len(chat_history_snapshot):
+                return {
+                    "error": f"out of range; trajectory has {len(chat_history_snapshot)} turns",
+                    "n_turns": len(chat_history_snapshot),
+                }
+            msg = chat_history_snapshot[idx]
+            return {
+                "turn": idx,
+                "role": msg.get("role"),
+                "content": (msg.get("content") or "")[:8000],
+            }
+
+        async def _check_field(api_path: str, json_path: str, expected):
+            data = await _read_env_state(api_path)
+            if isinstance(data, dict) and "error" in data:
+                return {"actual": None, "match": False, "error": data["error"]}
+            cur = data
+            try:
+                for part in (json_path or "").split("."):
+                    if not part:
+                        continue
+                    if part.endswith("]") and "[" in part:
+                        # support a.b[0] indexing
+                        key, rest = part.split("[", 1)
+                        idx = int(rest.rstrip("]"))
+                        if key:
+                            cur = cur[key]
+                        cur = cur[idx]
+                    else:
+                        cur = cur[part]
+            except (KeyError, IndexError, TypeError) as e:
+                return {"actual": None, "match": False, "error": f"path traversal failed: {e}"}
+            return {"actual": cur, "match": (cur == expected)}
+
+        async def _read_expected_outcome():
+            structured = None
+            for k in ("expected_outcome", "outcome", "expected_state"):
+                if task_config_snapshot.get(k):
+                    structured = task_config_snapshot[k]
+                    break
+            verifier_code = task_config_snapshot.get("verifier_code") or task_config_snapshot.get(
+                "verifier_func"
+            )
+            return {
+                "prose": (
+                    "See verifier function for ground-truth checks. "
+                    "Task prompt: " + (task_config_snapshot.get("prompt") or "")[:2000]
+                ),
+                "structured": structured,
+                "verifier_code": (verifier_code or "")[:6000],
+            }
+
+        return {
+            "read_env_state": _read_env_state,
+            "inspect_trajectory_turn": _inspect_trajectory_turn,
+            "check_field": _check_field,
+            "read_expected_outcome": _read_expected_outcome,
+        }
 
     def get_metrics(self) -> Dict[str, Any]:
         """Return environment metrics for this episode."""
