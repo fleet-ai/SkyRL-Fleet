@@ -74,7 +74,11 @@ envs:
   RESULTS_S3:      "s3://fleet-guanghan/witness_sft_v3/eval/tier2/"
   GAME:            "tw07"     # slide game, perception correct
   MAX_LEVELS:      "5"
-  MAX_STEPS:       "150"      # per-level cap, matches B4
+  # Per-level step cap. B4 Sonnet runs averaged ~290 steps/level on tw07
+  # (5/5 across all 5 configs at 277-311 steps/level avg). Setting 300 here
+  # matches that envelope so the SFT/Instruct arms aren't unfairly truncated
+  # below Sonnet's working range.
+  MAX_STEPS:       "300"
 
 setup: |
   if ! command -v c++ &>/dev/null; then
