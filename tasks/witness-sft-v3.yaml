@@ -1,0 +1,150 @@
+# ARC-AGI-3: SFT (B6) on v3 ChatML pairs distilled from B4 traces.
+#
+# Differences vs witness-grpo-*.yaml:
+#   - No env, reward, harness, arc-witness-envs clone (SFT is offline)
+#   - No prepare_witness_dataset.py (data is the v3 jsonl, file-mounted)
+#   - Calls sft_trainer_v3.py (cross_entropy via WorkerDispatch.forward_backward)
+#
+# Repo path fixes from prior GRPO yaml:
+#   - workdir: SkyRL-v2.git -> SkyRL-Fleet.git
+#   - branch:  guanghan/arc-agi-training-v2 -> guanghan/sft-b6
+#
+# Usage:
+#   cd SkyRL-Fleet
+#   sky launch tasks/witness-sft-v3.yaml \
+#     --env WANDB_API_KEY=<key> \
+#     -y --down
+
+resources:
+  disk_size: 500
+  ports: 6479
+  any_of:
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: runpod
+    - accelerators: H200:8
+      cloud: lambda
+    - accelerators: H200:8
+      cloud: nebius
+    - accelerators: H200-SXM:8
+      cloud: vast
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/sft-b6
+
+# Mount the v3 SFT pairs from the local artifacts dir into the cloud node.
+# Path on the launching machine is fixed; adjust if launching from elsewhere.
+file_mounts:
+  /home/sky/data/sft_pairs_judged.jsonl:
+    source: ~/Documents/obsidian/research-directions/artifacts/arc-witness-runs/sft_data/v3/sft_pairs_judged.jsonl
+    mode: COPY
+
+envs:
+  LOGGER: "wandb"
+  MODEL: "Qwen/Qwen3.5-9B"
+  # SFT hyperparameters
+  EPOCHS: "3"
+  BATCH_SIZE: "8"
+  MICRO_BATCH_SIZE: "1"
+  LR: "1e-5"
+  MAX_LENGTH: "4096"
+  JUDGE_SCORE_MIN: "2"
+  WANDB_PROJECT: "arc-agi-3"
+  WANDB_RUN_NAME: "witness_sft_v3_judged"
+
+setup: |
+  # --- Python environment & base deps (same as GRPO yaml) ---
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb
+
+  # --- Qwen3.5 deps (transformers 5.3.0, CUDA toolkit, causal-conv1d) ---
+  source scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  set -euo pipefail
+
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  TMP_DIR="$HOME/skyrl-tmp"
+  mkdir -p "$TMP_DIR"
+  export TMPDIR="$TMP_DIR"
+  export HYDRA_FULL_ERROR=1
+
+  # --- GCP NCCL/gIB handling (identical to GRPO yaml) ---
+  ON_GCP=false
+  if [ -d "/usr/local/gib" ] || { [ -f "/sys/class/dmi/id/product_name" ] && grep -qi "google" /sys/class/dmi/id/product_name 2>/dev/null; }; then
+    ON_GCP=true
+  fi
+  if [ "$ON_GCP" = true ]; then
+    if ! { [ -d "/sys/class/infiniband" ] && [ "$(ls /sys/class/infiniband/ 2>/dev/null)" ]; }; then
+      echo "GCP without RDMA — disabling gIB"
+      export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH:-}" | sed 's|/usr/local/gib/lib64:||g; s|:/usr/local/gib/lib64||g; s|/usr/local/gib/lib64||g')
+      unset NCCL_NET 2>/dev/null || true
+      unset NCCL_CROSS_NIC NCCL_NET_GDR_LEVEL NCCL_P2P_NET_CHUNKSIZE NCCL_NVLS_CHUNKSIZE 2>/dev/null || true
+      unset NCCL_IB_ADAPTIVE_ROUTING NCCL_IB_QPS_PER_CONNECTION NCCL_IB_TC NCCL_IB_FIFO_TC 2>/dev/null || true
+      unset NCCL_TUNER_CONFIG_PATH 2>/dev/null || true
+      export NCCL_CUMEM_ENABLE=0
+    fi
+    SHM_SIZE=$(df --output=size /dev/shm 2>/dev/null | tail -1 | tr -d ' ')
+    if [ -n "$SHM_SIZE" ] && [ "$SHM_SIZE" -lt 16777216 ]; then
+      sudo mount -o remount,size=16G /dev/shm 2>&1 || true
+    fi
+  fi
+  sudo sysctl -w kernel.yama.ptrace_scope=0 2>/dev/null || true
+  ulimit -n 1048576 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+
+  # --- Ray setup (single node, head only) ---
+  export RAY_RUNTIME_ENV_HOOK=ray._private.runtime_env.uv_runtime_env_hook.hook
+  export RAY_object_store_memory=10000000000
+  export RAY_DISABLE_MEMORY_MONITOR=1
+
+  if ! ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then
+    ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000
+  fi
+  for _ in $(seq 1 24); do
+    if ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then break; fi
+    sleep 5
+  done
+
+  # --- wandb login ---
+  python3 -c "import wandb; wandb.login(relogin=True, key='$WANDB_API_KEY')"
+
+  CKPT_DIR="$HOME/ckpts/witness_sft_v3"
+  mkdir -p "$CKPT_DIR"
+
+  python -m examples.train_integrations.witness.sft_trainer_v3 \
+    --data /home/sky/data/sft_pairs_judged.jsonl \
+    --model "$MODEL" \
+    --epochs "$EPOCHS" \
+    --batch_size "$BATCH_SIZE" \
+    --micro_batch_size "$MICRO_BATCH_SIZE" \
+    --lr "$LR" \
+    --max_length "$MAX_LENGTH" \
+    --judge_score_min "$JUDGE_SCORE_MIN" \
+    --num_gpus "$SKYPILOT_NUM_GPUS_PER_NODE" \
+    --strategy fsdp2 \
+    --output_dir "$CKPT_DIR" \
+    --logger "$LOGGER" \
+    --wandb_project "$WANDB_PROJECT" \
+    --wandb_run_name "$WANDB_RUN_NAME"
+
+  echo "[done] SFT complete. Final FSDP shards in $CKPT_DIR/global_step_*_final"
+  echo "[next] Merge to HF format:"
+  echo "  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \\"
+  echo "    --checkpoint_dir $CKPT_DIR/global_step_*_final/policy \\"
+  echo "    --output_dir $CKPT_DIR/merged --model_name $MODEL"
