@@ -56,9 +56,18 @@ setup: |
   fi
   uv venv --python 3.12 --seed
   source .venv/bin/activate
-  # Minimal deps: torch + transformers (Qwen3.5 needs 5.3.0 for VLM arch)
-  uv pip install --quiet torch numpy boto3 awscli accelerate
-  uv pip install --quiet "transformers==5.3.0"
+  # Use the same proven setup as SFT training + recovery yamls. Plain
+  # `uv pip install torch` gets the latest torch from PyPI which requires
+  # newer CUDA than the GCP image's driver (cu128 → driver 570). uv sync
+  # against SkyRL's pyproject pins torch 2.10+cu128 which matches.
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install --quiet boto3 awscli accelerate
+
+  # transformers 5.3.0 + flash-attn wheel + CUDA env (Qwen3.5 VLM arch needs this)
+  source scripts/fleet-qwen35-extra-setup.sh
 
 run: |
   source .venv/bin/activate
