@@ -276,16 +276,37 @@ def main():
     logger.info(f"[tok] tokenizing {len(pairs)} pairs (max_length={args.max_length})")
     tokenized = []
     n_dropped_truncated = 0
+    n_at_max_length = 0  # silent partial-truncation: assistant tail may be cut
     for p in pairs:
         ex = chatml_to_sft_example(p, tokenizer, max_length=args.max_length)
         if ex is None:
             n_dropped_truncated += 1
             continue
+        if len(ex["input_ids"]) >= args.max_length:
+            n_at_max_length += 1
         tokenized.append(ex)
     logger.info(
         f"[tok] kept {len(tokenized)}/{len(pairs)} after tokenization "
-        f"(dropped {n_dropped_truncated} due to truncation)"
+        f"(dropped {n_dropped_truncated} as fully truncated)"
     )
+    if n_at_max_length:
+        logger.warning(
+            f"[tok] {n_at_max_length} samples hit max_length={args.max_length} — "
+            f"assistant tail may be partially cut. Consider raising --max_length."
+        )
+
+    # Sanity: decode boundary of first 3 examples to verify ChatML split
+    # produces clean prompt/assistant separation (catches tokenizer quirks
+    # that would silently misalign loss_mask).
+    logger.info("[tok] tokenization boundary sanity (first 3 examples):")
+    for i, ex in enumerate(tokenized[:3]):
+        boundary = len(ex["input_ids"]) - ex["num_actions"]
+        last_5_prompt = tokenizer.decode(ex["input_ids"][max(0, boundary - 5) : boundary])
+        first_5_assistant = tokenizer.decode(ex["input_ids"][boundary : boundary + 5])
+        logger.info(
+            f"  [{i}] full_len={len(ex['input_ids'])} num_actions={ex['num_actions']} | "
+            f"prompt-tail={last_5_prompt!r} -> assistant-head={first_5_assistant!r}"
+        )
 
     # Token-length stats — useful for diagnosing OOM / truncation issues
     full_lens = [len(ex["input_ids"]) for ex in tokenized]
