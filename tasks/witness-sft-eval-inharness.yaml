@@ -49,14 +49,18 @@ workdir:
   url: https://github.com/fleet-ai/SkyRL-Fleet.git
   ref: guanghan/sft-b6
 
+# arc-witness-agent is private (fleet-ai), and arc-witness-envs we'd
+# rather not pull from github inside an unvetted spot VM. file_mounts
+# rsyncs both from the local launch machine (same pattern as v3 jsonl
+# was mounted for SFT training).
+file_mounts:
+  /home/sky/arc-witness-agent:  ~/Documents/obsidian/research-directions/repos/arc-witness-agent
+  /home/sky/arc-witness-envs:   ~/Documents/obsidian/research-directions/repos/arc-witness-envs
+
 envs:
   SFT_MODEL_S3:    "s3://fleet-guanghan/witness_sft_v3/merged/"
   BASE_MODEL:      "Qwen/Qwen3.5-9B"
   RESULTS_S3:      "s3://fleet-guanghan/witness_sft_v3/eval/tier2/"
-  WITNESS_AGENT_REPO: "https://github.com/Guanghan/arc-witness-agent.git"
-  WITNESS_AGENT_REF:  "main"
-  WITNESS_ENVS_REPO:  "https://github.com/Guanghan/arc-witness-envs.git"
-  WITNESS_ENVS_REF:   "main"
   GAME:            "tw07"     # slide game, perception correct
   MAX_LEVELS:      "5"
   MAX_STEPS:       "150"      # per-level cap, matches B4
@@ -78,18 +82,14 @@ setup: |
   # vLLM should already be in fsdp extras, confirm
   python -c "import vllm; print(f'vllm {vllm.__version__}')"
 
-  # ── Clone the agent harness + envs ──
-  if [ ! -d "$HOME/arc-witness-agent" ]; then
-    git clone --depth 1 --branch "$WITNESS_AGENT_REF" "$WITNESS_AGENT_REPO" "$HOME/arc-witness-agent"
-  fi
-  if [ ! -d "$HOME/arc-witness-envs" ]; then
-    git clone --depth 1 --branch "$WITNESS_ENVS_REF" "$WITNESS_ENVS_REPO" "$HOME/arc-witness-envs"
-  fi
-  # Install the agent's deps into our venv (it has its own pyproject)
-  cd "$HOME/arc-witness-agent"
-  uv pip install --quiet -e . || pip install --quiet -e . || true
+  # arc-witness-agent and arc-witness-envs are file-mounted at
+  # /home/sky/arc-witness-{agent,envs} (see file_mounts above). We don't
+  # need to clone — just install the agent's deps into our venv.
+  ls -la /home/sky/arc-witness-agent/ | head -5
+  ls -la /home/sky/arc-witness-envs/ | head -5
+  cd /home/sky/arc-witness-agent
   uv pip install --quiet pyyaml numpy pillow openai anthropic loguru
-  # arc-agi SDK for env access
+  # arc-agi SDK for env access (provides ActionInput, GameAction, ARCBaseGame)
   uv pip install --quiet arc-agi
 
 run: |
@@ -107,8 +107,8 @@ run: |
 
   set -uo pipefail
 
-  export PYTHONPATH="$HOME/arc-witness-agent:$HOME/arc-witness-envs:${PYTHONPATH:-}"
-  export WITNESS_ENVS_DIR="$HOME/arc-witness-envs"
+  export PYTHONPATH="/home/sky/arc-witness-agent:/home/sky/arc-witness-envs:${PYTHONPATH:-}"
+  export WITNESS_ENVS_DIR="/home/sky/arc-witness-envs"
 
   # ── Step 1: Download SFT'd model from S3 ──
   echo
@@ -164,7 +164,7 @@ run: |
 
     # Run agent against vLLM endpoint
     echo "[agent] running run_agent.py for $GAME, max_levels=$MAX_LEVELS"
-    cd "$HOME/arc-witness-agent"
+    cd /home/sky/arc-witness-agent
     python run_agent.py \
       --game "$GAME" \
       --seed 0 \
