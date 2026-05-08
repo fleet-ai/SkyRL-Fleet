@@ -1,5 +1,15 @@
-# Tier 2 in-harness evaluation — SFT'd vs base Qwen3.5-9B running inside the
-# real ORAI agent harness on tw07 (slide game where perception is correct).
+# Tier 2 in-harness evaluation — SFT'd vs **Instruct** Qwen3.5-9B running
+# inside the real ORAI agent harness on tw07 (slide game where perception
+# is correct per Finding I).
+#
+# Baseline choice — Instruct, NOT pretrain base:
+#   Tier 1 already showed pretrain Qwen3.5-9B has 0% format validity (it's
+#   never seen ChatML, will output free-form continuation). Comparing against
+#   it in-harness is a strawman — agent's parser would fail every step,
+#   inflating "SFT wins" with no real signal.
+#   Qwen3.5-9B-Instruct is the proper baseline: same family, same vLLM
+#   serving path, already chat-aligned. Tells us whether our domain SFT
+#   adds value beyond Qwen team's general instruction-tuning.
 #
 # Why tw07 only: Finding I (perception cell-vs-dot grid) means tw01/tw04/tw13
 # would fail regardless of SFT quality. tw07's slide mechanic uses cell
@@ -8,10 +18,10 @@
 #
 # How it works:
 #   1. Spin H100x1 spot
-#   2. Clone arc-witness-agent (the harness) + arc-witness-envs (the games)
+#   2. file_mount arc-witness-agent + arc-witness-envs (private; rsync'd from local)
 #   3. Two arms run sequentially (saves GPU vs running both simultaneously):
-#      Arm A: vLLM serve base Qwen3.5-9B → run_agent --llm-base-url localhost
-#      Arm B: vLLM serve SFT'd model     → run_agent --llm-base-url localhost
+#      Arm A: vLLM serve Qwen3.5-9B-Instruct → run_agent
+#      Arm B: vLLM serve SFT'd model         → run_agent
 #   4. Each arm runs tw07 levels 1-5 with seed=0
 #   5. Compare: levels_solved, steps_to_solve, total_llm_tokens, format_validity
 #
@@ -59,7 +69,8 @@ file_mounts:
 
 envs:
   SFT_MODEL_S3:    "s3://fleet-guanghan/witness_sft_v3/merged/"
-  BASE_MODEL:      "Qwen/Qwen3.5-9B"
+  # Use Instruct (not pretrain base) — see header comment for rationale
+  BASELINE_MODEL:  "Qwen/Qwen3.5-9B-Instruct"
   RESULTS_S3:      "s3://fleet-guanghan/witness_sft_v3/eval/tier2/"
   GAME:            "tw07"     # slide game, perception correct
   MAX_LEVELS:      "5"
@@ -189,10 +200,10 @@ run: |
     return "$agent_rc"
   }
 
-  # ── Step 2: ARM A — base ──
-  run_arm "base" "$BASE_MODEL" "qwen-base" || echo "[arm] base had non-zero exit; continuing to sft arm"
+  # ── Step 2: ARM A — Qwen3.5-9B-Instruct (off-the-shelf alignment baseline) ──
+  run_arm "instruct" "$BASELINE_MODEL" "qwen-instruct" || echo "[arm] instruct had non-zero exit; continuing to sft arm"
 
-  # ── Step 3: ARM B — SFT ──
+  # ── Step 3: ARM B — our SFT'd model ──
   run_arm "sft" "$SFT_LOCAL" "qwen-sft" || echo "[arm] sft had non-zero exit"
 
   # ── Step 4: Compare + upload ──
@@ -200,9 +211,9 @@ run: |
   echo "================================================================="
   echo "[$(date '+%H:%M:%S')] Step 4 — Summary + upload"
   echo "================================================================="
-  echo "--- BASE arm logs ---"
-  ls -la "$RESULTS_DIR/base/agent_logs/" 2>/dev/null | head -10
-  grep -E "Levels:|Actions:|RESULTS:" "$RESULTS_DIR/base/agent_run.log" 2>/dev/null | tail -10
+  echo "--- INSTRUCT arm logs ---"
+  ls -la "$RESULTS_DIR/instruct/agent_logs/" 2>/dev/null | head -10
+  grep -E "Levels:|Actions:|RESULTS:" "$RESULTS_DIR/instruct/agent_run.log" 2>/dev/null | tail -10
   echo
   echo "--- SFT arm logs ---"
   ls -la "$RESULTS_DIR/sft/agent_logs/" 2>/dev/null | head -10
