@@ -13,7 +13,16 @@
 #   cd SkyRL-Fleet
 #   sky launch tasks/witness-sft-v3.yaml \
 #     --env WANDB_API_KEY=<key> \
+#     --env AWS_ACCESS_KEY_ID=<key> \
+#     --env AWS_SECRET_ACCESS_KEY=<key> \
 #     -y --down
+#
+# Outputs (synced to S3 before VM teardown):
+#   s3://${S3_BUCKET}/${RUN_NAME}/fsdp/global_step_*_final/policy/   FSDP shards
+#   s3://${S3_BUCKET}/${RUN_NAME}/merged/                            HF-format model
+#   s3://${S3_BUCKET}/${RUN_NAME}/run.log                            stdout
+#
+# Then run eval with: tasks/witness-eval.yaml --env CHECKPOINT_S3=s3://${S3_BUCKET}/${RUN_NAME}/merged/
 
 resources:
   disk_size: 500
@@ -57,6 +66,9 @@ envs:
   JUDGE_SCORE_MIN: "2"
   WANDB_PROJECT: "arc-agi-3"
   WANDB_RUN_NAME: "witness_sft_v3_judged"
+  # S3 destination (matches witness-eval.yaml convention)
+  S3_BUCKET: "fleet-worktrial-guanghan"
+  RUN_NAME: "witness_sft_v3"
 
 setup: |
   # --- Python environment & base deps (same as GRPO yaml) ---
@@ -69,7 +81,7 @@ setup: |
   for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
     [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
   done
-  uv pip install wandb
+  uv pip install wandb boto3 awscli
 
   # --- Qwen3.5 deps (transformers 5.3.0, CUDA toolkit, causal-conv1d) ---
   source scripts/fleet-qwen35-extra-setup.sh
@@ -127,6 +139,7 @@ run: |
   CKPT_DIR="$HOME/ckpts/witness_sft_v3"
   mkdir -p "$CKPT_DIR"
 
+  RUN_LOG="$CKPT_DIR/run.log"
   python -m examples.train_integrations.witness.sft_trainer_v3 \
     --data /home/sky/data/sft_pairs_judged.jsonl \
     --model "$MODEL" \
@@ -141,10 +154,32 @@ run: |
     --output_dir "$CKPT_DIR" \
     --logger "$LOGGER" \
     --wandb_project "$WANDB_PROJECT" \
-    --wandb_run_name "$WANDB_RUN_NAME"
+    --wandb_run_name "$WANDB_RUN_NAME" 2>&1 | tee "$RUN_LOG"
 
   echo "[done] SFT complete. Final FSDP shards in $CKPT_DIR/global_step_*_final"
-  echo "[next] Merge to HF format:"
-  echo "  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \\"
-  echo "    --checkpoint_dir $CKPT_DIR/global_step_*_final/policy \\"
-  echo "    --output_dir $CKPT_DIR/merged --model_name $MODEL"
+
+  # --- Merge FSDP shards to HuggingFace format (so eval/serving works) ---
+  FSDP_DIR=$(ls -d "$CKPT_DIR"/global_step_*_final 2>/dev/null | tail -1)
+  if [ -z "$FSDP_DIR" ]; then
+    echo "[ERROR] No final FSDP checkpoint found in $CKPT_DIR — skipping merge + S3 sync"
+    exit 1
+  fi
+  MERGED_DIR="$CKPT_DIR/merged"
+  echo "[merge] $FSDP_DIR/policy -> $MERGED_DIR"
+  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \
+    --checkpoint_dir "$FSDP_DIR/policy" \
+    --output_dir "$MERGED_DIR" \
+    --model_name "$MODEL" 2>&1 | tee -a "$RUN_LOG"
+
+  # --- Upload to S3 before VM teardown ---
+  S3_BASE="s3://${S3_BUCKET}/${RUN_NAME}"
+  echo "[s3] uploading merged HF model -> ${S3_BASE}/merged/"
+  aws s3 sync "$MERGED_DIR" "${S3_BASE}/merged/"
+  echo "[s3] uploading FSDP shards (kept for resume) -> ${S3_BASE}/fsdp/"
+  aws s3 sync "$FSDP_DIR" "${S3_BASE}/fsdp/$(basename $FSDP_DIR)/" \
+    --exclude "*/optim*" --exclude "*/scheduler*"
+  echo "[s3] uploading run log -> ${S3_BASE}/run.log"
+  aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log"
+
+  echo "[done] All artifacts at ${S3_BASE}/"
+  echo "[eval] sky launch tasks/witness-eval.yaml --env CHECKPOINT_S3=${S3_BASE}/merged/"
