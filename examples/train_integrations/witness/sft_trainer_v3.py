@@ -198,8 +198,33 @@ def build_cfg(args) -> SkyRLTrainConfig:
 
 def parse_args():
     p = argparse.ArgumentParser()
+    # Mode
+    p.add_argument(
+        "--recovery_mode", action="store_true",
+        help="Skip training; load existing FSDP shards from --load_ckpt_dir and "
+             "save HF format to --export_dir. Used to recover from a previous "
+             "training run whose ckpt didn't get merged. Same code path as "
+             "GRPO's save_models() (trainer.py:1432) — uses dispatch.save_hf_model.",
+    )
+    p.add_argument(
+        "--load_ckpt_dir", default=None,
+        help="(recovery_mode only) FSDP shards directory to load. Should contain "
+             "model_world_size_*_rank_*.pt files. Typically <s3_root>/fsdp/global_step_N_final/policy.",
+    )
+    p.add_argument(
+        "--export_dir", default=None,
+        help="HF format export directory. In normal training, defaults to "
+             "<output_dir>/merged_hf and is also written at end of training. "
+             "In recovery_mode, REQUIRED.",
+    )
+    p.add_argument(
+        "--s3_export_dest", default=None,
+        help="S3 prefix to sync --export_dir to after save. e.g. "
+             "s3://fleet-guanghan/witness_sft_v3/merged/. Skipped if not set.",
+    )
     # Data
-    p.add_argument("--data", required=True, help="path to sft_pairs_judged.jsonl")
+    p.add_argument("--data", required=False, default=None,
+                   help="path to sft_pairs_judged.jsonl (required unless --recovery_mode)")
     p.add_argument(
         "--judge_score_min",
         type=int,
@@ -234,15 +259,114 @@ def parse_args():
     return p.parse_args()
 
 
+def _init_policy_worker(args, cfg):
+    """Set up Ray placement group + PolicyWorker actor group + WorkerDispatch.
+
+    Shared between training and recovery_mode entry points.
+    Returns (actor_group, dispatch).
+    """
+    logger.info(f"[ray] initializing policy worker (num_gpus={args.num_gpus})")
+    raw_pg = placement_group(
+        [{"GPU": args.num_gpus, "CPU": args.num_gpus}], strategy="PACK"
+    )
+    get_ray_pg_ready_with_timeout(raw_pg, timeout=60)
+    pg = ResolvedPlacementGroup(raw_pg)
+
+    actor_group = PPORayActorGroup(
+        cfg.trainer,
+        num_nodes=1,
+        num_gpus_per_node=args.num_gpus,
+        ray_actor_type=PolicyWorker,
+        pg=pg,
+        num_gpus_per_actor=1.0,
+        colocate_all=False,
+        sequence_parallel_size=cfg.trainer.policy.sequence_parallel_size,
+    )
+    ray.get(actor_group.async_init_model(args.model))
+    dispatch = WorkerDispatch(cfg, policy_actor_group=actor_group)
+    return actor_group, dispatch
+
+
+def _sync_to_s3(local_dir: str, s3_dest: str, label: str) -> None:
+    """aws s3 sync with try/except + verbose logging. Non-fatal on failure
+    (so we don't crash after a successful save just because of S3)."""
+    import subprocess
+
+    s3_dest = s3_dest.rstrip("/") + "/"
+    logger.info(f"[s3] syncing {local_dir} -> {s3_dest} ({label})")
+    try:
+        subprocess.check_call(["aws", "s3", "sync", local_dir, s3_dest])
+        logger.info(f"[s3] {label} synced OK")
+    except Exception as e:
+        logger.error(
+            f"[s3] {label} sync FAILED: {e}. Files still on disk at {local_dir}."
+        )
+
+
+def _run_recovery(args, cfg, tokenizer):
+    """Recovery mode: load existing FSDP shards, save as HF format.
+
+    This is the same code path GRPO uses to produce its `merged_hf/` directories
+    (skyrl/train/trainer.py:1432 save_models() → dispatch.save_hf_model). We
+    use it offline-from-shards by:
+      1. Init Ray + PolicyWorker (loads Qwen3.5-9B base from HF Hub — wasted
+         download but unavoidable; the FSDP wrapper needs to be alive).
+      2. dispatch.load_checkpoint("policy", load_ckpt_dir, ...)  — overrides
+         base weights with our SFT'd FSDP shards.
+      3. dispatch.save_hf_model("policy", export_dir, tokenizer)  — proper
+         FSDP2 gather + HF save_pretrained(safe_serialization=True). Works
+         live because we have a real FSDP-wrapped model + process group.
+      4. (Optional) S3 sync of export_dir.
+    """
+    actor_group, dispatch = _init_policy_worker(args, cfg)
+
+    logger.info(f"[recovery] loading FSDP shards from {args.load_ckpt_dir}")
+    # Don't try to load optimizer / scheduler — we excluded those from S3 sync
+    # (only model weights are present), and we don't need them for HF export.
+    dispatch.load_checkpoint(
+        "policy",
+        args.load_ckpt_dir,
+        load_optimizer_states=False,
+        load_lr_scheduler_states=False,
+    )
+    logger.info("[recovery] FSDP weights loaded into live model")
+
+    os.makedirs(args.export_dir, exist_ok=True)
+    logger.info(f"[recovery] saving HF format to {args.export_dir}")
+    dispatch.save_hf_model("policy", args.export_dir, tokenizer)
+    logger.info(f"[recovery] save_hf_model complete; listing:")
+    for f in sorted(os.listdir(args.export_dir)):
+        full = os.path.join(args.export_dir, f)
+        size = os.path.getsize(full) if os.path.isfile(full) else 0
+        logger.info(f"  {f:50s}  {size / 1e6:>10.1f} MB")
+
+    if args.s3_export_dest:
+        _sync_to_s3(args.export_dir, args.s3_export_dest, "merged_hf")
+
+    ray.shutdown()
+    logger.info("[recovery] done")
+
+
 def main():
     args = parse_args()
     random.seed(args.seed)
 
+    # Validate mode-specific args
+    if args.recovery_mode:
+        if not args.load_ckpt_dir:
+            raise ValueError("--recovery_mode requires --load_ckpt_dir")
+        if not args.export_dir:
+            raise ValueError("--recovery_mode requires --export_dir")
+        logger.info(f"[mode] recovery_mode=True; will load {args.load_ckpt_dir} → save HF to {args.export_dir}")
+    else:
+        if not args.data:
+            raise ValueError("--data is required for training mode (use --recovery_mode to skip)")
+
     cfg = build_cfg(args)
     initialize_ray(cfg)
 
-    # Wandb is optional — only init if logger=wandb
-    if args.logger == "wandb":
+    # Wandb is optional — only init if logger=wandb (and not in recovery mode)
+    if args.logger == "wandb" and not args.recovery_mode:
         try:
             import wandb
 
@@ -262,11 +386,18 @@ def main():
         except Exception as e:
             logger.warning(f"[wandb] init failed: {e}; continuing with console only")
 
-    # ---- Tokenizer ----
+    # ---- Tokenizer (always — needed for save_hf_model in both modes) ----
     logger.info(f"[tok] loading tokenizer for {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # In recovery mode, skip data loading + tokenization + training loop.
+    # We still init the policy worker below (FSDP-wrapped model needed for
+    # load_checkpoint + save_hf_model).
+    if args.recovery_mode:
+        _run_recovery(args, cfg, tokenizer)
+        return
 
     # ---- Data ----
     pairs = load_judged_pairs(args.data, args.judge_score_min)
@@ -322,27 +453,8 @@ def main():
         f"{sorted(action_lens)[int(len(action_lens)*0.95)]}/{max(action_lens)}"
     )
 
-    # ---- Policy worker ----
-    logger.info(f"[ray] initializing policy worker (num_gpus={args.num_gpus})")
-    raw_pg = placement_group(
-        [{"GPU": args.num_gpus, "CPU": args.num_gpus}], strategy="PACK"
-    )
-    get_ray_pg_ready_with_timeout(raw_pg, timeout=60)
-    pg = ResolvedPlacementGroup(raw_pg)
-
-    actor_group = PPORayActorGroup(
-        cfg.trainer,
-        num_nodes=1,
-        num_gpus_per_node=args.num_gpus,
-        ray_actor_type=PolicyWorker,
-        pg=pg,
-        num_gpus_per_actor=1.0,
-        colocate_all=False,
-        sequence_parallel_size=cfg.trainer.policy.sequence_parallel_size,
-    )
-    ray.get(actor_group.async_init_model(args.model))
-
-    dispatch = WorkerDispatch(cfg, policy_actor_group=actor_group)
+    # ---- Policy worker (shared with recovery mode) ----
+    actor_group, dispatch = _init_policy_worker(args, cfg)
 
     # ---- Training loop ----
     bs = args.batch_size
@@ -467,12 +579,32 @@ def main():
                     f"will try them. If that fails, ckpt is lost when VM goes down."
                 )
 
-        logger.info(
-            f"[ckpt] merge to HuggingFace format with: "
-            f"python examples/train_integrations/witness/merge_fsdp_checkpoint.py "
-            f"--checkpoint_dir {policy_save_dir} --output_dir {args.output_dir}/merged "
-            f"--model_name {args.model}"
-        )
+        # ── PRIMARY HF EXPORT — mirror GRPO's save_models() (trainer.py:1432) ──
+        # Uses dispatch.save_hf_model which does fsdp2_get_full_state_dict +
+        # HF model.save_pretrained(safe_serialization=True). This is the
+        # production-validated path for producing eval/serving-ready HF
+        # checkpoints. Avoids the offline merge_fsdp_checkpoint.py workflow
+        # entirely (that script is a fallback, not the primary path).
+        export_dir = args.export_dir or os.path.join(args.output_dir, "merged_hf")
+        os.makedirs(export_dir, exist_ok=True)
+        logger.info(f"[hf-export] saving HF format to {export_dir} via dispatch.save_hf_model")
+        try:
+            dispatch.save_hf_model("policy", export_dir, tokenizer)
+            logger.info(f"[hf-export] save_hf_model complete. Contents:")
+            for f in sorted(os.listdir(export_dir))[:15]:
+                full = os.path.join(export_dir, f)
+                size = os.path.getsize(full) if os.path.isfile(full) else 0
+                logger.info(f"  {f:50s}  {size / 1e6:>10.1f} MB")
+
+            if args.s3_export_dest:
+                _sync_to_s3(export_dir, args.s3_export_dest, "merged_hf")
+        except Exception as e:
+            logger.error(
+                f"[hf-export] save_hf_model FAILED: {e}. "
+                f"Raw FSDP shards already in S3 (if --s3_raw_sync_dest was set), "
+                f"recover offline via: python -m examples.train_integrations.witness.sft_trainer_v3 "
+                f"--recovery_mode --load_ckpt_dir <fsdp_dir> --export_dir <out>"
+            )
 
     logger.info("[done] SFT training complete")
     if args.logger == "wandb":
