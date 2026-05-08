@@ -221,6 +221,11 @@ def parse_args():
     # Output
     p.add_argument("--output_dir", default=None, help="dir to save final FSDP shards")
     p.add_argument("--save_every", type=int, default=0, help="save ckpt every N steps (0=only at end)")
+    p.add_argument(
+        "--s3_raw_sync_dest", default=None,
+        help="S3 prefix for eager raw FSDP shard sync (defense against bash merge failure). "
+             "e.g. s3://fleet-guanghan/witness_sft_v3/fsdp/. Skipped if not set.",
+    )
     # Logging
     p.add_argument("--logger", default="console", help="console | wandb | tensorboard")
     p.add_argument("--wandb_project", default="arc-agi-3")
@@ -378,20 +383,73 @@ def main():
                         pass
 
             if args.save_every and args.output_dir and global_step % args.save_every == 0:
-                ckpt_dir = os.path.join(args.output_dir, f"global_step_{global_step}")
-                logger.info(f"[ckpt] saving FSDP shards to {ckpt_dir}")
-                dispatch.save_checkpoint("policy", ckpt_dir, tokenizer=tokenizer)
+                # Mirror GRPO's path convention exactly (skyrl/train/trainer.py:1261-1268):
+                #   global_step_folder/policy/  ← FSDP shards land HERE
+                # `dispatch.save_checkpoint("policy", policy_save_dir, ...)`'s first
+                # arg "policy" is the actor-group routing key, NOT a path component;
+                # the /policy/ subdirectory must be in the path we pass.
+                global_step_folder = os.path.join(args.output_dir, f"global_step_{global_step}")
+                policy_save_dir = os.path.join(global_step_folder, "policy")
+                os.makedirs(global_step_folder, exist_ok=True)
+                logger.info(f"[ckpt] saving FSDP shards to {policy_save_dir}")
+                dispatch.save_checkpoint("policy", policy_save_dir, tokenizer=tokenizer)
 
-    # ---- Final checkpoint ----
+    # ---- Final checkpoint (GRPO path convention: <ckpt_path>/global_step_N/policy/) ----
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-        ckpt_dir = os.path.join(args.output_dir, f"global_step_{global_step}_final")
-        logger.info(f"[ckpt] saving final FSDP shards to {ckpt_dir}")
-        dispatch.save_checkpoint("policy", ckpt_dir, tokenizer=tokenizer)
+        global_step_folder = os.path.join(args.output_dir, f"global_step_{global_step}_final")
+        policy_save_dir = os.path.join(global_step_folder, "policy")
+        os.makedirs(global_step_folder, exist_ok=True)
+        logger.info(f"[ckpt] saving final FSDP shards to {policy_save_dir}")
+        dispatch.save_checkpoint("policy", policy_save_dir, tokenizer=tokenizer)
+
+        # Verify the save actually wrote shards. We've been burned by silent
+        # path mismatches before — fail loudly here instead of in bash later.
+        try:
+            shards = sorted(p for p in os.listdir(policy_save_dir) if p.startswith("model_world_size_"))
+        except FileNotFoundError:
+            shards = []
+        if not shards:
+            raise RuntimeError(
+                f"[ckpt] save_checkpoint completed but no model_world_size_*_rank_*.pt "
+                f"files found in {policy_save_dir}. Contents: "
+                f"{os.listdir(global_step_folder) if os.path.isdir(global_step_folder) else 'parent missing'}"
+            )
+        logger.info(f"[ckpt] verified {len(shards)} FSDP shard files at {policy_save_dir}")
+
+        # Defense in depth: sync raw FSDP shards to S3 BEFORE we hand off to bash
+        # for merge. If merge fails, at least we still have the raw shards in S3
+        # to merge offline. Spot VMs don't give us second chances.
+        if args.s3_raw_sync_dest:
+            import subprocess
+
+            try:
+                logger.info(
+                    f"[ckpt] eagerly syncing raw FSDP shards to {args.s3_raw_sync_dest} "
+                    f"(safety net before merge)"
+                )
+                subprocess.check_call(
+                    [
+                        "aws", "s3", "sync",
+                        global_step_folder,
+                        args.s3_raw_sync_dest.rstrip("/")
+                        + f"/global_step_{global_step}_final/",
+                        "--exclude", "*/optim*",
+                        "--exclude", "*/scheduler*",
+                    ]
+                )
+                logger.info("[ckpt] raw FSDP shards safe in S3")
+            except Exception as e:
+                logger.error(
+                    f"[ckpt] WARNING: raw FSDP sync to S3 failed: {e}. "
+                    f"Shards still on disk at {global_step_folder}; bash merge step "
+                    f"will try them. If that fails, ckpt is lost when VM goes down."
+                )
+
         logger.info(
             f"[ckpt] merge to HuggingFace format with: "
             f"python examples/train_integrations/witness/merge_fsdp_checkpoint.py "
-            f"--checkpoint_dir {ckpt_dir}/policy --output_dir {args.output_dir}/merged "
+            f"--checkpoint_dir {policy_save_dir} --output_dir {args.output_dir}/merged "
             f"--model_name {args.model}"
         )
 
