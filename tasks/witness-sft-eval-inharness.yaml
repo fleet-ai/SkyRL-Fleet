@@ -1,15 +1,21 @@
-# Tier 2 in-harness evaluation — SFT'd vs **Instruct** Qwen3.5-9B running
-# inside the real ORAI agent harness on tw07 (slide game where perception
-# is correct per Finding I).
+# Tier 2 in-harness evaluation — SFT'd vs off-the-shelf Qwen3.5-9B
+# running inside the real ORAI agent harness on tw07.
 #
-# Baseline choice — Instruct, NOT pretrain base:
-#   Tier 1 already showed pretrain Qwen3.5-9B has 0% format validity (it's
-#   never seen ChatML, will output free-form continuation). Comparing against
-#   it in-harness is a strawman — agent's parser would fail every step,
-#   inflating "SFT wins" with no real signal.
-#   Qwen3.5-9B-Instruct is the proper baseline: same family, same vLLM
-#   serving path, already chat-aligned. Tells us whether our domain SFT
-#   adds value beyond Qwen team's general instruction-tuning.
+# IMPORTANT (2026-05-08 correction): `Qwen/Qwen3.5-9B` IS the instruct
+# version of the model. Qwen3.5 series didn't ship a separate `-Instruct`
+# suffix; this is verified by HF Hub returning 404 for
+# `Qwen/Qwen3.5-9B-Instruct`. So:
+#   - Our SFT was always on TOP of the instruct model (the user's
+#     preferred path) — not on a pretrain base as we'd thought
+#   - This baseline arm is "off-the-shelf instruct (no ORAI training)"
+#   - Tier 2 measures: does our domain SFT add value beyond what
+#     instruct already gives for our specific ORAI XML schema?
+#
+# (Earlier docs that say "from base Qwen3.5-9B" — including
+# 2026-05-08_b6_sft_first_launch_failure.md, _evaluation_plan.md,
+# _tier1_design.md, and Findings Log Finding J — incorrectly assumed
+# Qwen3.5-9B was pretrain. They've been left for historical record
+# but should be read with this correction in mind.)
 #
 # Why tw07 only: Finding I (perception cell-vs-dot grid) means tw01/tw04/tw13
 # would fail regardless of SFT quality. tw07's slide mechanic uses cell
@@ -69,8 +75,12 @@ file_mounts:
 
 envs:
   SFT_MODEL_S3:    "s3://fleet-guanghan/witness_sft_v3/merged/"
-  # Use Instruct (not pretrain base) — see header comment for rationale
-  BASELINE_MODEL:  "Qwen/Qwen3.5-9B-Instruct"
+  # `Qwen/Qwen3.5-9B` IS the instruct version. Qwen3.5 series didn't ship
+  # a separate `-Instruct` suffix — verified 2026-05-08 (HF Hub
+  # `Qwen/Qwen3.5-9B-Instruct` returns 404 OSError). The "base/pretrain"
+  # variant is `Qwen/Qwen3.5-9B-Base` if it exists. So our SFT was already
+  # done on top of instruct, and this baseline is the off-the-shelf instruct.
+  BASELINE_MODEL:  "Qwen/Qwen3.5-9B"
   RESULTS_S3:      "s3://fleet-guanghan/witness_sft_v3/eval/tier2/"
   GAME:            "tw07"     # slide game, perception correct
   MAX_LEVELS:      "5"
@@ -125,7 +135,7 @@ run: |
   export PYTHONPATH="/home/sky/arc-witness-agent:/home/sky/arc-witness-envs:${PYTHONPATH:-}"
   export WITNESS_ENVS_DIR="/home/sky/arc-witness-envs"
 
-  # ── Step 1: Download SFT'd model from S3 ──
+  # ── Step 1: Download SFT'd model from S3 + missing VLM preprocessor ──
   echo
   echo "================================================================="
   echo "[$(date '+%H:%M:%S')] Step 1 — Download SFT'd HF model"
@@ -134,6 +144,26 @@ run: |
   mkdir -p "$SFT_LOCAL"
   aws s3 sync "$SFT_MODEL_S3" "$SFT_LOCAL/" --no-progress
   echo "Downloaded $(du -sh "$SFT_LOCAL" | cut -f1) to $SFT_LOCAL"
+
+  # SkyRL save_hf_model didn't preserve the VLM image processor config.
+  # Qwen3.5-9B is registered as Qwen3_5ForConditionalGeneration (VLM); vLLM
+  # tries to load the processor on serve and crashes without
+  # preprocessor_config.json. Pull it from the original HF Hub model — our
+  # SFT didn't touch image processing, so the original config is correct.
+  if [ ! -f "$SFT_LOCAL/preprocessor_config.json" ]; then
+    echo "[fix] preprocessor_config.json missing — downloading from $BASELINE_MODEL"
+    python -c "
+from huggingface_hub import hf_hub_download
+import shutil
+for fname in ['preprocessor_config.json', 'video_preprocessor_config.json']:
+    try:
+        p = hf_hub_download('$BASELINE_MODEL', fname)
+        shutil.copy(p, '$SFT_LOCAL/' + fname)
+        print(f'  copied {fname}')
+    except Exception as e:
+        print(f'  skip {fname}: {e}')
+" || echo "[fix] WARN: preprocessor download failed; vLLM may crash"
+  fi
 
   # ── Helper: serve a model with vLLM, run agent, kill server ──
   run_arm() {
