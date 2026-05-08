@@ -155,6 +155,13 @@ def build_cfg(args) -> SkyRLTrainConfig:
     cfg = SkyRLTrainConfig()
     cfg.trainer.policy.model.path = args.model
     cfg.trainer.placement.policy_num_gpus_per_node = args.num_gpus
+    # SkyRL's validate_cfg requires num_policy_gpus == num_rollout_gpus
+    # when colocate_all=True (the default). SFT doesn't actually run
+    # rollout, but the validator doesn't differentiate. Match the rollout
+    # engine count to the policy GPU count — same convention as the GRPO
+    # yamls (e.g. tasks/witness-grpo-*.yaml: num_inference_engines = TOTAL_POLICY_GPUS).
+    # See utils/utils.py:341-350.
+    cfg.generator.inference_engine.num_engines = args.num_gpus
     cfg.trainer.micro_train_batch_size_per_gpu = args.micro_batch_size
     cfg.trainer.policy.optimizer_config.lr = args.lr
     cfg.trainer.strategy = args.strategy  # "fsdp2" for multi-GPU, "fsdp" for single
