@@ -1,0 +1,180 @@
+# Recovery yaml: load existing FSDP shards, save as HF format via SkyRL's
+# OFFICIAL save_hf_model path (same code GRPO uses to produce its merged_hf/
+# directories during normal training).
+#
+# Why this exists: the offline merge_fsdp_checkpoint.py script (which we
+# tried 4 rounds of fixes on) is a backup fallback that was never properly
+# tested against Qwen3.5 VLM (per tasks/witness-eval.yaml:60 comment:
+# "Prefer that [merged_hf/] over manual FSDP shard merging."). The proper
+# path is to load the FSDP shards into a live FSDP-wrapped model and then
+# call dispatch.save_hf_model — which uses fsdp2_get_full_state_dict +
+# HF save_pretrained(safe_serialization=True). No offline storage handle
+# issues, no DTensor merge logic to write.
+#
+# Cost: ~$30 (H200x8 spot, ~30 min wall — most time is base-model download
+# from HF Hub + FSDP wrapping + ckpt load + save). Same GPU class as training.
+#
+# Usage:
+#   cd SkyRL-Fleet
+#   sky launch tasks/witness-sft-recover-via-savehf.yaml \
+#     --env WANDB_API_KEY=<key> \
+#     --env AWS_ACCESS_KEY_ID=<key> \
+#     --env AWS_SECRET_ACCESS_KEY=<key> \
+#     -y --down
+
+resources:
+  disk_size: 500
+  ports: 6479
+  any_of:
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: runpod
+    - accelerators: H200:8
+      cloud: lambda
+    - accelerators: H200:8
+      cloud: nebius
+    - accelerators: H200-SXM:8
+      cloud: vast
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/sft-b6
+
+envs:
+  MODEL: "Qwen/Qwen3.5-9B"
+  S3_BUCKET: "fleet-guanghan"
+  RUN_NAME: "witness_sft_v3"
+  LOAD_CKPT_S3: "s3://fleet-guanghan/witness_sft_v3/fsdp/global_step_63_final/policy"
+  EXPORT_S3:    "s3://fleet-guanghan/witness_sft_v3/merged/"
+
+setup: |
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb boto3 awscli
+
+  # Same Qwen3.5 deps as SFT/GRPO yamls — transformers 5.3.0 etc.
+  source scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  S3_BASE="s3://${S3_BUCKET}/${RUN_NAME}"
+  WORK="$HOME/recover_work"
+  mkdir -p "$WORK"
+
+  # ── PERSISTENT LOG (trap on EXIT, all paths) ─────────────────────────
+  RECOVER_LOG="$WORK/recover_run.log"
+  exec > >(tee -a "$RECOVER_LOG") 2>&1
+  trap 'echo "[trap] uploading recover log on exit"; aws s3 cp "$RECOVER_LOG" "${S3_BASE}/recover_run.log" 2>&1 || true' EXIT
+  echo "[$(date '+%H:%M:%S')] log persistence active; will upload to ${S3_BASE}/recover_run.log on any exit"
+
+  set -uo pipefail
+
+  # ── GCP/Ray/NCCL bringup (identical to SFT yaml) ─────────────────────
+  TMP_DIR="$HOME/skyrl-tmp"
+  mkdir -p "$TMP_DIR"
+  export TMPDIR="$TMP_DIR"
+  export HYDRA_FULL_ERROR=1
+
+  ON_GCP=false
+  if [ -d "/usr/local/gib" ] || { [ -f "/sys/class/dmi/id/product_name" ] && grep -qi "google" /sys/class/dmi/id/product_name 2>/dev/null; }; then
+    ON_GCP=true
+  fi
+  if [ "$ON_GCP" = true ]; then
+    if ! { [ -d "/sys/class/infiniband" ] && [ "$(ls /sys/class/infiniband/ 2>/dev/null)" ]; }; then
+      echo "GCP without RDMA — disabling gIB"
+      export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH:-}" | sed 's|/usr/local/gib/lib64:||g; s|:/usr/local/gib/lib64||g; s|/usr/local/gib/lib64||g')
+      unset NCCL_NET 2>/dev/null || true
+      unset NCCL_CROSS_NIC NCCL_NET_GDR_LEVEL NCCL_P2P_NET_CHUNKSIZE NCCL_NVLS_CHUNKSIZE 2>/dev/null || true
+      unset NCCL_IB_ADAPTIVE_ROUTING NCCL_IB_QPS_PER_CONNECTION NCCL_IB_TC NCCL_IB_FIFO_TC 2>/dev/null || true
+      unset NCCL_TUNER_CONFIG_PATH 2>/dev/null || true
+      export NCCL_CUMEM_ENABLE=0
+    fi
+    SHM_SIZE=$(df --output=size /dev/shm 2>/dev/null | tail -1 | tr -d ' ')
+    if [ -n "$SHM_SIZE" ] && [ "$SHM_SIZE" -lt 16777216 ]; then
+      sudo mount -o remount,size=16G /dev/shm 2>&1 || true
+    fi
+  fi
+  sudo sysctl -w kernel.yama.ptrace_scope=0 2>/dev/null || true
+  ulimit -n 1048576 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+
+  export RAY_RUNTIME_ENV_HOOK=ray._private.runtime_env.uv_runtime_env_hook.hook
+  export RAY_object_store_memory=10000000000
+  export RAY_DISABLE_MEMORY_MONITOR=1
+
+  if ! ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then
+    ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000
+  fi
+  for _ in $(seq 1 24); do
+    if ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then break; fi
+    sleep 5
+  done
+
+  # ── Step 1: Download FSDP shards from S3 ───────────────────────────
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 1 — Download FSDP shards"
+  echo "================================================================="
+  LOCAL_CKPT="$WORK/fsdp_ckpt/policy"
+  mkdir -p "$LOCAL_CKPT"
+  aws s3 sync "$LOAD_CKPT_S3/" "$LOCAL_CKPT/" --no-progress
+  echo "Downloaded:"
+  ls -la "$LOCAL_CKPT" | head -25
+
+  # ── Step 2: Run trainer in --recovery_mode ─────────────────────────
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 2 — Recovery via dispatch.save_hf_model"
+  echo "================================================================="
+  EXPORT_DIR="$WORK/merged_hf"
+  python -m examples.train_integrations.witness.sft_trainer_v3 \
+    --recovery_mode \
+    --model "$MODEL" \
+    --num_gpus "$SKYPILOT_NUM_GPUS_PER_NODE" \
+    --strategy fsdp2 \
+    --load_ckpt_dir "$LOCAL_CKPT" \
+    --export_dir "$EXPORT_DIR" \
+    --s3_export_dest "$EXPORT_S3" \
+    --logger console
+  RC=$?
+
+  # ── Step 3: Final verification ─────────────────────────────────────
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 3 — Verify"
+  echo "================================================================="
+  echo "trainer recovery_mode exit code: $RC"
+  echo
+  echo "--- Local export dir ---"
+  ls -la "$EXPORT_DIR" 2>/dev/null
+  echo
+  echo "--- Total local size ---"
+  du -sh "$EXPORT_DIR" 2>/dev/null
+  echo
+  echo "--- S3 destination contents ---"
+  aws s3 ls "$EXPORT_S3" --human-readable | head -20
+  echo
+  echo "--- S3 total size ---"
+  aws s3 ls "$EXPORT_S3" --recursive --summarize | tail -3
+
+  if [ "$RC" -eq 0 ]; then
+    echo "[$(date '+%H:%M:%S')] ✓ Recovery succeeded"
+    echo "  HF model:    $EXPORT_S3"
+    echo "  Eval with:   sky launch tasks/witness-eval.yaml --env CHECKPOINT_S3=$EXPORT_S3"
+  else
+    echo "[$(date '+%H:%M:%S')] ✗ Recovery FAILED (rc=$RC) — check log: $S3_BASE/recover_run.log"
+    exit "$RC"
+  fi
