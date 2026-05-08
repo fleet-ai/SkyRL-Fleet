@@ -145,32 +145,67 @@ def main():
     # storage was freshly allocated by torch.from_numpy (not inherited from
     # any FSDP/DTensor lineage). `.numpy()` requires a plain CPU Tensor — so
     # we first peel off any DTensor wrapper via `_local_tensor`.
-    print(f"  Materializing {len(full_state_dict)} tensors via numpy round-trip...")
-    n_dtensor = n_failed = 0
+    print(f"  Materializing {len(full_state_dict)} tensors via cascading fallback...")
+    n_dtensor = n_via_numpy = n_via_copy_into = n_failed = 0
     materialized = {}
-    for k, v in full_state_dict.items():
-        # Peel DTensor wrapper if present
-        if "DTensor" in type(v).__name__ or hasattr(v, "_local_tensor"):
-            n_dtensor += 1
-            if hasattr(v, "_local_tensor"):
-                v = v._local_tensor
-            elif hasattr(v, "to_local"):
+
+    def _peel_dtensor(t):
+        """Strip DTensor wrapper, returning best-effort plain Tensor."""
+        if "DTensor" in type(t).__name__ or hasattr(t, "_local_tensor"):
+            if hasattr(t, "_local_tensor"):
+                return t._local_tensor, True
+            if hasattr(t, "to_local"):
                 try:
-                    v = v.to_local()
+                    return t.to_local(), True
                 except Exception:
                     pass
+            if hasattr(t, "full_tensor"):
+                try:
+                    return t.full_tensor(), True
+                except Exception:
+                    pass
+        return t, False
 
-        # Detach + cpu, then numpy round-trip for fresh storage
+    for k, v in full_state_dict.items():
+        v, was_dtensor = _peel_dtensor(v)
+        if was_dtensor:
+            n_dtensor += 1
+
+        # Cascading materialization. Each path produces a fresh-storage tensor.
+        # Path A: numpy round-trip (fastest, requires .numpy() to work)
         try:
             arr = v.detach().cpu().numpy()
-            materialized[k] = torch.from_numpy(arr.copy())  # .copy() ensures fresh np.ndarray
+            materialized[k] = torch.from_numpy(arr.copy())
+            n_via_numpy += 1
+            continue
+        except Exception:
+            pass
+
+        # Path B: allocate a zero tensor then copy_ into it (avoids numpy entirely;
+        # copy_ goes through the source tensor's element accessor which doesn't
+        # depend on storage().data_ptr())
+        try:
+            shape = tuple(v.shape)
+            dtype = v.dtype
+            fresh = torch.empty(shape, dtype=dtype, device="cpu")
+            with torch.no_grad():
+                fresh.copy_(v.detach().cpu())
+            materialized[k] = fresh
+            n_via_copy_into += 1
+            continue
         except Exception as e:
-            print(f"    WARNING: numpy round-trip failed for {k!r}: {e}; using raw tensor")
+            print(f"    WARNING: both numpy and copy_into failed for {k!r}: {e}; "
+                  f"using raw tensor (save may fail)")
             materialized[k] = v
             n_failed += 1
+
     full_state_dict = materialized
-    print(f"  Materialized {len(full_state_dict)} tensors "
-          f"({n_dtensor} were DTensor-wrapped, {n_failed} fell back to raw)")
+    print(f"  Materialized: dtensor_wrapped={n_dtensor} "
+          f"via_numpy={n_via_numpy} via_copy_into={n_via_copy_into} "
+          f"failed_to_materialize={n_failed}")
+    if n_failed:
+        print(f"  WARNING: {n_failed} tensors fell back to raw — save may still crash. "
+              f"Will use --safe_serialization=False as last resort if save fails.")
 
     # Load config
     print(f"  Loading model config...")
@@ -217,8 +252,29 @@ def main():
         print(f"    first unexpected keys: {unexpected[:5]}")
 
     os.makedirs(args.output_dir, exist_ok=True)
-    print(f"  Saving via model.save_pretrained(safe_serialization=True) ...")
-    model.save_pretrained(args.output_dir, safe_serialization=True)
+    # Try safetensors first (preferred — smaller, safer, faster load).
+    # Fall back to torch.save (.bin) if any tensor still has storage issues
+    # — HF's from_pretrained tries .safetensors first then .bin.
+    saved_via = None
+    try:
+        print(f"  Saving via model.save_pretrained(safe_serialization=True) ...")
+        model.save_pretrained(args.output_dir, safe_serialization=True)
+        saved_via = "safetensors"
+    except Exception as e:
+        print(f"  WARNING: safetensors save failed ({type(e).__name__}: {e}); "
+              f"falling back to torch.save (.bin)")
+        try:
+            print(f"  Saving via model.save_pretrained(safe_serialization=False) ...")
+            model.save_pretrained(args.output_dir, safe_serialization=False)
+            saved_via = "torch_bin"
+        except Exception as e2:
+            print(f"  WARNING: even .bin save failed ({type(e2).__name__}: {e2}); "
+                  f"writing raw state dict via torch.save")
+            torch.save(model.state_dict(), os.path.join(args.output_dir, "pytorch_model.bin"))
+            # Save config / generation_config manually
+            model.config.save_pretrained(args.output_dir)
+            saved_via = "raw_torch_save"
+    print(f"  Save successful via: {saved_via}")
 
     # Copy tokenizer from local or download from HF
     import shutil
