@@ -1,0 +1,218 @@
+# Tier 2 in-harness evaluation — SFT'd vs base Qwen3.5-9B running inside the
+# real ORAI agent harness on tw07 (slide game where perception is correct).
+#
+# Why tw07 only: Finding I (perception cell-vs-dot grid) means tw01/tw04/tw13
+# would fail regardless of SFT quality. tw07's slide mechanic uses cell
+# representation which our perception handles correctly. tw09 mechanic
+# unverified — defer.
+#
+# How it works:
+#   1. Spin H100x1 spot
+#   2. Clone arc-witness-agent (the harness) + arc-witness-envs (the games)
+#   3. Two arms run sequentially (saves GPU vs running both simultaneously):
+#      Arm A: vLLM serve base Qwen3.5-9B → run_agent --llm-base-url localhost
+#      Arm B: vLLM serve SFT'd model     → run_agent --llm-base-url localhost
+#   4. Each arm runs tw07 levels 1-5 with seed=0
+#   5. Compare: levels_solved, steps_to_solve, total_llm_tokens, format_validity
+#
+# Cost: ~$15-25 (H100x1 spot, 1.5-2 hr wall)
+#   - Setup + vLLM serve startup: ~15-20 min
+#   - Arm A (base): ~30 min for 5 levels × 50-200 steps
+#   - Arm B (sft):  ~30 min same
+#   - Upload + cleanup: ~5 min
+#
+# Usage:
+#   cd SkyRL-Fleet
+#   sky launch tasks/witness-sft-eval-inharness.yaml \
+#     --env AWS_ACCESS_KEY_ID=<key> \
+#     --env AWS_SECRET_ACCESS_KEY=<key> \
+#     -y --down
+
+resources:
+  disk_size: 300
+  ports: [6479, 8000]   # 8000 for vLLM endpoint
+  any_of:
+    - accelerators: H100:1
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H100:1
+      cloud: runpod
+    - accelerators: A100-80GB:1
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/sft-b6
+
+envs:
+  SFT_MODEL_S3:    "s3://fleet-guanghan/witness_sft_v3/merged/"
+  BASE_MODEL:      "Qwen/Qwen3.5-9B"
+  RESULTS_S3:      "s3://fleet-guanghan/witness_sft_v3/eval/tier2/"
+  WITNESS_AGENT_REPO: "https://github.com/Guanghan/arc-witness-agent.git"
+  WITNESS_AGENT_REF:  "main"
+  WITNESS_ENVS_REPO:  "https://github.com/Guanghan/arc-witness-envs.git"
+  WITNESS_ENVS_REF:   "main"
+  GAME:            "tw07"     # slide game, perception correct
+  MAX_LEVELS:      "5"
+  MAX_STEPS:       "150"      # per-level cap, matches B4
+
+setup: |
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential git
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  # Use SkyRL's pinned torch (cu128, matches GCP image driver)
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install --quiet boto3 awscli accelerate
+  # vLLM for serving + transformers 5.3.0 for Qwen3.5 VLM
+  source scripts/fleet-qwen35-extra-setup.sh
+  # vLLM should already be in fsdp extras, confirm
+  python -c "import vllm; print(f'vllm {vllm.__version__}')"
+
+  # ── Clone the agent harness + envs ──
+  if [ ! -d "$HOME/arc-witness-agent" ]; then
+    git clone --depth 1 --branch "$WITNESS_AGENT_REF" "$WITNESS_AGENT_REPO" "$HOME/arc-witness-agent"
+  fi
+  if [ ! -d "$HOME/arc-witness-envs" ]; then
+    git clone --depth 1 --branch "$WITNESS_ENVS_REF" "$WITNESS_ENVS_REPO" "$HOME/arc-witness-envs"
+  fi
+  # Install the agent's deps into our venv (it has its own pyproject)
+  cd "$HOME/arc-witness-agent"
+  uv pip install --quiet -e . || pip install --quiet -e . || true
+  uv pip install --quiet pyyaml numpy pillow openai anthropic loguru
+  # arc-agi SDK for env access
+  uv pip install --quiet arc-agi
+
+run: |
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  RESULTS_DIR="$HOME/tier2_results"
+  mkdir -p "$RESULTS_DIR"
+
+  # ── Persistent log via trap (same pattern as merge / recover) ──
+  TIER2_LOG="$RESULTS_DIR/tier2_run.log"
+  exec > >(tee -a "$TIER2_LOG") 2>&1
+  trap 'echo "[trap] uploading log on exit"; aws s3 cp "$TIER2_LOG" "${RESULTS_S3}tier2_run.log" 2>&1 || true' EXIT
+  echo "[$(date '+%H:%M:%S')] log persistence active"
+
+  set -uo pipefail
+
+  export PYTHONPATH="$HOME/arc-witness-agent:$HOME/arc-witness-envs:${PYTHONPATH:-}"
+  export WITNESS_ENVS_DIR="$HOME/arc-witness-envs"
+
+  # ── Step 1: Download SFT'd model from S3 ──
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 1 — Download SFT'd HF model"
+  echo "================================================================="
+  SFT_LOCAL="$HOME/sft_model"
+  mkdir -p "$SFT_LOCAL"
+  aws s3 sync "$SFT_MODEL_S3" "$SFT_LOCAL/" --no-progress
+  echo "Downloaded $(du -sh "$SFT_LOCAL" | cut -f1) to $SFT_LOCAL"
+
+  # ── Helper: serve a model with vLLM, run agent, kill server ──
+  run_arm() {
+    local arm_name="$1"      # "base" or "sft"
+    local model_path="$2"    # HF name or local path
+    local served_model="$3"  # name to use in --llm-model
+    local arm_outdir="$RESULTS_DIR/$arm_name"
+    mkdir -p "$arm_outdir"
+
+    echo
+    echo "================================================================="
+    echo "[$(date '+%H:%M:%S')] ARM: $arm_name (model=$model_path)"
+    echo "================================================================="
+
+    # Start vLLM in background with logging
+    local vllm_log="$arm_outdir/vllm_server.log"
+    echo "[vllm] starting server on port 8000, log=$vllm_log"
+    python -m vllm.entrypoints.openai.api_server \
+      --model "$model_path" \
+      --served-model-name "$served_model" \
+      --dtype bfloat16 \
+      --max-model-len 4096 \
+      --gpu-memory-utilization 0.85 \
+      --port 8000 \
+      --trust-remote-code \
+      > "$vllm_log" 2>&1 &
+    local vllm_pid=$!
+
+    # Wait for vLLM to be ready (max 5 min)
+    echo "[vllm] waiting for healthcheck (pid=$vllm_pid)"
+    for i in $(seq 1 60); do
+      if curl -sf http://localhost:8000/v1/models >/dev/null 2>&1; then
+        echo "[vllm] ready after ${i}*5s"
+        break
+      fi
+      if ! kill -0 "$vllm_pid" 2>/dev/null; then
+        echo "[ERROR] vLLM server died during startup. Last 30 lines:"
+        tail -30 "$vllm_log"
+        return 1
+      fi
+      sleep 5
+    done
+
+    # Run agent against vLLM endpoint
+    echo "[agent] running run_agent.py for $GAME, max_levels=$MAX_LEVELS"
+    cd "$HOME/arc-witness-agent"
+    python run_agent.py \
+      --game "$GAME" \
+      --seed 0 \
+      --max-levels "$MAX_LEVELS" \
+      --max-level-steps "$MAX_STEPS" \
+      --log-dir "$arm_outdir/agent_logs" \
+      --llm-provider vllm \
+      --llm-base-url http://localhost:8000/v1 \
+      --llm-model "$served_model" \
+      --llm-temperature 0.0 \
+      --llm-max-tokens 1024 \
+      2>&1 | tee "$arm_outdir/agent_run.log"
+    local agent_rc=${PIPESTATUS[0]}
+
+    # Kill vLLM (free GPU for next arm)
+    echo "[vllm] stopping server pid=$vllm_pid"
+    kill "$vllm_pid" 2>/dev/null || true
+    wait "$vllm_pid" 2>/dev/null || true
+    sleep 5  # let GPU memory release
+
+    echo "[arm] $arm_name finished, rc=$agent_rc"
+    return "$agent_rc"
+  }
+
+  # ── Step 2: ARM A — base ──
+  run_arm "base" "$BASE_MODEL" "qwen-base" || echo "[arm] base had non-zero exit; continuing to sft arm"
+
+  # ── Step 3: ARM B — SFT ──
+  run_arm "sft" "$SFT_LOCAL" "qwen-sft" || echo "[arm] sft had non-zero exit"
+
+  # ── Step 4: Compare + upload ──
+  echo
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 4 — Summary + upload"
+  echo "================================================================="
+  echo "--- BASE arm logs ---"
+  ls -la "$RESULTS_DIR/base/agent_logs/" 2>/dev/null | head -10
+  grep -E "Levels:|Actions:|RESULTS:" "$RESULTS_DIR/base/agent_run.log" 2>/dev/null | tail -10
+  echo
+  echo "--- SFT arm logs ---"
+  ls -la "$RESULTS_DIR/sft/agent_logs/" 2>/dev/null | head -10
+  grep -E "Levels:|Actions:|RESULTS:" "$RESULTS_DIR/sft/agent_run.log" 2>/dev/null | tail -10
+
+  echo
+  echo "[s3] uploading entire results dir to ${RESULTS_S3}"
+  aws s3 sync "$RESULTS_DIR" "$RESULTS_S3" --no-progress
+
+  echo
+  echo "[$(date '+%H:%M:%S')] ✓ Tier 2 done."
+  echo "  Results: ${RESULTS_S3}"
+  echo "  Inspect: aws s3 ls ${RESULTS_S3} --recursive"
