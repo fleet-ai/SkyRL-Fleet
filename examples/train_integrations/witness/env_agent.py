@@ -51,7 +51,13 @@ class WitnessAgentEnv(BaseTextEnv):
     """
 
     def __init__(self, env_config: Any, extras: Dict[str, Any] = None):
-        super().__init__(env_config)
+        # NOTE: BaseTextEnv.__init__(self) takes no args — passing env_config
+        # raised TypeError silently caught by SkyRL's generator.generate(),
+        # leaving every trajectory loss-masked (NaN-loss warning at line 715
+        # in trainer_utils.validate_generator_output). Match v3 WitnessEnv
+        # convention: store env_config + extras locally, call super() bare.
+        super().__init__()
+        self.env_config = env_config
         extras = extras or {}
 
         self.game_id: str = extras["game_id"]
