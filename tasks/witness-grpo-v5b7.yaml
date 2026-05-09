@@ -112,6 +112,17 @@ setup: |
   mkdir -p $HOME/sft_ckpt
   aws s3 sync "$SFT_CHECKPOINT_S3" "$HOME/sft_ckpt/" 2>&1 | tail -5
 
+  # --- Patch missing multimodal config files from base HF model ---
+  # SkyRL's save_hf_model only writes weights + tokenizer + config.json,
+  # but vLLM detects Qwen3.5-9B as multimodal and tries to load
+  # preprocessor_config.json (image processor) from the same dir. Without
+  # this, AsyncVLLMInferenceEngine.__init__ raises OSError. We download
+  # the missing multimodal config files from HF and copy them into sft_ckpt.
+  echo "[patch] downloading multimodal config from Qwen/Qwen3.5-9B → ~/sft_ckpt"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Qwen/Qwen3.5-9B', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$HOME/sft_ckpt', local_dir_use_symlinks=False)"
+  echo "[patch] sft_ckpt contents after patch:"
+  ls -la "$HOME/sft_ckpt/" | head -25
+
   # --- Prepare dataset (env_class=witness_agent for B7) ---
   cd ~/sky_workdir
   python examples/train_integrations/witness/prepare_witness_dataset.py \
