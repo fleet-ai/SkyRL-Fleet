@@ -27,10 +27,21 @@ def skyrl_entrypoint(cfg: SkyRLTrainConfig):
     witness_dir = os.environ.get("WITNESS_ENVS_DIR", os.path.expanduser("~/arc-witness-envs"))
     if witness_dir and witness_dir not in sys.path:
         sys.path.insert(0, witness_dir)
+    # Also ensure arc-witness-agent (new B7 RL agent) is importable.
+    agent_dir = os.environ.get("ARC_WITNESS_AGENT_DIR", os.path.expanduser("~/arc-witness-agent"))
+    if agent_dir and agent_dir not in sys.path:
+        sys.path.insert(0, agent_dir)
 
+    # v3 GRPO env (light-harness, retained for backward compat).
     register(
         id="witness",
         entry_point="examples.train_integrations.witness.env:WitnessEnv",
+    )
+    # v5b7 RL env (full ORAI agent; bridged mode). Dataset rows must set
+    # `env_class: "witness_agent"` to use this.
+    register(
+        id="witness_agent",
+        entry_point="examples.train_integrations.witness.env_agent:WitnessAgentEnv",
     )
     exp = BasePPOExp(cfg)
     exp.run()

@@ -75,6 +75,12 @@ def main():
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--val_fraction", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--env_class", default="witness",
+                        choices=["witness", "witness_agent"],
+                        help="Env class to use. 'witness'=v3 light-harness; "
+                             "'witness_agent'=B7 RL with full arc-witness-agent.")
+    parser.add_argument("--max_orai_steps", type=int, default=30,
+                        help="Hard cap on ORAI ticks per trajectory (witness_agent only).")
     args = parser.parse_args()
 
     witness_repo = _get_witness_repo()
@@ -88,10 +94,10 @@ def main():
         total_levels = min(total_levels, args.max_levels)
 
         # One row per game: each episode plays from level 0 through max_levels
-        rows.append({
+        row = {
             "data_source": "witness",
             "prompt": make_prompt(game_id, total_levels),
-            "env_class": "witness",
+            "env_class": args.env_class,
             "game_id": game_id,
             "seed": args.seed,
             "reward_mode": args.reward_mode,
@@ -104,7 +110,11 @@ def main():
             "harness_exploration": args.harness_exploration,
             "harness_memory": args.harness_memory,
             "harness_priors": args.harness_priors,
-        })
+        }
+        if args.env_class == "witness_agent":
+            # B7 RL agent extras (env reads via extras dict at __init__).
+            row["max_orai_steps"] = args.max_orai_steps
+        rows.append(row)
 
     # For online RL, train and eval use the same games.
     train_rows = rows.copy()
