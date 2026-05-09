@@ -24,10 +24,16 @@ from typing import Any, Dict, List, Tuple
 
 from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput, ConversationType
 
-# Allow importing the local agent_wrapper.
+# Allow importing the local agent_wrapper. It lives in the harness/
+# subdirectory, NOT next to this file. Earlier versions only added
+# _HERE which left agent_wrapper unimportable in Ray actors → env.init
+# raised ModuleNotFoundError → SkyRL returned zero-reward stubs whose
+# string-valued metrics broke aggregate_metrics with TypeError int+str.
 _HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+_HARNESS_DIR = os.path.join(_HERE, "harness")
+for _p in (_HERE, _HARNESS_DIR):
+    if _p not in sys.path and os.path.isdir(_p):
+        sys.path.insert(0, _p)
 
 
 class WitnessAgentEnv(BaseTextEnv):
@@ -218,7 +224,13 @@ class WitnessAgentEnv(BaseTextEnv):
 
     @staticmethod
     def aggregate_metrics(metrics_list: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Aggregate per-trajectory metrics into batch summary."""
+        """Aggregate per-trajectory metrics into batch summary.
+
+        Filter to numeric values per key; if a metric is non-numeric
+        (e.g., env init failed and SkyRL returned string error markers),
+        skip aggregation for that key rather than raising. This is the
+        same pattern as skyrl_gym/metrics.py:default_aggregate_metrics.
+        """
         if not metrics_list:
             return {}
         all_keys = set()
@@ -226,7 +238,16 @@ class WitnessAgentEnv(BaseTextEnv):
             all_keys.update(m.keys())
         agg = {}
         for k in all_keys:
-            vals = [m[k] for m in metrics_list if k in m]
+            vals = []
+            for m in metrics_list:
+                if k not in m:
+                    continue
+                v = m[k]
+                if isinstance(v, bool):
+                    vals.append(float(v))
+                elif isinstance(v, (int, float)):
+                    vals.append(float(v))
+                # else: silently drop non-numeric (string error markers etc.)
             if vals:
                 agg[f"{k}_mean"] = sum(vals) / len(vals)
                 agg[f"{k}_max"] = max(vals)
