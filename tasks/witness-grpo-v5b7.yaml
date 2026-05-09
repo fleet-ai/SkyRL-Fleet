@@ -195,7 +195,60 @@ run: |
     # This is the v5 SFT warm-start point.
     POLICY_PATH="$HOME/sft_ckpt"
 
-    python -m examples.train_integrations.witness.entrypoints.main_witness \
+    # --- Live log persistence: stream stdout/stderr to file + S3 every 30s ---
+    # Two clusters previously died at ~5min after wandb init (Ray crash) with
+    # no captured logs because --down auto-cleaned. This guarantees we get
+    # full trainer output in S3 even if Ray/cluster dies.
+    S3_LOG_BASE="s3://fleet-guanghan/witness_grpo_v5b7/logs"
+    LOG_DIR="$HOME/run_logs"
+    mkdir -p "$LOG_DIR"
+    TRAIN_LOG="$LOG_DIR/trainer.log"
+    DIAG_LOG="$LOG_DIR/diagnostics.log"
+
+    # Pre-train diagnostic dump (so we have a snapshot even if trainer crashes immediately)
+    {
+      echo "=== Pre-train diagnostics $(date -u +%FT%TZ) ==="
+      echo "--- nvidia-smi ---"
+      nvidia-smi || echo "nvidia-smi failed"
+      echo "--- free -h ---"; free -h
+      echo "--- df -h ---";   df -h | head -20
+      echo "--- POLICY_PATH ($POLICY_PATH) contents ---"
+      ls -la "$POLICY_PATH" 2>&1 | head -30
+      du -sh "$POLICY_PATH" 2>&1
+      echo "--- ray status ---"
+      ray status --address 127.0.0.1:6479 2>&1 | head -40
+      echo "--- python/torch/vllm versions ---"
+      python -c "import torch, vllm, ray; print(f'torch={torch.__version__} cuda={torch.cuda.is_available()} ngpu={torch.cuda.device_count()} vllm={vllm.__version__} ray={ray.__version__}')" 2>&1
+    } > "$DIAG_LOG" 2>&1
+    aws s3 cp "$DIAG_LOG" "$S3_LOG_BASE/diagnostics.log" 2>&1 | tail -3 || true
+
+    # Background S3 mirror loop — copies trainer.log every 30s while training runs.
+    (
+      while true; do
+        if [ -f "$TRAIN_LOG" ]; then
+          aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" --quiet 2>/dev/null || true
+        fi
+        sleep 30
+      done
+    ) &
+    LOG_MIRROR_PID=$!
+
+    # Ensure final flush + cleanup mirror loop on exit (success OR crash).
+    trap '
+      kill $LOG_MIRROR_PID 2>/dev/null || true
+      [ -f "$TRAIN_LOG" ] && aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" 2>&1 | tail -3 || true
+      echo "[trap] final log uploaded to $S3_LOG_BASE/trainer.log"
+    ' EXIT
+
+    # `unbuffer` (or python -u) keeps Python from buffering stdout.
+    # Without this, the last few seconds of output before crash would be in
+    # process buffer and never flushed.
+    # Disable -e/-pipefail around the trainer so the failure-handler block below
+    # runs even when trainer crashes (yaml top-level set -euo pipefail would
+    # otherwise short-circuit).
+    set +e
+    set +o pipefail
+    PYTHONUNBUFFERED=1 python -u -m examples.train_integrations.witness.entrypoints.main_witness \
       data.train_data="['${DATA_DIR}/train.parquet']" \
       data.val_data="['${DATA_DIR}/validation.parquet']" \
       trainer.algorithm.advantage_estimator="grpo" \
@@ -249,7 +302,18 @@ run: |
       trainer.resume_mode=null \
       trainer.ckpt_path="$HOME/ckpts/witness_grpo_v5b7" \
       trainer.dump_data_batch=true \
-      trainer.dump_training_trajectories=true
+      trainer.dump_training_trajectories=true \
+      2>&1 | tee "$TRAIN_LOG"
+    PYTHON_EXIT=${PIPESTATUS[0]}
+    echo "[trainer exit] code=$PYTHON_EXIT"
+    # If trainer crashed, surface the bottom of trainer.log to make sky logs useful.
+    if [ "$PYTHON_EXIT" != "0" ]; then
+      echo "=== TAIL OF TRAINER LOG (last 100 lines) ==="
+      tail -100 "$TRAIN_LOG" || true
+      echo "=== END TAIL ==="
+    fi
+    # Re-enable strict mode for the rest of the run section.
+    set -eo pipefail
   else
     if ! ray status --address "$head_ip:6479" >/dev/null 2>&1; then
       ray start --address "$head_ip:6479" --disable-usage-stats
