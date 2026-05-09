@@ -29,6 +29,24 @@ Always consult the changelog before modifying Fleet training paths (`fsdp_worker
 
 All training flags live in these scripts. Never duplicate flags in SkyPilot YAMLs or fleet-research scripts.
 
+## Launching Jobs
+
+Always launch via `scripts/fleet-launch.sh`, not `sky launch` directly. It runs
+`scripts/fleet-preflight.sh` first to validate env vars (FLEET / WANDB / AWS),
+gcloud auth state, and `sky check` *before* provisioning a VM — so misconfigured
+launches fail in seconds locally instead of after setup on a remote node.
+
+```
+bash scripts/fleet-launch.sh tasks/openenv-fleet-grpo-vl.yaml \
+  --env FLEET_API_KEY="$FLEET_API_KEY" \
+  --env WANDB_API_KEY="$WANDB_API_KEY" \
+  --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+  --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+```
+
+Pass extra preflight requirements (e.g. for task-gen) via `--preflight-arg`:
+`--preflight-arg --require --preflight-arg OPENROUTER_API_KEY`.
+
 ## Task-Gen Metrics
 
 When reporting task-gen training metrics, distinguish between:
