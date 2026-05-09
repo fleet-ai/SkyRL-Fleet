@@ -476,8 +476,24 @@ class AgentRolloutWrapper:
             reward_breakdown={**geo_breakdown, **out_breakdown},
         )
 
-    def join_bridged_rollout(self, timeout: float = 30.0) -> Dict[str, Any]:
-        """Wait for the background rollout thread to finish; return final metrics."""
+    def join_bridged_rollout(
+        self,
+        timeout: float = 30.0,
+        signal_done_first: bool = True,
+    ) -> Dict[str, Any]:
+        """Wait for the background rollout thread to finish; return final metrics.
+
+        signal_done_first=True (default): signal the bridge to wind down BEFORE
+        waiting. Handles the truncation case — trainer ran out of step budget
+        mid-trajectory (or ORAI loop hit max_orai_steps cap). After signal_done,
+        agent's pending LLM call returns "", agent emits default actions, and
+        run() unwinds via natural max_steps_per_level termination.
+
+        Without signal_done_first the thread typically deadlocks on the bridge's
+        Event waiting for a response that will never come.
+        """
+        if signal_done_first and self._bridge is not None:
+            self._bridge.signal_done()
         if self._thread is not None:
             self._thread.join(timeout=timeout)
         if getattr(self, "_thread_error", None) is not None:
