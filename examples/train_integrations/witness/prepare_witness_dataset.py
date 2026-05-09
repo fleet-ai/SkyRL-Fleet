@@ -56,7 +56,11 @@ def make_prompt(game_id: str, total_levels: int) -> list:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--game_ids", nargs="+", default=["tw10"],
-                        help="Games to include (e.g., tw10 tw04 tw07)")
+                        help="Games to include for TRAIN (e.g., tw10 tw04 tw07)")
+    parser.add_argument("--val_game_ids", nargs="+", default=None,
+                        help="Held-out games for VAL (defaults to --game_ids — i.e., "
+                             "val=train, no held-out generalization signal). "
+                             "B7: pass disjoint games for true held-out eval.")
     parser.add_argument("--reward_mode", default="shaped",
                         choices=["sparse", "shaped", "arc_score"])
     parser.add_argument("--max_levels", type=int, default=5,
@@ -87,38 +91,42 @@ def main():
     if witness_repo not in sys.path:
         sys.path.insert(0, witness_repo)
 
-    rows = []
-    for game_id in args.game_ids:
-        baselines = _load_baselines(witness_repo, game_id)
-        total_levels = len(baselines) if baselines else 5
-        total_levels = min(total_levels, args.max_levels)
+    def _build_rows(game_ids):
+        out = []
+        for game_id in game_ids:
+            baselines = _load_baselines(witness_repo, game_id)
+            total_levels = len(baselines) if baselines else 5
+            total_levels = min(total_levels, args.max_levels)
+            row = {
+                # data_source = "witness/{game_id}" so SkyRL's per-dataset eval
+                # metrics also split by game (calculate_per_dataset_metrics
+                # groups on this field). Aggregate env metrics still split via
+                # WitnessAgentEnv.aggregate_metrics regardless.
+                "data_source": f"witness/{game_id}",
+                "prompt": make_prompt(game_id, total_levels),
+                "env_class": args.env_class,
+                "game_id": game_id,
+                "seed": args.seed,
+                "reward_mode": args.reward_mode,
+                "obs_mode": args.obs_mode,
+                "rules_mode": args.rules_mode,
+                "max_levels": total_levels,
+                "max_steps_multiplier": 3,
+                "harness_mode": args.harness_mode,
+                "harness_action_mapper": args.harness_action_mapper,
+                "harness_exploration": args.harness_exploration,
+                "harness_memory": args.harness_memory,
+                "harness_priors": args.harness_priors,
+            }
+            if args.env_class == "witness_agent":
+                row["max_orai_steps"] = args.max_orai_steps
+            out.append(row)
+        return out
 
-        # One row per game: each episode plays from level 0 through max_levels
-        row = {
-            "data_source": "witness",
-            "prompt": make_prompt(game_id, total_levels),
-            "env_class": args.env_class,
-            "game_id": game_id,
-            "seed": args.seed,
-            "reward_mode": args.reward_mode,
-            "obs_mode": args.obs_mode,
-            "rules_mode": args.rules_mode,
-            "max_levels": total_levels,
-            "max_steps_multiplier": 3,
-            "harness_mode": args.harness_mode,
-            "harness_action_mapper": args.harness_action_mapper,
-            "harness_exploration": args.harness_exploration,
-            "harness_memory": args.harness_memory,
-            "harness_priors": args.harness_priors,
-        }
-        if args.env_class == "witness_agent":
-            # B7 RL agent extras (env reads via extras dict at __init__).
-            row["max_orai_steps"] = args.max_orai_steps
-        rows.append(row)
-
-    # For online RL, train and eval use the same games.
-    train_rows = rows.copy()
-    val_rows = rows.copy()
+    train_game_ids = args.game_ids
+    val_game_ids = args.val_game_ids if args.val_game_ids else args.game_ids
+    train_rows = _build_rows(train_game_ids)
+    val_rows = _build_rows(val_game_ids)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -132,7 +140,9 @@ def main():
     val_df.to_parquet(val_path, index=False)
 
     print(f"Created {len(train_rows)} train + {len(val_rows)} val samples")
-    print(f"  Games: {args.game_ids}")
+    print(f"  Train games: {train_game_ids}")
+    print(f"  Val games:   {val_game_ids}"
+          f"{'  (held-out)' if args.val_game_ids else '  (=train, no held-out)'}")
     print(f"  Reward mode: {args.reward_mode}")
     print(f"  Obs mode: {args.obs_mode}")
     print(f"  Rules mode: {args.rules_mode}")
