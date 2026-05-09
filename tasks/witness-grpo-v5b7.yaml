@@ -72,6 +72,12 @@ envs:
   MAX_TURNS: "30"         # max env.step() ticks ≈ max_orai_steps
   # SFT-warm-start: load v5 SFT-merged checkpoint as starting policy.
   SFT_CHECKPOINT_S3: "s3://fleet-guanghan/witness_sft_v5/merged/"
+  # SkyRL/Fleet's default trajectory upload target (skyrl-trajectories) is a
+  # team bucket the user IAM (fleet-guanghan) doesn't have write access to.
+  # Redirect dumped rollouts to user's own bucket. SkyRL writes under
+  # rollouts/{run_name}/global_step_N.jsonl, so final path is
+  # s3://fleet-guanghan/rollouts/witness_grpo_v5b7/global_step_*.jsonl.
+  S3_TRAJECTORY_BUCKET: "fleet-guanghan"
   MODEL: "Qwen/Qwen3.5-9B"  # base model — overridden by SFT ckpt at load
 
 setup: |
