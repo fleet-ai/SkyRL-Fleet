@@ -57,9 +57,13 @@ file_mounts:
 envs:
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
-  NUM_EPOCHS: 50
-  # B7 v5 — 5 high-pass-rate games × 3 implicit seeds (seed shuffled by RL)
-  GAME_IDS: "tw02 tw03 tw05 tw07 tw13"
+  NUM_EPOCHS: 25
+  # B7 Phase 1 — 8 train games (multiple of train_batch_size=4 → no drop_last loss).
+  # Selection: medium/high SFT pass rate + diverse modes (5 cell + 3 dot).
+  GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
+  # 4 held-out games (also multiple of 4 → clean eval batching).
+  # tw04 dropped (Finding K — broken multi-color cursor perception, no signal).
+  VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
   MAX_LEVELS: "5"
   MAX_ORAI_STEPS: "30"
   REWARD_MODE: "shaped"   # ignored by env_agent (uses geometric+outcome internally)
@@ -112,6 +116,7 @@ setup: |
   cd ~/sky_workdir
   python examples/train_integrations/witness/prepare_witness_dataset.py \
     --game_ids $GAME_IDS \
+    --val_game_ids $VAL_GAME_IDS \
     --reward_mode $REWARD_MODE \
     --obs_mode $OBS_MODE \
     --rules_mode $RULES_MODE \
