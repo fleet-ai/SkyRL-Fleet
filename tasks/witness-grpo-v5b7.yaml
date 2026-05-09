@@ -45,6 +45,15 @@ workdir:
   url: https://github.com/fleet-ai/SkyRL-Fleet.git
   ref: guanghan/sft-b6
 
+# file_mounts: rsync local repo trees to the cluster. Avoids GitHub auth
+# (arc-witness-agent is private company asset). Source dirs respect .skyignore
+# (we exclude .venv, traces, logs, memory_store/runtime data, .git).
+# Local working tree (incl. uncommitted changes) is what gets used on cluster
+# — same pattern as the v5 SFT yaml mounting sft_pairs_judged.jsonl.
+file_mounts:
+  ~/arc-witness-agent: ~/Documents/obsidian/research-directions/repos/arc-witness-agent
+  ~/arc-witness-envs: ~/Documents/obsidian/research-directions/repos/arc-witness-envs
+
 envs:
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
@@ -80,21 +89,20 @@ setup: |
   # --- arcengine SDK ---
   uv pip install arc-agi
 
-  # --- Clone arc-witness-envs (game definitions) ---
-  if [ ! -d "$HOME/arc-witness-envs" ]; then
-    git clone https://github.com/fleet-guanghan/arc-witness-envs.git $HOME/arc-witness-envs
-  fi
+  # --- arc-witness-envs + arc-witness-agent are file_mounted ---
+  # See top of yaml `file_mounts` section. Local repo trees (with uncommitted
+  # changes) rsynced to cluster, so no GitHub auth needed.
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
-
-  # --- Clone arc-witness-agent (B7 NEW agent — wrapper imports from here) ---
-  if [ ! -d "$HOME/arc-witness-agent" ]; then
-    git clone https://github.com/fleet-guanghan/arc-witness-agent.git $HOME/arc-witness-agent
-  fi
   export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
 
   # Install agent's runtime deps (lightweight — agent uses transformers/torch
   # already in the venv, plus pyyaml for config loading).
   uv pip install pyyaml openai
+
+  # Sanity check the file_mounts arrived as expected.
+  test -f "$ARC_WITNESS_AGENT_DIR/agent/core.py" || { echo "ERROR: arc-witness-agent file_mount missing"; exit 1; }
+  test -f "$WITNESS_ENVS_DIR/witness_grid.py" || { echo "ERROR: arc-witness-envs file_mount missing"; exit 1; }
+  echo "[ok] file_mounts: arc-witness-agent + arc-witness-envs both present"
 
   # --- Download v5 SFT checkpoint from S3 ---
   mkdir -p $HOME/sft_ckpt
