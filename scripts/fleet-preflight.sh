@@ -40,9 +40,21 @@ SKIP_AWS=false
 SKIP_WANDB=false
 SKIP_FLEET=false
 
+# `require_value` errors out cleanly when a flag that takes a value is
+# called at the end of argv (or with another flag as its value). Without
+# this guard, `set -u` would surface the failure as the cryptic
+# "$2: unbound variable", which has bitten callers passing args incorrectly.
+require_value() {
+  local flag="$1" value="${2-}"
+  if [ -z "$value" ] || [[ "$value" == --* ]]; then
+    echo "ERROR: $flag requires a value (got: '${value:-<missing>}')" >&2
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --require)        EXTRA_REQUIRED+=("$2"); shift 2 ;;
+    --require)        require_value "$1" "${2-}"; EXTRA_REQUIRED+=("$2"); shift 2 ;;
     --skip-gcloud)    SKIP_GCLOUD=true;       shift ;;
     --skip-sky)       SKIP_SKY=true;          shift ;;
     --skip-liveness)  SKIP_LIVENESS=true;     shift ;;

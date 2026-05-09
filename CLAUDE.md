@@ -44,8 +44,15 @@ bash scripts/fleet-launch.sh tasks/openenv-fleet-grpo-vl.yaml \
   --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 ```
 
-Pass extra preflight requirements (e.g. for task-gen) via `--preflight-arg`:
-`--preflight-arg --require --preflight-arg OPENROUTER_API_KEY`.
+Pass extra preflight requirements (e.g. for task-gen) before a literal `--`:
+
+```
+bash scripts/fleet-launch.sh --require OPENROUTER_API_KEY -- \
+  tasks/task-gen-grpo-qwen3_5-9b.yaml --env ...
+```
+
+Tokens before `--` go to `fleet-preflight.sh`; tokens after go to `sky launch`.
+Without `--`, every token is forwarded to `sky launch`.
 
 ## Task-Gen Metrics
 
