@@ -28,7 +28,9 @@
 #     ...
 
 resources:
-  disk_size: 300
+  # 600 GB needed: FSDP ckpt download (~102 GB) + merged HF copy (~36 GB) +
+  # workdir + venv (~20 GB) + headroom. Phase 1 lesson: 300 GB was tight.
+  disk_size: 600
   ports: [6479, 8000]
   any_of:
     - accelerators: H100:1
@@ -107,22 +109,73 @@ run: |
   aws s3 sync "$CKPT_S3" "$CKPT_LOCAL/" --no-progress
   echo "Downloaded $(du -sh "$CKPT_LOCAL" | cut -f1) to $CKPT_LOCAL"
 
-  # Look for the final ckpt subdir (B7 saves under "global_step_N/" or "merged/")
-  if [ -d "$CKPT_LOCAL/merged" ]; then
-    MODEL_PATH="$CKPT_LOCAL/merged"
-  elif ls "$CKPT_LOCAL"/global_step_* 2>/dev/null | head -1; then
-    MODEL_PATH=$(ls -d "$CKPT_LOCAL"/global_step_* | sort -V | tail -1)
-  else
-    MODEL_PATH="$CKPT_LOCAL"
+  # ── Step 1b: detect ckpt format and merge if FSDP-sharded ──
+  # SkyRL trainer saves FSDP-sharded ckpts by default at
+  # `global_step_N/policy/model_world_size_*_rank_*.pt`. These are NOT
+  # vLLM-loadable. Need to merge to HF format first via
+  # examples/train_integrations/witness/merge_fsdp_checkpoint.py.
+  #
+  # Possible inputs:
+  #   (a) HF format already at $CKPT_LOCAL/   (ckpt has config.json at root)
+  #   (b) HF format at $CKPT_LOCAL/merged/    (merged before upload)
+  #   (c) FSDP shards at $CKPT_LOCAL/global_step_N/policy/  (default SkyRL)
+
+  detect_hf_dir() {
+    # Echoes the path to a usable HF dir, or empty if must merge.
+    if [ -f "$CKPT_LOCAL/config.json" ]; then
+      echo "$CKPT_LOCAL"; return
+    fi
+    if [ -f "$CKPT_LOCAL/merged/config.json" ]; then
+      echo "$CKPT_LOCAL/merged"; return
+    fi
+    echo ""
+  }
+
+  MODEL_PATH=$(detect_hf_dir)
+
+  if [ -z "$MODEL_PATH" ]; then
+    # Need to merge FSDP shards. Find latest global_step_N dir with
+    # model shards.
+    SHARD_DIR=$(ls -d "$CKPT_LOCAL"/global_step_*/policy 2>/dev/null \
+      | grep -v "huggingface" \
+      | sort -V | tail -1)
+    if [ -z "$SHARD_DIR" ] || ! ls "$SHARD_DIR"/model_world_size_*_rank_*.pt >/dev/null 2>&1; then
+      echo "ERROR: no HF dir AND no FSDP shards found in $CKPT_LOCAL"
+      echo "Contents:"
+      find "$CKPT_LOCAL" -maxdepth 3 -type d
+      exit 1
+    fi
+
+    echo "[merge] FSDP shards detected at $SHARD_DIR"
+    echo "[merge] Running merge_fsdp_checkpoint.py (10-20 min CPU)"
+    MERGE_OUT="$CKPT_LOCAL/merged"
+    mkdir -p "$MERGE_OUT"
+    python ~/sky_workdir/examples/train_integrations/witness/merge_fsdp_checkpoint.py \
+      --checkpoint_dir "$SHARD_DIR" \
+      --output_dir "$MERGE_OUT" \
+      --model_name "$BASELINE_MODEL" 2>&1 | tee "$HOME/merge.log"
+
+    if [ ! -f "$MERGE_OUT/config.json" ]; then
+      echo "ERROR: merge produced no config.json. Tail of merge.log:"
+      tail -50 "$HOME/merge.log"
+      exit 1
+    fi
+    MODEL_PATH="$MERGE_OUT"
+    echo "[merge] OK → $MODEL_PATH ($(du -sh "$MODEL_PATH" | cut -f1))"
   fi
+
   echo "Using MODEL_PATH=$MODEL_PATH"
 
-  # Patch missing VLM preprocessor (same fix as Phase 2 yaml)
+  # Patch missing VLM preprocessor (Qwen3.5 multimodal config not
+  # preserved by save_hf_model/merge — see memory entry
+  # feedback_save_hf_model_missing_mm_files).
   if [ ! -f "$MODEL_PATH/preprocessor_config.json" ]; then
     echo "[fix] preprocessor_config.json missing — pulling from $BASELINE_MODEL"
     python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$BASELINE_MODEL', allow_patterns=['preprocessor_config.json','video_preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja'], local_dir='$MODEL_PATH', local_dir_use_symlinks=False)" \
       || echo "[fix] WARN: preprocessor download failed; vLLM may crash"
   fi
+  echo "[fix] $MODEL_PATH ready for vLLM:"
+  ls "$MODEL_PATH" | head -20
 
   # ── Step 2: Start vLLM server (kept up across all games) ──
   echo "================================================================="
