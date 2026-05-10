@@ -81,7 +81,11 @@ envs:
   ENABLE_PLAN_DIVERSITY_PENALTY: "0"
   PLAN_DIVERSITY_SCHEME: "consecutive"
   PLAN_DIVERSITY_PENALTY: "-0.05"
-  ENABLE_ASCII_FIDELITY: "0"        # placeholder for R2 (impl Sat)
+  # R2 ASCII fidelity (perception grounding) — Phase 2 R2 ablation
+  # See arc-witness-agent/agent/runtime/process_reward.py:compute_ascii_fidelity_reward
+  ENABLE_ASCII_FIDELITY: "0"
+  ASCII_FIDELITY_MATCH_REWARD: "0.05"
+  ASCII_FIDELITY_MISMATCH_PENALTY: "-0.02"
 
   # === Same as Phase 1 ===
   GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
@@ -155,11 +159,13 @@ run: |
   export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
   export HYDRA_FULL_ERROR=1
 
-  # Pass plan-diversity flags down to env_agent.py via env (it reads os.environ).
+  # Pass reward-shaping flags down to env_agent.py + agent_wrapper.py via env.
   export ENABLE_PLAN_DIVERSITY_PENALTY
   export PLAN_DIVERSITY_SCHEME
   export PLAN_DIVERSITY_PENALTY
   export ENABLE_ASCII_FIDELITY
+  export ASCII_FIDELITY_MATCH_REWARD
+  export ASCII_FIDELITY_MISMATCH_PENALTY
 
   # GCP NCCL/gIB handling (same as Phase 1)
   ON_GCP=false
