@@ -44,7 +44,11 @@
 # (note: OOM concerns from that doc no longer apply — we keep 16K context)
 
 resources:
-  disk_size: 750
+  # Phase 2 = 4× more grad steps than Phase 1 (200 vs 50). Each FSDP
+  # ckpt is ~102 GB (model 35GB + optim 67GB). Even with
+  # max_ckpts_to_keep=3 (~306 GB) + workdir + venv + sft_ckpt download,
+  # 750 GB was tight in Phase 1. Bump to 1000 for safety margin.
+  disk_size: 1000
   ports: 6479
   any_of:
     - accelerators: H200:8
@@ -292,7 +296,8 @@ run: |
       trainer.policy_mini_batch_size=4 \
       trainer.micro_forward_batch_size_per_gpu=1 \
       trainer.micro_train_batch_size_per_gpu=1 \
-      trainer.ckpt_interval=10 \
+      trainer.ckpt_interval=20 \
+      trainer.max_ckpts_to_keep=3 \
       trainer.max_prompt_length=4096 \
       generator.max_input_length=16384 \
       generator.sampling_params.max_generate_length=1024 \
