@@ -1,0 +1,207 @@
+# In-harness final eval for B7 RL ckpts. Runs the trained model
+# against all 12 Witness games (8 train + 4 held-out), per-game eval
+# with full env metrics (levels_completed, actions, reward).
+#
+# Adapted from witness-sft-eval-inharness.yaml. Differences:
+#   - Single arm (just trained ckpt, no base comparison)
+#   - Loops over GAMES (default: 8 train + 4 held-out from Phase 1)
+#   - Uses CKPT_S3 env var (default: Phase 1 final ckpt)
+#   - Outputs per-game eval_*.json + summary.json
+#
+# Use this AFTER any B7 RL training run completes — Phase 1 first,
+# then each Phase 2 ablation (R0/R1/R2).
+#
+# Cost: ~$60-100 (H100×1 spot, 4-6 hr wall: vLLM serve + 12 games × ~25 min each)
+#
+# Usage:
+#   # Phase 1 final eval
+#   sky launch tasks/witness-rl-eval-inharness.yaml \
+#     --env CKPT_S3=s3://fleet-guanghan/witness_grpo_v5b7/ \
+#     --env RUN_LABEL=phase1 \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+#     -y --down
+#
+#   # Phase 2 R0 final eval
+#   sky launch tasks/witness-rl-eval-inharness.yaml \
+#     --env CKPT_S3=s3://fleet-guanghan/witness_grpo_v5b7_p2_r0/ \
+#     --env RUN_LABEL=p2_r0 \
+#     ...
+
+resources:
+  disk_size: 300
+  ports: [6479, 8000]
+  any_of:
+    - accelerators: H100:1
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H100:1
+      cloud: runpod
+    - accelerators: A100-80GB:1
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/sft-b6
+
+file_mounts:
+  /home/sky/arc-witness-agent: ~/Documents/obsidian/research-directions/repos/arc-witness-agent
+  /home/sky/arc-witness-envs:  ~/Documents/obsidian/research-directions/repos/arc-witness-envs
+
+envs:
+  CKPT_S3:        "s3://fleet-guanghan/witness_grpo_v5b7/"
+  RUN_LABEL:      "phase1"  # for output naming
+  BASELINE_MODEL: "Qwen/Qwen3.5-9B"  # used to fetch missing VLM preprocessor
+  RESULTS_S3:     "s3://fleet-guanghan/witness_grpo_eval/"
+  GAMES:          "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07 tw01 tw09 tw10 tw12"  # 8 train + 4 held-out
+  MAX_LEVELS:     "5"
+  MAX_STEPS:      "300"
+
+setup: |
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential git
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install --quiet boto3 awscli accelerate
+  source scripts/fleet-qwen35-extra-setup.sh
+  python -c "import vllm; print(f'vllm {vllm.__version__}')"
+
+  ls -la /home/sky/arc-witness-agent/ | head -5
+  ls -la /home/sky/arc-witness-envs/  | head -5
+  cd /home/sky/arc-witness-agent
+  uv pip install --quiet pyyaml numpy pillow openai anthropic loguru
+  uv pip install --quiet arc-agi
+
+run: |
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  RESULTS_DIR="$HOME/eval_results_${RUN_LABEL}"
+  mkdir -p "$RESULTS_DIR"
+
+  EVAL_LOG="$RESULTS_DIR/eval_run.log"
+  exec > >(tee -a "$EVAL_LOG") 2>&1
+  trap 'echo "[trap] uploading log on exit"; aws s3 cp "$EVAL_LOG" "${RESULTS_S3}${RUN_LABEL}/eval_run.log" 2>&1 || true; aws s3 sync "$RESULTS_DIR" "${RESULTS_S3}${RUN_LABEL}/" --no-progress 2>&1 || true' EXIT
+  echo "[$(date '+%H:%M:%S')] eval start | RUN_LABEL=$RUN_LABEL"
+
+  set -uo pipefail
+
+  export PYTHONPATH="/home/sky/arc-witness-agent:/home/sky/arc-witness-envs:${PYTHONPATH:-}"
+  export WITNESS_ENVS_DIR="/home/sky/arc-witness-envs"
+
+  # ── Step 1: Download trained ckpt ──
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 1 — Download trained model from $CKPT_S3"
+  echo "================================================================="
+  CKPT_LOCAL="$HOME/rl_ckpt"
+  mkdir -p "$CKPT_LOCAL"
+  aws s3 sync "$CKPT_S3" "$CKPT_LOCAL/" --no-progress
+  echo "Downloaded $(du -sh "$CKPT_LOCAL" | cut -f1) to $CKPT_LOCAL"
+
+  # Look for the final ckpt subdir (B7 saves under "global_step_N/" or "merged/")
+  if [ -d "$CKPT_LOCAL/merged" ]; then
+    MODEL_PATH="$CKPT_LOCAL/merged"
+  elif ls "$CKPT_LOCAL"/global_step_* 2>/dev/null | head -1; then
+    MODEL_PATH=$(ls -d "$CKPT_LOCAL"/global_step_* | sort -V | tail -1)
+  else
+    MODEL_PATH="$CKPT_LOCAL"
+  fi
+  echo "Using MODEL_PATH=$MODEL_PATH"
+
+  # Patch missing VLM preprocessor (same fix as Phase 2 yaml)
+  if [ ! -f "$MODEL_PATH/preprocessor_config.json" ]; then
+    echo "[fix] preprocessor_config.json missing — pulling from $BASELINE_MODEL"
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$BASELINE_MODEL', allow_patterns=['preprocessor_config.json','video_preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja'], local_dir='$MODEL_PATH', local_dir_use_symlinks=False)" \
+      || echo "[fix] WARN: preprocessor download failed; vLLM may crash"
+  fi
+
+  # ── Step 2: Start vLLM server (kept up across all games) ──
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 2 — Start vLLM server"
+  echo "================================================================="
+  VLLM_LOG="$RESULTS_DIR/vllm_server.log"
+  python -m vllm.entrypoints.openai.api_server \
+    --model "$MODEL_PATH" \
+    --served-model-name rl-policy \
+    --dtype bfloat16 \
+    --max-model-len 16384 \
+    --gpu-memory-utilization 0.85 \
+    --port 8000 \
+    --trust-remote-code \
+    > "$VLLM_LOG" 2>&1 &
+  VLLM_PID=$!
+
+  echo "[vllm] waiting for healthcheck (pid=$VLLM_PID)"
+  for i in $(seq 1 90); do
+    if curl -sf http://localhost:8000/v1/models >/dev/null 2>&1; then
+      echo "[vllm] ready after ${i}*5s"
+      break
+    fi
+    if ! kill -0 "$VLLM_PID" 2>/dev/null; then
+      echo "[ERROR] vLLM server died during startup. Last 30 lines:"
+      tail -30 "$VLLM_LOG"
+      exit 1
+    fi
+    sleep 5
+  done
+
+  # ── Step 3: Per-game eval loop ──
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 3 — Per-game eval (12 games)"
+  echo "================================================================="
+
+  cd /home/sky/arc-witness-agent
+  declare -a SUMMARY=()
+  for game in $GAMES; do
+    echo
+    echo "─── game $game ───"
+    GAME_DIR="$RESULTS_DIR/$game"
+    mkdir -p "$GAME_DIR"
+
+    python run_agent.py \
+      --game "$game" \
+      --seed 0 \
+      --max-levels "$MAX_LEVELS" \
+      --max-level-steps "$MAX_STEPS" \
+      --log-dir "$GAME_DIR/agent_logs" \
+      --llm-provider vllm \
+      --llm-base-url http://localhost:8000/v1 \
+      --llm-model rl-policy \
+      --llm-temperature 0.0 \
+      --llm-max-tokens 1024 \
+      2>&1 | tee "$GAME_DIR/agent_run.log"
+    rc=${PIPESTATUS[0]}
+    echo "[$game] agent finished rc=$rc"
+
+    # Extract levels_completed (best-effort grep — adjust if log format changes)
+    levels=$(grep -oE "levels_completed.*[0-9]+" "$GAME_DIR/agent_run.log" | tail -1 || echo "?")
+    SUMMARY+=("$game: $levels")
+  done
+
+  # ── Step 4: Stop vLLM, summary ──
+  echo "================================================================="
+  echo "[$(date '+%H:%M:%S')] Step 4 — Stopping vLLM + summary"
+  echo "================================================================="
+  kill "$VLLM_PID" 2>/dev/null || true
+  wait "$VLLM_PID" 2>/dev/null || true
+
+  echo
+  echo "=== Summary ==="
+  for line in "${SUMMARY[@]}"; do
+    echo "  $line"
+  done
+
+  # Final upload (also done by trap on exit)
+  echo "[s3] uploading $RESULTS_DIR → ${RESULTS_S3}${RUN_LABEL}/"
+  aws s3 sync "$RESULTS_DIR" "${RESULTS_S3}${RUN_LABEL}/" --no-progress
+  echo "[$(date '+%H:%M:%S')] ✓ B7 RL eval done. RUN_LABEL=$RUN_LABEL"
+  echo "  Results: ${RESULTS_S3}${RUN_LABEL}/"
