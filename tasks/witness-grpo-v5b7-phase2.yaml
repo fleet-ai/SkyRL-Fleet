@@ -139,6 +139,23 @@ setup: |
   python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Qwen/Qwen3.5-9B', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$HOME/sft_ckpt', local_dir_use_symlinks=False)"
   ls -la "$HOME/sft_ckpt/" | head -25
 
+  # --- Spot-preemption recovery: resume from S3 ckpts if any ---
+  # If S3 has prior ckpts for this RUN_LABEL (from a previous attempt
+  # that got preempted), download them so trainer.resume_mode=latest
+  # can pick up where we left off. First launch → no prior ckpts → noop.
+  CKPT_S3_BASE="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
+  CKPT_LOCAL="$HOME/ckpts/witness_grpo_v5b7_${RUN_LABEL}"
+  echo "[resume] checking for prior ckpts at $CKPT_S3_BASE"
+  if aws s3 ls "$CKPT_S3_BASE/global_step_" 2>/dev/null | head -1 | grep -q .; then
+    echo "[resume] prior ckpts found, downloading to $CKPT_LOCAL"
+    mkdir -p "$CKPT_LOCAL"
+    aws s3 sync "$CKPT_S3_BASE/" "$CKPT_LOCAL/" --no-progress --exclude "logs/*" 2>&1 | tail -10
+    echo "[resume] downloaded; will use trainer.resume_mode=latest"
+    ls -d "$CKPT_LOCAL"/global_step_* 2>/dev/null
+  else
+    echo "[resume] no prior ckpts — fresh training start"
+  fi
+
   cd ~/sky_workdir
   python examples/train_integrations/witness/prepare_witness_dataset.py \
     --game_ids $GAME_IDS \
@@ -261,10 +278,50 @@ run: |
     ) &
     LOG_MIRROR_PID=$!
 
+    # --- Mid-training ckpt mirror to S3 (NEW for spot-preempt resilience) ---
+    # Original yaml only synced ckpts at end of training. Spot preemption =
+    # full ckpt loss. This loop checks every 5 min for newly-saved ckpts at
+    # $HOME/ckpts/witness_grpo_v5b7_<RUN_LABEL>/global_step_N/ and pushes
+    # them to S3 in the same namespace. Combined with trainer.resume_mode=
+    # latest + the S3 download in setup, this enables spot-preempt resume
+    # with at most ~5min of training loss.
+    CKPT_LOCAL_DIR="$HOME/ckpts/witness_grpo_v5b7_${RUN_LABEL}"
+    CKPT_S3_DIR="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
+    (
+      LAST_SYNCED_DIR=""
+      while true; do
+        sleep 300  # 5 min
+        if [ -d "$CKPT_LOCAL_DIR" ]; then
+          # Find newest global_step_N dir
+          NEWEST=$(ls -td "$CKPT_LOCAL_DIR"/global_step_* 2>/dev/null | head -1 || echo "")
+          # Plus latest_ckpt_global_step.txt (small but critical for resume)
+          if [ -n "$NEWEST" ] && [ "$NEWEST" != "$LAST_SYNCED_DIR" ]; then
+            BASENAME=$(basename "$NEWEST")
+            echo "[ckpt-mirror $(date +%H:%M:%S)] syncing $BASENAME to S3"
+            aws s3 sync "$NEWEST" "$CKPT_S3_DIR/$BASENAME" --quiet 2>/dev/null && \
+              LAST_SYNCED_DIR="$NEWEST" || \
+              echo "[ckpt-mirror] sync failed (will retry next cycle)"
+          fi
+          # Always sync the small latest-pointer file so resume knows what to load
+          if [ -f "$CKPT_LOCAL_DIR/latest_ckpt_global_step.txt" ]; then
+            aws s3 cp "$CKPT_LOCAL_DIR/latest_ckpt_global_step.txt" \
+              "$CKPT_S3_DIR/latest_ckpt_global_step.txt" --quiet 2>/dev/null || true
+          fi
+        fi
+      done
+    ) &
+    CKPT_MIRROR_PID=$!
+
     trap '
       kill $LOG_MIRROR_PID 2>/dev/null || true
+      kill $CKPT_MIRROR_PID 2>/dev/null || true
       [ -f "$TRAIN_LOG" ] && aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" 2>&1 | tail -3 || true
       echo "[trap] final log uploaded to $S3_LOG_BASE/trainer.log"
+      # Best-effort final ckpt sync (may not run on SIGKILL preempt)
+      if [ -d "$CKPT_LOCAL_DIR" ]; then
+        echo "[trap] best-effort final ckpt sync"
+        aws s3 sync "$CKPT_LOCAL_DIR" "$CKPT_S3_DIR/" --quiet 2>/dev/null || true
+      fi
     ' EXIT
 
     set +e
@@ -321,7 +378,7 @@ run: |
       trainer.logger="$LOGGER" \
       trainer.project_name="arc-agi-3" \
       trainer.run_name="witness_grpo_v5b7_${RUN_LABEL}" \
-      trainer.resume_mode=null \
+      trainer.resume_mode=latest \
       trainer.ckpt_path="$HOME/ckpts/witness_grpo_v5b7_${RUN_LABEL}" \
       trainer.dump_data_batch=true \
       trainer.dump_training_trajectories=true \
