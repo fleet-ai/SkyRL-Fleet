@@ -72,6 +72,19 @@ class WitnessAgentEnv(BaseTextEnv):
         self.max_orai_steps: int = int(extras.get("max_orai_steps", 30))
         self.agent_config: Dict[str, Any] = extras.get("agent_config") or self._load_default_agent_config()
 
+        # B7 Phase 2 R1 — plan-diversity penalty (gateable per run).
+        # Set ENABLE_PLAN_DIVERSITY_PENALTY=1 in yaml envs to activate.
+        # See agent/runtime/process_reward.py:compute_plan_diversity_penalty
+        self.plan_diversity_enabled: bool = (
+            os.environ.get("ENABLE_PLAN_DIVERSITY_PENALTY", "0") == "1"
+        )
+        self.plan_diversity_scheme: str = os.environ.get(
+            "PLAN_DIVERSITY_SCHEME", "consecutive"
+        )
+        self.plan_diversity_penalty: float = float(
+            os.environ.get("PLAN_DIVERSITY_PENALTY", "-0.05")
+        )
+
         # vLLM endpoint (the policy server colocated with trainer).
         self.vllm_base_url: str = (
             extras.get("vllm_base_url")
@@ -87,6 +100,8 @@ class WitnessAgentEnv(BaseTextEnv):
         self._cumulative_reward: float = 0.0
         self._cumulative_breakdown: Dict[str, float] = {}
         self._levels_completed_view: int = 0
+        # Plan history within this trajectory (for plan-diversity penalty).
+        self._plan_history: List[str] = []
 
     # ─────────────────────────── BaseTextEnv API ────────────────────────────
 
@@ -139,6 +154,33 @@ class WitnessAgentEnv(BaseTextEnv):
             timeout=120.0,
         )
         self._last_event = event
+
+        # B7 Phase 2 R1 — plan-diversity penalty (gateable).
+        # Parse plan from action; compute penalty vs. trajectory plan history;
+        # add to event.reward + event.reward_breakdown so it propagates into
+        # both train metrics + GRPO advantage. We then UPDATE plan_history.
+        if self.plan_diversity_enabled:
+            import re as _re
+            from agent.runtime.process_reward import compute_plan_diversity_penalty
+            m = _re.search(r"<plan>([^<]*)</plan>", action or "")
+            current_plan = m.group(1).strip() if m else None
+            penalty, breakdown = compute_plan_diversity_penalty(
+                current_plan=current_plan,
+                plan_history=list(self._plan_history),
+                config={
+                    "scheme": self.plan_diversity_scheme,
+                    "penalty": self.plan_diversity_penalty,
+                },
+            )
+            if penalty != 0.0:
+                event.reward = float(event.reward) + penalty
+                event.reward_breakdown = dict(event.reward_breakdown or {})
+                event.reward_breakdown["plan_diversity"] = (
+                    event.reward_breakdown.get("plan_diversity", 0.0) + penalty
+                )
+            if current_plan is not None:
+                self._plan_history.append(current_plan)
+
         # Track cumulative reward for metrics.
         self._cumulative_reward += event.reward
         for k, v in event.reward_breakdown.items():

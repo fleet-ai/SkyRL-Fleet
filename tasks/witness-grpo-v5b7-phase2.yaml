@@ -1,0 +1,338 @@
+# ARC-AGI-3 B7 Phase 2: parameterized GRPO yaml for parallel ablations.
+#
+# Designed to be launched 3+ times with different RUN_LABEL + reward
+# flags so R0/R1/R2 ablations run in parallel. Each launch creates a
+# distinct cluster + wandb run + S3 namespace.
+#
+# Env vars (set per launch via sky launch --env):
+#   RUN_LABEL                 — distinguishes runs (default p2_r0)
+#                               examples: p2_r0, p2_r1, p2_r2
+#   LR                         — optimizer learning rate (default 5.0e-6)
+#   NUM_EPOCHS                 — total training epochs (default 100)
+#   ENABLE_PLAN_DIVERSITY_PENALTY  — "1" enables R1's plan-div penalty (default "0")
+#   PLAN_DIVERSITY_SCHEME      — consecutive | any_prior | frequency (default consecutive)
+#   PLAN_DIVERSITY_PENALTY     — per-occurrence penalty (default -0.05)
+#   ENABLE_ASCII_FIDELITY      — placeholder for R2; set "1" to enable when implemented
+#
+# Differences from witness-grpo-v5b7.yaml:
+#   - prompt example "<plan>1,4,2,5,3</plan>" REMOVED from
+#     agent/decision/meta_reasoning.py:64 (already file_mounted)
+#     → Phase 2 R0 baseline = "Phase 1 + drop prompt example + LR↑ + epochs↑"
+#   - LR 1e-6 → 5e-6 (clip_ratio=0 evidence; see
+#     reports/2026-05-09_b7_run_q77b0agb_trajectory_analysis.md Finding #5)
+#   - Epochs 25 → 100 (need more steps for real learning per
+#     2026-05-09_b7_context_sufficiency_analysis_plan.md)
+#   - Eval interval 5 → 10 (less overhead, ~10 evals across run)
+#   - max_input_length kept at 16384 (Claude data shows 16K is enough; see
+#     2026-05-09_b7_context_sufficiency_analysis_plan.md EXECUTED FINDINGS)
+#
+# Usage examples:
+#   sky launch tasks/witness-grpo-v5b7-phase2.yaml \
+#     --env RUN_LABEL=p2_r0 \
+#     --env WANDB_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+#     -y
+#
+#   sky launch tasks/witness-grpo-v5b7-phase2.yaml \
+#     --env RUN_LABEL=p2_r1 \
+#     --env ENABLE_PLAN_DIVERSITY_PENALTY=1 \
+#     --env WANDB_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+#     -y
+#
+# Reference design: artifacts/arc-witness-runs/reports/2026-05-09_b7_phase2_oom_planning.md
+# (note: OOM concerns from that doc no longer apply — we keep 16K context)
+
+resources:
+  disk_size: 750
+  ports: 6479
+  any_of:
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: runpod
+    - accelerators: H200:8
+      cloud: lambda
+    - accelerators: H200:8
+      cloud: nebius
+    - accelerators: H200-SXM:8
+      cloud: vast
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/sft-b6
+
+file_mounts:
+  ~/arc-witness-agent: ~/Documents/obsidian/research-directions/repos/arc-witness-agent
+  ~/arc-witness-envs: ~/Documents/obsidian/research-directions/repos/arc-witness-envs
+
+envs:
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+
+  # === Phase 2 ablation knobs (override via sky launch --env) ===
+  RUN_LABEL: "p2_r0"               # p2_r0 / p2_r1 / p2_r2
+  LR: "5.0e-6"                      # was 1e-6 in Phase 1
+  NUM_EPOCHS: 100                   # was 25 in Phase 1
+  ENABLE_PLAN_DIVERSITY_PENALTY: "0"
+  PLAN_DIVERSITY_SCHEME: "consecutive"
+  PLAN_DIVERSITY_PENALTY: "-0.05"
+  ENABLE_ASCII_FIDELITY: "0"        # placeholder for R2 (impl Sat)
+
+  # === Same as Phase 1 ===
+  GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
+  VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
+  MAX_LEVELS: "5"
+  MAX_ORAI_STEPS: "30"
+  REWARD_MODE: "shaped"
+  OBS_MODE: "grid"
+  RULES_MODE: "rules_unknown"
+  MAX_TURNS: "30"
+  SFT_CHECKPOINT_S3: "s3://fleet-guanghan/witness_sft_v5/merged/"
+  S3_TRAJECTORY_BUCKET: "fleet-guanghan"
+  MODEL: "Qwen/Qwen3.5-9B"
+
+setup: |
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb boto3 awscli pyyaml
+  source scripts/fleet-qwen35-extra-setup.sh
+  uv pip install arc-agi
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+  uv pip install pyyaml openai
+
+  test -f "$ARC_WITNESS_AGENT_DIR/agent/core.py" || { echo "ERROR: arc-witness-agent file_mount missing"; exit 1; }
+  test -f "$WITNESS_ENVS_DIR/witness_grid.py" || { echo "ERROR: arc-witness-envs file_mount missing"; exit 1; }
+  echo "[ok] file_mounts present | RUN_LABEL=$RUN_LABEL"
+
+  # Sanity check: prompt example dropped (Phase 2)
+  if grep -q '<plan>1,4,2,5,3</plan>' "$ARC_WITNESS_AGENT_DIR/agent/decision/meta_reasoning.py"; then
+    echo "ERROR: prompt example '1,4,2,5,3' still in meta_reasoning.py — Phase 2 expects it removed"
+    exit 1
+  fi
+  echo "[ok] prompt example correctly dropped"
+
+  mkdir -p $HOME/sft_ckpt
+  aws s3 sync "$SFT_CHECKPOINT_S3" "$HOME/sft_ckpt/" 2>&1 | tail -5
+
+  echo "[patch] downloading multimodal config from Qwen/Qwen3.5-9B → ~/sft_ckpt"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Qwen/Qwen3.5-9B', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$HOME/sft_ckpt', local_dir_use_symlinks=False)"
+  ls -la "$HOME/sft_ckpt/" | head -25
+
+  cd ~/sky_workdir
+  python examples/train_integrations/witness/prepare_witness_dataset.py \
+    --game_ids $GAME_IDS \
+    --val_game_ids $VAL_GAME_IDS \
+    --reward_mode $REWARD_MODE \
+    --obs_mode $OBS_MODE \
+    --rules_mode $RULES_MODE \
+    --max_levels $MAX_LEVELS \
+    --env_class witness_agent \
+    --max_orai_steps $MAX_ORAI_STEPS \
+    --output_dir $HOME/data/witness_v5b7
+
+run: |
+  set -euo pipefail
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  TMP_DIR="$HOME/skyrl-tmp"
+  mkdir -p "$TMP_DIR"
+  export TMPDIR="$TMP_DIR"
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+  export HYDRA_FULL_ERROR=1
+
+  # Pass plan-diversity flags down to env_agent.py via env (it reads os.environ).
+  export ENABLE_PLAN_DIVERSITY_PENALTY
+  export PLAN_DIVERSITY_SCHEME
+  export PLAN_DIVERSITY_PENALTY
+  export ENABLE_ASCII_FIDELITY
+
+  # GCP NCCL/gIB handling (same as Phase 1)
+  ON_GCP=false
+  if [ -d "/usr/local/gib" ] || { [ -f "/sys/class/dmi/id/product_name" ] && grep -qi "google" /sys/class/dmi/id/product_name 2>/dev/null; }; then
+    ON_GCP=true
+  fi
+  if [ "$ON_GCP" = true ]; then
+    if ! { [ -d "/sys/class/infiniband" ] && [ "$(ls /sys/class/infiniband/ 2>/dev/null)" ]; }; then
+      echo "GCP without RDMA — disabling gIB"
+      export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH:-}" | sed 's|/usr/local/gib/lib64:||g; s|:/usr/local/gib/lib64||g; s|/usr/local/gib/lib64||g')
+      unset NCCL_NET 2>/dev/null || true
+      unset NCCL_CROSS_NIC NCCL_NET_GDR_LEVEL NCCL_P2P_NET_CHUNKSIZE NCCL_NVLS_CHUNKSIZE 2>/dev/null || true
+      unset NCCL_IB_ADAPTIVE_ROUTING NCCL_IB_QPS_PER_CONNECTION NCCL_IB_TC NCCL_IB_FIFO_TC 2>/dev/null || true
+      unset NCCL_TUNER_CONFIG_PATH 2>/dev/null || true
+      export NCCL_CUMEM_ENABLE=0
+    fi
+    SHM_SIZE=$(df --output=size /dev/shm 2>/dev/null | tail -1 | tr -d ' ')
+    if [ -n "$SHM_SIZE" ] && [ "$SHM_SIZE" -lt 16777216 ]; then
+      sudo mount -o remount,size=16G /dev/shm 2>&1 || true
+    fi
+  fi
+  sudo sysctl -w kernel.yama.ptrace_scope=0 2>/dev/null || true
+  ulimit -n 1048576 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+
+  export RAY_RUNTIME_ENV_HOOK=ray._private.runtime_env.uv_runtime_env_hook.hook
+  export RAY_object_store_memory=10000000000
+  export RAY_DISABLE_MEMORY_MONITOR=1
+
+  read -r head_ip _ <<< "$SKYPILOT_NODE_IPS"
+  DATA_DIR="$HOME/data/witness_v5b7"
+
+  python3 -c "import wandb; wandb.login(relogin=True, key='$WANDB_API_KEY')"
+
+  wait_for_ray() {
+    local address=$1
+    for _ in $(seq 1 24); do
+      if ray status --address "$address" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 5
+    done
+    echo "Ray cluster at $address failed to become ready" >&2
+    return 1
+  }
+
+  if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
+    if ! ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then
+      ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000
+    fi
+    wait_for_ray 127.0.0.1:6479
+
+    TOTAL_POLICY_GPUS=$((SKYPILOT_NUM_GPUS_PER_NODE * ${SKYPILOT_NUM_NODES:-1}))
+    POLICY_PATH="$HOME/sft_ckpt"
+
+    # Per-run S3 namespace (RUN_LABEL keeps R0/R1/R2 separate)
+    S3_LOG_BASE="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}/logs"
+    LOG_DIR="$HOME/run_logs"
+    mkdir -p "$LOG_DIR"
+    TRAIN_LOG="$LOG_DIR/trainer.log"
+    DIAG_LOG="$LOG_DIR/diagnostics.log"
+
+    {
+      echo "=== Pre-train diagnostics $(date -u +%FT%TZ) RUN_LABEL=$RUN_LABEL ==="
+      echo "--- ablation flags ---"
+      echo "  LR: $LR"
+      echo "  NUM_EPOCHS: $NUM_EPOCHS"
+      echo "  ENABLE_PLAN_DIVERSITY_PENALTY: $ENABLE_PLAN_DIVERSITY_PENALTY"
+      echo "  PLAN_DIVERSITY_SCHEME: $PLAN_DIVERSITY_SCHEME"
+      echo "  PLAN_DIVERSITY_PENALTY: $PLAN_DIVERSITY_PENALTY"
+      echo "  ENABLE_ASCII_FIDELITY: $ENABLE_ASCII_FIDELITY"
+      echo "--- nvidia-smi ---"
+      nvidia-smi || echo "nvidia-smi failed"
+      echo "--- free -h ---"; free -h
+      echo "--- df -h ---";   df -h | head -20
+      echo "--- POLICY_PATH ---"; ls -la "$POLICY_PATH" | head -25; du -sh "$POLICY_PATH"
+      echo "--- ray status ---"; ray status --address 127.0.0.1:6479 | head -40
+      echo "--- versions ---"
+      python -c "import torch, vllm, ray; print(f'torch={torch.__version__} cuda={torch.cuda.is_available()} ngpu={torch.cuda.device_count()} vllm={vllm.__version__} ray={ray.__version__}')"
+    } > "$DIAG_LOG" 2>&1
+    aws s3 cp "$DIAG_LOG" "$S3_LOG_BASE/diagnostics.log" 2>&1 | tail -3 || true
+
+    (
+      while true; do
+        if [ -f "$TRAIN_LOG" ]; then
+          aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" --quiet 2>/dev/null || true
+        fi
+        sleep 30
+      done
+    ) &
+    LOG_MIRROR_PID=$!
+
+    trap '
+      kill $LOG_MIRROR_PID 2>/dev/null || true
+      [ -f "$TRAIN_LOG" ] && aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" 2>&1 | tail -3 || true
+      echo "[trap] final log uploaded to $S3_LOG_BASE/trainer.log"
+    ' EXIT
+
+    set +e
+    set +o pipefail
+    PYTHONUNBUFFERED=1 python -u -m examples.train_integrations.witness.entrypoints.main_witness \
+      data.train_data="['${DATA_DIR}/train.parquet']" \
+      data.val_data="['${DATA_DIR}/validation.parquet']" \
+      trainer.algorithm.advantage_estimator="grpo" \
+      trainer.policy.model.path="$POLICY_PATH" \
+      trainer.flash_attn=false \
+      generator.chat_template_kwargs='{enable_thinking:false}' \
+      trainer.loss_chunk_size=4096 \
+      trainer.use_sample_packing=false \
+      trainer.algorithm.loss_reduction="sequence_mean" \
+      trainer.placement.colocate_all=true \
+      trainer.strategy=fsdp2 \
+      trainer.placement.policy_num_gpus_per_node="$SKYPILOT_NUM_GPUS_PER_NODE" \
+      trainer.placement.ref_num_gpus_per_node="$SKYPILOT_NUM_GPUS_PER_NODE" \
+      trainer.placement.ref_num_nodes="${SKYPILOT_NUM_NODES:-1}" \
+      trainer.placement.policy_num_nodes="${SKYPILOT_NUM_NODES:-1}" \
+      generator.num_inference_engines="$TOTAL_POLICY_GPUS" \
+      generator.inference_engine_tensor_parallel_size=1 \
+      trainer.epochs=${NUM_EPOCHS} \
+      trainer.eval_batch_size=4 \
+      trainer.eval_before_train=true \
+      trainer.eval_interval=10 \
+      trainer.update_epochs_per_batch=1 \
+      trainer.train_batch_size=4 \
+      trainer.policy_mini_batch_size=4 \
+      trainer.micro_forward_batch_size_per_gpu=1 \
+      trainer.micro_train_batch_size_per_gpu=1 \
+      trainer.ckpt_interval=10 \
+      trainer.max_prompt_length=4096 \
+      generator.max_input_length=16384 \
+      generator.sampling_params.max_generate_length=1024 \
+      generator.sampling_params.temperature=0.7 \
+      generator.sampling_params.top_p=0.95 \
+      generator.eval_sampling_params.max_generate_length=1024 \
+      trainer.policy.optimizer_config.lr=${LR} \
+      trainer.algorithm.use_kl_loss=true \
+      trainer.algorithm.kl_loss_coef=0.001 \
+      generator.max_turns=$MAX_TURNS \
+      generator.backend="$INFERENCE_BACKEND" \
+      generator.run_engines_locally=true \
+      generator.weight_sync_backend=nccl \
+      generator.async_engine=true \
+      generator.batched=false \
+      environment.env_class=witness_agent \
+      generator.use_conversation_multi_turn=true \
+      generator.n_samples_per_prompt=4 \
+      generator.eval_n_samples_per_prompt=3 \
+      generator.gpu_memory_utilization=0.8 \
+      trainer.logger="$LOGGER" \
+      trainer.project_name="arc-agi-3" \
+      trainer.run_name="witness_grpo_v5b7_${RUN_LABEL}" \
+      trainer.resume_mode=null \
+      trainer.ckpt_path="$HOME/ckpts/witness_grpo_v5b7_${RUN_LABEL}" \
+      trainer.dump_data_batch=true \
+      trainer.dump_training_trajectories=true \
+      2>&1 | tee "$TRAIN_LOG"
+    PYTHON_EXIT=${PIPESTATUS[0]}
+    echo "[trainer exit] code=$PYTHON_EXIT"
+    if [ "$PYTHON_EXIT" != "0" ]; then
+      echo "=== TAIL OF TRAINER LOG (last 100 lines) ==="
+      tail -100 "$TRAIN_LOG" || true
+      echo "=== END TAIL ==="
+    fi
+    set -eo pipefail
+  else
+    if ! ray status --address "$head_ip:6479" >/dev/null 2>&1; then
+      ray start --address "$head_ip:6479" --disable-usage-stats
+    fi
+    wait_for_ray "$head_ip:6479"
+    sleep infinity
+  fi
+
+  set +e
+  S3_BASE="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
+  echo "[s3] uploading run logs + checkpoints to ${S3_BASE}"
+  aws s3 sync "$HOME/ckpts/witness_grpo_v5b7_${RUN_LABEL}" "${S3_BASE}/" 2>&1 | tail -5
+  echo "[done] B7 RL Phase 2 (${RUN_LABEL}) complete. Artifacts at ${S3_BASE}/"
