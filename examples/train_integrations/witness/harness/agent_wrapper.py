@@ -436,6 +436,7 @@ class AgentRolloutWrapper:
         from agent.runtime.process_reward import (    # noqa: E402
             compute_geometric_reward,
             compute_outcome_reward,
+            compute_ascii_fidelity_reward,
         )
 
         if not self._records:
@@ -460,11 +461,33 @@ class AgentRolloutWrapper:
             rec.pre_level_index, new_level, self.max_levels,
         )
 
+        # B7 Phase 2 R2 — ASCII fidelity (perception grounding) reward.
+        # Gateable via env var so R0/R1 stay unaffected.
+        ascii_total = 0.0
+        ascii_breakdown: Dict[str, Any] = {}
+        if os.environ.get("ENABLE_ASCII_FIDELITY", "0") == "1":
+            # Ground truth at PROMPT TIME = rec.pre_path[-1]
+            gt_pos = rec.pre_path[-1] if rec.pre_path else None
+            cfg = {
+                "match_reward": float(os.environ.get("ASCII_FIDELITY_MATCH_REWARD", "0.05")),
+                "mismatch_penalty": float(os.environ.get("ASCII_FIDELITY_MISMATCH_PENALTY", "-0.02")),
+            }
+            ascii_total, ascii_breakdown = compute_ascii_fidelity_reward(
+                user_message=rec.user_message,
+                ground_truth_pos=gt_pos,
+                config=cfg,
+            )
+
         # Look up matching ReflectionTrace for level/step metadata.
         idx = len(self._records) - 1
         refls = self.trace._reflections
         level = refls[idx].level if idx < len(refls) else rec.pre_level_index
         step = refls[idx].step if idx < len(refls) else 0
+
+        # Strip the diagnostic-only fields from ascii_breakdown before
+        # merging into reward_breakdown (caller expects float values).
+        ascii_clean = {k: v for k, v in ascii_breakdown.items()
+                       if isinstance(v, (int, float)) and not k.startswith("_")}
 
         return RolloutEvent(
             system_prompt=rec.system_prompt,
@@ -472,8 +495,8 @@ class AgentRolloutWrapper:
             response=rec.response,
             level=level,
             step=step,
-            reward=geo_total + out_total,
-            reward_breakdown={**geo_breakdown, **out_breakdown},
+            reward=geo_total + out_total + ascii_total,
+            reward_breakdown={**geo_breakdown, **out_breakdown, **ascii_clean},
         )
 
     def join_bridged_rollout(
