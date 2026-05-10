@@ -85,6 +85,30 @@ class WitnessAgentEnv(BaseTextEnv):
             os.environ.get("PLAN_DIVERSITY_PENALTY", "-0.05")
         )
 
+        # B7 Phase 2 R3 — Claude rule-judge reward (gateable).
+        # Fires only when action contains <add>...</add>; calls OpenRouter→Claude.
+        # See agent/runtime/process_reward.py:compute_rule_judge_reward
+        self.rule_judge_enabled: bool = (
+            os.environ.get("ENABLE_RULE_JUDGE_REWARD", "0") == "1"
+        )
+        self.rule_judge_config: Dict[str, Any] = {
+            "model": os.environ.get("RULE_JUDGE_MODEL", "anthropic/claude-haiku-4.5"),
+            "sample_rate": float(os.environ.get("RULE_JUDGE_SAMPLE_RATE", "0.20")),
+            "max_reward": float(os.environ.get("RULE_JUDGE_MAX_REWARD", "0.30")),
+        }
+
+        # B7 Phase 2 R4 — Rubric reward (gateable).
+        # Fires every ORAI step; mechanical C/D always; Claude A/B sampled.
+        # See agent/runtime/process_reward.py:compute_rubric_reward
+        self.rubric_enabled: bool = (
+            os.environ.get("ENABLE_RUBRIC_REWARD", "0") == "1"
+        )
+        self.rubric_config: Dict[str, Any] = {
+            "model": os.environ.get("RUBRIC_MODEL", "anthropic/claude-haiku-4.5"),
+            "sample_rate": float(os.environ.get("RUBRIC_SAMPLE_RATE", "0.15")),
+            "per_item_reward": float(os.environ.get("RUBRIC_PER_ITEM_REWARD", "0.05")),
+        }
+
         # vLLM endpoint (the policy server colocated with trainer).
         self.vllm_base_url: str = (
             extras.get("vllm_base_url")
@@ -155,6 +179,15 @@ class WitnessAgentEnv(BaseTextEnv):
         )
         self._last_event = event
 
+        # Last user message that triggered THIS action — needed by R3/R4 judges.
+        # self._chat_history[-1] is still the previous user obs (we append the
+        # new assistant/user pair AFTER reward computation, below).
+        last_user_msg = (
+            self._chat_history[-1]["content"]
+            if self._chat_history and self._chat_history[-1].get("role") == "user"
+            else ""
+        )
+
         # B7 Phase 2 R1 — plan-diversity penalty (gateable).
         # Parse plan from action; compute penalty vs. trajectory plan history;
         # add to event.reward + event.reward_breakdown so it propagates into
@@ -180,6 +213,39 @@ class WitnessAgentEnv(BaseTextEnv):
                 )
             if current_plan is not None:
                 self._plan_history.append(current_plan)
+
+        # B7 Phase 2 R3 — Claude rule-judge reward (gateable, sparse).
+        # Strictly non-negative; only fires when action contains <add>...</add>.
+        if self.rule_judge_enabled and "<add>" in (action or ""):
+            from agent.runtime.process_reward import compute_rule_judge_reward
+            r3_reward, r3_breakdown = compute_rule_judge_reward(
+                action=action,
+                user_message=last_user_msg,
+                config=self.rule_judge_config,
+            )
+            if r3_reward != 0.0:
+                event.reward = float(event.reward) + r3_reward
+                event.reward_breakdown = dict(event.reward_breakdown or {})
+                event.reward_breakdown["rule_judge"] = (
+                    event.reward_breakdown.get("rule_judge", 0.0) + r3_reward
+                )
+
+        # B7 Phase 2 R4 — Rubric reward (gateable, every ORAI step).
+        # Strictly non-negative; mechanical schema/plan checks always run;
+        # Claude semantic checks (A/B) sampled at rubric_config["sample_rate"].
+        if self.rubric_enabled:
+            from agent.runtime.process_reward import compute_rubric_reward
+            r4_reward, r4_breakdown = compute_rubric_reward(
+                action=action,
+                user_message=last_user_msg,
+                config=self.rubric_config,
+            )
+            if r4_reward != 0.0:
+                event.reward = float(event.reward) + r4_reward
+                event.reward_breakdown = dict(event.reward_breakdown or {})
+                event.reward_breakdown["rubric"] = (
+                    event.reward_breakdown.get("rubric", 0.0) + r4_reward
+                )
 
         # Track cumulative reward for metrics.
         self._cumulative_reward += event.reward
