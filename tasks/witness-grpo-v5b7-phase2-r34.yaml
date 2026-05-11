@@ -107,6 +107,15 @@ envs:
   #   arc-witness-agent/reports/2026-05-10_perception_markers_design_spec.md
   USE_ENV_GROUND_TRUTH: "1"
 
+  # Finding M (2026-05-10): hard-gate MLLM perception calls. SkyRL's vLLM
+  # doesn't expose HTTP, so the agent's OpenAI-SDK-over-HTTP call always
+  # fails with "Connection error" (1446 such failures observed in R1
+  # eih8x63f). Setting "0" skips the call entirely (saves ~25 min/run
+  # of HTTP timeouts + clears log noise). Re-enable after Finding M
+  # path 3 or 4 lands. See:
+  #   arc-witness-agent/reports/2026-05-10_mllm_unavailable_in_rl_findings.md
+  AGENT_MLLM_ENABLED: "0"
+
   # === Same as Phase 1 ===
   GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
   VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
@@ -213,6 +222,7 @@ run: |
   export OPENROUTER_API_KEY
   export OPENROUTER_BASE_URL
   export USE_ENV_GROUND_TRUTH
+  export AGENT_MLLM_ENABLED
 
   # Preflight check: if R3 or R4 enabled, OPENROUTER_API_KEY must be set.
   if [ "${ENABLE_RULE_JUDGE_REWARD}" = "1" ] || [ "${ENABLE_RUBRIC_REWARD}" = "1" ]; then
@@ -301,6 +311,7 @@ run: |
       echo "  RUBRIC_PER_ITEM_REWARD: $RUBRIC_PER_ITEM_REWARD"
       echo "  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:+set (last 4: ${OPENROUTER_API_KEY: -4})}"
       echo "  USE_ENV_GROUND_TRUTH: $USE_ENV_GROUND_TRUTH"
+      echo "  AGENT_MLLM_ENABLED: $AGENT_MLLM_ENABLED"
       echo "--- nvidia-smi ---"
       nvidia-smi || echo "nvidia-smi failed"
       echo "--- free -h ---"; free -h
