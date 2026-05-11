@@ -7,7 +7,7 @@
 #
 # Model: Qwen/Qwen3.5-9B (9B params, natively multimodal, GatedDeltaNet)
 # TP=1 (single GPU per engine, 8 engines on 8x H200)
-# Modality: computer_use (screenshots + coordinate normalization)
+# Modality: browser_use (screenshots + coordinate normalization)
 #
 # Required env vars: FLEET_API_KEY, WANDB_API_KEY
 # Optional: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (for S3 checkpoints)
@@ -17,11 +17,11 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo roo
 # Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v52}"
-export MODALITY="${MODALITY:-computer_use}"
+export DATA_VERSION="${DATA_VERSION:-v6}"
+export MODALITY="${MODALITY:-browser_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-10}"
-export MAX_TURNS="${MAX_TURNS:-50}"
-export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-131072}"
+export MAX_TURNS="${MAX_TURNS:-80}"
+export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-80000}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"
 export ENV_KEYS="${ENV_KEYS:-}"
 export DIFFICULTY="${DIFFICULTY:-}"
@@ -40,7 +40,7 @@ bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=1800 \
-  environment.skyrl_gym.fleet_task.partial_reward=false \
+  environment.skyrl_gym.fleet_task.partial_reward=true \
   environment.skyrl_gym.fleet_task.enable_hints=false \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.policy.model.path="Qwen/Qwen3.5-9B" \
@@ -53,13 +53,13 @@ bash scripts/fleet-common-run.sh \
   generator.inference_engine_tensor_parallel_size=1 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=12 \
-  trainer.eval_before_train=true \
+  trainer.eval_before_train=false \
   trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
-  trainer.train_batch_size=16 \
+  trainer.train_batch_size=50 \
   trainer.use_hybrid_env_sampling=true \
-  trainer.min_samples_per_env=1 \
-  trainer.policy_mini_batch_size=16 \
+  trainer.min_samples_per_env=2 \
+  trainer.policy_mini_batch_size=50 \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
@@ -70,8 +70,9 @@ bash scripts/fleet-common-run.sh \
   generator.sampling_params.top_p=0.95 \
   'generator.sampling_params.stop=["</tool_call>"]' \
   'generator.eval_sampling_params.stop=["</tool_call>"]' \
-  trainer.policy.optimizer_config.lr=1.0e-6 \
+  trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
+  trainer.algorithm.zero_variance_filter=true \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \
   generator.run_engines_locally=true \
@@ -82,6 +83,7 @@ bash scripts/fleet-common-run.sh \
   generator.n_samples_per_prompt=4 \
   generator.eval_n_samples_per_prompt=3 \
   generator.gpu_memory_utilization=0.80 \
+  generator.trajectory_timeout_seconds=900 \
   trainer.logger="$LOGGER" \
   trainer.project_name="fleet-browser-use-grpo" \
   trainer.run_name="fleet_qwen35_${MODALITY}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \

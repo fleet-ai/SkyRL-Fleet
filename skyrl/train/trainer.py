@@ -173,6 +173,22 @@ class RayPPOTrainer:
                 global_step=self.global_step,
                 tokenizer=self.tokenizer,
             )
+
+        # Upload eval results to S3
+        if self.cfg.trainer.dump_eval_results:
+            try:
+                from integrations.fleet.s3_checkpoints import upload_eval_results_to_s3
+
+                step_suffix = "eval_only" if self.global_step is None else f"global_step_{self.global_step}_evals"
+                local_dir = os.path.join(self.cfg.trainer.export_path, "dumped_evals", step_suffix)
+                upload_eval_results_to_s3(
+                    local_dir=local_dir,
+                    run_name=self.cfg.trainer.run_name,
+                    global_step=self.global_step,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to upload eval results to S3: {e}")
+
         return eval_metrics
 
     async def train(self):

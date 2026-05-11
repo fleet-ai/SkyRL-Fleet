@@ -2,7 +2,7 @@
 Task Generation Environment for SkyRL.
 
 Multi-turn BaseTextEnv where the LLM can explore the seed database via
-``describe_db`` / ``query_db`` meta-tools before generating a task.
+``query_db`` meta-tool before generating a task.
 
 When ``max_turns > 1`` (the default), the model explores the DB first
 and then produces a ``<task>`` block.  When ``max_turns == 1`` it
@@ -44,8 +44,28 @@ from skyrl_gym.envs.task_gen.verifier_sandbox import (
 
 logger = logging.getLogger(__name__)
 
+def _format_compact_schema(describe_result: Any) -> str:
+    """Convert a DescribeResponse dict to compact 'table: col (type), ...' format."""
+    if not isinstance(describe_result, dict):
+        return str(describe_result) if describe_result else ""
+    tables = describe_result.get("tables")
+    if not tables or not isinstance(tables, list):
+        return ""
+    lines = []
+    for t in tables:
+        name = t.get("name", "")
+        cols = t.get("columns", [])
+        col_parts = []
+        for c in cols:
+            col_name = c.get("name", "")
+            col_type = c.get("type", "").lower()
+            col_parts.append(f"{col_name} ({col_type})" if col_type else col_name)
+        lines.append(f"{name}: {', '.join(col_parts)}")
+    return "\n".join(lines)
+
+
 # Meta-tools the model can call to explore the seed database.
-_META_TOOLS = {"describe_db", "query_db"}
+_META_TOOLS = {"query_db"}
 
 # All callable tools = meta-tools + any MCP env tools discovered at init time.
 # Populated per-instance in init_async().
@@ -55,8 +75,8 @@ class TaskGenEnv(BaseTextEnv):
     """Environment for RL-based task generation.
 
     The LLM generates (prompt, verifier) pairs for Fleet environments.
-    Supports multi-turn: the model can explore the seed DB via ``describe_db``
-    and ``query_db`` meta-tools before outputting a ``<task>`` block.
+    Supports multi-turn: the model can explore the seed DB via ``query_db``
+    meta-tool before outputting a ``<task>`` block. Schema is in the prompt.
 
     Reward = llm_validity * (alpha * var(raw_scores) + (p_hint - p_raw))
 
@@ -94,7 +114,6 @@ class TaskGenEnv(BaseTextEnv):
         # Set of all callable tool names (meta-tools + MCP tools)
         self.callable_tools = set(_META_TOOLS)
         # Exploration sequence tracking (reset in init_async)
-        self.called_describe_db = False
         self.called_query_db = False
 
         # Environment context from dataset (extras)
@@ -172,9 +191,12 @@ class TaskGenEnv(BaseTextEnv):
         self.openrouter_api_key = os.environ.get("OPENROUTER_API_KEY", "")
         self.fleet_api_key = os.environ.get("FLEET_API_KEY", "")
 
-        # Eval mode: k=8 raw only (no hints); Train mode: k with hints
+        # Eval mode: k=8 raw only (no hints)
         self.is_eval = extras.get("training_phase") == "eval"
         self.eval_k_rollouts = int(env_config.get("eval_k_rollouts", 8)) if env_config else 8
+        # Whether to run hinted evaluation jobs (2nd harness job with verifier feedback).
+        # Default off — hints were net negative in iter#11 (verifier code dump confused evaluator).
+        self.enable_hints = bool(env_config.get("enable_hints", False)) if env_config else False
 
         # Lazy-init Fleet SDK client for harness evaluation
         self._fleet_client = None
@@ -188,12 +210,16 @@ class TaskGenEnv(BaseTextEnv):
         # Provides GRPO gradient signal even when all harness evals return 0.
         self.base_quality_reward = float(env_config.get("base_quality_reward", 0.1)) if env_config else 0.1
 
+        # Small per-tool-call reward to incentivize DB exploration (query_db).
+        # Default 0.0 = off (no behavior change for existing runs).
+        self.tool_call_reward_per_call = float(env_config.get("tool_call_reward_per_call", 0.0)) if env_config else 0.0
+
         logger.info(
             f"TaskGenEnv: env={self.env_key}, max_turns={self.max_turns}, "
             f"judge={self.judge_model or 'none'}, "
             f"tools={len(self.env_tools)}, k={self.k_rollouts}, eval_k={self.eval_k_rollouts}, "
             f"evaluator={self.evaluator_model}, is_eval={self.is_eval}, "
-            f"base_quality={self.base_quality_reward}"
+            f"base_quality={self.base_quality_reward}, tool_call_reward={self.tool_call_reward_per_call}"
         )
 
     def _format_tool_schema(self, tool: Dict[str, Any]) -> str:
@@ -384,6 +410,17 @@ def validate_task(env: Environment, final_answer: str | None = None) -> int:
     current = env.db("current")
 
     def find_new_entries(table_name, id_field="id", filter_conditions=None):
+        \"\"\"Compare seed vs current to find rows added by the agent.
+
+        Args:
+            table_name: Table to compare.
+            id_field: Primary key column (default "id").
+            filter_conditions: Optional dict of {{column: value}} filters
+                applied to BOTH seed and current before comparison.
+
+        Returns:
+            List[dict] — rows present in current but not in seed.
+        \"\"\"
         before_query = seed.table(table_name)
         after_query = current.table(table_name)
         if filter_conditions:
@@ -392,6 +429,15 @@ def validate_task(env: Environment, final_answer: str | None = None) -> int:
                 after_query = after_query.eq(key, value)
         before_ids = set(entry[id_field] for entry in before_query.select(id_field).all())
         return [e for e in after_query.all() if e[id_field] not in before_ids]
+
+    # --- Validation: use SET-BASED comparison, never row-index ---
+    # GOOD: compare by content/ID sets, order-independent
+    #   expected_ids = {{"id_1", "id_2"}}
+    #   actual_ids = {{row["id"] for row in new_entries}}
+    #   if not expected_ids.issubset(actual_ids): ...
+    #
+    # BAD: comparing by row index (fragile, order-dependent)
+    #   if new_entries[0]["id"] == "id_1": ...
 
     # Check conditions...
     # On early failure:
@@ -428,6 +474,9 @@ def validate_task(env: Environment, final_answer: str | None = None) -> int:
 - Look up the logged-in user by name/email from the users table, don't assume an ID
 - Compare `seed` (before) vs `current` (after) to detect what the agent did
 - Must return `TASK_FAILED_SCORE` on a fresh environment (before agent acts)
+- **NEVER call `.table("X").all()` without a preceding `.eq()` or `.neq()` filter** — unfiltered `.all()` fetches every row, which is wasteful and causes warm-pool saturation with large tables. Always filter first: `current.table("orders").eq("user_id", uid).all()`. The only exception is inside `find_new_entries` where `.select(id_field).all()` fetches just IDs for comparison
+- **Use order-independent (set-based) comparison** — never compare results by row index or list position. Rows may be returned in any order. Use sets: `actual_ids = {{r["id"] for r in rows}}; assert expected_ids.issubset(actual_ids)`. NEVER do `rows[0]["id"] == expected` — it breaks when row order changes
+- **Verifier MUST return 0 on unmodified DB** — the verifier must fail when the agent has not acted. Always compare `seed` vs `current` state. A verifier that only checks `current` without comparing to `seed` is permissive — it may return 1 even when the agent did nothing. Pattern: `new_entries = find_new_entries("table"); if not new_entries: return TASK_FAILED_SCORE`
 - Use `final_answer` for tasks that require the agent to report a value
 - Reference actual tool names from this environment
 
@@ -450,7 +499,7 @@ BAD prompt:  "Find a designer in Mexico" (3 designers exist, verifier checks for
 FIX option 1: Make the prompt specific: "Find the designer in Mexico City who joined after 2023"
 FIX option 2: Make the verifier accept all valid answers: check that ANY designer in Mexico is returned
 
-Use `describe_db`/`query_db` to check the actual data before writing the prompt. If a query returns multiple rows, either narrow the prompt or widen the verifier. Always verify your assumptions by querying — don't guess. You MUST call all three of `describe_db`, `query_db`, and at least one environment API tool before writing the task — your task will be rejected otherwise.
+Use `query_db` to check the actual data before writing the prompt. If a query returns multiple rows, either narrow the prompt or widen the verifier. Always verify your assumptions by querying — don't guess.
 
 ### Avoiding Overspecification
 A prompt is overspecified when it dictates HOW to accomplish the task rather than WHAT outcome is needed. This makes the task trivially easy (no learning signal) and doesn't test real problem-solving.
@@ -484,34 +533,26 @@ The verifier must check exactly what the prompt asks — no more, no less. Befor
                 """
 ## Exploration Tools
 
-Before generating a task, explore the environment to understand the actual data and API behavior.
+The database schema is provided above. Use BOTH `query_db` AND environment API tools during exploration.
 
 ### Database Tools
-<tool_call>{"name": "describe_db", "arguments": {}}</tool_call>
-Returns the full schema: table names, columns, types.
-
 <tool_call>{"name": "query_db", "arguments": {"sql": "SELECT * FROM table_name LIMIT 5"}}</tool_call>
 Runs a read-only SQL query against the seed database.
 
-### Environment Tools
-You MUST call at least one of the environment's API tools listed above to understand their input/output formats.
-
-**REQUIRED before generating a task:** You must call ALL THREE of: (1) `describe_db`, (2) `query_db`, and (3) at least one environment API tool. Your task will be rejected if any are missing.
-
+### Environment API Tools
 <tool_call>{"name": "tool_name", "arguments": {"param": "value"}}</tool_call>
-Calls the tool and returns its result. Use this to understand input/output formats.
+Calls the environment API tool and returns its result. **You MUST call at least one API tool** (e.g., searchEvents, getAvailability) during exploration to understand what the solver agent will experience. The solver uses these API tools, not SQL — if you only explore via SQL, you won't know whether the API tools actually work for your task.
 
 ### Workflow
-1. **Explore**: Call `describe_db` to see all tables and columns.
-2. **Inspect data**: Call `query_db` with SELECT queries to inspect real data (values, ranges, row counts, patterns).
-3. **Try tools**: Call at least one environment API tool to understand its behavior, input/output formats, and edge cases.
-4. **Draft a task idea**: Think about what prompt + verifier you could write based on the data you've seen.
-5. **Validate your draft**: Before outputting the task, run `query_db` to verify your assumptions:
-   - Does the data your prompt references actually exist? (e.g., "Update Jamie's email" — is there a Jamie?)
-   - Will the verifier return 0.0 on a fresh DB? (Check seed state)
-   - Are there edge cases? (e.g., multiple matches, null values, empty tables)
-6. **Iterate**: If your queries reveal problems (wrong assumptions, ambiguous data, too many/few matches), revise your task idea and verify again. Do NOT output the task until you've confirmed the data supports it.
-7. **Output**: Only when confident, output the final task in the format below."""
+1. **Inspect data**: Call `query_db` to inspect real data (values, ranges, row counts).
+2. **Try API tools**: Call at least one environment API tool to understand its behavior, input/output format, and what data it returns. This is critical — your task must be achievable using these tools.
+3. **Draft a task idea**: Based on the data AND tool behavior you've observed.
+4. **Validate**: Before outputting, verify:
+   - Does the data your prompt references actually exist? (Query to confirm.)
+   - Is the task achievable using the available API tools? (You tested them.)
+   - Does your verifier check for a DB mutation (e.g., new order, new cart item)? If so, does the task actually cause that mutation?
+   - Will the verifier return 0 on the unmodified DB? (If it uses `find_new_entries`, the task MUST involve a write action like buy/reserve/create — NOT just search/list.)
+5. **Output**: Only when confident, output the final task in the format below."""
             )
 
         # --- D. Few-shot examples removed ---
@@ -541,31 +582,82 @@ Generate exactly ONE task. Output it in this format:
         return "\n".join(parts)
 
     def _judge_task(self, prompt: str, verifier: str) -> float:
-        """LLM-as-a-judge gate: returns 0.0 (invalid) or 1.0 (valid).
+        """LLM classifier gate: returns 0.0 (reject) or 1.0 (accept).
 
-        Uses a model to check if the generated (prompt, verifier) pair
-        is valid and coherent. This is the binary gate in the reward formula.
+        Predicts whether the (prompt, verifier) pair will produce meaningful
+        evaluation signal. Optimized for very low false positive rate — only
+        rejects tasks that are near-certain to waste harness compute.
+
+        Checks:
+            1. Phantom tables: verifier references tables not in env schema
+            2. Undefined references: calls to functions/constants not defined
+            3. Vacuous checks: verifier only checks user existence or len>0
         """
         if not self.judge_model or not self.openrouter_api_key:
             return 1.0  # No judge configured, pass through
 
-        # Build concise tool list for context
+        # Build context for the classifier
         tool_names = [t for t in self.env_tools if t != "computer"]
         tools_str = ", ".join(tool_names[:20]) if tool_names else "none discovered"
 
+        schema_block = self.env_schema if self.env_schema else "Schema not available."
+
         judge_prompt = (
-            f'Evaluate this task for the "{self.env_key}" environment.\n\n'
+            "You are a verifier quality judge for an AI task-generation system. You evaluate "
+            "whether a generated verifier function can reliably determine if an AI agent "
+            "correctly completed a task.\n\n"
+            "## Context\n\n"
+            "The verifier has access to:\n"
+            "- `env.db(\"seed\")` — database state BEFORE the agent acted\n"
+            "- `env.db(\"current\")` — database state AFTER the agent acted\n"
+            "- `final_answer` — the agent's text response\n"
+            "- DB query methods: `.table(name)`, `.eq(col, val)`, `.first()`, `.all()`, "
+            "`.select()`, `.neq()`, `.gt()`, `.lt()`\n\n"
+            f"Database schema (valid tables and columns):\n```\n{schema_block}\n```\n\n"
+            f'Environment: "{self.env_key}"\n'
             f"Available tools: {tools_str}\n\n"
-            f"Task prompt:\n{prompt}\n\n"
-            f"Verifier code:\n```python\n{verifier}\n```\n\n"
-            "A valid task must:\n"
-            "1. Have a clear, specific prompt describing what an agent should do\n"
-            "2. Have a verifier that checks the correct outcome via the DB API "
-            '(env.db("seed"), env.db("current"), .table().eq().all())\n'
-            "3. The verifier must check what the prompt actually asks\n"
-            "4. The prompt must not leak the answer or expected values\n"
-            "5. The verifier must return 0.0 on a fresh env (before agent acts)\n\n"
-            "Answer with exactly one word: VALID or INVALID"
+            "## Classification Criteria\n\n"
+            "### ACCEPT if the verifier does ANY of:\n\n"
+            "1. **Mutation verification**: Compares seed vs current database state to detect "
+            "that the agent created, modified, or deleted records.\n\n"
+            "2. **DB-grounded answer validation**: Queries the database for specific records "
+            "and validates that values FROM those records appear in `final_answer`. The "
+            "expected values must come from the database, not from hardcoded strings or "
+            "the task prompt.\n\n"
+            "3. **Specific record validation**: Looks up a record by ID or unique field and "
+            "checks its field values match expected values.\n\n"
+            "### REJECT if the verifier does ANY of:\n\n"
+            "1. **Generic keyword checking**: Checks if generic category words appear in "
+            "`final_answer` (e.g., \"event\", \"venue\", \"concert\", \"price\", \"bedroom\", "
+            "\"listing\"). These words appear in any topically-relevant response regardless "
+            "of task completion.\n\n"
+            "2. **Prompt echo checking**: Checks if values from the task prompt appear in "
+            "`final_answer` (e.g., \"Los Angeles\" when the prompt asked about LA events). "
+            "The agent could echo prompt values without doing any work.\n\n"
+            "3. **Exists-check-only**: Only checks `final_answer is not None` or "
+            "`len(answer) > 0`.\n\n"
+            "4. **Dead code DB queries**: Has `seed.table()` or `current.table()` calls but "
+            "never uses the query results in conditional logic that affects the return value.\n\n"
+            "5. **Nonexistent API access**: References `env.instance.tool_calls`, "
+            "`get_call_history()`, or `env.call_tool()` — these don't exist in the verifier "
+            "runtime.\n\n"
+            "6. **Cargo-cult DB**: Queries the DB only for user/account existence (which always "
+            "passes for pre-existing entities), then gates on keyword checks for actual "
+            "validation.\n\n"
+            "7. **Phantom tables**: The verifier calls `.table(\"X\")` where X does not exist "
+            "in the schema above.\n\n"
+            "8. **Undefined references**: The verifier calls functions or uses constants that "
+            "are not defined in the code and are not Python builtins.\n\n"
+            "### Edge Cases:\n\n"
+            "- Read-only tasks with DB-grounded keywords: ACCEPT — if the verifier queries a "
+            "DB table to get specific values then checks those values appear in `final_answer`.\n"
+            "- JSON structure validation without DB cross-reference: REJECT.\n"
+            "- Existence checks on initially-empty tables (e.g., orders after \"place order\"): "
+            "weak ACCEPT.\n\n"
+            f"## Generated Task\n\n"
+            f"Prompt:\n{prompt}\n\n"
+            f"Verifier:\n```python\n{verifier}\n```\n\n"
+            "Answer with exactly one word: ACCEPT or REJECT"
         )
 
         try:
@@ -579,11 +671,14 @@ Generate exactly ONE task. Output it in this format:
                 api_key=self.openrouter_api_key,
             )
             answer = response.choices[0].message.content.strip().upper()
-            is_valid = "VALID" in answer and "INVALID" not in answer
-            logger.info(f"LLM judge [{self.env_key}]: {answer} -> {'VALID' if is_valid else 'INVALID'}")
-            return 1.0 if is_valid else 0.0
+            accepted = "ACCEPT" in answer and "REJECT" not in answer
+            logger.info(
+                f"LLM classifier [{self.env_key}]: {answer} -> "
+                f"{'ACCEPT' if accepted else 'REJECT'}"
+            )
+            return 1.0 if accepted else 0.0
         except Exception as e:
-            logger.warning(f"LLM judge failed, defaulting to valid: {e}")
+            logger.warning(f"LLM classifier failed, defaulting to accept: {e}")
             return 1.0
 
     @staticmethod
@@ -838,21 +933,15 @@ Generate exactly ONE task. Output it in this format:
         start = time.time()
 
         try:
-            # Eval mode: k=8 raw only (no hints) for pass rate measurement
-            # Train mode: k raw + k hinted for hint_gap signal
+            # Eval: k=eval_k_rollouts for pass rate; Train: k=k_rollouts
             eval_k = self.eval_k_rollouts if self.is_eval else self.k_rollouts
 
             # 1. Raw job: k rollouts without hints
             raw_job_id, raw_results = await self._run_harness_job(prompt, verifier, k=eval_k)
             raw_scores = [r[0] for r in raw_results]
 
-            if self.is_eval:
-                # Eval: no hints, reward = alpha * var_raw (hint_gap=0)
-                hinted_scores = []
-                hinted_job_id = None
-                hint_text = ""
-                result = compute_task_reward(raw_scores, raw_scores, validity=1.0)
-            else:
+            if self.enable_hints and not self.is_eval:
+                # Hinted training: k raw + k hinted for hint_gap signal
                 # 2. Build hint from first failing session's stdout/error
                 hint_stdout = None
                 hint_error = None
@@ -885,6 +974,12 @@ Generate exactly ONE task. Output it in this format:
 
                 # 4. Compute reward
                 result = compute_task_reward(raw_scores, hinted_scores, validity=1.0)
+            else:
+                # No hints — reward based on raw variance only
+                hinted_scores = []
+                hinted_job_id = None
+                hint_text = ""
+                result = compute_task_reward(raw_scores, raw_scores, validity=1.0)
 
             duration = time.time() - start
 
@@ -967,20 +1062,49 @@ Generate exactly ONE task. Output it in this format:
         except Exception as e:
             logger.warning(f"[{task_id}] Failed to save rollout: {e}")
 
+    async def _dryrun_verifier(self, verifier: str) -> Tuple[bool, str]:
+        """Run verifier against seed DB (no agent actions). Returns (ok, error_msg).
+
+        A correct verifier should return 0 on unmodified DB (task not done yet).
+        Returns 1 → broken (permissive). Crashes → broken.
+        """
+        if self.orch is None:
+            return True, ""  # Can't dry-run without orchestrator, skip
+        try:
+            from fleet._async.tasks import Task as AsyncFleetTask
+            task = AsyncFleetTask(
+                key=f"dryrun_{self.env_key}",
+                prompt="dry-run",
+                env_id=self.env_key,
+                verifier_func=verifier,
+            )
+            result = await task.verify_detailed_async(self.orch._fleet_env)
+            if result.success:
+                return False, "Verifier returned 1 on the unmodified database — it passes even when no agent has acted. Your verifier must return 0 on seed state. Check that your task involves a write/mutation action and your verifier checks for that mutation (e.g., find_new_entries)."
+            return True, ""
+        except Exception as e:
+            err_msg = str(e)
+            # Truncate long tracebacks
+            if len(err_msg) > 500:
+                err_msg = err_msg[:500] + "..."
+            return False, f"Verifier crashed on seed DB: {err_msg}"
+
     async def _handle_task_generation(self, action: str) -> BaseTextEnvStepOutput:
         """Evaluate a generated task through the full pipeline.
 
         Pipeline:
             1. Parse <task> output -> fail = reward 0
             2. Sandbox validation -> fail = reward 0
-            3. LLM-as-a-judge -> gate (0/1), fail = reward 0
-            4. Hint-based evaluation via Fleet harness (k raw + k hinted rollouts)
-            5. R = base_quality + judge_gate * compute_task_reward(raw, hinted)
+            3. Verifier dry-run on seed DB -> if broken, return feedback (retry)
+            4. LLM-as-a-judge -> gate (0/1), fail = reward 0
+            5. Hint-based evaluation via Fleet harness (k raw + k hinted rollouts)
+            6. R = base_quality + binary_eval_signal
 
         base_quality (default 0.1) rewards structural validity (sandbox+judge pass),
         providing GRPO gradient signal even when harness evals return all zeros.
         """
         metadata: Dict[str, Any] = {"env_key": self.env_key, "turn": self.turns}
+        max_turns_reached = self.turns >= self.max_turns
 
         # 1. Parse
         parsed = parse_task_output(action)
@@ -1003,10 +1127,26 @@ Generate exactly ONE task. Output it in this format:
             "error": validation.error,
         }
         if not validation.valid:
+            if not max_turns_reached:
+                remaining = self.max_turns - self.turns
+                obs = {"role": "user", "content": f"Sandbox rejected your verifier: {', '.join(validation.checks_failed)}. Fix and resubmit. {remaining} turn(s) left."}
+                return BaseTextEnvStepOutput(observations=[obs], reward=0.0, done=False, metadata=metadata)
             metadata["reward_breakdown"] = {"sandbox": 0.0, "total": 0.0}
             return BaseTextEnvStepOutput(observations=[], reward=0.0, done=True, metadata=metadata)
 
-        # 3. LLM-as-a-judge gate
+        # 3. Verifier dry-run on seed DB
+        dryrun_ok, dryrun_error = await self._dryrun_verifier(verifier)
+        metadata["dryrun_ok"] = dryrun_ok
+        if not dryrun_ok:
+            logger.info(f"TaskGenEnv [{self.env_key}]: Verifier dry-run failed: {dryrun_error[:200]}")
+            if not max_turns_reached:
+                remaining = self.max_turns - self.turns
+                obs = {"role": "user", "content": f"⚠️ Verifier dry-run FAILED: {dryrun_error}\n\nFix your verifier and resubmit. {remaining} turn(s) left."}
+                return BaseTextEnvStepOutput(observations=[obs], reward=0.0, done=False, metadata=metadata)
+            metadata["reward_breakdown"] = {"dryrun": 0.0, "total": 0.0}
+            return BaseTextEnvStepOutput(observations=[], reward=0.0, done=True, metadata=metadata)
+
+        # 4. LLM-as-a-judge gate
         judge_gate = self._judge_task(prompt, verifier)
         metadata["judge_gate"] = judge_gate
 
@@ -1014,22 +1154,18 @@ Generate exactly ONE task. Output it in this format:
             metadata["reward_breakdown"] = {"sandbox": 1.0, "judge": 0.0, "total": 0.0}
             return BaseTextEnvStepOutput(observations=[], reward=0.0, done=True, metadata=metadata)
 
-        # 4. Hint-based evaluation via Fleet harness
+        # 5. Hint-based evaluation via Fleet harness
         eval_result = await self._evaluate_task(prompt, verifier)
 
-        # 5. R = base_quality + eval_signal
-        # base_quality: small reward for passing sandbox+judge (structural validity)
-        # eval_signal: judge_gate * compute_task_reward (harness-based quality)
-        # This prevents GRPO zero-signal deadlock when all harness evals fail.
+        # 6. R = base_quality + binary_eval_signal
         base_quality = self.base_quality_reward
-        eval_signal = judge_gate * eval_result["total"]
-        reward = base_quality + eval_signal
+        reward = base_quality + eval_result["total"]
 
         metadata["reward_breakdown"] = {
             "sandbox": 1.0,
+            "dryrun": 1.0,
             "judge": judge_gate,
             "base_quality": base_quality,
-            "eval_signal": eval_signal,
             **eval_result,
             "total": reward,
         }
@@ -1045,7 +1181,7 @@ Generate exactly ONE task. Output it in this format:
 
         Multi-turn flow:
             1. <task> block detected  → evaluation pipeline (done=True)
-            2. <tool_call> detected   → execute describe_db/query_db (done=False)
+            2. <tool_call> detected   → execute query_db/MCP tools (done=False)
             3. Neither                → nudge observation (done=False)
             4. max_turns reached      → done=True, reward=0
         """
@@ -1054,6 +1190,24 @@ Generate exactly ONE task. Output it in this format:
 
         # 1. Check for <task> block → evaluation pipeline
         if "<task>" in action:
+            # Exploration gate: in multi-turn mode, bounce back if model hasn't
+            # called query_db yet and still has turns remaining. Prevents
+            # single-turn collapse where model skips DB exploration entirely.
+            if self.max_turns > 1 and not self.called_query_db and not max_turns_reached:
+                remaining = self.max_turns - self.turns
+                nudge = (
+                    "You must explore the database with `query_db` before submitting a task. "
+                    "Use SELECT queries to inspect actual data — table contents, value ranges, "
+                    f"row counts — so your task and verifier are grounded in real data. "
+                    f"You have {remaining} turn(s) remaining."
+                )
+                observation = {"role": "user", "content": nudge}
+                return BaseTextEnvStepOutput(
+                    observations=[observation],
+                    reward=0.0,
+                    done=False,
+                    metadata={"env_key": self.env_key, "turn": self.turns, "exploration_gate": True},
+                )
             return await self._handle_task_generation(action)
 
         # 2. Check for tool calls → execute all via Fleet orchestrator or MCP
@@ -1064,9 +1218,7 @@ Generate exactly ONE task. Output it in this format:
             for tc in tool_calls:
                 if tc["name"] in _META_TOOLS:
                     self.meta_tool_calls += 1
-                    if tc["name"] == "describe_db":
-                        self.called_describe_db = True
-                    elif tc["name"] == "query_db":
+                    if tc["name"] == "query_db":
                         self.called_query_db = True
                     result = await self._execute_meta_tool(tc)
                 else:
@@ -1083,6 +1235,13 @@ Generate exactly ONE task. Output it in this format:
                 )
 
             obs_content = "\n\n".join(results)
+            remaining = self.max_turns - self.turns
+            if remaining <= 3 and self.called_query_db:
+                obs_content += (
+                    f"\n\n⚠️ You have {remaining} turn(s) left. "
+                    "You MUST output your <task> block NOW. "
+                    "Stop exploring and generate the task."
+                )
             observation = {"role": "user", "content": obs_content}
             return BaseTextEnvStepOutput(
                 observations=[observation],
@@ -1123,29 +1282,34 @@ Generate exactly ONE task. Output it in this format:
         )
 
     async def _execute_meta_tool(self, tool_call: Dict[str, Any]) -> str:
-        """Execute a describe_db or query_db meta-tool call via the Fleet orchestrator."""
+        """Execute a query_db meta-tool call via the Fleet orchestrator."""
         name = tool_call["name"]
         args = tool_call.get("arguments", {})
 
         if self.orch is None:
             return "Error: Fleet environment not provisioned. Generate a <task> directly."
 
+        if name != "query_db":
+            return f"Error: Unknown meta-tool '{name}'."
+
+        sql = args.get("sql", "")
+        if not sql:
+            return "Error: query_db requires a 'sql' argument."
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                if name == "describe_db":
-                    result = await self.orch.describe_db_async(db_name=args.get("db_name", "seed"))
-                elif name == "query_db":
-                    sql = args.get("sql", "")
-                    if not sql:
-                        return "Error: query_db requires a 'sql' argument."
-                    result = await self.orch.query_db_async(sql=sql, db_name=args.get("db_name", "seed"))
-                else:
-                    return f"Error: Unknown meta-tool '{name}'."
-
+                result = await self.orch.query_db_async(sql=sql, db_name=args.get("db_name", "seed"))
                 if isinstance(result, dict):
-                    return f"Tool result:\n{json.dumps(result, indent=2, default=str)}"
-                return f"Tool result:\n{result}"
+                    # Truncate rows to save context — model only needs a sample
+                    if "rows" in result and isinstance(result["rows"], list) and len(result["rows"]) > 5:
+                        result["rows"] = result["rows"][:5]
+                        result["message"] = f"Query returned more rows; showing first 5."
+                    formatted = json.dumps(result, indent=2, default=str)
+                    if len(formatted) > 3000:
+                        formatted = formatted[:3000] + "\n... (truncated)"
+                    return f"Tool result:\n{formatted}"
+                return f"Tool result:\n{str(result)[:3000]}"
             except Exception as e:
                 if attempt < max_retries - 1 and ("closed" in str(e).lower() or "transport" in str(e).lower() or "connection" in str(e).lower()):
                     await asyncio.sleep(1)
@@ -1158,7 +1322,7 @@ Generate exactly ONE task. Output it in this format:
         args = tool_call.get("arguments", {})
 
         if self.mcp_tools is None:
-            return "Error: MCP tools not available. Use describe_db/query_db or generate a <task>."
+            return "Error: MCP tools not available. Use query_db or generate a <task>."
 
         try:
             result = await self.mcp_tools.call_tool(name, args)
@@ -1173,13 +1337,12 @@ Generate exactly ONE task. Output it in this format:
 
         When ``max_turns > 1``, provisions a Fleet environment via
         ``FleetEnvClient.from_fleet_async`` so the model can call
-        ``describe_db`` / ``query_db`` during exploration turns.
+        ``query_db`` during exploration turns.
         Falls back to single-turn if provisioning fails.
         """
         self.turns = 0
         self.meta_tool_calls = 0
         self.mcp_tool_calls = 0
-        self.called_describe_db = False
         self.called_query_db = False
         self.orch = None
         self.mcp_tools = None
@@ -1202,6 +1365,17 @@ Generate exactly ONE task. Output it in this format:
                 # instance.load() is async — must await directly, not via to_thread
                 await self.orch._fleet_env.instance.load()
                 logger.info(f"TaskGenEnv [{self.env_key}]: Fleet env provisioned for DB + tool exploration")
+
+                # Auto-populate env_schema from describe_db if not provided in dataset.
+                # Compact format: "table: col1 (type), col2 (type), ..." — one line per table.
+                if not self.env_schema:
+                    try:
+                        schema_result = await self.orch.describe_db_async(db_name="seed")
+                        self.env_schema = _format_compact_schema(schema_result)
+                        if self.env_schema:
+                            logger.info(f"TaskGenEnv [{self.env_key}]: Auto-populated env_schema ({len(self.env_schema)} chars)")
+                    except Exception as e:
+                        logger.warning(f"TaskGenEnv [{self.env_key}]: Failed to auto-populate env_schema: {e}")
 
                 # Discover MCP tools so the model can call them
                 if self.mcp_tools:

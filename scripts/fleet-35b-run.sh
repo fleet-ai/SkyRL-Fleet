@@ -2,7 +2,7 @@
 # Single source of truth for Qwen3.5-35B-A3B GRPO training config.
 # Called by the SkyPilot YAML and by fleet-research run.sh.
 #
-# Required env vars: FLEET_API_KEY, WANDB_API_KEY
+# Required env vars: FLEET_API_KEY, WANDB_API_KEY, OPENROUTER_API_KEY
 # Optional: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (for S3 checkpoints)
 set -euo pipefail
 cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo root)
@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo roo
 # Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v55}"
+export DATA_VERSION="${DATA_VERSION:-v6}"
 export MODALITY="${MODALITY:-tool_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-20}"
 export MAX_TURNS="${MAX_TURNS:-50}"
@@ -29,6 +29,8 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 
 : "${FLEET_API_KEY:?Set FLEET_API_KEY before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
+# OPENROUTER_API_KEY only needed when enable_hints=true (LLM hint synthesis)
+export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
 
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
@@ -36,8 +38,7 @@ bash scripts/fleet-common-run.sh \
   --nccl-heartbeat 1800 -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=900 \
   environment.skyrl_gym.fleet_task.partial_reward=true \
-  environment.skyrl_gym.fleet_task.enable_hints=true \
-  environment.skyrl_gym.fleet_task.n_hint_samples=2 \
+  environment.skyrl_gym.fleet_task.enable_hints=false \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.policy.model.path="Qwen/Qwen3.5-35B-A3B" \
   trainer.flash_attn=false \
@@ -47,8 +48,8 @@ bash scripts/fleet-common-run.sh \
   generator.inference_engine_tensor_parallel_size=2 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=8 \
-  trainer.eval_before_train=false \
-  trainer.eval_interval=20 \
+  trainer.eval_before_train=true \
+  trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
   trainer.train_batch_size=16 \
   trainer.use_hybrid_env_sampling=true \

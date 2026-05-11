@@ -74,6 +74,10 @@ class FleetPPOExp(BasePPOExp):
                     project_name=project_name,
                     model_name=model_name,
                 )
+
+                # Broadcast checkpoint to worker nodes (FSDP requires shards on every node)
+                from integrations.fleet.s3_checkpoints import broadcast_checkpoint_to_workers
+                broadcast_checkpoint_to_workers(ckpt_path)
             except Exception as e:
                 logger.warning(f"Failed to download checkpoint from S3: {e}")
 

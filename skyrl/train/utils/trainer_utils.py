@@ -254,6 +254,15 @@ def dump_per_dataset_eval_results(
     # Prepare common data
     input_prompts = [tokenizer.decode(prompt) for prompt in concat_generator_outputs["prompt_token_ids"]]
     output_responses = [tokenizer.decode(response) for response in concat_generator_outputs["response_ids"]]
+    multi_modal_data_list = concat_generator_outputs.get("multi_modal_data") or []
+
+    # Save screenshots if any trajectories have images
+    images_dir = dump_dir_path / "images"
+    has_any_images = any(
+        mm and mm.get("images") for mm in multi_modal_data_list if isinstance(mm, dict)
+    )
+    if has_any_images:
+        images_dir.mkdir(parents=True, exist_ok=True)
 
     # Group indices by data source
     data_source_indices = {}
@@ -265,12 +274,36 @@ def dump_per_dataset_eval_results(
         data_source_indices[data_source].append(i)
 
     # Dump per-dataset files
+    total_images_saved = 0
     for data_source, indices in data_source_indices.items():
         sanitized_data_source = sanitize_data_source(data_source)
         filename = dump_dir_path / f"{sanitized_data_source}.jsonl"
 
         with open(filename, "w") as f:
             for i in indices:
+                # Save screenshots for this eval trajectory
+                image_paths = []
+                mm_data = multi_modal_data_list[i] if i < len(multi_modal_data_list) else None
+                if isinstance(mm_data, dict) and mm_data.get("images"):
+                    for j, img in enumerate(mm_data["images"]):
+                        img_filename = f"eval_{i:04d}_img_{j:03d}.jpg"
+                        img_path = images_dir / img_filename
+                        try:
+                            if hasattr(img, "save"):
+                                img.save(str(img_path), "JPEG", quality=85)
+                                image_paths.append(str(img_path))
+                                total_images_saved += 1
+                            elif isinstance(img, str) and img.startswith(("http://", "https://")):
+                                image_paths.append(img)
+                                total_images_saved += 1
+                            elif isinstance(img, bytes):
+                                with open(img_path, "wb") as img_f:
+                                    img_f.write(img)
+                                image_paths.append(str(img_path))
+                                total_images_saved += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to save eval image {j} for trajectory {i}: {e}")
+
                 entry = {
                     "input_prompt": input_prompts[i],
                     "output_response": output_responses[i],
@@ -280,9 +313,15 @@ def dump_per_dataset_eval_results(
                     "env_extras": concat_env_extras[i],
                     "data_source": data_source,
                 }
+                if image_paths:
+                    entry["image_paths"] = image_paths
+                    entry["num_screenshots"] = len(image_paths)
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
         logger.info(f"Dumped eval data for {data_source} to {filename}")
+
+    if total_images_saved:
+        logger.info(f"Saved {total_images_saved} eval screenshots to {images_dir}")
 
     # Dump aggregated results file
     aggregated_filename = dump_dir_path / "aggregated_results.jsonl"
@@ -308,9 +347,18 @@ def dump_training_trajectories(
     filename = traj_dir / f"global_step_{global_step}.jsonl"
 
     env_metrics_list = generator_output.get("env_metrics") or []
+    multi_modal_data_list = generator_output.get("multi_modal_data") or []
     rewards_list = generator_output["rewards"]
     stop_reasons = generator_output.get("stop_reasons") or []
     ts = time.time()
+
+    # Save screenshots alongside JSONL if any trajectories have images
+    images_dir = traj_dir / f"global_step_{global_step}_images"
+    has_any_images = any(
+        mm and mm.get("images") for mm in multi_modal_data_list if isinstance(mm, dict)
+    )
+    if has_any_images:
+        images_dir.mkdir(parents=True, exist_ok=True)
 
     with open(filename, "w") as f:
         for i in range(len(generator_output["response_ids"])):
@@ -329,6 +377,28 @@ def dump_training_trajectories(
             stop_reason = stop_reasons[i] if i < len(stop_reasons) else "unknown"
             tokens = len(generator_output["response_ids"][i])
 
+            # Save screenshots for this trajectory
+            image_paths = []
+            mm_data = multi_modal_data_list[i] if i < len(multi_modal_data_list) else None
+            if isinstance(mm_data, dict) and mm_data.get("images"):
+                for j, img in enumerate(mm_data["images"]):
+                    img_filename = f"traj_{i:03d}_img_{j:03d}.jpg"
+                    img_path = images_dir / img_filename
+                    try:
+                        if hasattr(img, "save"):
+                            # PIL Image
+                            img.save(str(img_path), "JPEG", quality=85)
+                            image_paths.append(str(img_path))
+                        elif isinstance(img, str) and img.startswith(("http://", "https://")):
+                            # URL — store the URL, don't download during training
+                            image_paths.append(img)
+                        elif isinstance(img, bytes):
+                            with open(img_path, "wb") as img_f:
+                                img_f.write(img)
+                            image_paths.append(str(img_path))
+                    except Exception as e:
+                        logger.warning(f"Failed to save image {j} for trajectory {i}: {e}")
+
             entry = {
                 "step": global_step,
                 "env_key": env_key,
@@ -341,9 +411,21 @@ def dump_training_trajectories(
                 "text": tokenizer.decode(generator_output["response_ids"][i]),
                 "timestamp": ts,
             }
+            if image_paths:
+                entry["image_paths"] = image_paths
+                entry["num_screenshots"] = len(image_paths)
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    logger.info(f"Dumped {len(generator_output['response_ids'])} training trajectories to {filename}")
+    n_images = sum(
+        len(entry.get("images", []))
+        for mm in multi_modal_data_list
+        if isinstance(mm, dict)
+        for entry in [mm]
+    )
+    logger.info(
+        f"Dumped {len(generator_output['response_ids'])} training trajectories to {filename}"
+        + (f" ({n_images} screenshots saved)" if has_any_images else "")
+    )
     return str(filename)
 
 
@@ -804,6 +886,102 @@ def _validate_step_wise_fields(generator_output: GeneratorOutput, num_responses:
             )
 
 
+class HybridEnvSampler(torch.utils.data.Sampler):
+    """Ensures minimum representation from each environment per batch.
+
+    Prevents batches dominated by large envs (zillow 1000 tasks) while small
+    envs (rops-mail 93 tasks) get zero samples. Each batch gets at least
+    min_samples_per_env from every env, remaining slots filled proportionally.
+
+    Ported from fleet-ai/SkyRL-archived.
+    """
+
+    def __init__(self, dataset, batch_size, min_samples_per_env=1, generator=None, drop_last=True):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.min_samples_per_env = min_samples_per_env
+        self.generator = generator
+        self.drop_last = drop_last
+
+        self.env_to_indices: Dict[str, List[int]] = defaultdict(list)
+        for idx in range(len(dataset)):
+            row = dataset.dataframe[idx]
+            group = row.get("data_source") or row.get(dataset.env_class_key, "unknown")
+            self.env_to_indices[group].append(idx)
+
+        self.env_classes = list(self.env_to_indices.keys())
+        self.num_envs = len(self.env_classes)
+
+        min_required = self.num_envs * min_samples_per_env
+        if min_required > batch_size:
+            logger.warning(
+                f"HybridEnvSampler: {self.num_envs} envs × {min_samples_per_env} = {min_required} "
+                f"> batch_size {batch_size}. Reducing min_samples_per_env."
+            )
+            self.min_samples_per_env = max(1, batch_size // self.num_envs)
+
+        total_samples = len(dataset)
+        self.env_weights = {env: len(indices) / total_samples for env, indices in self.env_to_indices.items()}
+
+        logger.info(f"HybridEnvSampler: {self.num_envs} envs, batch_size={batch_size}, min_per_env={self.min_samples_per_env}")
+        for env, indices in sorted(self.env_to_indices.items()):
+            logger.info(f"  {env}: {len(indices)} samples ({self.env_weights[env]*100:.1f}%)")
+
+    def __iter__(self):
+        env_indices_shuffled = {}
+        for env, indices in self.env_to_indices.items():
+            shuffled = indices.copy()
+            perm = torch.randperm(len(shuffled), generator=self.generator).tolist()
+            env_indices_shuffled[env] = [shuffled[i] for i in perm]
+
+        env_positions = {env: 0 for env in self.env_classes}
+
+        min_batches_per_env = [len(indices) // self.min_samples_per_env for indices in self.env_to_indices.values()]
+        num_batches = min(min_batches_per_env)
+        total_samples = sum(len(indices) for indices in self.env_to_indices.values())
+        num_batches = min(num_batches, total_samples // self.batch_size)
+
+        for _ in range(num_batches):
+            batch_indices = []
+
+            for env in self.env_classes:
+                available = len(env_indices_shuffled[env]) - env_positions[env]
+                samples_to_take = min(self.min_samples_per_env, available)
+                for _ in range(samples_to_take):
+                    batch_indices.append(env_indices_shuffled[env][env_positions[env]])
+                    env_positions[env] += 1
+
+            remaining = self.batch_size - len(batch_indices)
+            if remaining > 0:
+                available_by_env = {env: env_indices_shuffled[env][env_positions[env]:] for env in self.env_classes}
+                for _ in range(remaining):
+                    envs_with_samples = [env for env, avail in available_by_env.items() if avail]
+                    if not envs_with_samples:
+                        break
+                    weights = [self.env_weights[env] for env in envs_with_samples]
+                    total_w = sum(weights)
+                    weights = [w / total_w for w in weights]
+                    rand_val = torch.rand(1, generator=self.generator).item()
+                    cumsum = 0
+                    chosen = envs_with_samples[-1]
+                    for env, w in zip(envs_with_samples, weights):
+                        cumsum += w
+                        if rand_val < cumsum:
+                            chosen = env
+                            break
+                    batch_indices.append(available_by_env[chosen].pop(0))
+                    env_positions[chosen] += 1
+
+            perm = torch.randperm(len(batch_indices), generator=self.generator).tolist()
+            yield [batch_indices[i] for i in perm]
+
+    def __len__(self):
+        min_batches_per_env = [len(indices) // self.min_samples_per_env for indices in self.env_to_indices.values()]
+        num_batches = min(min_batches_per_env)
+        total_samples = sum(len(indices) for indices in self.env_to_indices.values())
+        return min(num_batches, total_samples // self.batch_size)
+
+
 def build_dataloader(
     cfg: SkyRLTrainConfig, dataset: PromptDataset, is_train=True, is_fully_async=False
 ) -> StatefulDataLoader:
@@ -824,20 +1002,47 @@ def build_dataloader(
     seeded_generator = torch.Generator()
     seeded_generator.manual_seed(cfg.trainer.seed)
 
-    dataloader = StatefulDataLoader(
-        dataset,
-        batch_size=batch_size if not is_fully_async else 1,
-        shuffle=True if is_train else False,
-        collate_fn=dataset.collate_fn,
-        # TODO(Charlie): debug why inference http endpoint is slow when num_workers is 8
-        num_workers=0 if cfg.generator.inference_engine.enable_http_endpoint else 8,
-        drop_last=True if is_train else False,
-        generator=seeded_generator,
-        # NOTE (sumanthrh): We use ray and thus use `spawn` start method.
-        # forking within ray leads to undefined behaviour and often causes hard to debug
-        # memory leaks.  See: https://docs.ray.io/en/latest/ray-core/patterns/fork-new-processes.html
-        multiprocessing_context="spawn" if not cfg.generator.inference_engine.enable_http_endpoint else None,
+    use_hybrid_sampling = (
+        is_train
+        and not is_fully_async
+        and getattr(cfg.trainer, "use_hybrid_env_sampling", False)
+        and hasattr(dataset, "dataframe")
+        and hasattr(dataset, "env_class_key")
     )
+
+    num_workers = 0 if cfg.generator.inference_engine.enable_http_endpoint else 8
+    mp_context = "spawn" if not cfg.generator.inference_engine.enable_http_endpoint else None
+
+    if use_hybrid_sampling:
+        from torch.utils.data import DataLoader
+
+        min_samples_per_env = getattr(cfg.trainer, "min_samples_per_env", 1)
+        sampler = HybridEnvSampler(
+            dataset=dataset,
+            batch_size=batch_size,
+            min_samples_per_env=min_samples_per_env,
+            generator=seeded_generator,
+            drop_last=True,
+        )
+        dataloader = DataLoader(
+            dataset,
+            batch_sampler=sampler,
+            collate_fn=dataset.collate_fn,
+            num_workers=num_workers,
+        )
+        logger.info(f"Using HybridEnvSampler with min_samples_per_env={min_samples_per_env}")
+    else:
+        dataloader = StatefulDataLoader(
+            dataset,
+            batch_size=batch_size if not is_fully_async else 1,
+            shuffle=True if is_train else False,
+            collate_fn=dataset.collate_fn,
+            num_workers=num_workers,
+            drop_last=True if is_train else False,
+            generator=seeded_generator,
+            multiprocessing_context=mp_context,
+        )
+
     if is_train:
         if not is_fully_async:
             logger.info(f"Total steps: {len(dataloader) * cfg.trainer.epochs}")
