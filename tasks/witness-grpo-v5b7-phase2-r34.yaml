@@ -124,6 +124,10 @@ envs:
   # fallback-disabled vs Claude-augmented. See:
   #   arc-witness-agent/reports/2026-05-10_self_contained_agent_strategy.md
   ENABLE_SECONDARY_PROVIDER_FALLBACK: "0"
+  # Secondary provider model. Default Sonnet 4.5 matches v5 SFT fallback
+  # model quality. Override to opus-4.7 (matches SFT primary; ~4× cost)
+  # or haiku-4.5 (cheaper but too weak for crystallization-class tasks).
+  SECONDARY_MODEL: "anthropic/claude-sonnet-4.5"
 
   # === Same as Phase 1 ===
   GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
@@ -233,6 +237,7 @@ run: |
   export USE_ENV_GROUND_TRUTH
   export AGENT_MLLM_ENABLED
   export ENABLE_SECONDARY_PROVIDER_FALLBACK
+  export SECONDARY_MODEL
 
   # Preflight check: if R3 or R4 enabled, OPENROUTER_API_KEY must be set.
   if [ "${ENABLE_RULE_JUDGE_REWARD}" = "1" ] || [ "${ENABLE_RUBRIC_REWARD}" = "1" ]; then
@@ -323,6 +328,7 @@ run: |
       echo "  USE_ENV_GROUND_TRUTH: $USE_ENV_GROUND_TRUTH"
       echo "  AGENT_MLLM_ENABLED: $AGENT_MLLM_ENABLED"
       echo "  ENABLE_SECONDARY_PROVIDER_FALLBACK: $ENABLE_SECONDARY_PROVIDER_FALLBACK"
+      echo "  SECONDARY_MODEL: $SECONDARY_MODEL"
       echo "--- nvidia-smi ---"
       nvidia-smi || echo "nvidia-smi failed"
       echo "--- free -h ---"; free -h
