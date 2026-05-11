@@ -1,0 +1,265 @@
+# ARC-AGI-3: SFT on Qwen3.5-35B-A3B using v5 judged pairs (B6 → B6-35B).
+#
+# Adapts witness-sft-v5.yaml (9B) to 35B by:
+#   - MODEL: Qwen/Qwen3.5-9B → Qwen/Qwen3.5-35B-A3B
+#   - disk_size: 500 → 2000 (35B HF cache + FSDP ckpt + merged + workdir)
+#   - LR: 1e-5 → 5e-6 (smaller for bigger model)
+#   - MAX_LENGTH: 4096 → 8192 (preserve longer pair contexts)
+#   - RUN_NAME / WANDB_RUN_NAME bumped to v6_35b
+#   - Reuses fleet-qwen35-extra-setup.sh (transformers 5.3, causal-conv1d, etc.)
+#
+# Topology: 1 node × 8× H200. Memory math (FSDP sharded across 8 GPUs):
+#   - params bf16:   70 GB ÷ 8  =  8.75 GB/GPU
+#   - grad bf16:     70 GB ÷ 8  =  8.75 GB/GPU
+#   - AdamW state:  420 GB ÷ 8  = 52.5 GB/GPU (master fp32 + m + v)
+#   - activations (micro_batch=1, max_len=8K, gradient ckpt): ~15-25 GB/GPU
+#   Total ~85-95 GB/GPU vs 141 GB H200 → fits with margin.
+#
+# Data: reuses v5 sft_pairs_judged.jsonl (786 pairs ≥ judge_score 2 of 938 total)
+#   - Pairs are model-agnostic (ChatML triples), so usable for 35B as-is
+#   - max_turns=30 era; will be sub-optimal for 35B's max_turns=50 RL regime
+#     but acceptable as an anchor SFT — regenerate v6 pairs at max_turns=50
+#     later if needed
+#
+# Background:
+#   - 35B base + Sonnet eval@step0 = 5.54 > 9B + v5 SFT + Sonnet's 3.28
+#     (see 2026-05-11_35b_base_outperforms_9b_sft_discovery.md)
+#   - So this SFT is no longer critical path. Built as:
+#       (1) anchor / fallback if R5 35B base RL doesn't hold
+#       (2) ablation: R5_35b_v6sft vs R5_35b_base — measure SFT marginal value
+#       (3) compliance with team leader's "after your sft is done" prescriptive
+#
+# Usage:
+#   sky launch tasks/witness-sft-v6-35b.yaml \
+#     --env WANDB_API_KEY=<key> \
+#     --env AWS_ACCESS_KEY_ID=<key> \
+#     --env AWS_SECRET_ACCESS_KEY=<key> \
+#     -y --down
+#
+# Outputs (synced to S3 before VM teardown):
+#   s3://${S3_BUCKET}/${RUN_NAME}/fsdp/global_step_*_final/policy/   FSDP shards
+#   s3://${S3_BUCKET}/${RUN_NAME}/merged/                            HF-format model
+#   s3://${S3_BUCKET}/${RUN_NAME}/run.log                            stdout
+#
+# Use as RL warm-start:
+#   sky launch tasks/witness-grpo-v5b7-phase2-r5-35b.yaml \
+#     --env POLICY_CHECKPOINT_S3=s3://${S3_BUCKET}/${RUN_NAME}/merged/ ...
+
+resources:
+  # 35B numbers: HF cache ~75 GB + workdir ~5 GB + venv ~10 GB + FSDP raw
+  # shards ~210 GB + merged HF ~70 GB + slack → 2000 GB safe.
+  disk_size: 2000
+  ports: 6479
+  ordered:
+    # RunPod reserved H200s (priority — team's 35B convention)
+    - accelerators: H200:8
+      cloud: runpod
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: lambda
+    - accelerators: H200:8
+      cloud: nebius
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/b7-phase2-judge-rewards
+
+# Mount v5 SFT pairs from local artifacts (model-agnostic ChatML triples).
+file_mounts:
+  /home/sky/data/sft_pairs_judged.jsonl: ~/Documents/obsidian/research-directions/artifacts/arc-witness-runs/sft_data/v5/sft_pairs_judged.jsonl
+
+envs:
+  LOGGER: "wandb"
+  MODEL: "Qwen/Qwen3.5-35B-A3B"
+  # SFT hyperparameters — adjusted for 35B
+  EPOCHS: "3"
+  BATCH_SIZE: "8"             # grad-accum target across micro batches
+  MICRO_BATCH_SIZE: "1"
+  LR: "5e-6"                  # halved from 9B's 1e-5 (conventional smaller lr for larger models)
+  MAX_LENGTH: "8192"          # doubled from 9B's 4096 — preserves longer pair contexts
+  JUDGE_SCORE_MIN: "2"        # same as v5 (786 of 938 pairs)
+  WANDB_PROJECT: "arc-agi-3"
+  WANDB_RUN_NAME: "witness_sft_v6_35b"
+  S3_BUCKET: "fleet-guanghan"
+  RUN_NAME: "witness_sft_v6_35b"
+
+  # Credentials (REQUIRED at launch — never commit values here)
+  WANDB_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+setup: |
+  # --- Python environment & base deps ---
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb boto3 awscli
+
+  # --- 35B-specific deps: transformers 5.3.0, flash-attn 2.8.3, CUDA toolkit, causal-conv1d ---
+  source scripts/fleet-qwen35-extra-setup.sh
+
+  # Quick mount sanity check
+  test -f /home/sky/data/sft_pairs_judged.jsonl || { echo "ERROR: sft_pairs_judged.jsonl mount missing"; exit 1; }
+  PAIR_COUNT=$(wc -l < /home/sky/data/sft_pairs_judged.jsonl)
+  echo "[ok] v5 SFT pairs mounted: $PAIR_COUNT total (≥${JUDGE_SCORE_MIN} filter applied at load time)"
+
+run: |
+  set -euo pipefail
+
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  TMP_DIR="$HOME/skyrl-tmp"
+  mkdir -p "$TMP_DIR"
+  export TMPDIR="$TMP_DIR"
+  export HYDRA_FULL_ERROR=1
+
+  # --- GCP NCCL/gIB handling (same as 9B SFT) ---
+  ON_GCP=false
+  if [ -d "/usr/local/gib" ] || { [ -f "/sys/class/dmi/id/product_name" ] && grep -qi "google" /sys/class/dmi/id/product_name 2>/dev/null; }; then
+    ON_GCP=true
+  fi
+  if [ "$ON_GCP" = true ]; then
+    if ! { [ -d "/sys/class/infiniband" ] && [ "$(ls /sys/class/infiniband/ 2>/dev/null)" ]; }; then
+      echo "GCP without RDMA — disabling gIB"
+      export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH:-}" | sed 's|/usr/local/gib/lib64:||g; s|:/usr/local/gib/lib64||g; s|/usr/local/gib/lib64||g')
+      unset NCCL_NET 2>/dev/null || true
+      unset NCCL_CROSS_NIC NCCL_NET_GDR_LEVEL NCCL_P2P_NET_CHUNKSIZE NCCL_NVLS_CHUNKSIZE 2>/dev/null || true
+      unset NCCL_IB_ADAPTIVE_ROUTING NCCL_IB_QPS_PER_CONNECTION NCCL_IB_TC NCCL_IB_FIFO_TC 2>/dev/null || true
+      unset NCCL_TUNER_CONFIG_PATH 2>/dev/null || true
+      export NCCL_CUMEM_ENABLE=0
+    fi
+    SHM_SIZE=$(df --output=size /dev/shm 2>/dev/null | tail -1 | tr -d ' ')
+    if [ -n "$SHM_SIZE" ] && [ "$SHM_SIZE" -lt 16777216 ]; then
+      sudo mount -o remount,size=16G /dev/shm 2>&1 || true
+    fi
+  fi
+  sudo sysctl -w kernel.yama.ptrace_scope=0 2>/dev/null || true
+  ulimit -n 1048576 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+
+  # --- Ray setup (single node, head only) ---
+  export RAY_RUNTIME_ENV_HOOK=ray._private.runtime_env.uv_runtime_env_hook.hook
+  export RAY_object_store_memory=10000000000
+  export RAY_DISABLE_MEMORY_MONITOR=1
+
+  if ! ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then
+    ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000
+  fi
+  for _ in $(seq 1 24); do
+    if ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then break; fi
+    sleep 5
+  done
+
+  # --- wandb login ---
+  python3 -c "import wandb; wandb.login(relogin=True, key='$WANDB_API_KEY')"
+
+  CKPT_DIR="$HOME/ckpts/${RUN_NAME}"
+  mkdir -p "$CKPT_DIR"
+
+  RUN_LOG="$CKPT_DIR/run.log"
+  S3_BASE="s3://${S3_BUCKET}/${RUN_NAME}"
+
+  # --- Pre-train diagnostics ---
+  {
+    echo "=== Pre-SFT diagnostics $(date -u +%FT%TZ) ==="
+    echo "MODEL: $MODEL"
+    echo "EPOCHS=$EPOCHS BATCH_SIZE=$BATCH_SIZE MICRO=$MICRO_BATCH_SIZE LR=$LR MAX_LENGTH=$MAX_LENGTH"
+    echo "PAIRS: $(wc -l < /home/sky/data/sft_pairs_judged.jsonl) total, ≥${JUDGE_SCORE_MIN} after filter"
+    nvidia-smi || echo "nvidia-smi failed"
+    free -h
+    df -h | head -10
+    python -c "import torch, transformers; print(f'torch={torch.__version__} transformers={transformers.__version__} ngpu={torch.cuda.device_count()}')"
+    python -c "import causal_conv1d; print(f'causal_conv1d={causal_conv1d.__version__}')" || echo "causal_conv1d MISSING — 35B GatedDeltaNet may crash"
+  } | tee "$CKPT_DIR/diagnostics.log"
+
+  set +e
+
+  python -m examples.train_integrations.witness.sft_trainer_v3 \
+    --data /home/sky/data/sft_pairs_judged.jsonl \
+    --model "$MODEL" \
+    --epochs "$EPOCHS" \
+    --batch_size "$BATCH_SIZE" \
+    --micro_batch_size "$MICRO_BATCH_SIZE" \
+    --lr "$LR" \
+    --max_length "$MAX_LENGTH" \
+    --judge_score_min "$JUDGE_SCORE_MIN" \
+    --num_gpus "$SKYPILOT_NUM_GPUS_PER_NODE" \
+    --strategy fsdp2 \
+    --output_dir "$CKPT_DIR" \
+    --s3_raw_sync_dest "${S3_BASE}/fsdp/" \
+    --logger "$LOGGER" \
+    --wandb_project "$WANDB_PROJECT" \
+    --wandb_run_name "$WANDB_RUN_NAME" 2>&1 | tee "$RUN_LOG"
+  PY_RC=${PIPESTATUS[0]}
+  if [ "$PY_RC" -ne 0 ]; then
+    echo "[ERROR] trainer exited with code $PY_RC"
+    aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log" 2>&1 | tail -3
+    exit "$PY_RC"
+  fi
+
+  echo "[done] SFT complete."
+
+  # --- Locate FSDP checkpoint dir ---
+  FSDP_DIR=$(ls -d "$CKPT_DIR"/global_step_*_final 2>/dev/null | tail -1)
+  if [ -z "$FSDP_DIR" ]; then
+    echo "[ERROR] No global_step_*_final/ in $CKPT_DIR. Contents:"
+    ls -la "$CKPT_DIR" 2>&1 | tail -10
+    aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log"
+    exit 1
+  fi
+  echo "[merge] discovered FSDP dir: $FSDP_DIR"
+
+  POLICY_DIR="$FSDP_DIR/policy"
+  if [ ! -d "$POLICY_DIR" ]; then
+    echo "[ERROR] $POLICY_DIR not found. Listing parent:"
+    ls -la "$FSDP_DIR"
+    aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log"
+    echo "[fallback] Raw FSDP shards already at ${S3_BASE}/fsdp/ — merge offline."
+    exit 1
+  fi
+
+  MERGED_DIR="$CKPT_DIR/merged"
+  echo "[merge] $POLICY_DIR -> $MERGED_DIR"
+  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \
+    --checkpoint_dir "$POLICY_DIR" \
+    --output_dir "$MERGED_DIR" \
+    --model_name "$MODEL" 2>&1 | tee -a "$RUN_LOG"
+  MERGE_RC=${PIPESTATUS[0]}
+
+  # --- Patch multimodal config (Finding K: SkyRL save_hf_model omits these) ---
+  if [ -d "$MERGED_DIR" ]; then
+    echo "[patch] downloading multimodal config from $MODEL → $MERGED_DIR"
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$MERGED_DIR', local_dir_use_symlinks=False)" 2>&1 | tail -5
+  fi
+
+  # --- Upload to S3 ---
+  echo "[s3] uploading run log -> ${S3_BASE}/run.log"
+  aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log"
+
+  if [ "$MERGE_RC" -eq 0 ] && [ -d "$MERGED_DIR" ]; then
+    echo "[s3] uploading merged HF model -> ${S3_BASE}/merged/"
+    aws s3 sync "$MERGED_DIR" "${S3_BASE}/merged/"
+  else
+    echo "[ERROR] merge failed (rc=$MERGE_RC). Raw FSDP shards already at ${S3_BASE}/fsdp/."
+    echo "[recovery] run merge offline:"
+    echo "  aws s3 sync ${S3_BASE}/fsdp/ ./fsdp_local/"
+    echo "  python merge_fsdp_checkpoint.py --checkpoint_dir ./fsdp_local/global_step_<N>_final/policy --output_dir ./merged --model_name $MODEL"
+    exit 1
+  fi
+
+  echo "[done] All artifacts at ${S3_BASE}/"
+  echo "[next] RL warm-start:"
+  echo "  sky launch tasks/witness-grpo-v5b7-phase2-r5-35b.yaml \\"
+  echo "    --env POLICY_CHECKPOINT_S3=${S3_BASE}/merged/ ..."
