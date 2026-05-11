@@ -15,7 +15,9 @@
 #     - causal-conv1d (GatedDeltaNet CUDA kernels — without it: cudaErrorIllegalAddress)
 #
 # SFT warm-start:
-#   Defaults to base Qwen3.5-35B-A3B (POLICY_CHECKPOINT_S3="").
+#   Defaults to Qwen3.5-35B-A3B instruct without our task SFT (POLICY_CHECKPOINT_S3="").
+#   NOTE: "Qwen/Qwen3.5-35B-A3B" is the instruct (chat-aligned) variant.
+#   "-Base" suffix would be the pretrained model. We use instruct + no task SFT.
 #   When witness 35B SFT is complete, override via:
 #     --env POLICY_CHECKPOINT_S3=s3://fleet-guanghan/witness_sft_v6_35b/merged/
 #
@@ -93,7 +95,7 @@ envs:
   # === Run identity / model ===
   RUN_LABEL: "p2_r5_35b"
   MODEL: "Qwen/Qwen3.5-35B-A3B"
-  # Empty → vLLM fetches base from HF cache. Non-empty → aws s3 sync to ~/policy_ckpt + multimodal patch.
+  # Empty → vLLM fetches Qwen instruct from HF cache (no task SFT). Non-empty → aws s3 sync to ~/policy_ckpt + multimodal patch.
   POLICY_CHECKPOINT_S3: ""
 
   # === Anti-collapse hyperparameters (matches 9B R3/R4/R5; lr halved for 35B) ===
@@ -244,7 +246,7 @@ setup: |
     python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$HOME/policy_ckpt', local_dir_use_symlinks=False)"
     POLICY_PATH="$HOME/policy_ckpt"
   else
-    echo "[policy] POLICY_CHECKPOINT_S3 empty — using base $MODEL via vLLM HF cache (no SFT warm-start)"
+    echo "[policy] POLICY_CHECKPOINT_S3 empty — using $MODEL (instruct, no witness task SFT) via vLLM HF cache"
   fi
   echo "$POLICY_PATH" > "$HOME/policy_path.txt"
   echo "[policy] POLICY_PATH=$POLICY_PATH"
@@ -405,7 +407,7 @@ run: |
       echo "--- free -h ---"; free -h
       echo "--- df -h ---";   df -h | head -20
       echo "--- POLICY_PATH ---"
-      if [ -d "$POLICY_PATH" ]; then ls -la "$POLICY_PATH" | head -25; du -sh "$POLICY_PATH"; else echo "(base model — vLLM will fetch from HF cache)"; fi
+      if [ -d "$POLICY_PATH" ]; then ls -la "$POLICY_PATH" | head -25; du -sh "$POLICY_PATH"; else echo "(instruct model from HF cache, no task SFT)"; fi
       echo "--- ray status ---"; ray status --address 127.0.0.1:6479 | head -40
       echo "--- versions ---"
       python -c "import torch, vllm, ray, transformers; print(f'torch={torch.__version__} cuda={torch.cuda.is_available()} ngpu={torch.cuda.device_count()} vllm={vllm.__version__} ray={ray.__version__} transformers={transformers.__version__}')"
