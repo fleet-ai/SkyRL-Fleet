@@ -22,10 +22,13 @@
 #     later if needed
 #
 # Background:
-#   - 35B base + Sonnet eval@step0 = 5.54 > 9B + v5 SFT + Sonnet's 3.28
-#     (see 2026-05-11_35b_base_outperforms_9b_sft_discovery.md)
-#   - So this SFT is no longer critical path. Built as:
-#       (1) anchor / fallback if R5 35B base RL doesn't hold
+#   - 35B-instruct (no task SFT) + Sonnet eval@step0 = 5.54 > 9B-instruct +
+#     v5 task SFT + Sonnet's 3.28 (see 2026-05-11_35b_instruct_outperforms_9b_sft_discovery.md).
+#     NOTE: "Qwen/Qwen3.5-35B-A3B" IS the instruct (chat-aligned) variant;
+#     "-Base" suffix would be the pretrained model. The 35B already has
+#     general instruct-tuning, just not witness-task-specific tuning.
+#   - So this task SFT is no longer critical path. Built as:
+#       (1) anchor / fallback if R5 35B-instruct (no task SFT) RL doesn't hold
 #       (2) ablation: R5_35b_v6sft vs R5_35b_base — measure SFT marginal value
 #       (3) compliance with team leader's "after your sft is done" prescriptive
 #
