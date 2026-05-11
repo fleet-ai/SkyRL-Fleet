@@ -452,6 +452,10 @@ run: |
       kill $CKPT_MIRROR_PID 2>/dev/null || true
       [ -f "$TRAIN_LOG" ] && aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" 2>&1 | tail -3 || true
       [ -d "$CKPT_LOCAL_DIR" ] && aws s3 sync "$CKPT_LOCAL_DIR" "$CKPT_S3_DIR/" --quiet 2>/dev/null || true
+      # Stop Ray on head so worker nodes (which poll head liveness) exit cleanly
+      # and the sky job can finalize. Without this, worker stays in sleep loop
+      # holding the cluster — blocks subsequent sky exec submissions.
+      ray stop --force 2>/dev/null || true
     ' EXIT
 
     set +e
@@ -532,10 +536,31 @@ run: |
     # Propagate trainer exit code so SkyPilot status reflects the truth.
     exit "$PYTHON_EXIT"
   else
-    # Worker node: join Ray head + idle
+    # Worker node: join Ray head, then poll head liveness and exit when head
+    # leaves. Prior version used `sleep infinity` which kept the sky job in
+    # RUNNING state long after head's trainer exited, blocking subsequent
+    # sky exec submissions on the same cluster.
+    #
+    # Detection: 3 consecutive failed `ray status` checks (90 s window) →
+    # head considered gone → worker exits cleanly. 3-strike threshold avoids
+    # premature exit on transient network blips during long training runs.
     if ! ray status --address "$head_ip:6479" >/dev/null 2>&1; then
       ray start --address "$head_ip:6479" --disable-usage-stats
     fi
     wait_for_ray "$head_ip:6479"
-    sleep infinity
+    echo "[worker] joined Ray cluster — polling head liveness every 30s"
+    FAIL_COUNT=0
+    while true; do
+      if ray status --address "$head_ip:6479" >/dev/null 2>&1; then
+        FAIL_COUNT=0
+      else
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        if [ "$FAIL_COUNT" -ge 3 ]; then
+          echo "[worker] head left Ray cluster (3 failed checks) — exiting cleanly"
+          break
+        fi
+        echo "[worker] head check failed ($FAIL_COUNT/3) — retrying in 30s"
+      fi
+      sleep 30
+    done
   fi
