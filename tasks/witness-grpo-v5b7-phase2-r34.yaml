@@ -116,6 +116,15 @@ envs:
   #   arc-witness-agent/reports/2026-05-10_mllm_unavailable_in_rl_findings.md
   AGENT_MLLM_ENABLED: "0"
 
+  # Finding N R5 baseline (2026-05-10): route non-ORAI LLM calls through
+  # OpenRouter Claude so the agent's auxiliary stages (crystallization /
+  # synthesis / self-reflection / manager) actually work in RL. Default
+  # OFF (R3/R4 run with non-ORAI stages disabled via fallback). Set to
+  # "1" only for R5 baseline run that measures the gap between
+  # fallback-disabled vs Claude-augmented. See:
+  #   arc-witness-agent/reports/2026-05-10_self_contained_agent_strategy.md
+  ENABLE_SECONDARY_PROVIDER_FALLBACK: "0"
+
   # === Same as Phase 1 ===
   GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
   VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
@@ -223,6 +232,7 @@ run: |
   export OPENROUTER_BASE_URL
   export USE_ENV_GROUND_TRUTH
   export AGENT_MLLM_ENABLED
+  export ENABLE_SECONDARY_PROVIDER_FALLBACK
 
   # Preflight check: if R3 or R4 enabled, OPENROUTER_API_KEY must be set.
   if [ "${ENABLE_RULE_JUDGE_REWARD}" = "1" ] || [ "${ENABLE_RUBRIC_REWARD}" = "1" ]; then
@@ -312,6 +322,7 @@ run: |
       echo "  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:+set (last 4: ${OPENROUTER_API_KEY: -4})}"
       echo "  USE_ENV_GROUND_TRUTH: $USE_ENV_GROUND_TRUTH"
       echo "  AGENT_MLLM_ENABLED: $AGENT_MLLM_ENABLED"
+      echo "  ENABLE_SECONDARY_PROVIDER_FALLBACK: $ENABLE_SECONDARY_PROVIDER_FALLBACK"
       echo "--- nvidia-smi ---"
       nvidia-smi || echo "nvidia-smi failed"
       echo "--- free -h ---"; free -h
