@@ -62,10 +62,6 @@ resources:
     - accelerators: H200:8
       cloud: runpod
     - accelerators: H200:8
-      cloud: kubernetes
-      network_tier: best
-      use_spot: true
-    - accelerators: H200:8
       cloud: gcp
       use_spot: true
       image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
@@ -73,6 +69,9 @@ resources:
       cloud: lambda
     - accelerators: H200:8
       cloud: nebius
+    # NOTE: kubernetes entry removed — requires `pip install "skypilot[kubernetes]"`
+    # locally and we don't have a k8s cluster anyway. Add back with the
+    # extra-deps install if team k8s becomes available.
 
 num_nodes: 2
 
