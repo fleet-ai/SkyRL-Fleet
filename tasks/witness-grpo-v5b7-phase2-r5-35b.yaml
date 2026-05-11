@@ -117,10 +117,16 @@ envs:
   CKPT_INTERVAL: 20
   MAX_CKPTS_TO_KEEP: 2
 
-  # === Generator capacity (match v5 SFT distribution to avoid shift) ===
-  MAX_INPUT_LENGTH: 16384            # match v5 SFT — bump to 32K only after a 32K-trained SFT exists
-  MAX_GENERATE_LENGTH: 1024          # match v5 SFT
-  MAX_PROMPT_LENGTH: 4096
+  # === Generator capacity ===
+  # Sized for 35B + longer trajectories. 9B R5 hit response_length=14400
+  # (vs 16K MAX_INPUT cap) and max_turns=30 was binding — 35B with fresh
+  # SFT should be allowed longer trajectories. Math:
+  #   50 turns × ~500 tok/turn (observed avg) ≈ 25K accumulated context
+  #   + 3-4K system/initial-obs prompt = ~28-30K → 32K with 7% headroom.
+  # If vLLM OOMs the KV cache (rare with 0.65 mem-util), drop to 24K.
+  MAX_INPUT_LENGTH: 32768
+  MAX_GENERATE_LENGTH: 2048          # give 35B reasoning room (vs 9B's 1024)
+  MAX_PROMPT_LENGTH: 8192            # trainer-side prompt cap; doubled from 9B's 4096
   GPU_MEMORY_UTILIZATION: "0.65"     # 0.8 → 0.65 for 35B safety margin
   INFERENCE_TENSOR_PARALLEL_SIZE: 2  # 8 engines × TP=2 = 16 GPUs total
   NUM_INFERENCE_ENGINES: 8
@@ -162,11 +168,15 @@ envs:
   GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
   VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
   MAX_LEVELS: "5"
-  MAX_ORAI_STEPS: "30"
+  MAX_ORAI_STEPS: "30"               # per-level ORAI step cap (unchanged)
   REWARD_MODE: "shaped"
   OBS_MODE: "grid"
   RULES_MODE: "rules_unknown"
-  MAX_TURNS: "30"
+  # MAX_TURNS bumped 30→50: 9B R5 had max_turns=30 binding (response_length
+  # hitting 14400 vs 16K input cap, multiple games solving 2-3 of 5 levels
+  # then running out of turns). 35B with longer context can afford 10
+  # turns/level avg for the full 5-level path.
+  MAX_TURNS: "50"
   S3_TRAJECTORY_BUCKET: "fleet-guanghan"
 
   # Credentials (REQUIRED at launch — never commit values here)
