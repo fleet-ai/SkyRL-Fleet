@@ -1,0 +1,443 @@
+# ARC-AGI-3 Witness B7 Phase 2/2b: Qwen3.5-35B-A3B GRPO.
+#
+# This ports the latest Witness agent-harness path from
+# witness-grpo-v5b7-phase2-r34.yaml onto the existing Fleet 35B topology:
+#   - SkyRL env_class=witness_agent drives arc-witness-agent in bridged ORAI mode.
+#   - Local arc-witness-agent / arc-witness-envs worktrees are file-mounted.
+#   - Finding L/M/N gates are wired through env vars.
+#   - R1 plan-diversity and R3/R4 judge rewards are launch-time switches.
+#
+# Default is a conservative 2x8 H200 synchronous smoke/full-run shape.
+# For preflight without loading the 35B model:
+#   sky launch tasks/witness-grpo-v5b7-phase2-r34-35b.yaml \
+#     --env SMOKE_ONLY=1 -y
+#
+# For a tiny 35B training smoke, override down the episode length:
+#   sky launch tasks/witness-grpo-v5b7-phase2-r34-35b.yaml \
+#     --env RUN_LABEL=35b_smoke_train \
+#     --env GAME_IDS="tw07 tw03" --env VAL_GAME_IDS="tw01" \
+#     --env NUM_EPOCHS=1 --env MAX_LEVELS=1 --env MAX_ORAI_STEPS=2 \
+#     --env MAX_TURNS=2 --env EVAL_BEFORE_TRAIN=false \
+#     --env WANDB_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... -y
+#
+# NOTE: There is no validated 35B Witness SFT checkpoint yet. By default this
+# starts from Qwen/Qwen3.5-35B-A3B. If/when a 35B SFT checkpoint exists, set:
+#   --env POLICY_CHECKPOINT_S3=s3://.../merged/
+
+name: witness-grpo-v5b7-phase2-r34-35b
+
+resources:
+  # 35B ckpts are materially larger than 9B. Keep only one by default but
+  # allocate enough disk for workdir, venv, HF cache, and one full FSDP ckpt.
+  disk_size: 2000
+  memory: 1500+
+  ports: 6479
+  ordered:
+    - accelerators: H200:8
+      cloud: runpod
+    - accelerators: H200:8
+      cloud: kubernetes
+      network_tier: best
+      use_spot: true
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: lambda
+    - accelerators: H200:8
+      cloud: nebius
+
+num_nodes: 2
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/b7-phase2-judge-rewards
+
+file_mounts:
+  ~/arc-witness-agent: ~/arc-witness-agent-b7
+  ~/arc-witness-envs: ~/arc-witness-envs-b7
+
+envs:
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  SMOKE_ONLY: "0"
+
+  # === Run identity / model ===
+  RUN_LABEL: "35b_p2b_r4"
+  MODEL: "Qwen/Qwen3.5-35B-A3B"
+  POLICY_CHECKPOINT_S3: ""
+
+  # === 35B conservative defaults ===
+  LR: "5.0e-7"
+  NUM_EPOCHS: 25
+  KL_LOSS_COEF: "0.005"
+  ENTROPY_LOSS_COEF: "0.005"
+  TRAIN_BATCH_SIZE: 4
+  POLICY_MINI_BATCH_SIZE: 4
+  EVAL_BATCH_SIZE: 4
+  EVAL_BEFORE_TRAIN: "true"
+  EVAL_INTERVAL: 10
+  CKPT_INTERVAL: 10
+  MAX_CKPTS_TO_KEEP: 1
+  MAX_INPUT_LENGTH: 16384
+  MAX_GENERATE_LENGTH: 1024
+  MAX_PROMPT_LENGTH: 4096
+  GPU_MEMORY_UTILIZATION: "0.65"
+  # TP=2 -> 8 vLLM engines across 16 GPUs in colocated sync mode.
+  INFERENCE_TENSOR_PARALLEL_SIZE: 2
+  NUM_INFERENCE_ENGINES: 8
+  N_SAMPLES_PER_PROMPT: 4
+  EVAL_N_SAMPLES_PER_PROMPT: 3
+
+  # === R1/R3/R4/R5 harness knobs ===
+  ENABLE_PLAN_DIVERSITY_PENALTY: "1"
+  PLAN_DIVERSITY_SCHEME: "consecutive"
+  PLAN_DIVERSITY_PENALTY: "-0.05"
+
+  ENABLE_RULE_JUDGE_REWARD: "0"
+  RULE_JUDGE_MODEL: "anthropic/claude-haiku-4.5"
+  RULE_JUDGE_SAMPLE_RATE: "0.20"
+  RULE_JUDGE_MAX_REWARD: "0.30"
+
+  ENABLE_RUBRIC_REWARD: "1"
+  RUBRIC_MODEL: "anthropic/claude-haiku-4.5"
+  RUBRIC_SAMPLE_RATE: "0.15"
+  RUBRIC_PER_ITEM_REWARD: "0.05"
+
+  OPENROUTER_API_KEY: ""
+  OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
+
+  USE_ENV_GROUND_TRUTH: "1"
+  AGENT_MLLM_ENABLED: "0"
+  ENABLE_SECONDARY_PROVIDER_FALLBACK: "0"
+  SECONDARY_MODEL: "anthropic/claude-sonnet-4.5"
+  SECONDARY_SKIP_PRIMARY: "1"
+
+  # === Witness task split ===
+  GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
+  VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
+  MAX_LEVELS: "5"
+  MAX_ORAI_STEPS: "30"
+  REWARD_MODE: "shaped"
+  OBS_MODE: "grid"
+  RULES_MODE: "rules_unknown"
+  MAX_TURNS: "30"
+  S3_TRAJECTORY_BUCKET: "fleet-guanghan"
+
+  # Credentials are intentionally blank in the file; pass them at launch.
+  WANDB_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+setup: |
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb boto3 awscli pyyaml openai
+  source scripts/fleet-qwen35-extra-setup.sh
+  uv pip install arc-agi
+
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+
+  test -f "$ARC_WITNESS_AGENT_DIR/agent/core.py" || { echo "ERROR: arc-witness-agent file_mount missing"; exit 1; }
+  test -f "$WITNESS_ENVS_DIR/witness_grid.py" || { echo "ERROR: arc-witness-envs file_mount missing"; exit 1; }
+  echo "[ok] file_mounts present | RUN_LABEL=$RUN_LABEL"
+
+  # Required latest-harness checks. These fail fast if the mounted agent
+  # worktree is older than the May 10 R3/R4/R5 harness logic.
+  python - <<'PY'
+  import os, sys
+  agent_dir = os.environ["ARC_WITNESS_AGENT_DIR"]
+  if agent_dir not in sys.path:
+      sys.path.insert(0, agent_dir)
+  from agent.runtime.process_reward import (
+      compute_plan_diversity_penalty,
+      compute_rule_judge_reward,
+      compute_rubric_reward,
+  )
+  from agent.llm.client import LLMClient
+  from agent.core import AgentCore
+  print("[ok] latest agent reward + LLM fallback symbols import")
+  PY
+
+  if grep -q '<plan>1,4,2,5,3</plan>' "$ARC_WITNESS_AGENT_DIR/agent/decision/meta_reasoning.py"; then
+    echo "ERROR: prompt example '1,4,2,5,3' still in meta_reasoning.py; Phase 2/2b expects it removed"
+    exit 1
+  fi
+  echo "[ok] prompt example correctly dropped"
+
+  POLICY_PATH="$MODEL"
+  if [ -n "${POLICY_CHECKPOINT_S3:-}" ]; then
+    mkdir -p "$HOME/policy_ckpt"
+    echo "[policy] downloading 35B policy checkpoint from $POLICY_CHECKPOINT_S3"
+    aws s3 sync "$POLICY_CHECKPOINT_S3" "$HOME/policy_ckpt/" 2>&1 | tail -10
+    echo "[patch] downloading multimodal config from $MODEL -> ~/policy_ckpt"
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$HOME/policy_ckpt', local_dir_use_symlinks=False)"
+    POLICY_PATH="$HOME/policy_ckpt"
+  fi
+  echo "$POLICY_PATH" > "$HOME/policy_path.txt"
+  echo "[policy] POLICY_PATH=$POLICY_PATH"
+
+  # Spot-preemption recovery: download prior ckpts for this run label if any.
+  CKPT_S3_BASE="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
+  CKPT_LOCAL="$HOME/ckpts/witness_grpo_v5b7_${RUN_LABEL}"
+  echo "[resume] checking for prior ckpts at $CKPT_S3_BASE"
+  if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && aws s3 ls "$CKPT_S3_BASE/global_step_" 2>/dev/null | head -1 | grep -q .; then
+    echo "[resume] prior ckpts found, downloading to $CKPT_LOCAL"
+    mkdir -p "$CKPT_LOCAL"
+    aws s3 sync "$CKPT_S3_BASE/" "$CKPT_LOCAL/" --no-progress --exclude "logs/*" 2>&1 | tail -10
+  else
+    echo "[resume] no prior ckpts, or AWS creds unavailable"
+  fi
+
+  cd ~/sky_workdir
+  python examples/train_integrations/witness/prepare_witness_dataset.py \
+    --game_ids $GAME_IDS \
+    --val_game_ids $VAL_GAME_IDS \
+    --reward_mode $REWARD_MODE \
+    --obs_mode $OBS_MODE \
+    --rules_mode $RULES_MODE \
+    --max_levels $MAX_LEVELS \
+    --env_class witness_agent \
+    --max_orai_steps $MAX_ORAI_STEPS \
+    --output_dir $HOME/data/witness_v5b7
+
+run: |
+  set -euo pipefail
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  export TMPDIR="$HOME/skyrl-tmp"
+  mkdir -p "$TMPDIR"
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+  export HYDRA_FULL_ERROR=1
+
+  export ENABLE_PLAN_DIVERSITY_PENALTY
+  export PLAN_DIVERSITY_SCHEME
+  export PLAN_DIVERSITY_PENALTY
+  export ENABLE_RULE_JUDGE_REWARD
+  export RULE_JUDGE_MODEL
+  export RULE_JUDGE_SAMPLE_RATE
+  export RULE_JUDGE_MAX_REWARD
+  export ENABLE_RUBRIC_REWARD
+  export RUBRIC_MODEL
+  export RUBRIC_SAMPLE_RATE
+  export RUBRIC_PER_ITEM_REWARD
+  export OPENROUTER_API_KEY
+  export OPENROUTER_BASE_URL
+  export USE_ENV_GROUND_TRUTH
+  export AGENT_MLLM_ENABLED
+  export ENABLE_SECONDARY_PROVIDER_FALLBACK
+  export SECONDARY_MODEL
+  export SECONDARY_SKIP_PRIMARY
+
+  if [ "${SMOKE_ONLY}" != "1" ] && { [ "${ENABLE_RULE_JUDGE_REWARD}" = "1" ] || [ "${ENABLE_RUBRIC_REWARD}" = "1" ] || [ "${ENABLE_SECONDARY_PROVIDER_FALLBACK}" = "1" ]; }; then
+    if [ -z "${OPENROUTER_API_KEY}" ]; then
+      echo "ERROR: judge/fallback enabled but OPENROUTER_API_KEY is empty" >&2
+      exit 1
+    fi
+    echo "[preflight] OpenRouter-backed path enabled; key present (last 4: ${OPENROUTER_API_KEY: -4})"
+  fi
+
+  cd ~/sky_workdir
+  python - <<'PY'
+  import os, sys
+  sys.path.insert(0, os.environ["ARC_WITNESS_AGENT_DIR"])
+  from agent.runtime.process_reward import compute_plan_diversity_penalty, compute_rule_judge_reward, compute_rubric_reward
+  from examples.train_integrations.witness.env_agent import WitnessAgentEnv
+  print("[ok] WitnessAgentEnv + mounted latest agent harness import")
+  PY
+
+  if [ "${SMOKE_ONLY}" = "1" ]; then
+    echo "[smoke] SMOKE_ONLY=1 complete: mounts, dataset prep, env imports, reward hooks, and config gates validated."
+    exit 0
+  fi
+
+  ON_GCP=false
+  if [ -d "/usr/local/gib" ] || { [ -f "/sys/class/dmi/id/product_name" ] && grep -qi "google" /sys/class/dmi/id/product_name 2>/dev/null; }; then
+    ON_GCP=true
+  fi
+  if [ "$ON_GCP" = true ]; then
+    if ! { [ -d "/sys/class/infiniband" ] && [ "$(ls /sys/class/infiniband/ 2>/dev/null)" ]; }; then
+      echo "GCP without RDMA - disabling gIB"
+      export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH:-}" | sed 's|/usr/local/gib/lib64:||g; s|:/usr/local/gib/lib64||g; s|/usr/local/gib/lib64||g')
+      unset NCCL_NET NCCL_CROSS_NIC NCCL_NET_GDR_LEVEL NCCL_P2P_NET_CHUNKSIZE NCCL_NVLS_CHUNKSIZE 2>/dev/null || true
+      unset NCCL_IB_ADAPTIVE_ROUTING NCCL_IB_QPS_PER_CONNECTION NCCL_IB_TC NCCL_IB_FIFO_TC NCCL_TUNER_CONFIG_PATH 2>/dev/null || true
+      export NCCL_CUMEM_ENABLE=0
+    fi
+    SHM_SIZE=$(df --output=size /dev/shm 2>/dev/null | tail -1 | tr -d ' ')
+    if [ -n "$SHM_SIZE" ] && [ "$SHM_SIZE" -lt 16777216 ]; then
+      sudo mount -o remount,size=16G /dev/shm 2>&1 || true
+    fi
+  fi
+  sudo sysctl -w kernel.yama.ptrace_scope=0 2>/dev/null || true
+  ulimit -n 1048576 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+
+  export RAY_RUNTIME_ENV_HOOK=ray._private.runtime_env.uv_runtime_env_hook.hook
+  export RAY_object_store_memory=10000000000
+  export RAY_DISABLE_MEMORY_MONITOR=1
+
+  read -r head_ip _ <<< "$SKYPILOT_NODE_IPS"
+  DATA_DIR="$HOME/data/witness_v5b7"
+  POLICY_PATH=$(cat "$HOME/policy_path.txt")
+
+  python3 -c "import wandb; wandb.login(relogin=True, key='$WANDB_API_KEY')"
+
+  wait_for_ray() {
+    local address=$1
+    for _ in $(seq 1 24); do
+      if ray status --address "$address" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 5
+    done
+    echo "Ray cluster at $address failed to become ready" >&2
+    return 1
+  }
+
+  if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
+    if ! ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then
+      ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000
+    fi
+    wait_for_ray 127.0.0.1:6479
+
+    TOTAL_POLICY_GPUS=$((SKYPILOT_NUM_GPUS_PER_NODE * ${SKYPILOT_NUM_NODES:-1}))
+    S3_LOG_BASE="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}/logs"
+    LOG_DIR="$HOME/run_logs"
+    mkdir -p "$LOG_DIR"
+    TRAIN_LOG="$LOG_DIR/trainer.log"
+    DIAG_LOG="$LOG_DIR/diagnostics.log"
+
+    {
+      echo "=== Pre-train diagnostics $(date -u +%FT%TZ) RUN_LABEL=$RUN_LABEL ==="
+      echo "MODEL=$MODEL"
+      echo "POLICY_PATH=$POLICY_PATH"
+      echo "TOTAL_POLICY_GPUS=$TOTAL_POLICY_GPUS"
+      echo "NUM_INFERENCE_ENGINES=$NUM_INFERENCE_ENGINES TP=$INFERENCE_TENSOR_PARALLEL_SIZE"
+      env | grep -E '^(RUN_LABEL|LR|NUM_EPOCHS|KL_LOSS_COEF|ENTROPY_LOSS_COEF|ENABLE_|USE_ENV_GROUND_TRUTH|AGENT_MLLM_ENABLED|SECONDARY|GAME_IDS|VAL_GAME_IDS|MAX_)=' | sort
+      nvidia-smi || true
+      free -h
+      df -h | head -30
+      ray status --address 127.0.0.1:6479 | head -80
+      python -c "import torch, vllm, ray; print(f'torch={torch.__version__} cuda={torch.cuda.is_available()} ngpu={torch.cuda.device_count()} vllm={vllm.__version__} ray={ray.__version__}')"
+    } > "$DIAG_LOG" 2>&1
+    aws s3 cp "$DIAG_LOG" "$S3_LOG_BASE/diagnostics.log" 2>&1 | tail -3 || true
+
+    (
+      while true; do
+        [ -f "$TRAIN_LOG" ] && aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" --quiet 2>/dev/null || true
+        sleep 30
+      done
+    ) &
+    LOG_MIRROR_PID=$!
+
+    CKPT_LOCAL_DIR="$HOME/ckpts/witness_grpo_v5b7_${RUN_LABEL}"
+    CKPT_S3_DIR="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
+    (
+      LAST_SYNCED_DIR=""
+      while true; do
+        sleep 300
+        if [ -d "$CKPT_LOCAL_DIR" ]; then
+          NEWEST=$(ls -td "$CKPT_LOCAL_DIR"/global_step_* 2>/dev/null | head -1 || echo "")
+          if [ -n "$NEWEST" ] && [ "$NEWEST" != "$LAST_SYNCED_DIR" ]; then
+            BASENAME=$(basename "$NEWEST")
+            echo "[ckpt-mirror $(date +%H:%M:%S)] syncing $BASENAME to S3"
+            aws s3 sync "$NEWEST" "$CKPT_S3_DIR/$BASENAME" --quiet 2>/dev/null && LAST_SYNCED_DIR="$NEWEST" || echo "[ckpt-mirror] sync failed"
+          fi
+          [ -f "$CKPT_LOCAL_DIR/latest_ckpt_global_step.txt" ] && aws s3 cp "$CKPT_LOCAL_DIR/latest_ckpt_global_step.txt" "$CKPT_S3_DIR/latest_ckpt_global_step.txt" --quiet 2>/dev/null || true
+        fi
+      done
+    ) &
+    CKPT_MIRROR_PID=$!
+
+    trap '
+      kill $LOG_MIRROR_PID 2>/dev/null || true
+      kill $CKPT_MIRROR_PID 2>/dev/null || true
+      [ -f "$TRAIN_LOG" ] && aws s3 cp "$TRAIN_LOG" "$S3_LOG_BASE/trainer.log" 2>&1 | tail -3 || true
+      [ -d "$CKPT_LOCAL_DIR" ] && aws s3 sync "$CKPT_LOCAL_DIR" "$CKPT_S3_DIR/" --quiet 2>/dev/null || true
+    ' EXIT
+
+    set +e
+    set +o pipefail
+    PYTHONUNBUFFERED=1 python -u -m examples.train_integrations.witness.entrypoints.main_witness \
+      data.train_data="['${DATA_DIR}/train.parquet']" \
+      data.val_data="['${DATA_DIR}/validation.parquet']" \
+      trainer.algorithm.advantage_estimator="grpo" \
+      trainer.policy.model.path="$POLICY_PATH" \
+      trainer.flash_attn=false \
+      generator.chat_template_kwargs='{enable_thinking:false}' \
+      trainer.loss_chunk_size=4096 \
+      trainer.use_sample_packing=false \
+      trainer.algorithm.loss_reduction="sequence_mean" \
+      trainer.placement.colocate_all=true \
+      trainer.strategy=fsdp2 \
+      trainer.placement.policy_num_gpus_per_node="$SKYPILOT_NUM_GPUS_PER_NODE" \
+      trainer.placement.ref_num_gpus_per_node="$SKYPILOT_NUM_GPUS_PER_NODE" \
+      trainer.placement.ref_num_nodes="${SKYPILOT_NUM_NODES:-1}" \
+      trainer.placement.policy_num_nodes="${SKYPILOT_NUM_NODES:-1}" \
+      generator.num_inference_engines="$NUM_INFERENCE_ENGINES" \
+      generator.inference_engine_tensor_parallel_size="$INFERENCE_TENSOR_PARALLEL_SIZE" \
+      trainer.epochs=${NUM_EPOCHS} \
+      trainer.eval_batch_size=${EVAL_BATCH_SIZE} \
+      trainer.eval_before_train=${EVAL_BEFORE_TRAIN} \
+      trainer.eval_interval=${EVAL_INTERVAL} \
+      trainer.update_epochs_per_batch=1 \
+      trainer.train_batch_size=${TRAIN_BATCH_SIZE} \
+      trainer.policy_mini_batch_size=${POLICY_MINI_BATCH_SIZE} \
+      trainer.micro_forward_batch_size_per_gpu=1 \
+      trainer.micro_train_batch_size_per_gpu=1 \
+      trainer.ckpt_interval=${CKPT_INTERVAL} \
+      trainer.max_ckpts_to_keep=${MAX_CKPTS_TO_KEEP} \
+      trainer.max_prompt_length=${MAX_PROMPT_LENGTH} \
+      generator.max_input_length=${MAX_INPUT_LENGTH} \
+      generator.sampling_params.max_generate_length=${MAX_GENERATE_LENGTH} \
+      generator.sampling_params.temperature=0.7 \
+      generator.sampling_params.top_p=0.95 \
+      generator.eval_sampling_params.max_generate_length=${MAX_GENERATE_LENGTH} \
+      trainer.policy.optimizer_config.lr=${LR} \
+      trainer.algorithm.use_kl_loss=true \
+      trainer.algorithm.kl_loss_coef=${KL_LOSS_COEF} \
+      trainer.algorithm.use_entropy_loss=true \
+      trainer.algorithm.entropy_loss_coef=${ENTROPY_LOSS_COEF} \
+      generator.max_turns=$MAX_TURNS \
+      generator.backend="$INFERENCE_BACKEND" \
+      generator.run_engines_locally=true \
+      generator.weight_sync_backend=nccl \
+      generator.async_engine=true \
+      generator.batched=false \
+      environment.env_class=witness_agent \
+      generator.use_conversation_multi_turn=true \
+      generator.n_samples_per_prompt=${N_SAMPLES_PER_PROMPT} \
+      generator.eval_n_samples_per_prompt=${EVAL_N_SAMPLES_PER_PROMPT} \
+      generator.gpu_memory_utilization=${GPU_MEMORY_UTILIZATION} \
+      trainer.logger="$LOGGER" \
+      trainer.project_name="arc-agi-3" \
+      trainer.run_name="witness_grpo_v5b7_${RUN_LABEL}" \
+      trainer.resume_mode=latest \
+      trainer.ckpt_path="$CKPT_LOCAL_DIR" \
+      trainer.dump_data_batch=true \
+      trainer.dump_training_trajectories=true \
+      2>&1 | tee "$TRAIN_LOG"
+    PYTHON_EXIT=${PIPESTATUS[0]}
+    echo "[trainer exit] code=$PYTHON_EXIT"
+    [ "$PYTHON_EXIT" = "0" ] || tail -100 "$TRAIN_LOG" || true
+    set -eo pipefail
+    exit "$PYTHON_EXIT"
+  else
+    if ! ray status --address "$head_ip:6479" >/dev/null 2>&1; then
+      ray start --address "$head_ip:6479" --disable-usage-stats
+    fi
+    wait_for_ray "$head_ip:6479"
+    sleep infinity
+  fi
