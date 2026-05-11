@@ -100,6 +100,13 @@ envs:
   OPENROUTER_API_KEY: ""
   OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
 
+  # Finding L env-ground-truth gate (default ON for witness games).
+  # Surfaces env._path / _start / _end / _dots → board overlay + text
+  # fields. Set "0" to fall back to MLLM-only perception for non-witness
+  # envs. See:
+  #   arc-witness-agent/reports/2026-05-10_perception_markers_design_spec.md
+  USE_ENV_GROUND_TRUTH: "1"
+
   # === Same as Phase 1 ===
   GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
   VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
@@ -205,6 +212,7 @@ run: |
   export RUBRIC_PER_ITEM_REWARD
   export OPENROUTER_API_KEY
   export OPENROUTER_BASE_URL
+  export USE_ENV_GROUND_TRUTH
 
   # Preflight check: if R3 or R4 enabled, OPENROUTER_API_KEY must be set.
   if [ "${ENABLE_RULE_JUDGE_REWARD}" = "1" ] || [ "${ENABLE_RUBRIC_REWARD}" = "1" ]; then
@@ -292,6 +300,7 @@ run: |
       echo "  RUBRIC_SAMPLE_RATE: $RUBRIC_SAMPLE_RATE"
       echo "  RUBRIC_PER_ITEM_REWARD: $RUBRIC_PER_ITEM_REWARD"
       echo "  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:+set (last 4: ${OPENROUTER_API_KEY: -4})}"
+      echo "  USE_ENV_GROUND_TRUTH: $USE_ENV_GROUND_TRUTH"
       echo "--- nvidia-smi ---"
       nvidia-smi || echo "nvidia-smi failed"
       echo "--- free -h ---"; free -h

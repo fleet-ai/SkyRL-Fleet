@@ -72,6 +72,15 @@ class WitnessAgentEnv(BaseTextEnv):
         self.max_orai_steps: int = int(extras.get("max_orai_steps", 30))
         self.agent_config: Dict[str, Any] = extras.get("agent_config") or self._load_default_agent_config()
 
+        # Finding L env-ground-truth gate (default ON). Override the loaded
+        # config with the env-var value so SkyRL launches can flip it per
+        # cluster without touching arc-witness-agent's config.yaml.
+        # See reports/2026-05-10_perception_markers_design_spec.md
+        _use_egt = os.environ.get("USE_ENV_GROUND_TRUTH", "1") == "1"
+        ascii_cfg = self.agent_config.setdefault("semantic_ascii", {})
+        egt_cfg = ascii_cfg.setdefault("env_ground_truth", {})
+        egt_cfg["enabled"] = _use_egt
+
         # B7 Phase 2 R1 — plan-diversity penalty (gateable per run).
         # Set ENABLE_PLAN_DIVERSITY_PENALTY=1 in yaml envs to activate.
         # See agent/runtime/process_reward.py:compute_plan_diversity_penalty
