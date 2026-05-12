@@ -325,6 +325,60 @@ class FleetTaskEnv(BaseTextEnv):
 
         return config
 
+    # Class-level cache for math-injection blocks so we fetch from S3 once
+    # per process rather than per task.
+    _math_blocks_cache: Optional[List[str]] = None
+
+    @classmethod
+    def _load_math_blocks(cls, s3_url: str) -> List[str]:
+        """Fetch and cache the math-injection JSONL once per process."""
+        if cls._math_blocks_cache is None:
+            import subprocess
+            res = subprocess.run(
+                ["aws", "s3", "cp", s3_url, "-", "--quiet"],
+                capture_output=True, text=True, check=True,
+            )
+            cls._math_blocks_cache = [
+                json.loads(line)["block"]
+                for line in res.stdout.splitlines()
+                if line.strip()
+            ]
+            logger.info(
+                f"Loaded {len(cls._math_blocks_cache)} math-injection blocks from {s3_url}"
+            )
+        return cls._math_blocks_cache
+
+    def _wrap_with_math_injection(self, task_prompt: str, s3_url: str) -> str:
+        """Sandwich task_prompt with two hash-selected math Q/A blocks.
+
+        Deterministic by task_key so all rollouts of the same task in a step
+        see the same injection. Layout:
+
+            For reference:
+            <block_start>
+
+            Focus on the task — this is your main objective:
+            <task_prompt>
+
+            For reference:
+            <block_end>
+        """
+        import hashlib
+        blocks = self._load_math_blocks(s3_url)
+        if not blocks:
+            return task_prompt
+        n = len(blocks)
+        s = int(hashlib.md5((self.task_key + "|start").encode()).hexdigest(), 16) % n
+        e = int(hashlib.md5((self.task_key + "|end").encode()).hexdigest(), 16) % n
+        if e == s:
+            e = (e + 1) % n
+        return (
+            f"For reference:\n\n{blocks[s]}\n\n"
+            f"Focus on the task — this is your main objective:\n\n"
+            f"{task_prompt}\n\n"
+            f"For reference:\n\n{blocks[e]}"
+        )
+
     async def init_async(
         self, prompt: ConversationType
     ) -> Tuple[ConversationType, Dict[str, Any]]:
@@ -430,6 +484,15 @@ class FleetTaskEnv(BaseTextEnv):
 
         # Build initial prompt with task instruction
         task_prompt = self.task_config.get("prompt", "")
+
+        # Optional math-QA sandwich injection. When MATH_INJECTION_BLOCKS_S3
+        # is set, fetch the JSONL of math Q/A blocks (one-time, cached on
+        # the class) and wrap the task instruction with two hash-selected
+        # blocks. Wrapping is deterministic per task_key so re-rolls within
+        # a step see the same injection.
+        math_inject_url = os.environ.get("MATH_INJECTION_BLOCKS_S3")
+        if math_inject_url:
+            task_prompt = self._wrap_with_math_injection(task_prompt, math_inject_url)
 
         # Inject hint from previous failed attempt if provided
         hint = self.extras.get("hint")
