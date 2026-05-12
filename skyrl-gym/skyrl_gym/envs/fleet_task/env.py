@@ -486,12 +486,15 @@ class FleetTaskEnv(BaseTextEnv):
         task_prompt = self.task_config.get("prompt", "")
 
         # Optional math-QA sandwich injection. When MATH_INJECTION_BLOCKS_S3
-        # is set, fetch the JSONL of math Q/A blocks (one-time, cached on
-        # the class) and wrap the task instruction with two hash-selected
-        # blocks. Wrapping is deterministic per task_key so re-rolls within
-        # a step see the same injection.
+        # is set AND the current dispatch is a training batch (not eval),
+        # fetch the JSONL of math Q/A blocks (one-time, cached on the class)
+        # and wrap the task instruction with two hash-selected blocks.
+        # Wrapping is deterministic per task_key so re-rolls within a step
+        # see the same injection. Eval is left clean so pass@3 stays
+        # comparable to clean-density baselines.
         math_inject_url = os.environ.get("MATH_INJECTION_BLOCKS_S3")
-        if math_inject_url:
+        is_training = self.extras.get("training_phase") == "train"
+        if math_inject_url and is_training:
             task_prompt = self._wrap_with_math_injection(task_prompt, math_inject_url)
 
         # Inject hint from previous failed attempt if provided

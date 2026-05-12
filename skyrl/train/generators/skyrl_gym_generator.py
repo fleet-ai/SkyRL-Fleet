@@ -1104,6 +1104,15 @@ class SkyRLGymGenerator(GeneratorInterface):
         is_step_wise = self.generator_cfg.step_wise_trajectories
         zero_reward = 0.0 if self.custom_chat_template else [0.0]
 
+        # Stamp training_phase onto each env_extra so envs can gate train-only
+        # behavior (e.g. math-injection sandwich in fleet_task) without leaking
+        # into eval. batch_metadata is set by the trainer on every dispatch.
+        bm = input_batch.get("batch_metadata")
+        phase = getattr(bm, "training_phase", None) if bm is not None else None
+        if phase is not None:
+            for ee in env_extras:
+                ee.setdefault("training_phase", phase)
+
         async_tasks = []
         for i in range(len(prompts)):
             coro = self.agent_loop(
