@@ -16,7 +16,7 @@
 #   4. _wait_for_desktop() polls screenshot content (>15KB), not just wmctrl
 #   5. validate_envs.py — comprehensive env validator (runs in background after startup)
 
-name: gym-anything-server
+name: gym-anything-eval-deniz
 
 resources:
   cpus: 128+
