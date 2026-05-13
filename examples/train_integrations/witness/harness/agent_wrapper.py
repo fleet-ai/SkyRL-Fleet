@@ -55,6 +55,28 @@ if _AGENT_REPO not in sys.path and os.path.isdir(_AGENT_REPO):
     sys.path.insert(0, _AGENT_REPO)
 
 
+def _geometric_reward_config() -> Optional[Dict[str, float]]:
+    """Return a config override for compute_geometric_reward, or None for
+    default weights.
+
+    R0' ablation (2026-05-12): when ENABLE_PROCESS_GEOMETRIC=0 the 4
+    geometric weights (waypoint / region / distance / valid_move) are
+    zeroed out. The step_penalty term is preserved so an "outcome-only"
+    R0' run still discourages infinite trajectories. The Claude-based
+    rule-judge / rubric / ascii-fidelity rewards are gated separately
+    in env_agent.py and elsewhere, so they only need to be left at
+    their "0" env-var defaults to be off.
+    """
+    if os.environ.get("ENABLE_PROCESS_GEOMETRIC", "1") == "0":
+        return {
+            "waypoint_delta": 0.0,
+            "region_delta": 0.0,
+            "distance_delta": 0.0,
+            "valid_move": 0.0,
+        }
+    return None
+
+
 @dataclass
 class OraiCallRecord:
     """One intercepted ORAI LLM call + game-state snapshot at call time."""
@@ -315,13 +337,15 @@ class AgentRolloutWrapper:
                 next_path = final_path
                 next_level = final_level
 
-            # Process reward (geometric).
+            # Process reward (geometric). R0' ablation: config gates the
+            # 4 geometric weights via ENABLE_PROCESS_GEOMETRIC env var.
             geo_total, geo_breakdown = compute_geometric_reward(
                 self.game,
                 prev_path=rec.pre_path,
                 new_path=next_path,
                 is_valid_move=True,  # Phase 1 approximation: per-step validity
                                      # not tracked; trainer can refine later.
+                config=_geometric_reward_config(),
             )
             # Outcome reward (level transitions).
             total_levels = self.max_levels  # max_levels in trajectory
@@ -456,6 +480,7 @@ class AgentRolloutWrapper:
             prev_path=rec.pre_path,
             new_path=new_path,
             is_valid_move=True,
+            config=_geometric_reward_config(),
         )
         out_total, out_breakdown = compute_outcome_reward(
             rec.pre_level_index, new_level, self.max_levels,
