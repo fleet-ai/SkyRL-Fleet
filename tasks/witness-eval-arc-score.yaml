@@ -236,7 +236,9 @@ run: |
   # DEBUG logging + worker stderr capture so Qwen3.5-35B-A3B (MoE+VLM) worker
   # crashes surface to vllm_server.log instead of being swallowed.
   export VLLM_LOGGING_LEVEL=DEBUG
-  export VLLM_WORKER_MULTIPROC_METHOD=spawn
+  # fork (vs spawn) lets worker stderr propagate to parent — surfaces silent
+  # subprocess crashes that vllm 0.18 spawn-mode pipes were swallowing.
+  export VLLM_WORKER_MULTIPROC_METHOD=fork
   EXTRA_VLLM_FLAGS=""
   if [ "$POLICY_SIZE" = "35b" ]; then
     EXTRA_VLLM_FLAGS='--enforce-eager --limit-mm-per-prompt {"image":0,"video":0}'
