@@ -128,7 +128,9 @@ setup: |
   # merge_fsdp_checkpoint.py). Bump to 5.8.1 which has full Qwen3.5
   # support; vllm 0.18 tolerates this (transformers 5.x adds new model
   # types without breaking the old API surface vllm uses).
-  uv pip install --upgrade "transformers==5.8.1"
+  # Pin to transformers==5.3.0 to match the working b7 training cluster.
+  # transformers 5.8.1 caused silent vllm worker crashes on 35B (May 13).
+  uv pip install --upgrade "transformers==5.3.0"
   uv pip install arc-agi
 
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
