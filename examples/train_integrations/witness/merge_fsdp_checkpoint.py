@@ -326,10 +326,12 @@ def main():
         model_class = AutoModelForCausalLM
 
     with torch.device("meta"):
-        model = model_class.from_config(config, trust_remote_code=True)
+        model = model_class.from_config(
+            config, trust_remote_code=True, torch_dtype=torch.bfloat16,
+        )
 
-    # to_empty allocates real (empty) storage on cpu, then load_state_dict fills it
     model.to_empty(device="cpu")
+    model = model.to(torch.bfloat16)
 
     # Pre-filter: drop ckpt keys whose shape differs from the model's
     # current parameter — strict=False allows missing/unexpected keys, but

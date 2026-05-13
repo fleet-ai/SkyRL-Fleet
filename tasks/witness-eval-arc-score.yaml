@@ -218,8 +218,8 @@ run: |
 
   # Size-dependent vLLM config
   if [ "$POLICY_SIZE" = "35b" ]; then
-    TP_SIZE=4
-    MEM_UTIL=0.70
+    TP_SIZE=8
+    MEM_UTIL=0.85
   else
     TP_SIZE=1
     MEM_UTIL=0.75
