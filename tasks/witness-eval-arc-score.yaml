@@ -7,11 +7,14 @@
 #
 # Required env vars (pass via --env):
 #   CKPT_LABEL        — descriptive label, e.g. "R4-9B"
-#   CKPT_HF_S3        — S3 path to HF-format ckpt dir (containing
-#                       config.json + safetensors + tokenizer files)
+#   CKPT_FSDP_S3      — S3 path to FSDP-sharded ckpt dir (containing
+#                       model_world_size_*_rank_*.pt shards under policy/)
+#                       e.g. s3://.../witness_grpo_v5b7_p2_r5_35b/global_step_51/
+#                       The setup section runs merge_fsdp_checkpoint.py to
+#                       produce HF format before vLLM startup.
 #   ENABLE_SECONDARY_PROVIDER_FALLBACK — "0" for R4-style, "1" for R5
-#   POLICY_SIZE_HINT  — "9b" or "35b" (selects MODEL_BASE for multimodal
-#                       config patch; otherwise inferred from CKPT_HF_S3)
+#   POLICY_SIZE_HINT  — "9b" or "35b" (selects base model for tokenizer/config
+#                       templating during merge; auto-inferred from path if empty)
 #
 # Optional:
 #   GAMES         — default "tw01 tw09 tw10 tw12"
@@ -23,7 +26,7 @@
 #   sky launch tasks/witness-eval-arc-score.yaml \
 #     -c arc-eval-r5-35b-${USER} \
 #     --env CKPT_LABEL=R5-35B \
-#     --env CKPT_HF_S3=s3://fleet-guanghan/witness_grpo_v5b7_p2_r5_35b/global_step_50/policy/huggingface/ \
+#     --env CKPT_FSDP_S3=s3://fleet-guanghan/witness_grpo_v5b7_p2_r5_35b/global_step_51/ \
 #     --env ENABLE_SECONDARY_PROVIDER_FALLBACK=1 \
 #     --env POLICY_SIZE_HINT=35b \
 #     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
@@ -33,14 +36,32 @@
 name: witness-eval-arc-score
 
 resources:
+  # 9B eval uses TP=1 (1 GPU); 35B eval uses TP=4 (4 GPUs).  We list 8-GPU
+  # nodes for simplicity (only 1 or 4 of 8 get used).  Tried in order:
+  # H200 first (best perf), then H100/A100 fallbacks for capacity, all on
+  # GCP spot.  Cross-cloud (runpod/nebius/lambda) entries kept for users
+  # with those enabled — silently skipped otherwise.
   disk_size: 600
   ports: 8000
   any_of:
-    - accelerators: H200:8
-      cloud: runpod
+    # GCP H200 spot (preferred, often stocked out)
     - accelerators: H200:8
       cloud: gcp
       use_spot: true
+    # GCP H100 spot (frequent fallback when H200 stocked out)
+    - accelerators: H100:8
+      cloud: gcp
+      use_spot: true
+    # GCP A100 spot (slower, but typically available)
+    - accelerators: A100-80GB:8
+      cloud: gcp
+      use_spot: true
+    - accelerators: A100:8
+      cloud: gcp
+      use_spot: true
+    # Cross-cloud fallbacks (user-config-dependent)
+    - accelerators: H200:8
+      cloud: runpod
     - accelerators: H200:8
       cloud: lambda
     - accelerators: H200:8
@@ -58,7 +79,7 @@ file_mounts:
 
 envs:
   CKPT_LABEL: ""
-  CKPT_HF_S3: ""
+  CKPT_FSDP_S3: ""
   ENABLE_SECONDARY_PROVIDER_FALLBACK: "0"
   POLICY_SIZE_HINT: ""          # "9b" or "35b"; auto-detect from path if empty
   GAMES: "tw01 tw09 tw10 tw12"
@@ -85,45 +106,95 @@ setup: |
   set -euo pipefail
 
   # Preflight
-  if [ -z "${CKPT_LABEL}" ] || [ -z "${CKPT_HF_S3}" ]; then
-    echo "ERROR: CKPT_LABEL and CKPT_HF_S3 must be set." >&2
+  if [ -z "${CKPT_LABEL}" ] || [ -z "${CKPT_FSDP_S3}" ]; then
+    echo "ERROR: CKPT_LABEL and CKPT_FSDP_S3 must be set." >&2
     exit 1
   fi
 
   uv venv --python 3.12 --seed
   source .venv/bin/activate
-  uv pip install awscli boto3 pyyaml openai
+  uv pip install awscli boto3 pyyaml openai huggingface_hub
   # vLLM with CUDA — pin to the same major as SkyRL trainer to keep tokeniser
   # behaviour identical.
   uv pip install "vllm>=0.6.0"
   uv pip install arc-agi
+  # Torch + transformers (needed by merge_fsdp_checkpoint.py). vLLM install
+  # already pulls a compatible torch; ensure transformers is recent enough.
+  uv pip install "transformers>=4.45"
 
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
   export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+  export MERGE_SCRIPT="$HOME/sky_workdir/examples/train_integrations/witness/merge_fsdp_checkpoint.py"
 
-  # Sanity-check file_mounts
+  # Sanity-check file_mounts + tooling
   test -f "$ARC_WITNESS_AGENT_DIR/agent/core.py" || { echo "ERROR: arc-witness-agent file_mount missing"; exit 1; }
   test -f "$ARC_WITNESS_AGENT_DIR/tools/evaluate_arc_score.py" || { echo "ERROR: evaluate_arc_score.py missing — make sure local repo is up-to-date"; exit 1; }
   test -d "$WITNESS_ENVS_DIR/environment_files" || { echo "ERROR: environment_files missing"; exit 1; }
-  echo "[ok] file_mounts present | CKPT_LABEL=$CKPT_LABEL"
+  test -f "$MERGE_SCRIPT" || { echo "ERROR: merge_fsdp_checkpoint.py missing at $MERGE_SCRIPT"; exit 1; }
+  echo "[ok] file_mounts + merge script present | CKPT_LABEL=$CKPT_LABEL"
 
-  # Download ckpt from S3 (HF format)
-  mkdir -p $HOME/policy_ckpt
-  echo "[ckpt] downloading from $CKPT_HF_S3"
-  aws s3 sync "$CKPT_HF_S3" "$HOME/policy_ckpt/" 2>&1 | tail -10
-
-  # Patch in multimodal config files from base HF (matches the trainer-side fix)
-  if [ "${POLICY_SIZE_HINT}" = "35b" ] || echo "$CKPT_HF_S3" | grep -qi "35b"; then
+  # Decide base model name (used by merge for config templating)
+  if [ "${POLICY_SIZE_HINT}" = "35b" ] || echo "$CKPT_FSDP_S3" | grep -qi "35b"; then
     BASE_MODEL="Qwen/Qwen3.5-35B-A3B"
     SIZE_HINT="35b"
   else
     BASE_MODEL="Qwen/Qwen3.5-9B"
     SIZE_HINT="9b"
   fi
-  echo "[ckpt] patching multimodal config from $BASE_MODEL"
-  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$BASE_MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$HOME/policy_ckpt', local_dir_use_symlinks=False)" 2>&1 | tail -5
-
   echo "POLICY_SIZE=${SIZE_HINT}" > $HOME/.eval_meta
+  echo "BASE_MODEL=${BASE_MODEL}" >> $HOME/.eval_meta
+
+  # === Download FSDP shards from S3 ===
+  # The S3 layout (per training yaml's mid-train mirror) is:
+  #   ${CKPT_FSDP_S3}/policy/model_world_size_*_rank_*.pt   (~8.7 GB × 8-16 shards)
+  #   ${CKPT_FSDP_S3}/policy/optim_world_size_*_rank_*.pt    (NOT needed for inference — skipped)
+  #   ${CKPT_FSDP_S3}/policy/extra_state_*.pt                (~14 KB × N)
+  # We only fetch the model + extra_state files to save ~140 GB per 35B ckpt.
+  FSDP_DIR="$HOME/fsdp_ckpt"
+  mkdir -p "$FSDP_DIR"
+  echo "[ckpt] downloading FSDP shards from $CKPT_FSDP_S3 (excluding optim)"
+  aws s3 sync "$CKPT_FSDP_S3" "$FSDP_DIR/" \
+      --exclude "*" \
+      --include "policy/model_*" \
+      --include "policy/extra_state_*" \
+      --include "data.pt" \
+      --include "trainer_state.pt" \
+      2>&1 | tail -10
+  du -sh "$FSDP_DIR/policy" || true
+  ls -la "$FSDP_DIR/policy" | head -20
+
+  # === Merge FSDP shards → HF format ===
+  MERGED_DIR="$HOME/policy_ckpt"
+  mkdir -p "$MERGED_DIR"
+  echo "[merge] running merge_fsdp_checkpoint.py (base=$BASE_MODEL)"
+  python "$MERGE_SCRIPT" \
+      --checkpoint_dir "$FSDP_DIR/policy" \
+      --output_dir "$MERGED_DIR" \
+      --model_name "$BASE_MODEL" \
+      2>&1 | tee "$HOME/merge.log"
+  echo "[merge] output dir contents:"
+  ls -la "$MERGED_DIR"
+  # Sanity: HF format requires config.json + at least one .safetensors / pytorch_model.bin
+  if ! ls "$MERGED_DIR"/*.safetensors >/dev/null 2>&1 && ! ls "$MERGED_DIR"/pytorch_model*.bin >/dev/null 2>&1; then
+    echo "ERROR: merge did not produce weights file (.safetensors / .bin) in $MERGED_DIR" >&2
+    tail -40 "$HOME/merge.log"
+    exit 1
+  fi
+  if [ ! -f "$MERGED_DIR/config.json" ]; then
+    echo "ERROR: merge did not produce config.json in $MERGED_DIR" >&2
+    exit 1
+  fi
+  echo "[merge] OK"
+
+  # Patch multimodal config files from base HF (matches trainer-side fix —
+  # save_hf_model omits these per memory note feedback_save_hf_model_missing_mm_files)
+  echo "[ckpt] patching multimodal config from $BASE_MODEL"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$BASE_MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$MERGED_DIR', local_dir_use_symlinks=False)" 2>&1 | tail -5
+
+  # Free FSDP-shard disk now that merge is done (saves ~70 GB on 9B, ~140 GB on 35B)
+  echo "[cleanup] removing FSDP shards (merge succeeded)"
+  rm -rf "$FSDP_DIR"
+  df -h | head -5
 
 run: |
   set -euo pipefail
@@ -160,7 +231,7 @@ run: |
     --gpu-memory-utilization "$MEM_UTIL" \
     --max-model-len "${MAX_MODEL_LEN}" \
     --dtype bfloat16 \
-    --disable-log-requests \
+    --no-enable-log-requests \
     > "$VLLM_LOG" 2>&1 &
   VLLM_PID=$!
   echo "[vllm] pid=$VLLM_PID"
