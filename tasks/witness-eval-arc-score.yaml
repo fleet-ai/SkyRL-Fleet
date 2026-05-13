@@ -242,7 +242,12 @@ run: |
   export VLLM_WORKER_MULTIPROC_METHOD=fork
   EXTRA_VLLM_FLAGS=""
   if [ "$POLICY_SIZE" = "35b" ]; then
-    EXTRA_VLLM_FLAGS='--enforce-eager --limit-mm-per-prompt {"image":0,"video":0}'
+    # --distributed-executor-backend ray: spawn vllm workers as Ray remote
+    # tasks rather than multiprocessing subprocesses. The mp path silently
+    # swallows worker stderr and deadlocks on Qwen3.5-35B-A3B (MoE+VLM) at
+    # TP>1; the ray path is what the SkyRL training cluster uses and is
+    # verified to work for this exact model.
+    EXTRA_VLLM_FLAGS='--enforce-eager --limit-mm-per-prompt {"image":0,"video":0} --distributed-executor-backend ray'
   fi
   nohup python -m vllm.entrypoints.openai.api_server \
     --model "$HOME/policy_ckpt" \
