@@ -60,10 +60,9 @@ resources:
       cloud: gcp
       use_spot: true
       image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
-    - accelerators: A100:8
-      cloud: gcp
-      use_spot: true
-      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    # A100 (40GB) removed: 35B vllm workers crash silently after NCCL init
+    # (8 attempts, May 13).  Working training cluster runs on H200.  Restrict
+    # to ≥80GB GPUs to bypass.
     # Cross-cloud fallbacks (user-config-dependent; image not specified)
     - accelerators: H200:8
       cloud: runpod
