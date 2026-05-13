@@ -239,7 +239,7 @@ run: |
   export VLLM_WORKER_MULTIPROC_METHOD=spawn
   EXTRA_VLLM_FLAGS=""
   if [ "$POLICY_SIZE" = "35b" ]; then
-    EXTRA_VLLM_FLAGS="--enforce-eager --limit-mm-per-prompt image=0,video=0"
+    EXTRA_VLLM_FLAGS='--enforce-eager --limit-mm-per-prompt {"image":0,"video":0}'
   fi
   nohup python -m vllm.entrypoints.openai.api_server \
     --model "$HOME/policy_ckpt" \
