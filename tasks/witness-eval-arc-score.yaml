@@ -44,22 +44,27 @@ resources:
   disk_size: 600
   ports: 8000
   any_of:
-    # GCP H200 spot (preferred, often stocked out)
+    # GCP DL image with CUDA 12.8 + nvidia driver 570 (vLLM latest needs >=12.4).
+    # Default GCP A100 images ship with driver 12020 (CUDA 12.2) which fails
+    # vLLM init with "NVIDIA driver is too old (found version 12020)".
+    # Pin image_id on every GCP entry below to avoid that.
     - accelerators: H200:8
       cloud: gcp
       use_spot: true
-    # GCP H100 spot (frequent fallback when H200 stocked out)
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
     - accelerators: H100:8
       cloud: gcp
       use_spot: true
-    # GCP A100 spot (slower, but typically available)
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
     - accelerators: A100-80GB:8
       cloud: gcp
       use_spot: true
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
     - accelerators: A100:8
       cloud: gcp
       use_spot: true
-    # Cross-cloud fallbacks (user-config-dependent)
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    # Cross-cloud fallbacks (user-config-dependent; image not specified)
     - accelerators: H200:8
       cloud: runpod
     - accelerators: H200:8
@@ -114,13 +119,17 @@ setup: |
   uv venv --python 3.12 --seed
   source .venv/bin/activate
   uv pip install awscli boto3 pyyaml openai huggingface_hub
-  # vLLM with CUDA — pin to the same major as SkyRL trainer to keep tokeniser
-  # behaviour identical.
-  uv pip install "vllm>=0.6.0"
+  # vLLM pinned to 0.18.0 — same version SkyRL trainer uses, known to work
+  # with cu128/nvidia-570 image. `vllm>=0.6.0` picked up 0.20+ which built
+  # against cu130 wheels (driver 12080 too old for cu130 runtime).
+  uv pip install "vllm==0.18.0"
+  # vLLM 0.18 pulls transformers 4.57.6, which DOES NOT recognise the
+  # `qwen3_5` / `qwen3_5_moe` model types (needed by AutoConfig in
+  # merge_fsdp_checkpoint.py). Bump to 5.8.1 which has full Qwen3.5
+  # support; vllm 0.18 tolerates this (transformers 5.x adds new model
+  # types without breaking the old API surface vllm uses).
+  uv pip install --upgrade "transformers==5.8.1"
   uv pip install arc-agi
-  # Torch + transformers (needed by merge_fsdp_checkpoint.py). vLLM install
-  # already pulls a compatible torch; ensure transformers is recent enough.
-  uv pip install "transformers>=4.45"
 
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
   export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
@@ -223,6 +232,10 @@ run: |
   VLLM_LOG="$LOG_DIR/vllm_server.log"
 
   echo "[vllm] launching server on port ${VLLM_PORT}"
+  # FLASHINFER_DISABLE_VERSION_CHECK: bypass the flashinfer / flashinfer-cubin
+  # version mismatch that arises when vllm is force-reinstalled to an older
+  # version but cubin stays on the latest. Functionality not affected.
+  export FLASHINFER_DISABLE_VERSION_CHECK=1
   nohup python -m vllm.entrypoints.openai.api_server \
     --model "$HOME/policy_ckpt" \
     --port "${VLLM_PORT}" \
@@ -231,6 +244,7 @@ run: |
     --gpu-memory-utilization "$MEM_UTIL" \
     --max-model-len "${MAX_MODEL_LEN}" \
     --dtype bfloat16 \
+    --served-model-name witness-policy \
     --no-enable-log-requests \
     > "$VLLM_LOG" 2>&1 &
   VLLM_PID=$!
