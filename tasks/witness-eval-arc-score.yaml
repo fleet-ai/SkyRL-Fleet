@@ -232,10 +232,15 @@ run: |
   VLLM_LOG="$LOG_DIR/vllm_server.log"
 
   echo "[vllm] launching server on port ${VLLM_PORT}"
-  # FLASHINFER_DISABLE_VERSION_CHECK: bypass the flashinfer / flashinfer-cubin
-  # version mismatch that arises when vllm is force-reinstalled to an older
-  # version but cubin stays on the latest. Functionality not affected.
   export FLASHINFER_DISABLE_VERSION_CHECK=1
+  # DEBUG logging + worker stderr capture so Qwen3.5-35B-A3B (MoE+VLM) worker
+  # crashes surface to vllm_server.log instead of being swallowed.
+  export VLLM_LOGGING_LEVEL=DEBUG
+  export VLLM_WORKER_MULTIPROC_METHOD=spawn
+  EXTRA_VLLM_FLAGS=""
+  if [ "$POLICY_SIZE" = "35b" ]; then
+    EXTRA_VLLM_FLAGS="--enforce-eager --limit-mm-per-prompt image=0,video=0"
+  fi
   nohup python -m vllm.entrypoints.openai.api_server \
     --model "$HOME/policy_ckpt" \
     --port "${VLLM_PORT}" \
@@ -246,6 +251,7 @@ run: |
     --dtype bfloat16 \
     --served-model-name witness-policy \
     --no-enable-log-requests \
+    $EXTRA_VLLM_FLAGS \
     > "$VLLM_LOG" 2>&1 &
   VLLM_PID=$!
   echo "[vllm] pid=$VLLM_PID"
