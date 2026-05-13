@@ -1,0 +1,215 @@
+# ARC-AGI-3 efficiency-score eval task.
+#
+# Loads a trained policy ckpt from S3, serves it via standalone vLLM,
+# then runs arc-witness-agent's tools/evaluate_arc_score.py to compute
+# per-(traj, level) arc_score = min(S_ref/S_agent, 1) * 1[solved] on the
+# four held-out games. Uploads the result JSON to S3.
+#
+# Required env vars (pass via --env):
+#   CKPT_LABEL        — descriptive label, e.g. "R4-9B"
+#   CKPT_HF_S3        — S3 path to HF-format ckpt dir (containing
+#                       config.json + safetensors + tokenizer files)
+#   ENABLE_SECONDARY_PROVIDER_FALLBACK — "0" for R4-style, "1" for R5
+#   POLICY_SIZE_HINT  — "9b" or "35b" (selects MODEL_BASE for multimodal
+#                       config patch; otherwise inferred from CKPT_HF_S3)
+#
+# Optional:
+#   GAMES         — default "tw01 tw09 tw10 tw12"
+#   SEEDS         — default "0 1 2"
+#   MAX_LEVELS    — default 5
+#   SECONDARY_MODEL — default anthropic/claude-sonnet-4.5
+#
+# Usage (per ckpt; launch 4× for R4-9B / R5-9B / R4-35B / R5-35B):
+#   sky launch tasks/witness-eval-arc-score.yaml \
+#     -c arc-eval-r5-35b-${USER} \
+#     --env CKPT_LABEL=R5-35B \
+#     --env CKPT_HF_S3=s3://fleet-guanghan/witness_grpo_v5b7_p2_r5_35b/global_step_50/policy/huggingface/ \
+#     --env ENABLE_SECONDARY_PROVIDER_FALLBACK=1 \
+#     --env POLICY_SIZE_HINT=35b \
+#     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+#     -y --detach-run
+
+name: witness-eval-arc-score
+
+resources:
+  disk_size: 600
+  ports: 8000
+  any_of:
+    - accelerators: H200:8
+      cloud: runpod
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+    - accelerators: H200:8
+      cloud: lambda
+    - accelerators: H200:8
+      cloud: nebius
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/b7-phase2-judge-rewards
+
+file_mounts:
+  ~/arc-witness-agent: ~/Documents/obsidian/research-directions/repos/arc-witness-agent
+  ~/arc-witness-envs: ~/Documents/obsidian/research-directions/repos/arc-witness-envs
+
+envs:
+  CKPT_LABEL: ""
+  CKPT_HF_S3: ""
+  ENABLE_SECONDARY_PROVIDER_FALLBACK: "0"
+  POLICY_SIZE_HINT: ""          # "9b" or "35b"; auto-detect from path if empty
+  GAMES: "tw01 tw09 tw10 tw12"
+  SEEDS: "0 1 2"
+  MAX_LEVELS: "5"
+  SECONDARY_MODEL: "anthropic/claude-sonnet-4.5"
+
+  # Inference settings (overridden by POLICY_SIZE_HINT in run section)
+  VLLM_PORT: "8000"
+  GPU_MEMORY_UTILIZATION: "0.75"
+  MAX_MODEL_LEN: "32768"
+  TENSOR_PARALLEL_SIZE: "1"     # overridden for 35B in run section
+
+  # S3 output destination
+  OUTPUT_S3_BASE: "s3://fleet-guanghan/arc_score_eval"
+
+  # Credentials
+  WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+
+setup: |
+  set -euo pipefail
+
+  # Preflight
+  if [ -z "${CKPT_LABEL}" ] || [ -z "${CKPT_HF_S3}" ]; then
+    echo "ERROR: CKPT_LABEL and CKPT_HF_S3 must be set." >&2
+    exit 1
+  fi
+
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv pip install awscli boto3 pyyaml openai
+  # vLLM with CUDA — pin to the same major as SkyRL trainer to keep tokeniser
+  # behaviour identical.
+  uv pip install "vllm>=0.6.0"
+  uv pip install arc-agi
+
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+
+  # Sanity-check file_mounts
+  test -f "$ARC_WITNESS_AGENT_DIR/agent/core.py" || { echo "ERROR: arc-witness-agent file_mount missing"; exit 1; }
+  test -f "$ARC_WITNESS_AGENT_DIR/tools/evaluate_arc_score.py" || { echo "ERROR: evaluate_arc_score.py missing — make sure local repo is up-to-date"; exit 1; }
+  test -d "$WITNESS_ENVS_DIR/environment_files" || { echo "ERROR: environment_files missing"; exit 1; }
+  echo "[ok] file_mounts present | CKPT_LABEL=$CKPT_LABEL"
+
+  # Download ckpt from S3 (HF format)
+  mkdir -p $HOME/policy_ckpt
+  echo "[ckpt] downloading from $CKPT_HF_S3"
+  aws s3 sync "$CKPT_HF_S3" "$HOME/policy_ckpt/" 2>&1 | tail -10
+
+  # Patch in multimodal config files from base HF (matches the trainer-side fix)
+  if [ "${POLICY_SIZE_HINT}" = "35b" ] || echo "$CKPT_HF_S3" | grep -qi "35b"; then
+    BASE_MODEL="Qwen/Qwen3.5-35B-A3B"
+    SIZE_HINT="35b"
+  else
+    BASE_MODEL="Qwen/Qwen3.5-9B"
+    SIZE_HINT="9b"
+  fi
+  echo "[ckpt] patching multimodal config from $BASE_MODEL"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$BASE_MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$HOME/policy_ckpt', local_dir_use_symlinks=False)" 2>&1 | tail -5
+
+  echo "POLICY_SIZE=${SIZE_HINT}" > $HOME/.eval_meta
+
+run: |
+  set -euo pipefail
+  source .venv/bin/activate
+  source $HOME/.eval_meta
+
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+  export ENABLE_SECONDARY_PROVIDER_FALLBACK
+  export SECONDARY_MODEL
+  export OPENROUTER_API_KEY
+
+  # Size-dependent vLLM config
+  if [ "$POLICY_SIZE" = "35b" ]; then
+    TP_SIZE=4
+    MEM_UTIL=0.70
+  else
+    TP_SIZE=1
+    MEM_UTIL=0.75
+  fi
+  echo "[vllm] POLICY_SIZE=$POLICY_SIZE  TP=$TP_SIZE  MEM=$MEM_UTIL"
+
+  # Start vLLM OpenAI-compatible server in background
+  LOG_DIR=$HOME/run_logs
+  mkdir -p "$LOG_DIR"
+  VLLM_LOG="$LOG_DIR/vllm_server.log"
+
+  echo "[vllm] launching server on port ${VLLM_PORT}"
+  nohup python -m vllm.entrypoints.openai.api_server \
+    --model "$HOME/policy_ckpt" \
+    --port "${VLLM_PORT}" \
+    --host 0.0.0.0 \
+    --tensor-parallel-size "$TP_SIZE" \
+    --gpu-memory-utilization "$MEM_UTIL" \
+    --max-model-len "${MAX_MODEL_LEN}" \
+    --dtype bfloat16 \
+    --disable-log-requests \
+    > "$VLLM_LOG" 2>&1 &
+  VLLM_PID=$!
+  echo "[vllm] pid=$VLLM_PID"
+
+  # Wait for /health to become 200 (up to 8 min for 35B load)
+  echo "[vllm] waiting for ready..."
+  READY=0
+  for i in $(seq 1 96); do
+    if curl -s -f -o /dev/null "http://localhost:${VLLM_PORT}/health"; then
+      READY=1
+      break
+    fi
+    if ! kill -0 $VLLM_PID 2>/dev/null; then
+      echo "[vllm] server died during startup; tail of log:"
+      tail -50 "$VLLM_LOG"
+      exit 1
+    fi
+    sleep 5
+  done
+  if [ "$READY" != "1" ]; then
+    echo "[vllm] server not ready after 8 min; tail of log:"
+    tail -50 "$VLLM_LOG"
+    kill $VLLM_PID 2>/dev/null || true
+    exit 1
+  fi
+  echo "[vllm] ready"
+
+  # Run the eval script
+  OUTPUT_JSON="$HOME/run_logs/arc_score_${CKPT_LABEL}.json"
+  echo "[eval] running tools/evaluate_arc_score.py"
+  cd "$ARC_WITNESS_AGENT_DIR"
+  python tools/evaluate_arc_score.py \
+    --ckpt_label "$CKPT_LABEL" \
+    --vllm_base_url "http://localhost:${VLLM_PORT}/v1" \
+    --games $GAMES \
+    --seeds $SEEDS \
+    --max_levels "$MAX_LEVELS" \
+    --enable_secondary_fallback "$ENABLE_SECONDARY_PROVIDER_FALLBACK" \
+    --secondary_model "$SECONDARY_MODEL" \
+    --output_json "$OUTPUT_JSON" \
+    2>&1 | tee "$LOG_DIR/eval_${CKPT_LABEL}.log"
+
+  # Upload result to S3
+  S3_DEST="${OUTPUT_S3_BASE}/${CKPT_LABEL}.json"
+  echo "[s3] uploading result to $S3_DEST"
+  aws s3 cp "$OUTPUT_JSON" "$S3_DEST"
+  aws s3 cp "$LOG_DIR/eval_${CKPT_LABEL}.log" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_eval.log"
+  aws s3 cp "$VLLM_LOG" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_vllm.log"
+
+  # Teardown
+  kill $VLLM_PID 2>/dev/null || true
+  echo "[done] arc_score eval complete for $CKPT_LABEL — artifacts at ${OUTPUT_S3_BASE}/"

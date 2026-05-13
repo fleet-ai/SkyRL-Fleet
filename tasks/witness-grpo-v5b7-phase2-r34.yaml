@@ -84,6 +84,12 @@ envs:
   KL_LOSS_COEF: "0.005"              # ↑ from 0.001 — anti-drift
   ENTROPY_LOSS_COEF: "0.005"         # NEW — entropy bonus (subtracted from loss)
 
+  # R0' ablation (2026-05-12): gate the 4 geometric process rewards
+  # (waypoint / region / distance / valid_move) so RUN_LABEL=p2_r0prime
+  # can isolate "outcome reward only" (step_penalty is preserved). Default
+  # "1" = R3/R4/R5 unchanged. See agent_wrapper.py:_geometric_reward_config.
+  ENABLE_PROCESS_GEOMETRIC: "1"
+
   # R3 Claude rule-judge reward (fires on <add>...</add>)
   ENABLE_RULE_JUDGE_REWARD: "0"
   RULE_JUDGE_MODEL: "anthropic/claude-haiku-4.5"
@@ -223,6 +229,9 @@ run: |
   export PLAN_DIVERSITY_SCHEME=${PLAN_DIVERSITY_SCHEME:-consecutive}
   export PLAN_DIVERSITY_PENALTY=${PLAN_DIVERSITY_PENALTY:--0.05}
 
+  # R0' ablation flag
+  export ENABLE_PROCESS_GEOMETRIC
+
   # R3/R4 Claude-judge flags
   export ENABLE_RULE_JUDGE_REWARD
   export RULE_JUDGE_MODEL
@@ -316,6 +325,7 @@ run: |
       echo "  NUM_EPOCHS: $NUM_EPOCHS"
       echo "  KL_LOSS_COEF: $KL_LOSS_COEF"
       echo "  ENTROPY_LOSS_COEF: $ENTROPY_LOSS_COEF"
+      echo "  ENABLE_PROCESS_GEOMETRIC: $ENABLE_PROCESS_GEOMETRIC"
       echo "  ENABLE_RULE_JUDGE_REWARD: $ENABLE_RULE_JUDGE_REWARD"
       echo "  RULE_JUDGE_MODEL: $RULE_JUDGE_MODEL"
       echo "  RULE_JUDGE_SAMPLE_RATE: $RULE_JUDGE_SAMPLE_RATE"
