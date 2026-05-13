@@ -330,6 +330,29 @@ def main():
 
     # to_empty allocates real (empty) storage on cpu, then load_state_dict fills it
     model.to_empty(device="cpu")
+
+    # Pre-filter: drop ckpt keys whose shape differs from the model's
+    # current parameter — strict=False allows missing/unexpected keys, but
+    # size mismatches still raise. This is needed for Qwen3.5-35B-A3B
+    # whose visual-encoder dims diverge between training-time transformers
+    # and the version available here (visual encoder isn't used at eval
+    # time for our text-only ASCII inputs, so dropping is safe).
+    model_sd = model.state_dict()
+    dropped = []
+    for k in list(full_state_dict.keys()):
+        if k in model_sd and full_state_dict[k].shape != model_sd[k].shape:
+            dropped.append(
+                (k, tuple(full_state_dict[k].shape), tuple(model_sd[k].shape))
+            )
+            del full_state_dict[k]
+    if dropped:
+        print(f"  Dropped {len(dropped)} shape-mismatched keys "
+              f"(model defaults will be used; safe if those layers are unused at eval):")
+        for k, ckpt_shape, model_shape in dropped[:5]:
+            print(f"    {k}: ckpt {ckpt_shape} vs model {model_shape}")
+        if len(dropped) > 5:
+            print(f"    ...and {len(dropped) - 5} more")
+
     missing, unexpected = model.load_state_dict(full_state_dict, strict=False)
     print(f"  load_state_dict: missing={len(missing)} unexpected={len(unexpected)}")
     if missing:
