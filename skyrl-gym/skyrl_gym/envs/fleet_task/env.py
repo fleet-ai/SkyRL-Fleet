@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import time
+from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -27,6 +28,16 @@ from skyrl_gym.envs.base_text_env import (
     ConversationType,
 )
 from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
+
+
+def _within_group_std(by_instance: "dict[str, list[float]]") -> "float | None":
+    """Mean per-group std across all instance groups that have ≥2 values."""
+    stds = []
+    for vals in by_instance.values():
+        if len(vals) >= 2:
+            mean_v = sum(vals) / len(vals)
+            stds.append((sum((x - mean_v) ** 2 for x in vals) / (len(vals) - 1)) ** 0.5)
+    return sum(stds) / len(stds) if stds else None
 
 # Reduce MCP client log noise
 try:
@@ -81,6 +92,72 @@ def clear_caches():
     """Clear global caches. Useful for testing."""
     global _TASK_CACHE
     _TASK_CACHE = {}
+
+
+_MAX_ACTION_CONTENT_CHARS = 2000
+_MAX_DEFERRED_SCREENSHOTS = 8
+
+
+def _extract_screenshots_from_chat_history(chat_history: list) -> list:
+    """Extract base64 screenshot strings from image_url blocks in user messages.
+
+    Browser observations arrive as {"type": "image_url", "image_url": {"url":
+    "data:image/png;base64,<data>"}} blocks inside user-role messages.  We
+    strip the data-URI prefix and return raw base64 strings so the research
+    judge's _screenshot_to_anthropic_block() can consume them directly.
+
+    Pre-sampled to _MAX_DEFERRED_SCREENSHOTS so we don't balloon deferred-data
+    memory for long trajectories; the group judge subsamples further to
+    max_screenshots_per_rollout (default 2).
+    """
+    all_b64: list = []
+    for msg in chat_history:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "image_url":
+                continue
+            url = block.get("image_url", {}).get("url", "")
+            if url.startswith("data:"):
+                _, _, b64 = url.partition(",")
+                if b64:
+                    all_b64.append(b64)
+    if len(all_b64) <= _MAX_DEFERRED_SCREENSHOTS:
+        return all_b64
+    step = (len(all_b64) - 1) / (_MAX_DEFERRED_SCREENSHOTS - 1)
+    idx = sorted({round(i * step) for i in range(_MAX_DEFERRED_SCREENSHOTS)})
+    return [all_b64[i] for i in idx]
+
+
+def _truncate_action_content(content) -> str:
+    """Truncate action content for the group judge to prevent context overflow.
+
+    Qwen3-VL <think> blocks can be 10-50K chars; at 8 rollouts × 30 actions
+    that would exceed Haiku's 200K context.  We keep the first 2000 chars,
+    which preserves the key action intent while staying safe.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, list):
+        # Multimodal content: extract text parts only (drop image blobs).
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(str(block.get("text", "")))
+                # image_url / image blocks are skipped — screenshots go via
+                # the dedicated screenshots= path, not inside action content.
+            elif isinstance(block, str):
+                parts.append(block)
+        text = "\n".join(parts)
+    else:
+        text = str(content)
+    if len(text) > _MAX_ACTION_CONTENT_CHARS:
+        return text[:_MAX_ACTION_CONTENT_CHARS] + "…"
+    return text
 
 
 class FleetTaskEnv(BaseTextEnv):
@@ -179,6 +256,50 @@ class FleetTaskEnv(BaseTextEnv):
             if hasattr(env_config, "get")
             else False
         )
+
+        # Taste judge reward modes:
+        #   "gated"    (default): final_reward = verifier * max(taste_floor, taste)
+        #   "additive":           final_reward = verifier + taste_alpha * taste
+        #              Judge scores ALL rollouts (including fails); all-fail groups
+        #              get non-zero signal from taste variation among fails.
+        self.taste_mode: str = (
+            env_config.get("taste_mode", "gated")
+            if hasattr(env_config, "get")
+            else "gated"
+        )
+        if self.taste_mode not in ("gated", "additive"):
+            raise ValueError(f"taste_mode must be 'gated' or 'additive', got {self.taste_mode!r}")
+        self.taste_alpha: float = float(
+            env_config.get("taste_alpha", 0.5)
+            if hasattr(env_config, "get")
+            else 0.5
+        )
+        self.taste_floor = float(
+            env_config.get("taste_floor", 0.1)
+            if hasattr(env_config, "get")
+            else 0.1
+        )
+        if not 0.0 <= self.taste_floor <= 1.0:
+            raise ValueError(
+                f"taste_floor must be in [0,1], got {self.taste_floor}"
+            )
+        self.taste_judge_timeout_s = float(
+            env_config.get("taste_judge_timeout_s", 10.0)
+            if hasattr(env_config, "get")
+            else 10.0
+        )
+        self.last_verifier_reward: Optional[float] = None
+        self.last_taste_reward: Optional[float] = None
+        self.last_effective_taste: Optional[float] = None
+        self.last_taste_judge_failed: bool = False
+        # Group/relative judge mode: defer scoring to the generator so all
+        # rollouts for the same task are scored together.  Enabled either by
+        # env_config["taste_use_group_judge"]=True or SKYRL_TASTE_MODE=relative.
+        self.taste_use_group_judge: bool = bool(
+            (env_config.get("taste_use_group_judge", False) if hasattr(env_config, "get") else False)
+            or os.environ.get("SKYRL_TASTE_MODE", "").lower() == "relative"
+        )
+        self._taste_deferred_data: Optional[dict] = None
 
         # Hint config
         self.enable_hints = (
@@ -667,16 +788,25 @@ class FleetTaskEnv(BaseTextEnv):
                     f"Failed to upload trace for {self.task_key}: {e}"
                 )
 
+        # Apply taste reward gating at episode end
+        if episode_done:
+            reward = await self._apply_taste_reward(reward, episode_done)
+
         # Build observation message
         if max_turns_reached:
+            metadata = {
+                "done_reason": "max_turns",
+                "task_key": self.task_key,
+                "taste_reward": self.last_taste_reward,
+                "effective_taste": self.last_effective_taste,
+                "taste_floor": self.taste_floor,
+                "taste_judge_failed": self.last_taste_judge_failed,
+            }
             return BaseTextEnvStepOutput(
                 observations=[],
                 reward=reward,
                 done=True,
-                metadata={
-                    "done_reason": "max_turns",
-                    "task_key": self.task_key,
-                },
+                metadata=metadata,
             )
 
         # Build response observation
@@ -703,6 +833,11 @@ class FleetTaskEnv(BaseTextEnv):
                     "step_time": step_time,
                     "mcp_time": mcp_time,
                 }
+                if episode_done:
+                    metadata["taste_reward"] = self.last_taste_reward
+                    metadata["effective_taste"] = self.last_effective_taste
+                    metadata["taste_floor"] = self.taste_floor
+                    metadata["taste_judge_failed"] = self.last_taste_judge_failed
                 return BaseTextEnvStepOutput(
                     observations=[new_obs],
                     reward=reward,
@@ -757,12 +892,107 @@ class FleetTaskEnv(BaseTextEnv):
             if tool_call["name"] == "manage_context":
                 metadata["modified_chat_history"] = self.chat_history.copy()
 
+        if episode_done:
+            metadata["taste_reward"] = self.last_taste_reward
+            metadata["effective_taste"] = self.last_effective_taste
+            metadata["taste_floor"] = self.taste_floor
+            metadata["taste_judge_failed"] = self.last_taste_judge_failed
+
         return BaseTextEnvStepOutput(
             observations=[new_obs],
             reward=reward,
             done=episode_done,
             metadata=metadata,
         )
+
+    async def _apply_taste_reward(
+        self, verifier_reward: float, episode_done: bool
+    ) -> float:
+        """Gate the binary verifier reward by the taste-judge score.
+
+        On non-terminal steps we pass through verifier_reward unchanged.
+        On terminal steps we call the judge with a hard timeout; on
+        timeout/exception/None we set effective_taste=1.0 (pure verifier).
+        """
+        if not episode_done:
+            return verifier_reward
+
+        self.last_verifier_reward = float(verifier_reward)
+        self.last_taste_reward = None
+        self.last_effective_taste = None
+        self.last_taste_judge_failed = False
+
+        if self.taste_use_group_judge:
+            # Defer to generator-level group judge. Stash the trajectory data
+            # that score_group_async needs; generator patches the reward later.
+            task_text = self.task_config.get("prompt", "") if self.task_config else ""
+            actions = [
+                {"role": m.get("role"), "content": _truncate_action_content(m.get("content"))}
+                for m in self.chat_history
+                if m.get("role") == "assistant"
+            ]
+            self._taste_deferred_data = {
+                "task": task_text,
+                "actions": actions,
+                "outcome": bool(verifier_reward >= 1.0),
+                "screenshots": _extract_screenshots_from_chat_history(self.chat_history),
+            }
+            return verifier_reward
+
+        try:
+            from skyrl_gym.taste import score_trajectory_async
+        except Exception as e:
+            logger.warning(
+                "skyrl_gym.taste import failed (%s); verifier-only reward", e
+            )
+            self.last_taste_judge_failed = True
+            self.last_effective_taste = 1.0
+            return verifier_reward
+
+        actions = [
+            {"role": m.get("role"), "content": m.get("content")}
+            for m in self.chat_history
+            if m.get("role") == "assistant"
+        ]
+        task_text = self.task_config.get("prompt", "") if self.task_config else ""
+        outcome = bool(self.last_verifier_reward >= 1.0)
+
+        taste_score: Optional[float]
+        try:
+            taste_score = await asyncio.wait_for(
+                score_trajectory_async(task_text, actions, outcome, instance_id=self.task_key),
+                timeout=self.taste_judge_timeout_s,
+            )
+        except asyncio.TimeoutError:
+            self.last_taste_judge_failed = True
+            logger.warning(
+                "taste judge timed out after %.1fs for task_key=%s",
+                self.taste_judge_timeout_s,
+                getattr(self, "task_key", "?"),
+            )
+            taste_score = None
+        except Exception as e:
+            self.last_taste_judge_failed = True
+            logger.warning(
+                "taste judge raised %s: %s for task_key=%s",
+                type(e).__name__, e, getattr(self, "task_key", "?"),
+            )
+            taste_score = None
+
+        if taste_score is None:
+            self.last_effective_taste = 1.0
+            return verifier_reward
+
+        taste_score = max(0.0, min(1.0, float(taste_score)))
+        self.last_taste_reward = taste_score
+
+        if self.taste_mode == "additive":
+            self.last_effective_taste = taste_score
+            return verifier_reward + self.taste_alpha * taste_score
+
+        effective_taste = max(self.taste_floor, taste_score)
+        self.last_effective_taste = effective_taste
+        return verifier_reward * effective_taste
 
     def step(self, action: str) -> BaseTextEnvStepOutput:
         """Execute one step in the Fleet environment (sync wrapper)."""
@@ -822,6 +1052,19 @@ class FleetTaskEnv(BaseTextEnv):
         }
         if self.last_reward is not None:
             metrics["final_reward"] = self.last_reward
+        # Taste judge metrics
+        if self.last_taste_reward is not None:
+            metrics["taste_reward"] = self.last_taste_reward
+        if self.last_effective_taste is not None:
+            metrics["effective_taste"] = self.last_effective_taste
+        metrics["taste_floor"] = self.taste_floor
+        metrics["taste_mode"] = self.taste_mode
+        metrics["taste_alpha"] = self.taste_alpha
+        metrics["taste_judge_failed"] = self.last_taste_judge_failed
+        if self._taste_deferred_data is not None:
+            # Group judge mode: generator will call score_group_async and patch rewards.
+            metrics["taste_deferred_data"] = self._taste_deferred_data
+            metrics["verifier_reward"] = self.last_verifier_reward
         # Include verifier feedback for hint generation
         if self._verifier_stdout is not None:
             metrics["verifier_stdout"] = self._verifier_stdout
@@ -930,6 +1173,11 @@ class FleetTaskEnv(BaseTextEnv):
                         "turns": [],
                         "tool_calls": [],
                         "tool_errors": [],
+                        "taste_reward": [],
+                        "effective_taste": [],
+                        "taste_judge_failed": [],
+                        "taste_reward_by_instance": defaultdict(list),
+                        "effective_taste_by_instance": defaultdict(list),
                     }
                 env_data[env_key]["turns"].append(m.get("turns", 0))
                 env_data[env_key]["tool_calls"].append(
@@ -938,6 +1186,18 @@ class FleetTaskEnv(BaseTextEnv):
                 env_data[env_key]["tool_errors"].append(
                     m.get("tool_errors", 0)
                 )
+                iid = m.get("_instance_id")
+                if m.get("taste_reward") is not None:
+                    val = float(m["taste_reward"])
+                    env_data[env_key]["taste_reward"].append(val)
+                    if iid is not None:
+                        env_data[env_key]["taste_reward_by_instance"][iid].append(val)
+                if m.get("effective_taste") is not None:
+                    val = float(m["effective_taste"])
+                    env_data[env_key]["effective_taste"].append(val)
+                    if iid is not None:
+                        env_data[env_key]["effective_taste_by_instance"][iid].append(val)
+                env_data[env_key]["taste_judge_failed"].append(float(bool(m.get("taste_judge_failed", False))))
 
         result: Dict[str, Any] = {}
         total_turns = 0
@@ -977,10 +1237,50 @@ class FleetTaskEnv(BaseTextEnv):
             result[f"{env_key}/tool_error_rate"] = tool_error_rate
             result[f"{env_key}/num_episodes"] = len(turns_list)
 
+            taste_reward_list = data["taste_reward"]
+            effective_taste_list = data["effective_taste"]
+            taste_judge_failed_list = data["taste_judge_failed"]
+            if taste_reward_list:
+                result[f"{env_key}/avg_taste_reward"] = sum(taste_reward_list) / len(taste_reward_list)
+                wg_std = _within_group_std(data["taste_reward_by_instance"])
+                if wg_std is not None:
+                    result[f"{env_key}/within_group_std_taste_reward"] = wg_std
+            if effective_taste_list:
+                result[f"{env_key}/avg_effective_taste"] = sum(effective_taste_list) / len(effective_taste_list)
+                wg_std = _within_group_std(data["effective_taste_by_instance"])
+                if wg_std is not None:
+                    result[f"{env_key}/within_group_std_effective_taste"] = wg_std
+            if taste_judge_failed_list:
+                result[f"{env_key}/taste_judge_fail_rate"] = sum(taste_judge_failed_list) / len(taste_judge_failed_list)
+
             total_turns += total_env_turns
             total_tool_calls += total_env_tool_calls
             total_tool_errors += total_env_tool_errors
             total_episodes += len(turns_list)
+
+        all_taste_reward = [v for d in env_data.values() for v in d["taste_reward"]]
+        all_effective_taste = [v for d in env_data.values() for v in d["effective_taste"]]
+        all_taste_judge_failed = [v for d in env_data.values() for v in d["taste_judge_failed"]]
+        if all_taste_reward:
+            result["avg_taste_reward"] = sum(all_taste_reward) / len(all_taste_reward)
+            merged: Dict[str, list] = defaultdict(list)
+            for d in env_data.values():
+                for iid, vals in d["taste_reward_by_instance"].items():
+                    merged[iid].extend(vals)
+            wg_std = _within_group_std(merged)
+            if wg_std is not None:
+                result["within_group_std_taste_reward"] = wg_std
+        if all_effective_taste:
+            result["avg_effective_taste"] = sum(all_effective_taste) / len(all_effective_taste)
+            merged = defaultdict(list)
+            for d in env_data.values():
+                for iid, vals in d["effective_taste_by_instance"].items():
+                    merged[iid].extend(vals)
+            wg_std = _within_group_std(merged)
+            if wg_std is not None:
+                result["within_group_std_effective_taste"] = wg_std
+        if all_taste_judge_failed:
+            result["taste_judge_fail_rate"] = sum(all_taste_judge_failed) / len(all_taste_judge_failed)
 
         result["avg_turns"] = (
             total_turns / total_episodes if total_episodes > 0 else 0
