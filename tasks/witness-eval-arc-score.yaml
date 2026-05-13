@@ -130,6 +130,11 @@ setup: |
   # Pin to transformers==5.3.0 to match the working b7 training cluster.
   # transformers 5.8.1 caused silent vllm worker crashes on 35B (May 13).
   uv pip install --upgrade "transformers==5.3.0"
+  # Ray required by --distributed-executor-backend=ray (used at 35B to bypass
+  # the silent mp-spawn worker crash on Qwen3.5-35B-A3B MoE+VLM).  The
+  # training cluster has ray bundled via SkyRL's deps; eval cluster needs
+  # it installed explicitly.  ray==2.49.x matches what SkyRL trainer uses.
+  uv pip install "ray[default]==2.49.2"
   uv pip install arc-agi
 
   export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
