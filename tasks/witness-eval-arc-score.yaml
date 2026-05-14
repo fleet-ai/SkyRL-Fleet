@@ -206,17 +206,7 @@ setup: |
   # vision branch at all.
   if [ "$POLICY_SIZE" = "35b" ]; then
     echo "[ckpt] stripping vision_config + switching to text-only architecture"
-    MERGED_DIR_ENV="$MERGED_DIR" python - <<'PY'
-import json, os
-p = os.environ["MERGED_DIR_ENV"] + "/config.json"
-with open(p) as f: c = json.load(f)
-c.pop("vision_config", None)
-c["architectures"] = ["Qwen3_5MoeForCausalLM"]
-for k in ("image_token_id","video_token_id","vision_start_token_id","vision_end_token_id","vision_token_id"):
-    c.pop(k, None)
-with open(p, "w") as f: json.dump(c, f, indent=2)
-print("patched config.json:", c.get("architectures"), "has vision_config:", "vision_config" in c)
-PY
+    MERGED_DIR_ENV="$MERGED_DIR" python -c 'import json,os; p=os.environ["MERGED_DIR_ENV"]+"/config.json"; c=json.load(open(p)); c.pop("vision_config",None); c["architectures"]=["Qwen3_5MoeForCausalLM"]; [c.pop(k,None) for k in ("image_token_id","video_token_id","vision_start_token_id","vision_end_token_id","vision_token_id")]; json.dump(c, open(p,"w"), indent=2); print("patched config.json: arch=", c.get("architectures"), "vision_config in c=", "vision_config" in c)'
   fi
 
   # Free FSDP-shard disk now that merge is done (saves ~70 GB on 9B, ~140 GB on 35B)
