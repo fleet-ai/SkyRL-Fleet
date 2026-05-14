@@ -197,6 +197,29 @@ setup: |
   echo "[ckpt] patching multimodal config from $BASE_MODEL"
   python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$BASE_MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$MERGED_DIR', local_dir_use_symlinks=False)" 2>&1 | tail -5
 
+  # For 35B: strip vision_config + switch to text-only architecture.
+  # The merged ckpt drops 1026 visual-encoder weights as shape-mismatched
+  # (merge_fsdp_checkpoint.py). vllm.LLM() then tries to build the VLM
+  # class from config.json and fails when those weights aren't in the
+  # safetensors. The eval is text-only anyway — point vllm at the
+  # text-only sibling architecture so it doesn't try to construct the
+  # vision branch at all.
+  if [ "$POLICY_SIZE" = "35b" ]; then
+    echo "[ckpt] stripping vision_config + switching to text-only architecture"
+    python -c "
+import json
+p = '$MERGED_DIR/config.json'
+with open(p) as f: c = json.load(f)
+c.pop('vision_config', None)
+c['architectures'] = ['Qwen3_5MoeForCausalLM']
+# Some VLM-specific top-level fields can confuse text-only loaders; strip them.
+for k in ('image_token_id','video_token_id','vision_start_token_id','vision_end_token_id','vision_token_id'):
+    c.pop(k, None)
+with open(p, 'w') as f: json.dump(c, f, indent=2)
+print('patched config.json:', c.get('architectures'), 'has vision_config:', 'vision_config' in c)
+"
+  fi
+
   # Free FSDP-shard disk now that merge is done (saves ~70 GB on 9B, ~140 GB on 35B)
   echo "[cleanup] removing FSDP shards (merge succeeded)"
   rm -rf "$FSDP_DIR"
