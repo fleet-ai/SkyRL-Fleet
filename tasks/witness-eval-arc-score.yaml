@@ -239,33 +239,40 @@ run: |
 
   echo "[vllm] launching server on port ${VLLM_PORT}"
   export FLASHINFER_DISABLE_VERSION_CHECK=1
-  # DEBUG logging + worker stderr capture so Qwen3.5-35B-A3B (MoE+VLM) worker
-  # crashes surface to vllm_server.log instead of being swallowed.
-  export VLLM_LOGGING_LEVEL=DEBUG
-  # fork (vs spawn) lets worker stderr propagate to parent — surfaces silent
-  # subprocess crashes that vllm 0.18 spawn-mode pipes were swallowing.
-  export VLLM_WORKER_MULTIPROC_METHOD=fork
-  EXTRA_VLLM_FLAGS=""
+  # For 9B (TP=1): keep upstream `vllm.entrypoints.openai.api_server`
+  # which works fine at single-worker.
+  # For 35B (TP=8): use our mini HTTP shim built on `vllm.LLM()` Python API
+  # with `distributed_executor_backend=ray`.  This is the same code path
+  # the SkyRL training cluster uses successfully on Qwen3.5-35B-A3B; the
+  # standalone api_server's EngineCore subprocess layer has a worker init
+  # bug at TP>1 on this MoE+VLM model that we could not work around.
   if [ "$POLICY_SIZE" = "35b" ]; then
-    # --distributed-executor-backend ray: spawn vllm workers as Ray remote
-    # tasks rather than multiprocessing subprocesses. The mp path silently
-    # swallows worker stderr and deadlocks on Qwen3.5-35B-A3B (MoE+VLM) at
-    # TP>1; the ray path is what the SkyRL training cluster uses and is
-    # verified to work for this exact model.
-    EXTRA_VLLM_FLAGS='--enforce-eager --limit-mm-per-prompt {"image":0,"video":0} --distributed-executor-backend ray'
+    nohup python "$ARC_WITNESS_AGENT_DIR/tools/vllm_minimal_server.py" \
+      --model "$HOME/policy_ckpt" \
+      --port "${VLLM_PORT}" \
+      --host 0.0.0.0 \
+      --tensor-parallel-size "$TP_SIZE" \
+      --gpu-memory-utilization "$MEM_UTIL" \
+      --max-model-len "${MAX_MODEL_LEN}" \
+      --dtype bfloat16 \
+      --served-model-name witness-policy \
+      --enforce-eager \
+      --distributed-executor-backend ray \
+      --limit-mm-per-prompt-image 0 \
+      > "$VLLM_LOG" 2>&1 &
+  else
+    nohup python -m vllm.entrypoints.openai.api_server \
+      --model "$HOME/policy_ckpt" \
+      --port "${VLLM_PORT}" \
+      --host 0.0.0.0 \
+      --tensor-parallel-size "$TP_SIZE" \
+      --gpu-memory-utilization "$MEM_UTIL" \
+      --max-model-len "${MAX_MODEL_LEN}" \
+      --dtype bfloat16 \
+      --served-model-name witness-policy \
+      --no-enable-log-requests \
+      > "$VLLM_LOG" 2>&1 &
   fi
-  nohup python -m vllm.entrypoints.openai.api_server \
-    --model "$HOME/policy_ckpt" \
-    --port "${VLLM_PORT}" \
-    --host 0.0.0.0 \
-    --tensor-parallel-size "$TP_SIZE" \
-    --gpu-memory-utilization "$MEM_UTIL" \
-    --max-model-len "${MAX_MODEL_LEN}" \
-    --dtype bfloat16 \
-    --served-model-name witness-policy \
-    --no-enable-log-requests \
-    $EXTRA_VLLM_FLAGS \
-    > "$VLLM_LOG" 2>&1 &
   VLLM_PID=$!
   echo "[vllm] pid=$VLLM_PID"
 
