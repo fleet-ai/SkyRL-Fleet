@@ -204,7 +204,7 @@ setup: |
   # safetensors. The eval is text-only anyway — point vllm at the
   # text-only sibling architecture so it doesn't try to construct the
   # vision branch at all.
-  if [ "$POLICY_SIZE" = "35b" ]; then
+  if [ "$SIZE_HINT" = "35b" ]; then
     echo "[ckpt] stripping vision_config + switching to text-only architecture"
     MERGED_DIR_ENV="$MERGED_DIR" python -c 'import json,os; p=os.environ["MERGED_DIR_ENV"]+"/config.json"; c=json.load(open(p)); c.pop("vision_config",None); c["architectures"]=["Qwen3_5MoeForCausalLM"]; [c.pop(k,None) for k in ("image_token_id","video_token_id","vision_start_token_id","vision_end_token_id","vision_token_id")]; json.dump(c, open(p,"w"), indent=2); print("patched config.json: arch=", c.get("architectures"), "vision_config in c=", "vision_config" in c)'
   fi
