@@ -215,8 +215,13 @@ run: |
 
   # Size-dependent vLLM config
   if [ "$POLICY_SIZE" = "35b" ]; then
-    TP_SIZE=8
-    MEM_UTIL=0.85
+    # Match the SkyRL training cluster's known-working config for this exact
+    # model: TP=2 + MEM=0.65 with vllm.LLM() + ray executor.  TP=8 (used
+    # earlier) was unvalidated and consistently triggered silent worker
+    # crashes around NCCL init even on H200.  We waste 6 of 8 GPUs at
+    # TP=2 but get a config we have evidence works.
+    TP_SIZE=2
+    MEM_UTIL=0.65
   else
     TP_SIZE=1
     MEM_UTIL=0.75
