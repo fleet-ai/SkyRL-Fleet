@@ -44,26 +44,17 @@ resources:
   disk_size: 600
   ports: 8000
   any_of:
-    # GCP DL image with CUDA 12.8 + nvidia driver 570 (vLLM latest needs >=12.4).
-    # Default GCP A100 images ship with driver 12020 (CUDA 12.2) which fails
-    # vLLM init with "NVIDIA driver is too old (found version 12020)".
-    # Pin image_id on every GCP entry below to avoid that.
+    # H200-ONLY: this is the GPU type the SkyRL training cluster uses
+    # successfully with vllm.LLM() + ray executor on Qwen3.5-35B-A3B.
+    # We have no validated "shim + GPU" combo on anything else, so
+    # restrict to H200 to avoid burning preempt-cycles on unvalidated GPUs
+    # (A100-80GB / H100 paths never reached the eval phase to confirm).
+    # GCP DL image with CUDA 12.8 + nvidia driver 570 (vLLM needs >=12.4).
     - accelerators: H200:8
       cloud: gcp
       use_spot: true
       image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
-    - accelerators: H100:8
-      cloud: gcp
-      use_spot: true
-      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
-    - accelerators: A100-80GB:8
-      cloud: gcp
-      use_spot: true
-      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
-    # A100 (40GB) removed: 35B vllm workers crash silently after NCCL init
-    # (8 attempts, May 13).  Working training cluster runs on H200.  Restrict
-    # to ≥80GB GPUs to bypass.
-    # Cross-cloud fallbacks (user-config-dependent; image not specified)
+    # Cross-cloud H200 fallbacks (user-config-dependent; silently skipped if not enabled)
     - accelerators: H200:8
       cloud: runpod
     - accelerators: H200:8
