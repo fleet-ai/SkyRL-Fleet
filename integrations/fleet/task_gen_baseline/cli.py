@@ -742,6 +742,22 @@ def validate_generated_task(env: Any, prompt: str, verifier: str) -> Dict[str, A
     return validation_to_dict(validation)
 
 
+async def validate_generated_task_on_fresh_env_async(
+    args: argparse.Namespace, env_extras: Dict[str, Any], prompt: str, verifier: str
+) -> Tuple[Dict[str, Any], bool, str]:
+    check_env = make_task_gen_env(env_config=make_env_config(args), extras=env_extras)
+    try:
+        await check_env.init_async([])
+        require_generation_db_ready(args, check_env, env_extras)
+        validation = validate_generated_task(check_env, prompt, verifier)
+        if not validation["valid"]:
+            return validation, False, ""
+        dryrun_ok, dryrun_error = await run_verifier_dryrun_async(check_env, verifier)
+        return validation, dryrun_ok, dryrun_error
+    finally:
+        await check_env.close_async()
+
+
 def require_generation_db_ready(args: argparse.Namespace, env: Any, env_extras: Dict[str, Any]) -> None:
     if args.allow_missing_db:
         return
@@ -785,7 +801,7 @@ def config_payload(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def solver_metrics_from_scores(scores: List[float]) -> Dict[str, Any]:
-    pass_count = sum(1 for score in scores if score > 0)
+    pass_count = sum(1 for score in scores if score >= 1.0)
     total = len(scores)
     return {
         "solver_scores": scores,
@@ -1002,7 +1018,13 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
                     done_reason = "parse_failed"
                     break
 
-                validation_result = validate_generated_task(env, parsed_task["prompt"], parsed_task["verifier"])
+                log_generate(
+                    "Running verifier sandbox and dry-run on a fresh seed environment "
+                    f"prompt_chars={len(parsed_task['prompt'])} verifier_chars={len(parsed_task['verifier'])}"
+                )
+                validation_result, dryrun_ok, dryrun_error = await validate_generated_task_on_fresh_env_async(
+                    args, env_extras, parsed_task["prompt"], parsed_task["verifier"]
+                )
                 if not validation_result["valid"]:
                     log_generate(f"Verifier sandbox failed: {validation_result}")
                     if turns_remaining > 0:
@@ -1013,11 +1035,6 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
                     done_reason = "validation_failed"
                     break
 
-                log_generate(
-                    "Running verifier dry-run "
-                    f"prompt_chars={len(parsed_task['prompt'])} verifier_chars={len(parsed_task['verifier'])}"
-                )
-                dryrun_ok, dryrun_error = await run_verifier_dryrun_async(env, parsed_task["verifier"])
                 if not dryrun_ok:
                     log_generate(f"Verifier dry-run failed: {dryrun_error}")
                     if turns_remaining > 0:
