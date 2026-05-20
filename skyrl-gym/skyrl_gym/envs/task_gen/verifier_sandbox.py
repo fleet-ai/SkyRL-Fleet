@@ -95,6 +95,7 @@ class VerifierSandbox:
             max_ast_nodes: Maximum allowed verifier AST nodes. Defaults to MAX_AST_NODES.
         """
         self.available_tools = available_tools or set()
+        # Callers may pass explicit None when no Hydra override is set.
         self.min_ast_nodes = MIN_AST_NODES if min_ast_nodes is None else min_ast_nodes
         self.max_ast_nodes = MAX_AST_NODES if max_ast_nodes is None else max_ast_nodes
 
