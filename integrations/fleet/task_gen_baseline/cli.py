@@ -1,7 +1,7 @@
-"""CLI for task-generation baselines and evaluation.
+"""CLI for task-generation baselines and solver rollouts.
 
 This module intentionally stays outside the RL trainer. It reuses TaskGenEnv's
-prompt construction, exploration tools, and Fleet harness evaluation path so a
+prompt construction, exploration tools, and Fleet harness solver path so a
 frontier model can be compared against the trained Qwen generator.
 """
 
@@ -101,20 +101,36 @@ def has_manual_snapshot(args: argparse.Namespace) -> bool:
     return bool(args.env_key and args.data_key and args.data_version)
 
 
+def has_any_manual_snapshot_arg(args: argparse.Namespace) -> bool:
+    return bool(args.env_key or args.data_key or args.data_version)
+
+
+def is_live_task_list_selector(args: argparse.Namespace) -> bool:
+    return bool(
+        args.command == "generate"
+        and args.allow_live_task_list
+        and args.env_key
+        and not args.data_key
+        and not args.data_version
+        and not args.fleet_task_key
+        and not args.fleet_task_key_file
+    )
+
+
 def has_partial_manual_snapshot(args: argparse.Namespace) -> bool:
-    if args.data_key or args.data_version:
-        return not has_manual_snapshot(args)
-    return False
+    return has_any_manual_snapshot_arg(args) and not has_manual_snapshot(args)
 
 
 def validate_context_arguments(args: argparse.Namespace) -> None:
-    if has_partial_manual_snapshot(args):
+    if args.fleet_task_key and args.fleet_task_key_file:
+        raise ValueError("Pass either --fleet-task-key or --fleet-task-key-file, not both.")
+    if (args.fleet_task_key or args.fleet_task_key_file) and has_any_manual_snapshot_arg(args):
+        raise ValueError("Pass either a Fleet task key source or manual snapshot args, not both.")
+    if has_partial_manual_snapshot(args) and not is_live_task_list_selector(args):
         raise ValueError("Pass --env-key, --data-key, and --data-version together, or omit all three.")
-    if args.fleet_task_key and has_manual_snapshot(args):
-        raise ValueError("Pass either --fleet-task-key or manual snapshot args, not both.")
     if args.fleet_base_url:
         raise ValueError(
-            "--fleet-base-url is not supported for baseline generation/evaluation because TaskGenEnv "
+            "--fleet-base-url is not supported for baseline generation/solving because TaskGenEnv "
             "creates its own Fleet client. Use the default Fleet backend for controlled runs."
         )
     if (
@@ -128,12 +144,26 @@ def validate_context_arguments(args: argparse.Namespace) -> None:
             "Pass --fleet-task-key, --fleet-task-key-file, or manual --env-key/--data-key/--data-version. "
             "Use --allow-live-task-list only for ad hoc, non-controlled sampling from Fleet."
         )
+    if (
+        args.command == "solve"
+        and not args.fleet_task_key
+        and not has_manual_snapshot(args)
+        and not args.fleet_task_key_file
+    ):
+        raise ValueError(
+            "Solve requires environment context. Use a generated JSON file with env_key/data_key/data_version, "
+            "or pass --fleet-task-key, --fleet-task-key-file, or manual --env-key/--data-key/--data-version."
+        )
+    if args.command == "solve" and args.judge_model and not (
+        args.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY", "")
+    ):
+        raise RuntimeError("OPENROUTER_API_KEY is required when --judge-model is set for solve.")
 
 
 def apply_runtime_environment(args: argparse.Namespace) -> None:
     if args.fleet_api_key:
         os.environ["FLEET_API_KEY"] = args.fleet_api_key
-    if args.command == "evaluate" and args.openrouter_api_key:
+    if args.command == "solve" and args.openrouter_api_key:
         os.environ["OPENROUTER_API_KEY"] = args.openrouter_api_key
 
 
@@ -211,9 +241,9 @@ def load_generated_file_data(file_text: str) -> Dict[str, Any]:
 
 
 def apply_fleet_context_from_generated_file(args: argparse.Namespace, generated_data: Dict[str, Any]) -> None:
-    if args.command != "evaluate":
+    if args.command != "solve":
         return
-    if args.fleet_task_key or has_manual_snapshot(args):
+    if args.fleet_task_key or args.fleet_task_key_file or has_any_manual_snapshot_arg(args):
         return
 
     fleet_task_key = generated_data.get("fleet_task_key")
@@ -238,6 +268,9 @@ def load_fleet_context(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
         print_selected_fleet_task_key(args.fleet_task_key, args.fleet_task_key_source)
         return load_fleet_task_context(args)
     if args.command == "generate" and not has_manual_snapshot(args):
+        args.fleet_task_key = select_random_fleet_task_key(args)
+        return load_fleet_task_context(args)
+    if args.command == "solve" and args.fleet_task_key_file:
         args.fleet_task_key = select_random_fleet_task_key(args)
         return load_fleet_task_context(args)
     return None
@@ -723,6 +756,16 @@ def require_generation_db_ready(args: argparse.Namespace, env: Any, env_extras: 
         )
 
 
+def require_solve_db_ready(env: Any, env_extras: Dict[str, Any]) -> None:
+    if not env_extras.get("data_key") or not env_extras.get("data_version"):
+        raise RuntimeError("Solve requires data_key and data_version so the seed-state verifier dry-run is meaningful.")
+    if env.orch is None:
+        raise RuntimeError(
+            "TaskGenEnv did not provision a Fleet database for solve. "
+            "Refusing to skip the seed-state verifier dry-run."
+        )
+
+
 def config_payload(args: argparse.Namespace) -> Dict[str, Any]:
     payload = {
         "max_turns": args.max_turns,
@@ -764,7 +807,7 @@ def read_rollout_record(rollout_dir: str, run_name: str) -> Optional[Dict[str, A
     return data if isinstance(data, dict) else None
 
 
-def gates_reached_solver_eval(metadata: Dict[str, Any]) -> bool:
+def gates_reached_solver_run(metadata: Dict[str, Any]) -> bool:
     breakdown = metadata.get("reward_breakdown", {})
     if not isinstance(breakdown, dict):
         return False
@@ -940,7 +983,7 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
             if "<task>" in final_text:
                 log_generate(f"Detected <task> block on attempt={attempt} turn={turn_number}")
                 if args.enforce_exploration_gate and env.max_turns > 1 and not env.called_query_db:
-                    log_generate("Task arrived before query_db; adding exploration feedback without running eval")
+                    log_generate("Task arrived before query_db; adding exploration feedback without running solver rollouts")
                     if turns_remaining > 0:
                         observations = [format_exploration_feedback(turns_remaining)]
                         conversation.extend(observations)
@@ -1120,7 +1163,7 @@ def handle_generate(args: argparse.Namespace) -> None:
     asyncio.run(generate_async(args))
 
 
-async def evaluate_async(args: argparse.Namespace) -> None:
+async def solve_async(args: argparse.Namespace) -> None:
     file_text = Path(args.file).read_text()
     generated_data = load_generated_file_data(file_text)
     apply_fleet_context_from_generated_file(args, generated_data)
@@ -1128,7 +1171,7 @@ async def evaluate_async(args: argparse.Namespace) -> None:
     prompt, verifier, task_xml = extract_task_from_text(file_text)
 
     env_extras = make_env_extras(args)
-    run_name = f"task_gen_baseline_eval_{uuid.uuid4().hex}"
+    run_name = f"task_gen_baseline_solve_{uuid.uuid4().hex}"
     previous_run_name = os.environ.get("RUN_NAME")
     previous_rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR")
     rollout_record = None
@@ -1139,11 +1182,12 @@ async def evaluate_async(args: argparse.Namespace) -> None:
         env = make_task_gen_env(env_config=make_env_config(args), extras=env_extras)
         try:
             await env.init_async([])
+            require_solve_db_ready(env, env_extras)
             env.called_query_db = True
             step_output = await env.step_async(task_xml)
             rollout_record = read_rollout_record(rollout_dir, run_name)
             result = {
-                "mode": "gates_and_eval",
+                "mode": "gates_and_solve",
                 "primary_metric": "solver_pass_rate",
                 "task_gen_reward": step_output["reward"],
                 "done": step_output["done"],
@@ -1188,15 +1232,15 @@ async def evaluate_async(args: argparse.Namespace) -> None:
 
     attach_rollout_metrics(result, rollout_record)
 
-    if gates_reached_solver_eval(result["metadata"]) and rollout_record is None:
-        raise RuntimeError("Solver evaluation produced no rollout log; refusing to write an unauditable result.")
+    if gates_reached_solver_run(result["metadata"]) and rollout_record is None:
+        raise RuntimeError("Solver run produced no rollout log; refusing to write an unauditable result.")
 
     write_json(result, args.output)
 
 
-def handle_evaluate(args: argparse.Namespace) -> None:
+def handle_solve(args: argparse.Namespace) -> None:
     apply_runtime_environment(args)
-    asyncio.run(evaluate_async(args))
+    asyncio.run(solve_async(args))
 
 
 def add_env_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1253,7 +1297,7 @@ def add_env_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--env-tools-schema-file", help="JSON file with OpenAI-style tool schemas.")
 
 
-def add_eval_config_arguments(parser: argparse.ArgumentParser) -> None:
+def add_solve_config_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--evaluator-model", default=DEFAULT_EVALUATOR_MODEL)
     parser.add_argument("--openrouter-api-key", default="", help="OpenRouter API key for the judge model.")
     parser.add_argument("--k-rollouts", type=int, default=4)
@@ -1262,7 +1306,7 @@ def add_eval_config_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--base-quality-reward", type=float, default=0.0)
     parser.add_argument("--enable-hints", action="store_true")
     parser.add_argument("--training-phase", choices=["train", "eval"], default="eval")
-    parser.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="Judge model for evaluation gates.")
+    parser.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="Judge model for solve gates.")
     parser.add_argument(
         "--verifier-min-ast-nodes",
         type=int,
@@ -1279,7 +1323,7 @@ def add_eval_config_arguments(parser: argparse.ArgumentParser) -> None:
 
 def generate_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Generate and evaluate Fleet task-generation prompts without RL training."
+        description="Generate Fleet task-generation prompts and solve them without RL training."
     )
     parser.set_defaults(func=lambda unused_args: parser.print_help())
     subparsers = parser.add_subparsers(dest="command")
@@ -1343,23 +1387,18 @@ def generate_cli() -> argparse.ArgumentParser:
     )
     generate_parser.set_defaults(func=handle_generate)
 
-    evaluate_parser = subparsers.add_parser(
-        "evaluate",
-        help="Evaluate a generated task file with the current Fleet harness evaluation path.",
+    solve_parser = subparsers.add_parser(
+        "solve",
+        help="Solve a generated task file with the current Fleet harness path.",
     )
-    add_env_arguments(evaluate_parser)
-    add_eval_config_arguments(evaluate_parser)
-    evaluate_parser.add_argument("--max-turns", type=int, default=10)
-    evaluate_parser.add_argument("--file", required=True, help="Generated JSON or raw <task> file to evaluate.")
-    evaluate_parser.add_argument(
-        "--run-gates",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    evaluate_parser.add_argument("-o", "--output", help="Write JSON output to this file. Defaults to stdout.")
-    evaluate_parser.set_defaults(fleet_task_key_source="argument", tool_call_reward_per_call=0.0)
-    evaluate_parser.set_defaults(allow_missing_db=False, fleet_task_key_candidate_count=None)
-    evaluate_parser.set_defaults(func=handle_evaluate)
+    add_env_arguments(solve_parser)
+    add_solve_config_arguments(solve_parser)
+    solve_parser.add_argument("--max-turns", type=int, default=10)
+    solve_parser.add_argument("--file", required=True, help="Generated JSON or raw <task> file to solve.")
+    solve_parser.add_argument("-o", "--output", help="Write JSON output to this file. Defaults to stdout.")
+    solve_parser.set_defaults(fleet_task_key_source="argument", tool_call_reward_per_call=0.0)
+    solve_parser.set_defaults(allow_missing_db=False, fleet_task_key_candidate_count=None)
+    solve_parser.set_defaults(func=handle_solve)
 
     return parser
 
