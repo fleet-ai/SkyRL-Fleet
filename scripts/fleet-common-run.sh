@@ -14,12 +14,15 @@
 #
 # Required env vars: WANDB_API_KEY, MODALITY, INFERENCE_BACKEND,
 #   SKYPILOT_NUM_GPUS_PER_NODE, SKYPILOT_NODE_IPS
-# Optional env vars: SKYPILOT_NUM_NODES, SKYPILOT_NODE_RANK
+# Optional env vars: SKYPILOT_NUM_NODES, SKYPILOT_NODE_RANK,
+#   FLEET_RAY_PORT, FLEET_RAY_DASHBOARD_PORT
 set -euo pipefail
 
 # Defaults
 DATA_ROOT=""
 CKPT_ROOT=""
+RAY_PORT="${FLEET_RAY_PORT:-6379}"
+RAY_DASHBOARD_PORT="${FLEET_RAY_DASHBOARD_PORT:-8265}"
 USE_PYTHON_DIRECT=false
 CUDA_ENV=""
 SET_ULIMIT=false
@@ -35,6 +38,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --data-root) DATA_ROOT="$2"; shift 2 ;;
     --ckpt-root) CKPT_ROOT="$2"; shift 2 ;;
+    --ray-port) RAY_PORT="$2"; shift 2 ;;
+    --ray-dashboard-port|--dashboard-port) RAY_DASHBOARD_PORT="$2"; shift 2 ;;
     --use-python-direct) USE_PYTHON_DIRECT=true; shift ;;
     --cuda-env) CUDA_ENV="$2"; shift 2 ;;
     --set-ulimit) SET_ULIMIT=true; shift ;;
@@ -47,6 +52,21 @@ while [[ $# -gt 0 ]]; do
     *) echo "ERROR: Unknown arg: $1"; exit 1 ;;
   esac
 done
+
+if ! [[ "$RAY_PORT" =~ ^[0-9]+$ ]] || [ "$RAY_PORT" -lt 1 ] || [ "$RAY_PORT" -gt 65535 ]; then
+  echo "ERROR: --ray-port must be a valid TCP port (got: $RAY_PORT)" >&2
+  exit 1
+fi
+if ! [[ "$RAY_DASHBOARD_PORT" =~ ^[0-9]+$ ]] || [ "$RAY_DASHBOARD_PORT" -lt 1 ] || [ "$RAY_DASHBOARD_PORT" -gt 65535 ]; then
+  echo "ERROR: --ray-dashboard-port must be a valid TCP port (got: $RAY_DASHBOARD_PORT)" >&2
+  exit 1
+fi
+if [ "$RAY_PORT" = "$RAY_DASHBOARD_PORT" ]; then
+  echo "ERROR: --ray-port and --ray-dashboard-port must be different ports" >&2
+  exit 1
+fi
+export FLEET_RAY_PORT="$RAY_PORT"
+export FLEET_RAY_DASHBOARD_PORT="$RAY_DASHBOARD_PORT"
 
 # Auto-detect data/ckpt root: /workspace if writable (RunPod), else $HOME (GCP, Lambda, etc.)
 if [ -z "$DATA_ROOT" ]; then
@@ -97,11 +117,12 @@ TMP_DIR="${CKPT_ROOT}/skyrl-tmp"
 mkdir -p "$TMP_DIR"
 # Ray uses TMPDIR for session dirs which contain Unix domain sockets.
 # UDS don't work over NFS, so use local /tmp for Ray while keeping
-# TMPDIR on NFS for everything else (checkpoints, data).
-RAY_TMPDIR="/tmp/skyrl-ray"
-mkdir -p "$RAY_TMPDIR"
+# TMPDIR on NFS for everything else (checkpoints, data). Include the Ray
+# port in the path so explicit concurrent launches do not share session dirs.
+RAY_TMPDIR="${FLEET_RAY_TMPDIR:-/tmp/skyrl-ray-${RAY_PORT}}"
 export TMPDIR="$TMP_DIR"
-export RAY_TMPDIR="$RAY_TMPDIR"
+export RAY_TMPDIR
+mkdir -p "$RAY_TMPDIR"
 
 TASKS_FILE="${DATA_ROOT}/data/fleet/tasks_${MODALITY}.json"
 DATA_DIR="${DATA_ROOT}/data/fleet/${DATA_DIR_NAME}"
@@ -218,7 +239,7 @@ export RAY_DISABLE_MEMORY_MONITOR=1
 # On GKE with RDMA, gIB is preserved for inter-node GPUDirect.
 
 read -r head_ip _ <<< "$SKYPILOT_NODE_IPS"
-ray_address="$head_ip:6479"
+ray_address="$head_ip:$RAY_PORT"
 
 wait_for_ray() {
   local address=$1
@@ -232,45 +253,16 @@ wait_for_ray() {
   return 1
 }
 
-cleanup_existing_ray() {
-  echo "Cleaning local Ray state before launch..."
-  env -u RAY_ADDRESS ray stop --force >/dev/null 2>&1 || true
-  local patterns=(
-    gcs_server
-    raylet
-    plasma_store
-    'ray::'
-    ray.dashboard
-    dashboard_agent
-    runtime_env_agent
-    log_monitor
-    monitor.py
-    default_worker.py
-  )
-  local pattern
-  for pattern in "${patterns[@]}"; do
-    pkill -9 -f "$pattern" 2>/dev/null || true
-  done
-  fuser -k 6479/tcp 2>/dev/null || true
-  rm -rf "$RAY_TMPDIR" /tmp/ray 2>/dev/null || true
-  mkdir -p "$RAY_TMPDIR"
-  for _ in $(seq 1 10); do
-    if ! fuser 6479/tcp >/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
-  sleep 2
-}
-
-cleanup_existing_ray
-
 if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   # === Head node: start Ray head + launch training ===
+  echo "=== Ray head will use $ray_address; dashboard port $RAY_DASHBOARD_PORT ==="
+
   # --node-ip-address: on SLURM, force Ray to use the overlay IP (from SKYPILOT_NODE_IPS)
   # instead of auto-detecting the Docker-internal IP (172.19.x.x). Without this, the head
   # registers as a ghost node and the placement group can't schedule GPU bundles.
-  env -u RAY_ADDRESS ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000 \
+  env -u RAY_ADDRESS ray start --head --disable-usage-stats --include-dashboard=true \
+    --port "$RAY_PORT" --dashboard-host=0.0.0.0 --dashboard-port "$RAY_DASHBOARD_PORT" \
+    --object-store-memory=10000000000 \
     --node-ip-address="$head_ip" --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   # Tell ray.init() where to find the cluster (needed when --temp-dir differs
@@ -343,7 +335,7 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
     echo "--- cgroup memory events ---"
     cat /sys/fs/cgroup/memory.events 2>/dev/null || cat /sys/fs/cgroup/memory/memory.oom_control 2>/dev/null || true
     echo "--- Ray worker logs (last errors) ---"
-    grep -r "SIGKILL\|SIGABRT\|SIGSEGV\|SYSTEM_ERROR\|RuntimeError\|NCCL" /tmp/ray/session_latest/logs/ 2>/dev/null | tail -30 || true
+    grep -r "SIGKILL\|SIGABRT\|SIGSEGV\|SYSTEM_ERROR\|RuntimeError\|NCCL" "$RAY_TMPDIR/session_latest/logs/" 2>/dev/null | tail -30 || true
     exit $EXIT_CODE
   fi
 

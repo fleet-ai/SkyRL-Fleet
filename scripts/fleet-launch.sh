@@ -39,6 +39,11 @@
 # Environment:
 #   SKIP_PREFLIGHT=1   Bypass the preflight entirely (escape hatch; avoid
 #                      using this in scripts — it defeats the safety net).
+#   FLEET_RAY_PORT                 Ray head port; defaults to 6379.
+#   FLEET_RAY_DASHBOARD_PORT       Ray dashboard port; defaults to 8265.
+#
+# Task YAMLs may use __FLEET_RAY_PORT__ and __FLEET_RAY_DASHBOARD_PORT__
+# placeholders in resources.ports; this wrapper renders them before launch.
 set -euo pipefail
 cd "$(dirname "$0")/.."  # repo root
 
@@ -80,5 +85,115 @@ if ! command -v sky >/dev/null 2>&1; then
   exit 1
 fi
 
+is_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+sky_env_is_set() {
+  local key=$1
+  local i arg next
+  for i in "${!SKY_ARGS[@]}"; do
+    arg="${SKY_ARGS[$i]}"
+    if [ "$arg" = "--env" ] && [ $((i + 1)) -lt ${#SKY_ARGS[@]} ]; then
+      next="${SKY_ARGS[$((i + 1))]}"
+      if [[ "$next" == "$key="* ]]; then
+        return 0
+      fi
+    elif [[ "$arg" == "--env=$key="* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+get_sky_env() {
+  local key=$1
+  local default=$2
+  local value="$default"
+  local i arg next
+
+  if [ -n "${!key+x}" ]; then
+    value="${!key}"
+  fi
+  for i in "${!SKY_ARGS[@]}"; do
+    arg="${SKY_ARGS[$i]}"
+    if [ "$arg" = "--env" ] && [ $((i + 1)) -lt ${#SKY_ARGS[@]} ]; then
+      next="${SKY_ARGS[$((i + 1))]}"
+      if [[ "$next" == "$key="* ]]; then
+        value="${next#*=}"
+      fi
+    elif [[ "$arg" == "--env=$key="* ]]; then
+      value="${arg#--env=$key=}"
+    fi
+  done
+  printf '%s\n' "$value"
+}
+
+find_task_yaml_index() {
+  local i arg
+  for i in "${!SKY_ARGS[@]}"; do
+    arg="${SKY_ARGS[$i]}"
+    if [[ "$arg" == *.yaml || "$arg" == *.yml ]] && [ -f "$arg" ]; then
+      printf '%s\n' "$i"
+      return 0
+    fi
+  done
+  return 1
+}
+
+task_needs_render() {
+  local task_yaml=$1
+  grep -q '__FLEET_RAY_PORT__\|__FLEET_RAY_DASHBOARD_PORT__' "$task_yaml"
+}
+
+render_task_template() {
+  local task_yaml=$1
+  local output_yaml=$2
+  sed \
+    -e "s/__FLEET_RAY_PORT__/$RAY_PORT/g" \
+    -e "s/__FLEET_RAY_DASHBOARD_PORT__/$RAY_DASHBOARD_PORT/g" \
+    "$task_yaml" > "$output_yaml"
+}
+
+TMP_SKY_YAML=""
+cleanup_tmp_yaml() {
+  if [ -n "$TMP_SKY_YAML" ]; then
+    rm -f "$TMP_SKY_YAML"
+  fi
+}
+trap cleanup_tmp_yaml EXIT
+
+RAY_PORT="$(get_sky_env FLEET_RAY_PORT 6379)"
+RAY_DASHBOARD_PORT="$(get_sky_env FLEET_RAY_DASHBOARD_PORT 8265)"
+if ! is_port "$RAY_PORT"; then
+  echo "ERROR: FLEET_RAY_PORT must be a valid TCP port (got: $RAY_PORT)" >&2
+  exit 1
+fi
+if ! is_port "$RAY_DASHBOARD_PORT"; then
+  echo "ERROR: FLEET_RAY_DASHBOARD_PORT must be a valid TCP port (got: $RAY_DASHBOARD_PORT)" >&2
+  exit 1
+fi
+if [ "$RAY_PORT" = "$RAY_DASHBOARD_PORT" ]; then
+  echo "ERROR: FLEET_RAY_PORT and FLEET_RAY_DASHBOARD_PORT must be different ports" >&2
+  exit 1
+fi
+
+if [ -n "${FLEET_RAY_PORT+x}" ] && ! sky_env_is_set FLEET_RAY_PORT; then
+  SKY_ARGS+=(--env "FLEET_RAY_PORT=$RAY_PORT")
+fi
+if [ -n "${FLEET_RAY_DASHBOARD_PORT+x}" ] && ! sky_env_is_set FLEET_RAY_DASHBOARD_PORT; then
+  SKY_ARGS+=(--env "FLEET_RAY_DASHBOARD_PORT=$RAY_DASHBOARD_PORT")
+fi
+
+if TASK_YAML_INDEX="$(find_task_yaml_index)"; then
+  TASK_YAML="${SKY_ARGS[$TASK_YAML_INDEX]}"
+  if task_needs_render "$TASK_YAML"; then
+    TMP_SKY_YAML="$(mktemp "./.fleet-launch.XXXXXX")"
+    render_task_template "$TASK_YAML" "$TMP_SKY_YAML"
+    SKY_ARGS[$TASK_YAML_INDEX]="$TMP_SKY_YAML"
+    echo "=== Rendered Ray ports: [$RAY_PORT, $RAY_DASHBOARD_PORT] ==="
+  fi
+fi
+
 echo "=== Preflight passed; running: sky launch ${SKY_ARGS[*]} ==="
-exec sky launch "${SKY_ARGS[@]}"
+sky launch "${SKY_ARGS[@]}"

@@ -21,17 +21,17 @@ resources:
     # RunPod on-demand (API provisioned)
     - accelerators: H200-SXM:8
       cloud: runpod
-      ports: 6479
+      ports: [__FLEET_RAY_PORT__, __FLEET_RAY_DASHBOARD_PORT__]
     # GCP fallback
     - accelerators: H200:8
       cloud: gcp
       use_spot: true
-      ports: 6479
+      ports: [__FLEET_RAY_PORT__, __FLEET_RAY_DASHBOARD_PORT__]
       image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
     # Other providers
     - accelerators: H200:8
       cloud: lambda
-      ports: 6479
+      ports: [__FLEET_RAY_PORT__, __FLEET_RAY_DASHBOARD_PORT__]
 
 num_nodes: 2
 
@@ -63,17 +63,6 @@ envs:
   NUM_INFERENCE_ENGINES: 8
 
 setup: |
-  # Kill stale Ray from previous SkyPilot jobs (SLURM containers persist).
-  # Use process name patterns that won't match the setup script itself.
-  pkill -9 -f gcs_server 2>/dev/null || true
-  pkill -9 -f 'raylet ' 2>/dev/null || true
-  pkill -9 -f 'ray::' 2>/dev/null || true
-  pkill -9 -f 'ray.dashboard' 2>/dev/null || true
-  pkill -9 -f 'log_monitor' 2>/dev/null || true
-  # Kill anything on Ray's GCS port
-  fuser -k 6479/tcp 2>/dev/null || true
-  sleep 5
-  rm -rf /tmp/ray 2>/dev/null || true
   bash scripts/fleet-common-setup.sh \
     --openenv-branch deniz/fleet_client \
     --extra-setup scripts/fleet-qwen35-extra-setup.sh \
