@@ -15,7 +15,9 @@ import os
 import random
 import re
 import sys
+import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,6 +28,7 @@ if SKYRL_GYM_SRC.exists() and str(SKYRL_GYM_SRC) not in sys.path:
 
 
 DEFAULT_EVALUATOR_MODEL = "anthropic/claude-sonnet-4.5"
+DEFAULT_JUDGE_MODEL = DEFAULT_EVALUATOR_MODEL
 DEFAULT_RANDOM_ENV_KEY = "booking"
 SEED_STATE_DRYRUN_ERROR = (
     "Verifier returned 1 on the unmodified database — it passes even when no agent has acted. "
@@ -98,6 +101,42 @@ def has_manual_snapshot(args: argparse.Namespace) -> bool:
     return bool(args.env_key and args.data_key and args.data_version)
 
 
+def has_partial_manual_snapshot(args: argparse.Namespace) -> bool:
+    if args.data_key or args.data_version:
+        return not has_manual_snapshot(args)
+    return False
+
+
+def validate_context_arguments(args: argparse.Namespace) -> None:
+    if has_partial_manual_snapshot(args):
+        raise ValueError("Pass --env-key, --data-key, and --data-version together, or omit all three.")
+    if args.fleet_task_key and has_manual_snapshot(args):
+        raise ValueError("Pass either --fleet-task-key or manual snapshot args, not both.")
+    if args.fleet_base_url:
+        raise ValueError(
+            "--fleet-base-url is not supported for baseline generation/evaluation because TaskGenEnv "
+            "creates its own Fleet client. Use the default Fleet backend for controlled runs."
+        )
+    if (
+        args.command == "generate"
+        and not args.fleet_task_key
+        and not has_manual_snapshot(args)
+        and not args.fleet_task_key_file
+        and not args.allow_live_task_list
+    ):
+        raise ValueError(
+            "Pass --fleet-task-key, --fleet-task-key-file, or manual --env-key/--data-key/--data-version. "
+            "Use --allow-live-task-list only for ad hoc, non-controlled sampling from Fleet."
+        )
+
+
+def apply_runtime_environment(args: argparse.Namespace) -> None:
+    if args.fleet_api_key:
+        os.environ["FLEET_API_KEY"] = args.fleet_api_key
+    if args.command == "evaluate" and args.openrouter_api_key:
+        os.environ["OPENROUTER_API_KEY"] = args.openrouter_api_key
+
+
 def make_fleet_client(args: argparse.Namespace, purpose: str):
     try:
         from fleet import Fleet
@@ -153,6 +192,8 @@ def select_random_fleet_task_key(args: argparse.Namespace) -> str:
     rng = random.Random(args.random_seed) if args.random_seed is not None else random.SystemRandom()
     task_key = rng.choice(candidates)
     log_generate(f"Using random Fleet task key from {source}: {task_key}")
+    args.fleet_task_key_source = source
+    args.fleet_task_key_candidate_count = len(candidates)
     return task_key
 
 
@@ -179,6 +220,17 @@ def apply_fleet_context_from_generated_file(args: argparse.Namespace, generated_
     if isinstance(fleet_task_key, str) and fleet_task_key:
         args.fleet_task_key = fleet_task_key
         args.fleet_task_key_source = "generated file"
+        return
+
+    env_key = generated_data.get("env_key")
+    data_key = generated_data.get("data_key")
+    data_version = generated_data.get("data_version")
+    if isinstance(env_key, str) and isinstance(data_key, str) and isinstance(data_version, str):
+        if env_key and data_key and data_version:
+            args.env_key = env_key
+            args.data_key = data_key
+            args.data_version = data_version
+            args.env_version = generated_data.get("env_version") or args.env_version
 
 
 def load_fleet_context(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
@@ -332,7 +384,7 @@ def extract_task_from_text(text: str) -> Tuple[str, str, str]:
 
     if isinstance(data, dict):
         if isinstance(data.get("prompt"), str) and isinstance(data.get("verifier"), str):
-            task_xml = data.get("task_xml") or format_task_xml(data["prompt"], data["verifier"])
+            task_xml = format_task_xml(data["prompt"], data["verifier"])
             return data["prompt"], data["verifier"], task_xml
         for key in ("task_xml", "generated_text", "final_text", "output"):
             if isinstance(data.get(key), str):
@@ -370,17 +422,48 @@ def format_dryrun_feedback(dryrun_error: str, turns_remaining: int) -> Dict[str,
     }
 
 
-def verifier_result_passed(result: Any) -> bool:
-    verifier_score = result if isinstance(result, (int, float, bool)) else result.result
-    try:
-        return float(verifier_score) > 0.0
-    except (TypeError, ValueError):
-        return bool(verifier_score)
+def format_parse_feedback(turns_remaining: int) -> Dict[str, str]:
+    return {
+        "role": "user",
+        "content": (
+            "No complete <task> block with both <prompt> and <verifier> was found. "
+            f"Fix the format and resubmit. {turns_remaining} turn(s) left."
+        ),
+    }
+
+
+def format_sandbox_feedback(validation: Dict[str, Any], turns_remaining: int) -> Dict[str, str]:
+    failed = ", ".join(validation["failed"]) if validation["failed"] else "unknown validation check"
+    return {
+        "role": "user",
+        "content": f"Sandbox rejected your verifier: {failed}. Fix and resubmit. {turns_remaining} turn(s) left.",
+    }
+
+
+def format_exploration_feedback(turns_remaining: int) -> Dict[str, str]:
+    return {
+        "role": "user",
+        "content": (
+            "You must explore the database with `query_db` before submitting a task. "
+            "Use SELECT queries to inspect actual data — table contents, value ranges, "
+            f"row counts — so your task and verifier are grounded in real data. "
+            f"You have {turns_remaining} turn(s) remaining."
+        ),
+    }
+
+
+def validation_to_dict(validation: Any) -> Dict[str, Any]:
+    return {
+        "valid": validation.valid,
+        "passed": validation.checks_passed,
+        "failed": validation.checks_failed,
+        "error": validation.error,
+    }
 
 
 async def run_verifier_dryrun_async(env: Any, verifier: str) -> Tuple[bool, str]:
     if env.orch is None:
-        return True, ""
+        return False, "Fleet environment was not provisioned, so verifier dry-run could not run."
 
     try:
         return await env.dryrun_verifier(verifier)
@@ -392,7 +475,25 @@ async def run_verifier_dryrun_async(env: Any, verifier: str) -> Tuple[bool, str]
 
 
 def should_retry_generation(result: Dict[str, Any]) -> bool:
-    return bool(result.get("dryrun_error"))
+    if result.get("parse_error"):
+        return True
+    validation = result.get("validation")
+    if isinstance(validation, dict) and validation.get("valid") is False:
+        return True
+    if result.get("dryrun_error"):
+        return True
+    return result.get("done_reason") in {"max_turns", "missing_query_db", "task_not_generated"}
+
+
+def generation_failure_message(result: Dict[str, Any]) -> str:
+    if result.get("parse_error"):
+        return result["parse_error"]
+    validation = result.get("validation")
+    if isinstance(validation, dict) and validation.get("valid") is False:
+        return validation.get("error") or f"Sandbox failed: {validation.get('failed', [])}"
+    if result.get("dryrun_error"):
+        return result["dryrun_error"]
+    return f"Generation ended with done_reason={result.get('done_reason', 'unknown')}"
 
 
 def retry_budget_allows(args: argparse.Namespace, attempt: int) -> bool:
@@ -553,7 +654,7 @@ async def execute_native_tool_calls_async(
     env: Any, native_tool_calls: List[Dict[str, Any]]
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     tool_messages = []
-    valid_tool_calls = []
+    last_step_output = {"observations": [], "reward": 0.0, "done": False, "metadata": {"tool_calls": []}}
 
     for native_tool_call in native_tool_calls:
         if native_tool_call["argument_error"]:
@@ -575,25 +676,122 @@ async def execute_native_tool_calls_async(
                 }
             )
         else:
-            valid_tool_calls.append(native_tool_call)
+            xml_action = format_xml_tool_call_from_native(native_tool_call)
+            last_step_output = await env.step_async(xml_action)
+            content = observation_text(last_step_output["observations"]) or "Tool call completed with no output."
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": native_tool_call["id"],
+                    "name": native_tool_call["name"],
+                    "content": content,
+                }
+            )
+            if last_step_output["done"]:
+                break
 
-    if not valid_tool_calls:
-        step_output = {"observations": [], "reward": 0.0, "done": False, "metadata": {"tool_calls": []}}
-        return step_output, tool_messages
+    if last_step_output["done"] and len(tool_messages) < len(native_tool_calls):
+        for native_tool_call in native_tool_calls[len(tool_messages) :]:
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": native_tool_call["id"],
+                    "name": native_tool_call["name"],
+                    "content": "Error: Environment ended before this tool call could be executed.",
+                }
+            )
 
-    xml_action = "\n".join(format_xml_tool_call_from_native(native_tool_call) for native_tool_call in valid_tool_calls)
-    step_output = await env.step_async(xml_action)
-    content = observation_text(step_output["observations"]) or "Tool call completed with no output."
-    for native_tool_call in valid_tool_calls:
-        tool_messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": native_tool_call["id"],
-                "name": native_tool_call["name"],
-                "content": content,
-            }
+    return last_step_output, tool_messages
+
+
+def validate_generated_task(env: Any, prompt: str, verifier: str) -> Dict[str, Any]:
+    validation = env.sandbox.validate(verifier, prompt)
+    return validation_to_dict(validation)
+
+
+def require_generation_db_ready(args: argparse.Namespace, env: Any, env_extras: Dict[str, Any]) -> None:
+    if args.allow_missing_db:
+        return
+    if args.max_turns <= 1:
+        return
+    if not env_extras.get("data_key"):
+        return
+    if env.orch is None:
+        raise RuntimeError(
+            "TaskGenEnv did not provision a Fleet database for query_db. "
+            "Use a Fleet task key or complete snapshot args, or pass --allow-missing-db for prompt-only debugging."
         )
-    return step_output, tool_messages
+
+
+def config_payload(args: argparse.Namespace) -> Dict[str, Any]:
+    payload = {
+        "max_turns": args.max_turns,
+        "temperature": args.temperature if args.command == "generate" else None,
+        "top_p": args.top_p if args.command == "generate" else None,
+        "max_tokens": args.max_tokens if args.command == "generate" else None,
+        "random_seed": args.random_seed,
+        "k_rollouts": args.k_rollouts,
+        "eval_k_rollouts": args.eval_k_rollouts,
+        "max_eval_steps": args.max_eval_steps,
+        "training_phase": args.training_phase,
+        "judge_model": args.judge_model,
+        "verifier_min_ast_nodes": args.verifier_min_ast_nodes,
+        "verifier_max_ast_nodes": args.verifier_max_ast_nodes,
+    }
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+def solver_metrics_from_scores(scores: List[float]) -> Dict[str, Any]:
+    pass_count = sum(1 for score in scores if score > 0)
+    total = len(scores)
+    return {
+        "solver_scores": scores,
+        "solver_rollouts": total,
+        "solver_pass_count": pass_count,
+        "solver_pass_rate": pass_count / total if total else 0.0,
+        "solver_pass_at_k": pass_count > 0,
+    }
+
+
+def read_rollout_record(rollout_dir: str, run_name: str) -> Optional[Dict[str, Any]]:
+    path = Path(rollout_dir) / f"{run_name}.jsonl"
+    if not path.exists():
+        return None
+    lines = [line for line in path.read_text().splitlines() if line.strip()]
+    if not lines:
+        return None
+    data = json.loads(lines[-1])
+    return data if isinstance(data, dict) else None
+
+
+def gates_reached_solver_eval(metadata: Dict[str, Any]) -> bool:
+    breakdown = metadata.get("reward_breakdown", {})
+    if not isinstance(breakdown, dict):
+        return False
+    return breakdown.get("sandbox") == 1.0 and breakdown.get("dryrun") == 1.0 and breakdown.get("judge") != 0.0
+
+
+def attach_rollout_metrics(result: Dict[str, Any], rollout_record: Optional[Dict[str, Any]]) -> None:
+    if rollout_record is None:
+        result.update(solver_metrics_from_scores([]))
+        return
+
+    raw_scores = rollout_record.get("raw_scores", [])
+    scores = [float(score) for score in raw_scores if isinstance(score, (int, float, bool))]
+    result.update(solver_metrics_from_scores(scores))
+    result["raw_job_id"] = rollout_record.get("raw_job_id")
+    result["hinted_job_id"] = rollout_record.get("hinted_job_id")
+    result["hinted_scores"] = rollout_record.get("hinted_scores", [])
+    result["rollout_log"] = rollout_record
+
+    if rollout_record.get("raw_job_id") is None:
+        raise RuntimeError("Fleet harness import failed before a raw solver job was created.")
+
+    expected = result["eval_k_rollouts"] if result["training_phase"] == "eval" else result["k_rollouts"]
+    if result["solver_rollouts"] != expected:
+        raise RuntimeError(
+            f"Expected {expected} solver rollout score(s), got {result['solver_rollouts']} from Fleet."
+        )
 
 
 def call_openrouter(
@@ -675,7 +873,13 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
     )
     env = make_task_gen_env(env_config=make_env_config(args), extras=env_extras)
     log_generate("Initializing TaskGenEnv")
-    conversation, metadata = await env.init_async([])
+    try:
+        conversation, metadata = await env.init_async([])
+        require_generation_db_ready(args, env, env_extras)
+    except Exception:
+        await env.close_async()
+        log_generate("Closed TaskGenEnv after initialization failure")
+        raise
     log_generate(
         f"TaskGenEnv initialized messages={len(conversation)} "
         f"metadata_keys={sorted(metadata.keys()) if isinstance(metadata, dict) else []}"
@@ -691,6 +895,7 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
     final_text = ""
     done_reason = "max_turns"
     dryrun_error = ""
+    validation_result: Optional[Dict[str, Any]] = None
 
     try:
         turns_remaining = args.max_turns
@@ -735,41 +940,53 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
             if "<task>" in final_text:
                 log_generate(f"Detected <task> block on attempt={attempt} turn={turn_number}")
                 if args.enforce_exploration_gate and env.max_turns > 1 and not env.called_query_db:
-                    log_generate("Task arrived before query_db; passing through exploration gate for feedback")
-                    step_output = await env.step_async(final_text)
-                    observations = step_output["observations"]
-                    conversation.extend(observations)
-                    transcript.extend(observations)
-                    log_generate(
-                        f"Exploration gate returned done={step_output['done']} " f"observations={len(observations)}"
-                    )
-                    if step_output["done"]:
-                        done_reason = step_output.get("metadata", {}).get("done_reason", "done")
-                        if step_output.get("metadata", {}).get("dryrun_ok") is False:
-                            dryrun_error = step_output.get("metadata", {}).get("dryrun_error", SEED_STATE_DRYRUN_ERROR)
-                            done_reason = "dryrun_failed"
-                            log_generate(f"Verifier dry-run failed inside env step: {dryrun_error}")
-                        break
+                    log_generate("Task arrived before query_db; adding exploration feedback without running eval")
+                    if turns_remaining > 0:
+                        observations = [format_exploration_feedback(turns_remaining)]
+                        conversation.extend(observations)
+                        transcript.extend(observations)
+                        continue
+                    done_reason = "missing_query_db"
                     continue
                 parsed_task = parse_task_output(final_text)
-                if parsed_task is not None:
-                    log_generate(
-                        "Running verifier dry-run "
-                        f"prompt_chars={len(parsed_task['prompt'])} verifier_chars={len(parsed_task['verifier'])}"
-                    )
-                    dryrun_ok, dryrun_error = await run_verifier_dryrun_async(env, parsed_task["verifier"])
-                    if not dryrun_ok:
-                        log_generate(f"Verifier dry-run failed: {dryrun_error}")
-                        if turns_remaining > 0:
-                            observations = [format_dryrun_feedback(dryrun_error, turns_remaining)]
-                            conversation.extend(observations)
-                            transcript.extend(observations)
-                            log_generate(f"Added dry-run feedback to conversation; turns_remaining={turns_remaining}")
-                            continue
-                        done_reason = "dryrun_failed"
-                        break
-                    dryrun_error = ""
-                    log_generate("Verifier dry-run passed")
+                if parsed_task is None:
+                    log_generate("Task block was incomplete or malformed")
+                    if turns_remaining > 0:
+                        observations = [format_parse_feedback(turns_remaining)]
+                        conversation.extend(observations)
+                        transcript.extend(observations)
+                        continue
+                    done_reason = "parse_failed"
+                    break
+
+                validation_result = validate_generated_task(env, parsed_task["prompt"], parsed_task["verifier"])
+                if not validation_result["valid"]:
+                    log_generate(f"Verifier sandbox failed: {validation_result}")
+                    if turns_remaining > 0:
+                        observations = [format_sandbox_feedback(validation_result, turns_remaining)]
+                        conversation.extend(observations)
+                        transcript.extend(observations)
+                        continue
+                    done_reason = "validation_failed"
+                    break
+
+                log_generate(
+                    "Running verifier dry-run "
+                    f"prompt_chars={len(parsed_task['prompt'])} verifier_chars={len(parsed_task['verifier'])}"
+                )
+                dryrun_ok, dryrun_error = await run_verifier_dryrun_async(env, parsed_task["verifier"])
+                if not dryrun_ok:
+                    log_generate(f"Verifier dry-run failed: {dryrun_error}")
+                    if turns_remaining > 0:
+                        observations = [format_dryrun_feedback(dryrun_error, turns_remaining)]
+                        conversation.extend(observations)
+                        transcript.extend(observations)
+                        log_generate(f"Added dry-run feedback to conversation; turns_remaining={turns_remaining}")
+                        continue
+                    done_reason = "dryrun_failed"
+                    break
+                dryrun_error = ""
+                log_generate("Verifier sandbox and dry-run passed")
                 done_reason = "task_generated"
                 break
 
@@ -798,6 +1015,9 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
         "fleet_task_key": env_extras.get("fleet_task_key", ""),
         "model": args.model,
         "tool_mode": args.tool_mode,
+        "task_key_source": args.fleet_task_key_source,
+        "task_key_candidate_count": args.fleet_task_key_candidate_count,
+        "generation_config": config_payload(args),
         "attempt": attempt,
         "done_reason": done_reason,
         "called_query_db": env.called_query_db,
@@ -814,6 +1034,9 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
         )
     else:
         result["parse_error"] = "No complete <task> block found in final model response."
+
+    if validation_result is not None:
+        result["validation"] = validation_result
 
     if dryrun_error:
         result["dryrun_error"] = dryrun_error
@@ -885,15 +1108,15 @@ async def generate_async(args: argparse.Namespace) -> None:
             log_generate("Generate command completed")
             return
         if not retry_budget_allows(args, attempt):
-            raise RuntimeError(
-                f"Generation failed verifier dry-run after {attempt} attempt(s): {result['dryrun_error']}"
-            )
+            raise RuntimeError(f"Generation failed after {attempt} attempt(s): {generation_failure_message(result)}")
 
-        log_generate(f"Retrying after verifier dry-run failure on attempt={attempt}: {result['dryrun_error']}")
+        log_generate(f"Retrying generation after attempt={attempt}: {generation_failure_message(result)}")
         attempt += 1
 
 
 def handle_generate(args: argparse.Namespace) -> None:
+    validate_context_arguments(args)
+    apply_runtime_environment(args)
     asyncio.run(generate_async(args))
 
 
@@ -901,41 +1124,78 @@ async def evaluate_async(args: argparse.Namespace) -> None:
     file_text = Path(args.file).read_text()
     generated_data = load_generated_file_data(file_text)
     apply_fleet_context_from_generated_file(args, generated_data)
+    validate_context_arguments(args)
     prompt, verifier, task_xml = extract_task_from_text(file_text)
 
     env_extras = make_env_extras(args)
-    env = make_task_gen_env(env_config=make_env_config(args), extras=env_extras)
-    try:
-        await env.init_async([])
-        env.called_query_db = True
-        step_output = await env.step_async(task_xml)
-        result = {
-            "mode": "gates_and_eval",
-            "reward": step_output["reward"],
-            "done": step_output["done"],
-            "observations": step_output["observations"],
-            "metadata": step_output["metadata"],
-        }
-    finally:
-        await env.close_async()
+    run_name = f"task_gen_baseline_eval_{uuid.uuid4().hex}"
+    previous_run_name = os.environ.get("RUN_NAME")
+    previous_rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR")
+    rollout_record = None
+
+    with tempfile.TemporaryDirectory() as rollout_dir:
+        os.environ["RUN_NAME"] = run_name
+        os.environ["REWARD_ROLLOUT_DIR"] = rollout_dir
+        env = make_task_gen_env(env_config=make_env_config(args), extras=env_extras)
+        try:
+            await env.init_async([])
+            env.called_query_db = True
+            step_output = await env.step_async(task_xml)
+            rollout_record = read_rollout_record(rollout_dir, run_name)
+            result = {
+                "mode": "gates_and_eval",
+                "primary_metric": "solver_pass_rate",
+                "task_gen_reward": step_output["reward"],
+                "done": step_output["done"],
+                "observations": step_output["observations"],
+                "metadata": step_output["metadata"],
+            }
+        finally:
+            await env.close_async()
+            if previous_run_name is None:
+                os.environ.pop("RUN_NAME", None)
+            else:
+                os.environ["RUN_NAME"] = previous_run_name
+            if previous_rollout_dir is None:
+                os.environ.pop("REWARD_ROLLOUT_DIR", None)
+            else:
+                os.environ["REWARD_ROLLOUT_DIR"] = previous_rollout_dir
 
     result.update(
         {
             "env_key": env_extras["env_key"],
+            "env_version": env_extras.get("env_version", ""),
             "data_key": env_extras.get("data_key", ""),
             "data_version": env_extras.get("data_version", ""),
             "fleet_task_key": env_extras.get("fleet_task_key", ""),
             "evaluator_model": args.evaluator_model,
             "k_rollouts": args.k_rollouts,
+            "eval_k_rollouts": args.eval_k_rollouts,
+            "rollout_count_used": args.eval_k_rollouts if args.training_phase == "eval" else args.k_rollouts,
             "max_eval_steps": args.max_eval_steps,
+            "training_phase": args.training_phase,
+            "judge_model": args.judge_model,
+            "base_quality_reward": args.base_quality_reward,
+            "enable_hints": args.enable_hints,
+            "verifier_min_ast_nodes": args.verifier_min_ast_nodes,
+            "verifier_max_ast_nodes": args.verifier_max_ast_nodes,
+            "config": config_payload(args),
             "prompt": prompt,
             "verifier": verifier,
+            "task_xml": task_xml,
         }
     )
+
+    attach_rollout_metrics(result, rollout_record)
+
+    if gates_reached_solver_eval(result["metadata"]) and rollout_record is None:
+        raise RuntimeError("Solver evaluation produced no rollout log; refusing to write an unauditable result.")
+
     write_json(result, args.output)
 
 
 def handle_evaluate(args: argparse.Namespace) -> None:
+    apply_runtime_environment(args)
     asyncio.run(evaluate_async(args))
 
 
@@ -953,9 +1213,23 @@ def add_env_arguments(parser: argparse.ArgumentParser) -> None:
             '`["task_abc", "task_def"]`. Used only for random task-key selection.'
         ),
     )
+    parser.add_argument(
+        "--allow-live-task-list",
+        action="store_true",
+        help="Allow ad hoc random task-key selection from the live Fleet /v1/tasks listing.",
+    )
     parser.add_argument("--fleet-api-key", default="", help="Fleet API key. Defaults to FLEET_API_KEY.")
-    parser.add_argument("--fleet-base-url", default="", help="Optional Fleet API base URL.")
-    parser.add_argument("--fleet-timeout", type=float, default=20.0, help="Fleet API request timeout in seconds.")
+    parser.add_argument(
+        "--fleet-base-url",
+        default="",
+        help="Unsupported for baseline runs; TaskGenEnv must use the default Fleet backend.",
+    )
+    parser.add_argument(
+        "--fleet-timeout",
+        type=float,
+        default=20.0,
+        help="Fleet API request timeout in seconds for task lookup/listing.",
+    )
     parser.add_argument(
         "--random-seed",
         type=int,
@@ -981,13 +1255,14 @@ def add_env_arguments(parser: argparse.ArgumentParser) -> None:
 
 def add_eval_config_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--evaluator-model", default=DEFAULT_EVALUATOR_MODEL)
+    parser.add_argument("--openrouter-api-key", default="", help="OpenRouter API key for the judge model.")
     parser.add_argument("--k-rollouts", type=int, default=4)
     parser.add_argument("--eval-k-rollouts", type=int, default=8)
     parser.add_argument("--max-eval-steps", type=int, default=20)
     parser.add_argument("--base-quality-reward", type=float, default=0.0)
     parser.add_argument("--enable-hints", action="store_true")
     parser.add_argument("--training-phase", choices=["train", "eval"], default="eval")
-    parser.add_argument("--judge-model", default="", help="Optional judge model for evaluation.")
+    parser.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="Judge model for evaluation gates.")
     parser.add_argument(
         "--verifier-min-ast-nodes",
         type=int,
@@ -1045,6 +1320,11 @@ def generate_cli() -> argparse.ArgumentParser:
         help="Allow a <task> response before query_db has been called.",
     )
     generate_parser.set_defaults(enforce_exploration_gate=True)
+    generate_parser.add_argument(
+        "--allow-missing-db",
+        action="store_true",
+        help="Allow generation to continue if Fleet DB provisioning fails. Intended only for prompt debugging.",
+    )
     generate_parser.add_argument("--include-transcript", action="store_true")
     generate_parser.add_argument("-o", "--output", help="Write JSON output to this file. Defaults to stdout.")
     generate_parser.set_defaults(
@@ -1053,6 +1333,7 @@ def generate_cli() -> argparse.ArgumentParser:
         eval_k_rollouts=8,
         evaluator_model=DEFAULT_EVALUATOR_MODEL,
         fleet_task_key_source="argument",
+        fleet_task_key_candidate_count=None,
         judge_model="",
         k_rollouts=4,
         max_eval_steps=20,
@@ -1077,6 +1358,7 @@ def generate_cli() -> argparse.ArgumentParser:
     )
     evaluate_parser.add_argument("-o", "--output", help="Write JSON output to this file. Defaults to stdout.")
     evaluate_parser.set_defaults(fleet_task_key_source="argument", tool_call_reward_per_call=0.0)
+    evaluate_parser.set_defaults(allow_missing_db=False, fleet_task_key_candidate_count=None)
     evaluate_parser.set_defaults(func=handle_evaluate)
 
     return parser
