@@ -9,17 +9,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
+import hashlib
 import inspect
 import json
 import os
 import random
 import re
 import sys
-import tempfile
 import time
+import traceback
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SKYRL_GYM_SRC = REPO_ROOT / "skyrl-gym"
@@ -29,6 +31,7 @@ if SKYRL_GYM_SRC.exists() and str(SKYRL_GYM_SRC) not in sys.path:
 
 DEFAULT_EVALUATOR_MODEL = "anthropic/claude-sonnet-4.5"
 DEFAULT_JUDGE_MODEL = DEFAULT_EVALUATOR_MODEL
+DEFAULT_VERIFIER_SCORE_MODEL = DEFAULT_JUDGE_MODEL
 DEFAULT_RANDOM_ENV_KEY = "booking"
 SEED_STATE_DRYRUN_ERROR = (
     "Verifier returned 1 on the unmodified database — it passes even when no agent has acted. "
@@ -43,6 +46,10 @@ os.environ.setdefault("LOGFIRE_IGNORE_NO_CONFIG", "1")
 
 def log_generate(message: str) -> None:
     print(f"[task-gen generate] {message}", file=sys.stderr, flush=True)
+
+
+def log_verifier_score(message: str) -> None:
+    print(f"[task-gen verifierscore] {message}", file=sys.stderr, flush=True)
 
 
 def patch_fleet_env_client_close_async() -> None:
@@ -158,12 +165,16 @@ def validate_context_arguments(args: argparse.Namespace) -> None:
         args.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY", "")
     ):
         raise RuntimeError("OPENROUTER_API_KEY is required when --judge-model is set for solve.")
+    if args.command == "verifierscore" and not (
+        args.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY", "")
+    ):
+        raise RuntimeError("OPENROUTER_API_KEY is required for verifierscore.")
 
 
 def apply_runtime_environment(args: argparse.Namespace) -> None:
-    if args.fleet_api_key:
+    if getattr(args, "fleet_api_key", ""):
         os.environ["FLEET_API_KEY"] = args.fleet_api_key
-    if args.command == "solve" and args.openrouter_api_key:
+    if args.command in {"solve", "verifierscore"} and getattr(args, "openrouter_api_key", ""):
         os.environ["OPENROUTER_API_KEY"] = args.openrouter_api_key
 
 
@@ -238,6 +249,26 @@ def load_generated_file_data(file_text: str) -> Dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def generated_task_payload(file_text: str) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "input_sha256": hashlib.sha256(file_text.encode("utf-8")).hexdigest(),
+        "input_text": file_text,
+    }
+    try:
+        parsed = json.loads(file_text)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        payload["input_json"] = parsed
+    try:
+        prompt, verifier, task_xml = extract_task_from_text(file_text)
+    except Exception as exc:
+        payload["task_parse_error"] = str(exc)
+        return payload
+    payload.update({"prompt": prompt, "verifier": verifier, "task_xml": task_xml})
+    return payload
 
 
 def apply_fleet_context_from_generated_file(args: argparse.Namespace, generated_data: Dict[str, Any]) -> None:
@@ -402,9 +433,98 @@ def make_env_extras(args: argparse.Namespace) -> Dict[str, Any]:
 def write_json(data: Dict[str, Any], output: Optional[str]) -> None:
     rendered = json.dumps(data, indent=2, ensure_ascii=False)
     if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
         Path(output).write_text(rendered + "\n")
     else:
         print(rendered)
+
+
+def read_jsonl_last_record(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.exists():
+        return None
+    lines = [line for line in path.read_text().splitlines() if line.strip()]
+    if not lines:
+        return None
+    data = json.loads(lines[-1])
+    return data if isinstance(data, dict) else None
+
+
+def collect_fleet_status_artifacts(rollout_dir: str) -> Dict[str, Any]:
+    if not rollout_dir:
+        return {}
+    status_path = Path(rollout_dir) / "fleet_job_status.jsonl"
+    jobs_dir = Path(rollout_dir) / "fleet_jobs"
+    payload: Dict[str, Any] = {
+        "fleet_status_log": str(status_path),
+        "fleet_jobs_dir": str(jobs_dir),
+    }
+    if status_path.exists():
+        job_ids = []
+        latest_status: Dict[str, str] = {}
+        for line in status_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            job_id = event.get("job_id")
+            if isinstance(job_id, str) and job_id:
+                job_ids.append(job_id)
+                status = event.get("status")
+                if isinstance(status, str):
+                    latest_status[job_id] = status
+        payload["fleet_job_ids"] = sorted(set(job_ids))
+        payload["fleet_latest_status"] = latest_status
+    return payload
+
+
+def write_failure_json(args: argparse.Namespace, mode: str, exc: BaseException) -> None:
+    output = getattr(args, "output", None)
+    if not output or Path(output).exists():
+        return
+    payload = {
+        "mode": mode,
+        "error": str(exc),
+        "exception_type": type(exc).__name__,
+        "traceback": traceback.format_exc(),
+        "config": config_payload(args),
+    }
+    if getattr(args, "command", "") == "generate":
+        payload.update(
+            {
+                "model": getattr(args, "model", ""),
+                "fleet_task_key": getattr(args, "fleet_task_key", ""),
+                "fleet_task_key_file": getattr(args, "fleet_task_key_file", ""),
+            }
+        )
+    if getattr(args, "command", "") == "solve":
+        rollout_dir = getattr(args, "_rollout_dir", "") or getattr(args, "rollout_dir", "")
+        rollout_file = getattr(args, "_rollout_file", "")
+        rollout_record = read_jsonl_last_record(Path(rollout_file)) if rollout_file else None
+        payload.update(
+            {
+                "file": getattr(args, "file", ""),
+                "evaluator_model": getattr(args, "evaluator_model", ""),
+                "fleet_task_key": getattr(args, "fleet_task_key", ""),
+                "run_name": getattr(args, "_baseline_run_name", ""),
+                "rollout_dir": rollout_dir,
+                "rollout_file": rollout_file,
+            }
+        )
+        generated_file = getattr(args, "file", "")
+        if generated_file and Path(generated_file).exists():
+            try:
+                payload["generated_task"] = generated_task_payload(Path(generated_file).read_text())
+            except Exception as read_exc:
+                payload["generated_task_read_error"] = str(read_exc)
+        payload.update(collect_fleet_status_artifacts(rollout_dir))
+        if rollout_record:
+            payload["rollout_log"] = rollout_record
+            payload["raw_job_id"] = rollout_record.get("raw_job_id")
+            payload["hinted_job_id"] = rollout_record.get("hinted_job_id")
+            payload["solver_scores"] = rollout_record.get("raw_scores", [])
+    write_json(payload, output)
 
 
 def extract_task_from_text(text: str) -> Tuple[str, str, str]:
@@ -814,13 +934,7 @@ def solver_metrics_from_scores(scores: List[float]) -> Dict[str, Any]:
 
 def read_rollout_record(rollout_dir: str, run_name: str) -> Optional[Dict[str, Any]]:
     path = Path(rollout_dir) / f"{run_name}.jsonl"
-    if not path.exists():
-        return None
-    lines = [line for line in path.read_text().splitlines() if line.strip()]
-    if not lines:
-        return None
-    data = json.loads(lines[-1])
-    return data if isinstance(data, dict) else None
+    return read_jsonl_last_record(path)
 
 
 def gates_reached_solver_run(metadata: Dict[str, Any]) -> bool:
@@ -915,6 +1029,488 @@ def call_openrouter(
         "assistant_message": assistant_message,
         "native_tool_calls": native_tool_calls,
     }
+
+
+def artifact_kind_from_data(data: Dict[str, Any], path: Path) -> str:
+    if data.get("mode") in {"gates_and_solve", "solve_failure"}:
+        return "solve"
+    if "evaluator_model" in data and ("rollout_file" in data or "solver_scores" in data):
+        return "solve"
+    if "done_reason" in data or "generation_config" in data or "generated_text" in data:
+        return "generated"
+    if "solves" in path.parts:
+        return "solve"
+    if "generated" in path.parts:
+        return "generated"
+    return "unknown"
+
+
+def artifact_kind_for_file(path: Path) -> str:
+    try:
+        data = load_generated_file_data(path.read_text())
+    except Exception:
+        data = {}
+    return artifact_kind_from_data(data, path)
+
+
+def verifier_score_search_roots(path: Path) -> List[Path]:
+    if path.is_file():
+        return [path]
+    if not path.exists():
+        raise FileNotFoundError(path)
+    if (path / "generated").is_dir():
+        return [path / "generated"]
+    return [path]
+
+
+def source_files_for_verifier_score(path: Path, glob_pattern: str) -> List[Path]:
+    if path.is_file():
+        return [path] if artifact_kind_for_file(path) == "generated" else []
+
+    candidates: List[Path] = []
+    for root in verifier_score_search_roots(path):
+        candidates.extend(candidate for candidate in root.rglob(glob_pattern) if candidate.is_file())
+
+    candidates = [candidate for candidate in candidates if artifact_kind_for_file(candidate) == "generated"]
+    return sorted(set(candidates))
+
+
+def infer_env_key_from_path(path: Path) -> str:
+    parts = path.parts
+    if "generated" in parts:
+        generated_index = parts.index("generated")
+        if generated_index + 1 < len(parts):
+            return parts[generated_index + 1]
+    return ""
+
+
+def infer_model_from_path(path: Path) -> str:
+    parts = path.parts
+    if "generated" in parts:
+        generated_index = parts.index("generated")
+        if generated_index + 2 < len(parts):
+            return parts[generated_index + 2].replace("__", "/")
+    return ""
+
+
+def normalize_issues(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def clamp_score(value: Any) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, score))
+
+
+def extract_json_object(text: str) -> Dict[str, Any]:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    try:
+        parsed = json.loads(stripped)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        pass
+
+    start = stripped.find("{")
+    if start < 0:
+        return {}
+    depth = 0
+    in_string = False
+    escape = False
+    for index, char in enumerate(stripped[start:], start=start):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = stripped[start : index + 1]
+                try:
+                    parsed = json.loads(candidate)
+                except json.JSONDecodeError:
+                    return {}
+                return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def verifier_score_messages(task: Dict[str, Any]) -> List[Dict[str, str]]:
+    solver_prompt = str(task.get("solver_prompt") or task.get("prompt", ""))
+    verifier = str(task.get("verifier", ""))
+    env_key = str(task.get("env_key", ""))
+    fleet_task_key = str(task.get("fleet_task_key", ""))
+    generation_validation = task.get("generation_validation") if isinstance(task.get("generation_validation"), dict) else {}
+    context_sections = [
+        f"Environment: {env_key or 'unknown'}",
+        f"Fleet task key: {fleet_task_key or 'unknown'}",
+        f"Data key: {task.get('data_key') or 'unknown'}",
+        f"Data version: {task.get('data_version') or 'unknown'}",
+        f"Generator model: {task.get('generator_model') or task.get('model') or 'unknown'}",
+    ]
+    if generation_validation:
+        context_sections.append(f"Generation validation metadata:\n{compact_json(generation_validation, 2500)}")
+    if task.get("generation_dryrun_error"):
+        context_sections.append(f"Generation verifier dry-run error:\n{task['generation_dryrun_error']}")
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a skeptical verifier-quality judge for Fleet task generation. "
+                "Score whether a Python verifier correctly grades a solver's solution "
+                "to the exact solver-facing task prompt, "
+                "with 1.0 meaning robust, aligned, hard to game, and executable, and "
+                "0.0 meaning vacuous, invalid, unrelated, or easy to reward-hack. "
+                "Return only one JSON object."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Evaluate this generated task verifier as an evaluator of solutions to the solver-facing prompt.\n\n"
+                "The solver-facing prompt below is the task specification imported into Fleet as the solver's task. "
+                "Score the verifier against that prompt. Do not score whether the prompt is interesting; score whether "
+                "the verifier would accept valid solver completions for that prompt and reject invalid, incomplete, "
+                "or reward-hacking completions.\n\n"
+                "A high score requires:\n"
+                "- The verifier checks exactly the outcome requested by the solver-facing prompt, no more and no less.\n"
+                "- Write/mutation tasks compare seed vs current state and fail on the seed state.\n"
+                "- Read-only tasks validate DB-grounded facts, not generic keywords or prompt echoes.\n"
+                "- The code uses the documented verifier API, avoids unsupported query methods, "
+                "undefined helpers, broad unfiltered scans, fragile row ordering, and hardcoded IDs "
+                "unless the prompt itself makes the value legitimate.\n"
+                "- The verifier is neither too permissive nor too narrow for valid alternate solutions.\n\n"
+                "Penalize reward-hacking risks aggressively: generic final_answer checks, cargo-cult DB "
+                "queries whose results do not affect the return, checks for user existence only, verifier "
+                "logic unrelated to the solver-facing prompt, missing or invalid validate_task, syntax/runtime hazards, "
+                "and prompt/verifier mismatches.\n\n"
+                "Return JSON exactly in this schema:\n"
+                '{"score": 0.0, "issues": ["short issue"], "rationale": "brief explanation"}\n\n'
+                "Context:\n"
+                + "\n\n".join(context_sections)
+                + "\n\n"
+                f"Solver-facing prompt:\n{solver_prompt}\n\n"
+                f"Verifier:\n```python\n{verifier}\n```"
+            ),
+        },
+    ]
+
+
+def parse_verifier_judge_response(text: str) -> Tuple[float, List[str], str, Dict[str, Any], str]:
+    parsed = extract_json_object(text)
+    if not parsed:
+        return 0.0, ["judge_response_not_json"], text.strip()[:1000], {}, "parse_error"
+    score = clamp_score(parsed.get("score"))
+    issues = normalize_issues(parsed.get("issues"))
+    rationale = str(parsed.get("rationale") or parsed.get("reason") or "").strip()
+    if not rationale:
+        rationale = str(parsed)[:1000]
+    return score, issues, rationale, parsed, ""
+
+
+def compact_json(value: Any, max_chars: int = 4000) -> str:
+    if value in ("", None, [], {}):
+        return ""
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, indent=2)
+    except TypeError:
+        rendered = str(value)
+    if len(rendered) > max_chars:
+        return rendered[:max_chars] + "\n... [truncated]"
+    return rendered
+
+
+def generation_invalid_reason(data: Dict[str, Any]) -> str:
+    done_reason = str(data.get("done_reason") or "")
+    if done_reason and done_reason != "task_generated":
+        return f"done_reason={done_reason}"
+    validation = data.get("validation")
+    if isinstance(validation, dict) and validation.get("valid") is False:
+        return str(validation.get("error") or f"validation_failed={validation.get('failed', [])}")
+    if data.get("dryrun_error"):
+        return str(data["dryrun_error"])
+    if data.get("parse_error"):
+        return str(data["parse_error"])
+    return ""
+
+
+def extract_prompt_verifier_from_data_or_text(data: Dict[str, Any], source_text: str) -> Tuple[str, str, str]:
+    if isinstance(data.get("prompt"), str) and isinstance(data.get("verifier"), str):
+        prompt = data["prompt"]
+        verifier = data["verifier"]
+        return prompt, verifier, format_task_xml(prompt, verifier)
+    return extract_task_from_text(source_text)
+
+
+def build_unscored_verifier_row(path: Path) -> Dict[str, Any]:
+    source_text = path.read_text()
+    data = load_generated_file_data(source_text)
+    artifact_kind = artifact_kind_from_data(data, path)
+    row: Dict[str, Any] = {
+        "source_file": str(path),
+        "source_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+        "artifact_kind": artifact_kind,
+        "env_key": str(data.get("env_key") or infer_env_key_from_path(path)),
+        "fleet_task_key": str(data.get("fleet_task_key") or ""),
+        "generator_model": str(
+            data.get("generator_model")
+            or data.get("model")
+            or infer_model_from_path(path)
+        ),
+        "model": str(data.get("model") or data.get("generator_model") or infer_model_from_path(path)),
+        "done_reason": str(data.get("done_reason") or ""),
+        "attempt": data.get("attempt"),
+        "data_key": str(data.get("data_key") or ""),
+        "data_version": str(data.get("data_version") or ""),
+        "generation_validation": data.get("validation") or {},
+        "generation_dryrun_error": str(data.get("dryrun_error") or ""),
+    }
+    if artifact_kind != "generated":
+        row.update(
+            {
+                "prompt": "",
+                "solver_prompt": "",
+                "verifier": "",
+                "prompt_chars": 0,
+                "solver_prompt_chars": 0,
+                "verifier_chars": 0,
+                "score": 0.0,
+                "issues": ["not_generated_artifact"],
+                "rationale": "Verifier score consumes generator outputs only.",
+                "judge_model": "",
+                "judge_raw": "",
+                "status": "invalid_input",
+                "error": f"artifact_kind={artifact_kind}",
+            }
+        )
+        return row
+    try:
+        prompt, verifier, _task_xml = extract_prompt_verifier_from_data_or_text(data, source_text)
+    except Exception as exc:
+        row.update(
+            {
+                "prompt": "",
+                "solver_prompt": "",
+                "verifier": "",
+                "prompt_chars": 0,
+                "solver_prompt_chars": 0,
+                "verifier_chars": 0,
+                "score": 0.0,
+                "issues": ["missing_or_invalid_task", str(exc)],
+                "rationale": str(exc),
+                "judge_model": "",
+                "judge_raw": "",
+                "status": "invalid_input",
+                "error": str(exc),
+            }
+        )
+        return row
+
+    row.update(
+        {
+            "prompt": prompt,
+            "solver_prompt": prompt,
+            "verifier": verifier,
+            "prompt_chars": len(prompt),
+            "solver_prompt_chars": len(prompt),
+            "verifier_chars": len(verifier),
+            "score": None,
+            "issues": [],
+            "rationale": "",
+            "judge_model": "",
+            "judge_raw": "",
+            "status": "pending",
+            "error": "",
+        }
+    )
+    if not prompt.strip() or not verifier.strip():
+        row.update(
+            {
+                "score": 0.0,
+                "issues": ["missing_prompt_or_verifier"],
+                "rationale": "The artifact did not contain a non-empty prompt and verifier.",
+                "status": "invalid_input",
+            }
+        )
+        return row
+
+    invalid_reason = generation_invalid_reason(data)
+    if invalid_reason:
+        row.update(
+            {
+                "score": 0.0,
+                "issues": ["known_generation_failure", invalid_reason],
+                "rationale": (
+                    "The generated artifact already failed generation validation or verifier dry-run, "
+                    "so its verifier is not a valid solver-facing evaluator."
+                ),
+                "status": "invalid_input",
+                "error": invalid_reason,
+            }
+        )
+    return row
+
+
+def call_verifier_score_judge(args: argparse.Namespace, row: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        import litellm
+    except ImportError as exc:
+        raise RuntimeError(
+            "litellm is required for verifierscore. Install it or run in the task-gen environment."
+        ) from exc
+
+    api_key = args.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is required. Pass --openrouter-api-key or set the env var.")
+
+    response = litellm.completion(
+        model=openrouter_model(args.model),
+        messages=verifier_score_messages(row),
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_tokens=args.max_tokens,
+        api_key=api_key,
+    )
+    content = response.choices[0].message.content or ""
+    score, issues, rationale, parsed, parse_error = parse_verifier_judge_response(content)
+    scored = dict(row)
+    scored.update(
+        {
+            "score": score,
+            "issues": issues,
+            "rationale": rationale,
+            "judge_model": args.model,
+            "judge_raw": content,
+            "judge_json": parsed,
+            "status": "scored" if not parse_error else "judge_parse_error",
+            "error": parse_error,
+        }
+    )
+    return scored
+
+
+async def score_verifier_row_async(
+    args: argparse.Namespace, row: Dict[str, Any], semaphore: asyncio.Semaphore
+) -> Dict[str, Any]:
+    if row.get("status") == "invalid_input":
+        row["judge_model"] = args.model
+        return row
+    async with semaphore:
+        try:
+            log_verifier_score(f"Scoring {row['source_file']}")
+            return await asyncio.to_thread(call_verifier_score_judge, args, row)
+        except Exception as exc:
+            failed = dict(row)
+            failed.update(
+                {
+                    "score": 0.0,
+                    "issues": ["judge_call_failed"],
+                    "rationale": str(exc),
+                    "judge_model": args.model,
+                    "status": "judge_error",
+                    "error": str(exc),
+                }
+            )
+            return failed
+
+
+VERIFIER_SCORE_CSV_FIELDS = [
+    "artifact_kind",
+    "env_key",
+    "fleet_task_key",
+    "generator_model",
+    "model",
+    "judge_model",
+    "score",
+    "issues",
+    "rationale",
+    "status",
+    "error",
+    "done_reason",
+    "attempt",
+    "prompt_chars",
+    "solver_prompt_chars",
+    "verifier_chars",
+    "source_file",
+    "source_sha256",
+]
+
+
+def csv_value(value: Any) -> Any:
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return value
+
+
+def write_verifier_score_outputs(rows: Sequence[Dict[str, Any]], csv_output: Path, jsonl_output: Path) -> None:
+    csv_output.parent.mkdir(parents=True, exist_ok=True)
+    jsonl_output.parent.mkdir(parents=True, exist_ok=True)
+    with jsonl_output.open("w") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    with csv_output.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=VERIFIER_SCORE_CSV_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: csv_value(row.get(field, "")) for field in VERIFIER_SCORE_CSV_FIELDS})
+
+
+def resolve_verifier_score_outputs(args: argparse.Namespace) -> Tuple[Path, Path]:
+    if args.output_prefix:
+        prefix = Path(args.output_prefix)
+    else:
+        source = Path(args.path)
+        base_dir = source if source.is_dir() else source.parent
+        prefix = base_dir / "verifier_scores"
+    csv_output = Path(args.csv_output) if args.csv_output else prefix.with_suffix(".csv")
+    jsonl_output = Path(args.jsonl_output) if args.jsonl_output else prefix.with_suffix(".jsonl")
+    return csv_output, jsonl_output
+
+
+async def verifier_score_async(args: argparse.Namespace) -> None:
+    files = source_files_for_verifier_score(Path(args.path), args.glob)
+    if args.limit is not None:
+        files = files[: args.limit]
+    if not files:
+        raise ValueError(f"No files matched {args.path!r} with --glob {args.glob!r}.")
+
+    log_verifier_score(f"Discovered {len(files)} artifact(s)")
+    rows = [build_unscored_verifier_row(path) for path in files]
+    semaphore = asyncio.Semaphore(max(1, args.concurrency))
+    scored_rows = await asyncio.gather(*(score_verifier_row_async(args, row, semaphore) for row in rows))
+    csv_output, jsonl_output = resolve_verifier_score_outputs(args)
+    write_verifier_score_outputs(scored_rows, csv_output, jsonl_output)
+    scored_count = sum(1 for row in scored_rows if row.get("status") == "scored")
+    invalid_count = sum(1 for row in scored_rows if row.get("status") == "invalid_input")
+    error_count = len(scored_rows) - scored_count - invalid_count
+    log_verifier_score(
+        f"Wrote {len(scored_rows)} row(s) to {csv_output} and {jsonl_output} "
+        f"(scored={scored_count} invalid={invalid_count} errors={error_count})"
+    )
+
+
+def handle_verifier_score(args: argparse.Namespace) -> None:
+    if not (args.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY", "")):
+        raise RuntimeError("OPENROUTER_API_KEY is required for verifierscore.")
+    apply_runtime_environment(args)
+    asyncio.run(verifier_score_async(args))
 
 
 async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict[str, Any]:
@@ -1168,6 +1764,9 @@ async def generate_async(args: argparse.Namespace) -> None:
             log_generate("Generate command completed")
             return
         if not retry_budget_allows(args, attempt):
+            if args.output:
+                log_generate(f"Writing failed generation result to {args.output}")
+                write_json(result, args.output)
             raise RuntimeError(f"Generation failed after {attempt} attempt(s): {generation_failure_message(result)}")
 
         log_generate(f"Retrying generation after attempt={attempt}: {generation_failure_message(result)}")
@@ -1177,7 +1776,11 @@ async def generate_async(args: argparse.Namespace) -> None:
 def handle_generate(args: argparse.Namespace) -> None:
     validate_context_arguments(args)
     apply_runtime_environment(args)
-    asyncio.run(generate_async(args))
+    try:
+        asyncio.run(generate_async(args))
+    except Exception as exc:
+        write_failure_json(args, "generate_failure", exc)
+        raise
 
 
 async def solve_async(args: argparse.Namespace) -> None:
@@ -1192,35 +1795,50 @@ async def solve_async(args: argparse.Namespace) -> None:
     previous_run_name = os.environ.get("RUN_NAME")
     previous_rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR")
     rollout_record = None
+    rollout_file = ""
+    env = None
 
-    with tempfile.TemporaryDirectory() as rollout_dir:
-        os.environ["RUN_NAME"] = run_name
-        os.environ["REWARD_ROLLOUT_DIR"] = rollout_dir
-        env = make_task_gen_env(env_config=make_env_config(args), extras=env_extras)
-        try:
-            await env.init_async([])
-            require_solve_db_ready(env, env_extras)
-            env.called_query_db = True
-            step_output = await env.step_async(task_xml)
-            rollout_record = read_rollout_record(rollout_dir, run_name)
-            result = {
-                "mode": "gates_and_solve",
-                "primary_metric": "solver_pass_rate",
-                "task_gen_reward": step_output["reward"],
-                "done": step_output["done"],
-                "observations": step_output["observations"],
-                "metadata": step_output["metadata"],
-            }
-        finally:
+    if args.rollout_dir:
+        rollout_dir = args.rollout_dir
+    elif args.output:
+        output_path = Path(args.output)
+        rollout_dir = str(output_path.parent / f"{output_path.stem}.rollouts" / run_name)
+    else:
+        rollout_dir = str(Path.cwd() / "task_gen_baseline_rollouts" / run_name)
+    Path(rollout_dir).mkdir(parents=True, exist_ok=True)
+    rollout_file = str(Path(rollout_dir) / f"{run_name}.jsonl")
+    args._baseline_run_name = run_name
+    args._rollout_dir = rollout_dir
+    args._rollout_file = rollout_file
+
+    os.environ["RUN_NAME"] = run_name
+    os.environ["REWARD_ROLLOUT_DIR"] = rollout_dir
+    env = make_task_gen_env(env_config=make_env_config(args), extras=env_extras)
+    try:
+        await env.init_async([])
+        require_solve_db_ready(env, env_extras)
+        env.called_query_db = True
+        step_output = await env.step_async(task_xml)
+        rollout_record = read_rollout_record(rollout_dir, run_name)
+        result = {
+            "mode": "gates_and_solve",
+            "primary_metric": "solver_pass_rate",
+            "task_gen_reward": step_output["reward"],
+            "done": step_output["done"],
+            "observations": step_output["observations"],
+            "metadata": step_output["metadata"],
+        }
+    finally:
+        if env is not None:
             await env.close_async()
-            if previous_run_name is None:
-                os.environ.pop("RUN_NAME", None)
-            else:
-                os.environ["RUN_NAME"] = previous_run_name
-            if previous_rollout_dir is None:
-                os.environ.pop("REWARD_ROLLOUT_DIR", None)
-            else:
-                os.environ["REWARD_ROLLOUT_DIR"] = previous_rollout_dir
+        if previous_run_name is None:
+            os.environ.pop("RUN_NAME", None)
+        else:
+            os.environ["RUN_NAME"] = previous_run_name
+        if previous_rollout_dir is None:
+            os.environ.pop("REWARD_ROLLOUT_DIR", None)
+        else:
+            os.environ["REWARD_ROLLOUT_DIR"] = previous_rollout_dir
 
     result.update(
         {
@@ -1244,6 +1862,8 @@ async def solve_async(args: argparse.Namespace) -> None:
             "prompt": prompt,
             "verifier": verifier,
             "task_xml": task_xml,
+            "rollout_dir": rollout_dir,
+            "rollout_file": rollout_file,
         }
     )
 
@@ -1257,7 +1877,11 @@ async def solve_async(args: argparse.Namespace) -> None:
 
 def handle_solve(args: argparse.Namespace) -> None:
     apply_runtime_environment(args)
-    asyncio.run(solve_async(args))
+    try:
+        asyncio.run(solve_async(args))
+    except Exception as exc:
+        write_failure_json(args, "solve_failure", exc)
+        raise
 
 
 def add_env_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1412,10 +2036,37 @@ def generate_cli() -> argparse.ArgumentParser:
     add_solve_config_arguments(solve_parser)
     solve_parser.add_argument("--max-turns", type=int, default=10)
     solve_parser.add_argument("--file", required=True, help="Generated JSON or raw <task> file to solve.")
+    solve_parser.add_argument(
+        "--rollout-dir",
+        default="",
+        help="Directory where solver rollout JSONL records should be preserved. Defaults next to --output, or ./task_gen_baseline_rollouts.",
+    )
     solve_parser.add_argument("-o", "--output", help="Write JSON output to this file. Defaults to stdout.")
     solve_parser.set_defaults(fleet_task_key_source="argument", tool_call_reward_per_call=0.0)
     solve_parser.set_defaults(allow_missing_db=False, fleet_task_key_candidate_count=None)
     solve_parser.set_defaults(func=handle_solve)
+
+    score_parser = subparsers.add_parser(
+        "verifierscore",
+        help="Score generated task verifiers with an LLM judge and write CSV/JSONL outputs.",
+    )
+    score_parser.add_argument("path", help="Generated artifact JSON file or directory to score recursively.")
+    score_parser.add_argument("--model", default=DEFAULT_VERIFIER_SCORE_MODEL, help="OpenRouter judge model id.")
+    score_parser.add_argument("--openrouter-api-key", default="")
+    score_parser.add_argument("--concurrency", type=int, default=4)
+    score_parser.add_argument("--max-tokens", type=int, default=1200)
+    score_parser.add_argument("--temperature", type=float, default=0.0)
+    score_parser.add_argument("--top-p", type=float, default=1.0)
+    score_parser.add_argument("--glob", default="*.json", help="File glob used when path is a directory.")
+    score_parser.add_argument("--limit", type=int, default=None, help="Optional cap for smoke tests.")
+    score_parser.add_argument(
+        "--output-prefix",
+        default="",
+        help="Output path prefix. Defaults to <path>/verifier_scores for directories.",
+    )
+    score_parser.add_argument("--csv-output", default="", help="CSV output path. Overrides --output-prefix CSV path.")
+    score_parser.add_argument("--jsonl-output", default="", help="JSONL output path. Overrides --output-prefix JSONL path.")
+    score_parser.set_defaults(func=handle_verifier_score)
 
     return parser
 

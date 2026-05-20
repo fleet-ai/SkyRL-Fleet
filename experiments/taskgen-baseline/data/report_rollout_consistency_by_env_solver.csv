@@ -1,0 +1,33 @@
+env_key,solver_model,n_completed_3_rollout_jobs,all_3_success_count,mixed_count,all_3_failure_count,all_3_success_rate,mixed_rate,all_3_failure_rate,mean_pass_count,mean_rollout_pass_rate,solver
+booking,anthropic/claude-sonnet-4.6,8,3,0,5,0.375,0.0,0.625,1.125,0.375,Sonnet 4.6
+booking,openai/gpt-5.5,8,3,0,5,0.375,0.0,0.625,1.125,0.375,GPT-5.5
+booking,anthropic/claude-opus-4.7,8,2,1,5,0.25,0.125,0.625,1.0,0.3333333333333333,Opus 4.7
+booking,openai/gpt-4o-mini,8,0,2,6,0.0,0.25,0.75,0.25,0.08333333333333333,GPT-4o-mini
+budget,anthropic/claude-sonnet-4.6,7,3,1,3,0.42857142857142855,0.14285714285714285,0.42857142857142855,1.4285714285714286,0.47619047619047616,Sonnet 4.6
+budget,openai/gpt-5.5,7,3,1,3,0.42857142857142855,0.14285714285714285,0.42857142857142855,1.5714285714285714,0.5238095238095238,GPT-5.5
+budget,anthropic/claude-opus-4.7,7,2,2,3,0.2857142857142857,0.2857142857142857,0.42857142857142855,1.2857142857142858,0.4285714285714285,Opus 4.7
+budget,openai/gpt-4o-mini,7,0,1,6,0.0,0.14285714285714285,0.8571428571428571,0.2857142857142857,0.09523809523809523,GPT-4o-mini
+forums-homes,anthropic/claude-sonnet-4.6,5,3,1,1,0.6,0.2,0.2,2.0,0.6666666666666667,Sonnet 4.6
+forums-homes,openai/gpt-5.5,5,3,0,2,0.6,0.0,0.4,1.8,0.6,GPT-5.5
+forums-homes,anthropic/claude-opus-4.7,5,2,1,2,0.4,0.2,0.4,1.6,0.5333333333333333,Opus 4.7
+forums-homes,openai/gpt-4o-mini,5,1,1,3,0.2,0.2,0.6,1.0,0.3333333333333333,GPT-4o-mini
+outlook,anthropic/claude-sonnet-4.6,6,1,0,5,0.16666666666666666,0.0,0.8333333333333334,0.5,0.16666666666666666,Sonnet 4.6
+outlook,openai/gpt-4o-mini,7,1,0,6,0.14285714285714285,0.0,0.8571428571428571,0.42857142857142855,0.14285714285714285,GPT-4o-mini
+outlook,openai/gpt-5.5,7,1,0,6,0.14285714285714285,0.0,0.8571428571428571,0.42857142857142855,0.14285714285714285,GPT-5.5
+outlook,anthropic/claude-opus-4.7,6,0,1,5,0.0,0.16666666666666666,0.8333333333333334,0.3333333333333333,0.1111111111111111,Opus 4.7
+reddit,anthropic/claude-opus-4.7,8,5,1,2,0.625,0.125,0.25,2.0,0.6666666666666667,Opus 4.7
+reddit,anthropic/claude-sonnet-4.6,8,5,0,3,0.625,0.0,0.375,1.875,0.625,Sonnet 4.6
+reddit,openai/gpt-5.5,8,5,1,2,0.625,0.125,0.25,2.0,0.6666666666666666,GPT-5.5
+reddit,openai/gpt-4o-mini,8,3,2,3,0.375,0.25,0.375,1.5,0.49999999999999994,GPT-4o-mini
+rops-mail,anthropic/claude-opus-4.7,7,7,0,0,1.0,0.0,0.0,3.0,1.0,Opus 4.7
+rops-mail,anthropic/claude-sonnet-4.6,7,7,0,0,1.0,0.0,0.0,3.0,1.0,Sonnet 4.6
+rops-mail,openai/gpt-5.5,7,7,0,0,1.0,0.0,0.0,3.0,1.0,GPT-5.5
+rops-mail,openai/gpt-4o-mini,7,4,2,1,0.5714285714285714,0.2857142857142857,0.14285714285714285,2.2857142857142856,0.7619047619047619,GPT-4o-mini
+ticketmaster,anthropic/claude-opus-4.7,4,0,0,4,0.0,0.0,1.0,0.0,0.0,Opus 4.7
+ticketmaster,anthropic/claude-sonnet-4.6,4,0,0,4,0.0,0.0,1.0,0.0,0.0,Sonnet 4.6
+ticketmaster,openai/gpt-4o-mini,4,0,0,4,0.0,0.0,1.0,0.0,0.0,GPT-4o-mini
+ticketmaster,openai/gpt-5.5,4,0,0,4,0.0,0.0,1.0,0.0,0.0,GPT-5.5
+zillow,anthropic/claude-sonnet-4.6,8,6,0,2,0.75,0.0,0.25,2.25,0.75,Sonnet 4.6
+zillow,anthropic/claude-opus-4.7,8,5,1,2,0.625,0.125,0.25,2.0,0.6666666666666666,Opus 4.7
+zillow,openai/gpt-5.5,8,5,1,2,0.625,0.125,0.25,2.0,0.6666666666666666,GPT-5.5
+zillow,openai/gpt-4o-mini,8,3,0,5,0.375,0.0,0.625,1.125,0.375,GPT-4o-mini
