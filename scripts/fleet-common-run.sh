@@ -95,12 +95,13 @@ fi
 
 TMP_DIR="${CKPT_ROOT}/skyrl-tmp"
 mkdir -p "$TMP_DIR"
-# Ray uses TMPDIR for session dirs which contain Unix domain sockets.
-# UDS don't work over NFS, so use local /tmp for Ray while keeping
-# TMPDIR on NFS for everything else (checkpoints, data).
+# TMPDIR must be LOCAL, not NFS. vLLM uses tempfile.gettempdir() for filelock
+# lock files — on NFS, concurrent engines hit ESTALE (errno 116) because
+# filelock's _release() does unlink() before flock(UNLOCK), and NFS can't
+# stat a deleted inode. Ray also needs local temp for Unix domain sockets.
 RAY_TMPDIR="/tmp/skyrl-ray"
 mkdir -p "$RAY_TMPDIR"
-export TMPDIR="$TMP_DIR"
+export TMPDIR="/tmp"
 export RAY_TMPDIR="$RAY_TMPDIR"
 
 TASKS_FILE="${DATA_ROOT}/data/fleet/tasks_${MODALITY}.json"
