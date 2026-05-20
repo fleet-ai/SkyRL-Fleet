@@ -103,6 +103,11 @@ RAY_TMPDIR="/tmp/skyrl-ray"
 mkdir -p "$RAY_TMPDIR"
 export TMPDIR="/tmp"
 export RAY_TMPDIR="$RAY_TMPDIR"
+# HuggingFace cache must be local — SkyPilot on SLURM sets HOME to an NFS path
+# (/workspace/.sky_clusters/...), so ~/.cache/huggingface lands on NFS. filelock
+# on NFS causes ESTALE when multiple vLLM engines download concurrently.
+export HF_HOME="/tmp/hf_cache"
+mkdir -p "$HF_HOME"
 
 TASKS_FILE="${DATA_ROOT}/data/fleet/tasks_${MODALITY}.json"
 DATA_DIR="${DATA_ROOT}/data/fleet/${DATA_DIR_NAME}"
