@@ -1,0 +1,97 @@
+name: tm-baseline-judge-s42
+
+resources:
+  disk_size: 750
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    - accelerators: H200:8
+      cloud: runpod
+      ports: 6479
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 1
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  DATA_VERSION: "v6"
+  MODALITY: "browser_use"
+  ENV_KEYS: "ticketmaster"
+  DIFFICULTY: ""
+  MAX_TASKS: ""
+  MAX_TASKS_PER_ENV: 100
+  SAMPLING_SEED: 42
+  MAX_ENV_RATIO: 1.0
+  EVAL_ALL_SELECTED: "true"
+  MAX_EVAL_PROMPTS: 0
+
+  MAX_TURNS: 80
+  MAX_INPUT_LENGTH: 80000
+  MAX_GENERATE_LENGTH: 4096
+  RESUME_RUN_NAME: ""
+  EVAL_BATCH_SIZE: 12
+  EVAL_N_SAMPLES: 1
+
+  MODEL_PATH: "Qwen/Qwen3.5-9B"
+  PROJECT_NAME: "fleet-taste-baselines"
+  RUN_NAME: "tm-qwen35-9b-baseline-s42"
+  DATA_ROOT: "/workspace/skyrl_data/tm-baseline-judge-s42"
+  JUDGE_WORKERS: 4
+  JUDGE_N_SCREENSHOTS: 8
+
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  set -euo pipefail
+  export ENV_KEYS="ticketmaster"
+  export SKYRL_FAIL_ON_ENV_INIT_ERROR="true"
+  .venv/bin/python - <<'PY'
+  import os
+  from pathlib import Path
+
+  import pyarrow.parquet as pq
+
+  root = Path(os.environ["DATA_ROOT"])
+  data_dir = root / "data" / "fleet" / "browser_use"
+  for split in ("train", "validation"):
+      path = data_dir / f"{split}.parquet"
+      if not path.exists():
+          raise SystemExit(f"Missing prepared dataset: {path}")
+      table = pq.read_table(path, columns=["data_source"])
+      sources = sorted(set(table.column("data_source").to_pylist()))
+      print(f"{split}: {table.num_rows} rows, data_source={sources}")
+      if sources != ["ticketmaster"]:
+          raise SystemExit(f"Refusing to run: {split}.parquet is not ticketmaster-only: {sources}")
+  PY
+  bash scripts/fleet-eval-only-run.sh
+  EVAL_DIR="$HOME/exports/dumped_evals/eval_only"
+  .venv/bin/python scripts/judge_eval_outputs.py \
+    --input "$EVAL_DIR/ticketmaster.jsonl" \
+    --out "$EVAL_DIR/taste_scores.jsonl" \
+    --summary "$EVAL_DIR/taste_summary.json" \
+    --workers "$JUDGE_WORKERS" \
+    --num-screenshots "$JUDGE_N_SCREENSHOTS"
+  S3_PREFIX="s3://${S3_TRAJECTORY_BUCKET}/evals/${RUN_NAME}/eval_only"
+  aws s3 cp "$EVAL_DIR/taste_scores.jsonl" "$S3_PREFIX/taste_scores.jsonl"
+  aws s3 cp "$EVAL_DIR/taste_summary.json" "$S3_PREFIX/taste_summary.json"

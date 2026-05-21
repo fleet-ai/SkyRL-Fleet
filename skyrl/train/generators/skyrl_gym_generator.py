@@ -7,6 +7,7 @@ For details, see https://docs.skyrl.ai/docs/tutorials/skyrl_gym_generator
 
 import asyncio
 import copy
+import os
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
@@ -350,6 +351,9 @@ class SkyRLGymGenerator(GeneratorInterface):
         try:
             chat_history, _ = await self._env_init(env, chat_history)
         except Exception as e:
+            if os.environ.get("SKYRL_FAIL_ON_ENV_INIT_ERROR", "false").lower() in ("1", "true", "yes"):
+                logger.error(f"Session {session_id}: env.init failed ({type(e).__name__}: {e}); failing run")
+                raise
             logger.warning(f"Session {session_id}: env.init failed ({type(e).__name__}: {e}), returning zero-reward trajectory")
             # Return a minimal failed trajectory so training can continue
             dummy_ids = self.tokenizer.apply_chat_template(
@@ -573,6 +577,36 @@ class SkyRLGymGenerator(GeneratorInterface):
         await self._env_close(env)
         # Get environment-specific metrics after the episode is done
         env_metrics = env.get_metrics()
+
+        if env_class == "fleet_task" and env_config.get("taste_reward", False):
+            try:
+                from skyrl_gym.envs.fleet_task.taste_judge import score_taste_reward_async
+
+                verifier_score = env_metrics.get("final_reward")
+                if verifier_score is None and per_step_rewards:
+                    verifier_score = per_step_rewards[-1][0]
+                taste_breakdown = await score_taste_reward_async(
+                    chat_history=env_metrics.get("chat_history", []),
+                    task_key=str(env_metrics.get("task_key") or env_extras.get("task_key", "")),
+                    env_key=str(env_metrics.get("env_key", "")),
+                    verifier_score=float(verifier_score or 0.0),
+                    num_turns=int(env_metrics.get("turns", 0)),
+                    text_model=env_config.get("taste_text_model", "claude-sonnet-4-5-20250929"),
+                    visual_model=env_config.get("taste_visual_model", "claude-sonnet-4-5-20250929"),
+                    skip_visual=env_config.get("taste_skip_visual", False),
+                    n_screenshots=int(env_config.get("taste_n_screenshots", 8)),
+                    timeout=float(env_config.get("taste_timeout", 60.0)),
+                )
+                shaped_reward = float(taste_breakdown["reward"])
+                env_metrics["taste_reward_breakdown"] = taste_breakdown
+                env_metrics["raw_verifier_reward"] = float(verifier_score or 0.0)
+                env_metrics["final_reward"] = shaped_reward
+                if per_step_rewards:
+                    per_step_rewards[-1] = (shaped_reward, per_step_rewards[-1][1])
+            except Exception as e:
+                if env_config.get("taste_judge_required", True):
+                    raise
+                logger.warning(f"Fleet taste judge failed; keeping verifier reward: {type(e).__name__}: {e}")
 
         prompt_ids = agent_loop_state.input_ids[:initial_prompt_length]
         rollout_logprobs = None

@@ -39,8 +39,29 @@
 # Environment:
 #   SKIP_PREFLIGHT=1   Bypass the preflight entirely (escape hatch; avoid
 #                      using this in scripts — it defeats the safety net).
+#   FLEET_ENV_FILE     Optional dotenv file to source locally for preflight and
+#                      pass to SkyPilot as --secret-file. Defaults to ../env.sh
+#                      when that file exists.
 set -euo pipefail
 cd "$(dirname "$0")/.."  # repo root
+
+FLEET_ENV_FILE="${FLEET_ENV_FILE:-}"
+if [ -z "$FLEET_ENV_FILE" ] && [ -f "../env.sh" ]; then
+  FLEET_ENV_FILE="../env.sh"
+fi
+
+if [ -n "$FLEET_ENV_FILE" ]; then
+  if [ ! -f "$FLEET_ENV_FILE" ]; then
+    echo "ERROR: FLEET_ENV_FILE does not exist: $FLEET_ENV_FILE" >&2
+    exit 1
+  fi
+  # Source secrets for local preflight only. SkyPilot receives the same file via
+  # --secret-file below so secret values are not printed in the launch command.
+  set -a
+  # shellcheck disable=SC1090
+  source "$FLEET_ENV_FILE"
+  set +a
+fi
 
 PREFLIGHT_ARGS=()
 SKY_ARGS=()
@@ -73,6 +94,19 @@ if [ ${#SKY_ARGS[@]} -eq 0 ]; then
   echo "Usage: bash scripts/fleet-launch.sh [preflight args...] -- <yaml> [sky launch args...]" >&2
   echo "   or: bash scripts/fleet-launch.sh <yaml> [sky launch args...]" >&2
   exit 1
+fi
+
+if [ -n "$FLEET_ENV_FILE" ]; then
+  HAS_ENV_FILE=false
+  for arg in "${SKY_ARGS[@]}"; do
+    if [ "$arg" = "--env-file" ] || [ "$arg" = "--secret-file" ]; then
+      HAS_ENV_FILE=true
+      break
+    fi
+  done
+  if [ "$HAS_ENV_FILE" = false ]; then
+    SKY_ARGS=(--secret-file "$FLEET_ENV_FILE" "${SKY_ARGS[@]}")
+  fi
 fi
 
 if ! command -v sky >/dev/null 2>&1; then

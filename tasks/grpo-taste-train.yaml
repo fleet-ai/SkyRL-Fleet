@@ -1,0 +1,101 @@
+# GRPO training for taste-reward experiments on ticketmaster.
+# Derived from openenv-fleet-grpo-vl.yaml.
+#
+# Differences from the upstream config:
+#   - workdir: . (uploads the local SkyRL-Fleet tree so edits to
+#     scripts/fleet-vl-run.sh and integrations/fleet/* ship to the cluster).
+#   - ENV_KEYS: ticketmaster
+#   - MAX_TASKS_PER_ENV: 100-task random subsample of the ticketmaster pool.
+#   - SAMPLING_SEED: fixed at 42 so baselines/ablations use the same task IDs.
+#   - One epoch by default for faster first signal.
+#
+# Hardcoded in scripts/fleet-vl-run.sh:
+#   train_batch_size=16, policy_mini_batch_size=16, eval_n_samples_per_prompt=1,
+#   n_samples_per_prompt=4 (kept — GRPO group size).
+#
+# Launch:
+#   bash scripts/fleet-launch.sh tasks/grpo-taste-train.yaml \
+#     --env FLEET_API_KEY="$FLEET_API_KEY" \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" \
+#     --env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+#     --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+#     --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+
+name: grpo-taste-ticketmaster
+
+resources:
+  disk_size: 750
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    - accelerators: H200:8
+      cloud: runpod
+      ports: 6480
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6480
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: lambda
+      ports: 6480
+    - accelerators: H200:8
+      cloud: nebius
+      ports: 6480
+    - accelerators: H200-SXM:8
+      cloud: vast
+      ports: 6480
+
+# Single-node training only; use spare 8xH200 nodes for independent jobs once
+# the smoke passes.
+num_nodes: 1
+
+# Upload local tree so edits to scripts/fleet-vl-run.sh, fleet-common-setup.sh,
+# and integrations/fleet/prepare_dataset.py are picked up.
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  DATA_VERSION: "v6"
+  MODALITY: "browser_use"
+
+  ENV_KEYS: "ticketmaster"
+  DIFFICULTY: ""
+
+  # Single-env ticketmaster run. Disable max-env-ratio capping so all selected
+  # ticketmaster train prompts remain eligible.
+  MAX_TASKS: ""
+  MAX_TASKS_PER_ENV: 100
+  SAMPLING_SEED: 42
+  MAX_ENV_RATIO: 1.0
+
+  MAX_TURNS: 80
+  MAX_INPUT_LENGTH: 80000
+  MAX_GENERATE_LENGTH: 4096
+  NUM_EPOCHS: 1
+  RUN_ID: ""
+  RESUME_RUN_NAME: ""
+  TASTE_REWARD: "true"
+  TASTE_SKIP_VISUAL: "false"
+  TASTE_N_SCREENSHOTS: 8
+
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-vl-run.sh

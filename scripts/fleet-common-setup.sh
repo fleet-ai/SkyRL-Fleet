@@ -14,7 +14,7 @@ set -euo pipefail
 # Defaults
 OPENENV_BRANCH="deniz/fleet_client"
 EXTRA_SETUP=""
-DATA_ROOT=""
+DATA_ROOT="${DATA_ROOT:-}"
 SKIP_UV_ISOLATED=false
 EXTRA_PIP=""
 SKIP_PREPARE=false
@@ -111,7 +111,7 @@ source .venv/bin/activate
 uv sync --extra fsdp
 uv pip install wandb boto3 awscli
 # Pin fleet-python<=0.2.119: 0.2.120+ has async BaseWrapper bug (missing jwt/team_id params)
-uv pip install "litellm>=1.75.5" "fleet-python<=0.2.119" logfire "mcp>=1.0.0"
+uv pip install "litellm>=1.75.5" "anthropic>=0.71.0" "fleet-python<=0.2.119" logfire "mcp>=1.0.0"
 
 # --- Extra pip packages (installed before extra-setup to avoid dependency downgrades) ---
 if [ -n "$EXTRA_PIP" ]; then
@@ -127,6 +127,16 @@ fi
 
 # --- OpenEnv (force reinstall for latest changes) ---
 uv pip install --force-reinstall --no-cache-dir --no-deps "git+https://github.com/fleet-ai/OpenEnv.git@${OPENENV_BRANCH}"
+
+# Flatten MCP tool retry backoff from exponential (1,2,4,8...) to a flat 1s.
+# Exponential backoff is appropriate for transient network issues but causes
+# rollouts to stall 5–30s on every MCP session-terminated error, which compounds
+# across 80-turn trajectories. Flat 1s keeps rollouts responsive.
+MCP_TOOLS_PY="$(python -c "import envs.fleet_env.mcp_tools as m; print(m.__file__)" 2>/dev/null || true)"
+if [ -n "$MCP_TOOLS_PY" ] && [ -f "$MCP_TOOLS_PY" ]; then
+  sed -i 's|delay = min(2 \*\* attempt, self.max_backoff)|delay = 1.0|' "$MCP_TOOLS_PY"
+  echo "Patched MCP tool retry backoff to flat 1.0s in $MCP_TOOLS_PY"
+fi
 
 # --- Dataset download ---
 mkdir -p "${DATA_ROOT}/data/fleet"
@@ -145,6 +155,13 @@ else
   PREPARE_CMD="python -m integrations.fleet.prepare_dataset --tasks-json $TASKS_FILE --output-dir $DATA_DIR --modality $MODALITY --env-class $ENV_CLASS"
   [ -n "${ENV_KEYS:-}" ] && PREPARE_CMD="$PREPARE_CMD --env-filter $ENV_KEYS"
   [ -n "${DIFFICULTY:-}" ] && PREPARE_CMD="$PREPARE_CMD --difficulty-filter $DIFFICULTY"
+  [ -n "${MAX_TASKS:-}" ] && PREPARE_CMD="$PREPARE_CMD --max-tasks $MAX_TASKS"
+  [ -n "${MAX_TASKS_PER_ENV:-}" ] && PREPARE_CMD="$PREPARE_CMD --max-tasks-per-env $MAX_TASKS_PER_ENV"
+  [ -n "${SAMPLING_SEED:-}" ] && PREPARE_CMD="$PREPARE_CMD --sampling-seed $SAMPLING_SEED"
+  [ -n "${MAX_ENV_RATIO:-}" ] && PREPARE_CMD="$PREPARE_CMD --max-env-ratio $MAX_ENV_RATIO"
+  [ -n "${EVAL_RATIO:-}" ] && PREPARE_CMD="$PREPARE_CMD --eval-ratio $EVAL_RATIO"
+  [ -n "${MAX_EVAL_PROMPTS:-}" ] && PREPARE_CMD="$PREPARE_CMD --max-eval-prompts $MAX_EVAL_PROMPTS"
+  [ "${EVAL_ALL_SELECTED:-false}" = "true" ] && PREPARE_CMD="$PREPARE_CMD --eval-all-selected"
   eval "$PREPARE_CMD"
 fi
 

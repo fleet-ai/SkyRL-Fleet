@@ -1,0 +1,92 @@
+# Smoke-test variant of baseline-qwen35-9b-eval-only.yaml.
+# Purpose: validate the eval-only pipeline (data prep → vLLM load → rollout → verifier
+# → S3 upload) end-to-end on minimum data before committing to the full 2000-task baseline.
+#
+# Effective: 10 random tasks per env × 2 envs × 1 sample = 20 rollouts.
+# Scoring: partial_reward=false (binary 0/1) — see scripts/fleet-eval-only-run.sh.
+#
+# Launch:
+#   bash scripts/fleet-launch.sh tasks/baseline-qwen35-9b-smoke.yaml \
+#     --env FLEET_API_KEY="$FLEET_API_KEY" \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" \
+#     --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+#     --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+#
+# Output:
+#   s3://skyrl-trajectories/evals/qwen35-9b-baseline-smoke/eval_only/{zillow,ticketmaster}.jsonl
+#
+# Teardown:
+#   sky down qwen35-9b-baseline-smoke -y
+
+name: qwen35-9b-baseline-smoke
+
+resources:
+  disk_size: 750
+  ordered:
+    # Fleet's slurm-on-runpod cluster (preferred for the smoke).
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    # Fallbacks if the slurm cluster is unavailable.
+    - accelerators: H200:8
+      cloud: runpod
+      ports: 6479
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: false
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: lambda
+      ports: 6479
+
+num_nodes: 1
+
+# Upload local tree so script edits (partial_reward=false, MAX_TASKS_PER_ENV forwarding,
+# random sampling in prepare_dataset.py) ship to the cluster.
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  DATA_VERSION: "v6"
+  MODALITY: "browser_use"
+
+  ENV_KEYS: "zillow,ticketmaster"
+
+  # Smoke: 25 random tasks per env (seed=42) → 50 prompts total. Needs to be
+  # >=25 so eval split (20%) clears MIN_EVAL_SAMPLES=5 per env in prepare_dataset.py;
+  # otherwise the script writes train-only and the prior run's validation.parquet wins.
+  MAX_TASKS: ""
+  MAX_TASKS_PER_ENV: 25
+
+  MAX_TURNS: 80
+  MAX_INPUT_LENGTH: 80000
+  MAX_GENERATE_LENGTH: 4096
+
+  # Baseline mode: empty RESUME_RUN_NAME → eval base Qwen3.5-9B weights, no FSDP load.
+  RESUME_RUN_NAME: ""
+
+  EVAL_N_SAMPLES: 1
+
+  MODEL_PATH: "Qwen/Qwen3.5-9B"
+  PROJECT_NAME: "fleet-taste-baselines"
+  RUN_NAME: "qwen35-9b-baseline-smoke"
+
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-eval-only-run.sh

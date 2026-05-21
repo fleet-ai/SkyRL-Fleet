@@ -57,7 +57,13 @@ class FleetPPOExp(BasePPOExp):
         except Exception as e:
             logger.warning(f"Failed to setup checkpoint management: {e}")
 
-        asyncio.run(trainer.train())
+        try:
+            asyncio.run(trainer.train())
+        finally:
+            uploader = getattr(trainer, "_s3_uploader", None)
+            if uploader is not None:
+                logger.info("Waiting for pending S3 checkpoint uploads...")
+                uploader.wait_for_uploads()
 
 
 @ray.remote(num_cpus=1)

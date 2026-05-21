@@ -1,0 +1,90 @@
+# Smoke-test variant of grpo-taste-train.yaml. Minimal data, 1 epoch.
+# Purpose: confirm the full stack (data prep → vLLM rollouts → reward → GRPO update
+# → checkpoint upload) is wired correctly before burning real compute.
+#
+# Effective settings:
+#   - 25 random ticketmaster tasks. After eval split, this should leave >=16
+#     training prompts, which is required by train_batch_size=16.
+#   - train_batch_size=16 (from fleet-vl-run.sh) → ~1-2 grad steps in 1 epoch.
+#   - n_samples_per_prompt=4 → roughly 64+ total training rollouts.
+#   - 1 epoch.
+#
+# Launch:
+#   bash scripts/fleet-launch.sh tasks/grpo-taste-smoke.yaml \
+#     --env FLEET_API_KEY="$FLEET_API_KEY" \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" \
+#     --env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+#     --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+#     --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+#
+# Teardown:
+#   sky down grpo-taste-smoke -y
+
+name: grpo-taste-smoke
+
+resources:
+  disk_size: 750
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    - accelerators: H200:8
+      cloud: runpod
+      ports: 6480
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6480
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: lambda
+      ports: 6480
+
+# Smoke run: single node is enough — keeps provisioning time short.
+num_nodes: 1
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  DATA_VERSION: "v6"
+  MODALITY: "browser_use"
+
+  ENV_KEYS: "ticketmaster"
+  DIFFICULTY: ""
+
+  # Single-env smoke. Disable max-env-ratio capping; otherwise the default 20%
+  # cap shrinks a one-env dataset and can fall below train_batch_size=16.
+  MAX_TASKS: ""
+  MAX_TASKS_PER_ENV: 25
+  MAX_ENV_RATIO: 1.0
+
+  MAX_TURNS: 80
+  MAX_INPUT_LENGTH: 80000
+  MAX_GENERATE_LENGTH: 4096
+  NUM_EPOCHS: 1
+  RUN_ID: "smoke"
+  RESUME_RUN_NAME: ""
+  TASTE_REWARD: "true"
+  TASTE_SKIP_VISUAL: "false"
+  TASTE_N_SCREENSHOTS: 8
+
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-vl-run.sh

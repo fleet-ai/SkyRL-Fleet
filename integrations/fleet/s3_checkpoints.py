@@ -139,6 +139,8 @@ class S3CheckpointUploader:
                 retries={"max_attempts": 3, "mode": "adaptive"},
                 connect_timeout=30,
                 read_timeout=120,
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
             )
 
             s3 = boto3.client("s3", region_name=self.region, config=config)

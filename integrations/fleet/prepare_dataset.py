@@ -35,8 +35,11 @@ import argparse
 import hashlib
 import json
 import os
+import random
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
+
+SAMPLING_SEED = 42
 
 from datasets import Dataset
 
@@ -191,8 +194,11 @@ def prepare_fleet_dataset(
     env_filter: Optional[str] = None,
     difficulty_filter: Optional[str] = None,  # v0.4.0: filter by difficulty (1=easy, 2=medium, 3=hard)
     max_tasks: Optional[int] = None,
+    max_tasks_per_env: Optional[int] = None,
+    sampling_seed: int = SAMPLING_SEED,
     max_env_ratio: float = MAX_ENV_TRAIN_RATIO,  # v0.3.1: cap dominant environments
     max_eval_prompts: Optional[int] = MAX_EVAL_PROMPTS,  # v0.3.2: cap total eval prompts
+    eval_all_selected: bool = False,
     env_class: str = "fleet_task",  # SkyRL env_class per record (fleet_task or task_gen)
 ):
     """
@@ -215,8 +221,11 @@ def prepare_fleet_dataset(
     print(f"  Env filter: {env_filter or 'none'}")
     print(f"  Difficulty filter: {difficulty_filter or 'all (1,2,3)'}")
     print(f"  Max tasks: {max_tasks or 'unlimited'}")
+    print(f"  Max tasks per env: {max_tasks_per_env or 'unlimited'}")
+    print(f"  Sampling seed: {sampling_seed}")
     print(f"  Max env ratio: {max_env_ratio:.0%}")
     print(f"  Max eval prompts: {max_eval_prompts or 'unlimited'}")
+    print(f"  Eval all selected: {eval_all_selected}")
     print()
 
     print(f"Loading tasks from {tasks_json}...")
@@ -240,10 +249,26 @@ def prepare_fleet_dataset(
         tasks = [t for t in tasks if t.get("difficulty") in diff_list]
         print(f"After difficulty filter ({diff_list}): {len(tasks)} tasks")
 
-    # Limit tasks if specified
+    # Per-env random subsample BEFORE the global cap so envs stay balanced.
+    if max_tasks_per_env:
+        rng = random.Random(sampling_seed)
+        by_env: Dict[str, List[Any]] = defaultdict(list)
+        for t in tasks:
+            by_env[t.get("env_key") or t.get("env_id") or "unknown"].append(t)
+        sampled: List[Any] = []
+        for env, env_tasks in by_env.items():
+            if len(env_tasks) > max_tasks_per_env:
+                sampled.extend(rng.sample(env_tasks, max_tasks_per_env))
+            else:
+                sampled.extend(env_tasks)
+        tasks = sampled
+        print(f"After per-env cap ({max_tasks_per_env}/env, seed={sampling_seed}): {len(tasks)} tasks")
+
+    # Global random subsample (deterministic via fixed seed).
     if max_tasks and len(tasks) > max_tasks:
-        tasks = tasks[:max_tasks]
-        print(f"Limited to {max_tasks} tasks")
+        rng = random.Random(sampling_seed)
+        tasks = rng.sample(tasks, max_tasks)
+        print(f"Randomly sampled {max_tasks} tasks (seed={sampling_seed})")
 
     if not tasks:
         print("No tasks remaining after filtering. Exiting.")
@@ -392,6 +417,18 @@ def prepare_fleet_dataset(
 
     print(f"\nTotal: {len(train_records)} train, {len(eval_records)} eval")
 
+    if eval_all_selected:
+        eval_records = []
+        for env_key in sorted(tasks_by_env.keys()):
+            env_eval_count = 0
+            for task in tasks_by_env[env_key]:
+                record = _task_to_record(task, env_key, env_class=env_class, env_meta=env_metadata.get(env_key))
+                if record:
+                    eval_records.append(record)
+                    env_eval_count += 1
+            env_split_counts.setdefault(env_key, {"train": 0, "eval": 0})["eval"] = env_eval_count
+        print(f"\nEval-all-selected enabled: validation contains all {len(eval_records)} selected prompts")
+
     # Apply total eval cap (v0.3.2) - stratified sampling across environments
     if max_eval_prompts and len(eval_records) > max_eval_prompts:
         print(f"\n=== Capping Eval Prompts ({max_eval_prompts} max total) ===")
@@ -470,10 +507,14 @@ def prepare_fleet_dataset(
         train_dataset.to_parquet(train_path)
         print(f"Saved train dataset to {train_path}")
 
+    eval_path = os.path.join(output_dir, "validation.parquet")
     if eval_dataset:
-        eval_path = os.path.join(output_dir, "validation.parquet")
         eval_dataset.to_parquet(eval_path)
         print(f"Saved validation dataset to {eval_path}")
+    elif os.path.exists(eval_path):
+        # Avoid leaving a stale validation.parquet from a previous run.
+        os.remove(eval_path)
+        print(f"Removed stale validation parquet at {eval_path} (no eval records this run)")
 
     # Print summary statistics
     print("\n=== Dataset Summary ===")
@@ -588,7 +629,19 @@ def main():
         "--max-tasks",
         type=int,
         default=None,
-        help="Maximum number of tasks to include",
+        help="Maximum number of tasks to include (random sample with fixed seed)",
+    )
+    parser.add_argument(
+        "--max-tasks-per-env",
+        type=int,
+        default=None,
+        help="Maximum number of tasks per env_key (random sample, applied before --max-tasks)",
+    )
+    parser.add_argument(
+        "--sampling-seed",
+        type=int,
+        default=SAMPLING_SEED,
+        help=f"Random seed for --max-tasks and --max-tasks-per-env sampling (default: {SAMPLING_SEED})",
     )
     parser.add_argument(
         "--max-env-ratio",
@@ -601,6 +654,11 @@ def main():
         type=int,
         default=MAX_EVAL_PROMPTS,
         help=f"Maximum total eval prompts across all environments (default: {MAX_EVAL_PROMPTS})",
+    )
+    parser.add_argument(
+        "--eval-all-selected",
+        action="store_true",
+        help="Put every selected prompt in validation while preserving the normal train split",
     )
     parser.add_argument(
         "--env-class",
@@ -623,8 +681,11 @@ def main():
         env_filter=args.env_filter,
         difficulty_filter=args.difficulty_filter,
         max_tasks=args.max_tasks,
+        max_tasks_per_env=args.max_tasks_per_env,
+        sampling_seed=args.sampling_seed,
         max_env_ratio=args.max_env_ratio,
         max_eval_prompts=args.max_eval_prompts,
+        eval_all_selected=args.eval_all_selected,
         env_class=args.env_class,
     )
 

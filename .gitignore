@@ -114,6 +114,10 @@ outputs/
 
 # Local artifacts
 tinker.db
+/.judge-venv/
+/analysis_assets/
+/ishan_files/
+/local_runs/
 
 # Local launcher with hardcoded credentials — never commit
 scripts/start-overnight.sh

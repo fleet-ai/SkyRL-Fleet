@@ -1,0 +1,94 @@
+name: reddit-grpo-verifier-s42
+
+resources:
+  disk_size: 750
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    - accelerators: H200:8
+      cloud: runpod
+      ports: 6480
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6480
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: lambda
+      ports: 6480
+
+num_nodes: 1
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  DATA_VERSION: "v6"
+  MODALITY: "browser_use"
+  ENV_KEYS: "reddit"
+  DIFFICULTY: ""
+  MAX_TASKS: ""
+  MAX_TASKS_PER_ENV: 100
+  SAMPLING_SEED: 42
+  MAX_ENV_RATIO: 1.0
+  EVAL_ALL_SELECTED: "true"
+  MAX_EVAL_PROMPTS: 0
+
+  MAX_TURNS: 80
+  MAX_INPUT_LENGTH: 80000
+  MAX_GENERATE_LENGTH: 4096
+  NUM_EPOCHS: 1
+  RUN_ID: "reddit-grpo-verifier-s42"
+  PROJECT_NAME: "fleet-taste-baselines"
+  RUN_NAME: "reddit-grpo-verifier-s42"
+  DATA_ROOT: "/workspace/skyrl_data/reddit-grpo-verifier-s42"
+  RESUME_RUN_NAME: ""
+  TASTE_REWARD: "false"
+  TRAIN_BATCH_SIZE: 16
+  GRPO_GROUP_SIZE: 4
+  EVAL_BATCH_SIZE: 12
+  EVAL_N_SAMPLES: 1
+  CKPT_INTERVAL: 2
+
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  set -euo pipefail
+  export ENV_KEYS="reddit"
+  export RUN_ID="reddit-grpo-verifier-s42"
+  export RUN_NAME="reddit-grpo-verifier-s42"
+  export TASTE_REWARD="false"
+  export SKYRL_FAIL_ON_ENV_INIT_ERROR="true"
+  .venv/bin/python - <<'PY'
+  import os
+  from pathlib import Path
+
+  import pyarrow.parquet as pq
+
+  root = Path(os.environ["DATA_ROOT"])
+  data_dir = root / "data" / "fleet" / "browser_use"
+  for split in ("train", "validation"):
+      path = data_dir / f"{split}.parquet"
+      if not path.exists():
+          raise SystemExit(f"Missing prepared dataset: {path}")
+      table = pq.read_table(path, columns=["data_source"])
+      sources = sorted(set(table.column("data_source").to_pylist()))
+      print(f"{split}: {table.num_rows} rows, data_source={sources}")
+      if sources != ["reddit"]:
+          raise SystemExit(f"Refusing to train: {split}.parquet is not reddit-only: {sources}")
+  PY
+  bash scripts/fleet-vl-run.sh

@@ -20,6 +20,13 @@ fleet_task:
   api_key: null
   ttl_seconds: 900
   partial_reward: false
+  taste_reward: false
+  taste_text_model: "claude-sonnet-4-5-20250929"
+  taste_visual_model: "claude-sonnet-4-5-20250929"
+  taste_skip_visual: false
+  taste_n_screenshots: 8
+  taste_timeout: 60.0
+  taste_judge_required: true
   enable_hints: false
   hint_reward_threshold: 0.0
   n_hint_samples: 2

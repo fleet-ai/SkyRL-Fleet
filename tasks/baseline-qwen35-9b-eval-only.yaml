@@ -1,0 +1,92 @@
+# Fleet VL eval-only baseline for Qwen3.5-9B on zillow + ticketmaster.
+# Mirrors openenv-fleet-grpo-vl.yaml's resources/setup but swaps the run
+# command for scripts/fleet-eval-only-run.sh (no GRPO updates, base weights).
+#
+# Launch:
+#   bash scripts/fleet-launch.sh tasks/baseline-qwen35-9b-eval-only.yaml \
+#     --env FLEET_API_KEY="$FLEET_API_KEY" \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" \
+#     --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+#     --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+#
+# Output goes to:
+#   s3://skyrl-trajectories/evals/qwen35-9b-baseline-zillow-tm/eval_only/
+#     ├── zillow.jsonl
+#     ├── ticketmaster.jsonl
+#     └── aggregated_results.jsonl
+
+name: qwen35-9b-baseline-zillow-tm
+
+resources:
+  disk_size: 750
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    - accelerators: H200:8
+      cloud: runpod
+      ports: 6479
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    - accelerators: H200:8
+      cloud: lambda
+      ports: 6479
+    - accelerators: H200:8
+      cloud: nebius
+      ports: 6479
+    - accelerators: H200-SXM:8
+      cloud: vast
+      ports: 6479
+
+# Single node is enough for eval — no gradient sync.
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: main
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  DATA_VERSION: "v6"
+  MODALITY: "browser_use"
+
+  # Scope to the two envs you want baselined.
+  ENV_KEYS: "zillow,ticketmaster"
+
+  # Match the GRPO config so baseline ≈ what training will see at step 0.
+  MAX_TURNS: 80
+  MAX_INPUT_LENGTH: 80000
+  MAX_GENERATE_LENGTH: 4096
+
+  # Baseline mode: leave RESUME_RUN_NAME unset → scripts/fleet-eval-only-run.sh
+  # evaluates the base Qwen3.5-9B weights with no FSDP checkpoint load.
+  RESUME_RUN_NAME: ""
+
+  # Single-sample baseline measurement (you can bump to 3 later for variance bars).
+  EVAL_N_SAMPLES: 1
+
+  MODEL_PATH: "Qwen/Qwen3.5-9B"
+  PROJECT_NAME: "fleet-taste-baselines"
+  RUN_NAME: "qwen35-9b-baseline-zillow-tm"
+
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-eval-only-run.sh

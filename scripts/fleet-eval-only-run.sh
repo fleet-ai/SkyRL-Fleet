@@ -28,6 +28,8 @@ export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-72000}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"
 export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-8}"
 export EVAL_N_SAMPLES="${EVAL_N_SAMPLES:-8}"
+export EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-12}"
+export SKYRL_FAIL_ON_ENV_INIT_ERROR="${SKYRL_FAIL_ON_ENV_INIT_ERROR:-true}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export S3_DATASET_BUCKET="${S3_DATASET_BUCKET:-fleet-internal-datasets}"
 export S3_CHECKPOINT_BUCKET="${S3_CHECKPOINT_BUCKET:-skyrl-checkpoints}"
@@ -51,10 +53,10 @@ else
 fi
 export RESUME_RUN_NAME="${RESUME_RUN_NAME:-}"
 
-DATA_ROOT=""
-if [ -d "/workspace" ] && [ -w "/workspace" ]; then
+DATA_ROOT="${DATA_ROOT:-}"
+if [ -z "$DATA_ROOT" ] && [ -d "/workspace" ] && [ -w "/workspace" ]; then
   DATA_ROOT="/workspace"
-else
+elif [ -z "$DATA_ROOT" ]; then
   DATA_ROOT="$HOME"
 fi
 
@@ -68,6 +70,7 @@ echo "Resume run name: ${RESUME_RUN_NAME:-(none — base model eval)}"
 echo "Resume mode:     $RESUME_MODE"
 echo "Ckpt path:       $RESUME_CKPT_PATH"
 echo "Eval data:       $EVAL_PARQUET"
+echo "Eval batch size: $EVAL_BATCH_SIZE"
 echo "Samples/prompt:  $EVAL_N_SAMPLES"
 
 bash scripts/fleet-common-run.sh \
@@ -76,14 +79,14 @@ bash scripts/fleet-common-run.sh \
   --entrypoint integrations.fleet.entrypoints.main_eval \
   --nccl-heartbeat 1800 -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=900 \
-  environment.skyrl_gym.fleet_task.partial_reward=true \
+  environment.skyrl_gym.fleet_task.partial_reward=false \
   environment.skyrl_gym.fleet_task.enable_hints=false \
   trainer.policy.model.path="$MODEL_PATH" \
   trainer.flash_attn=false \
   trainer.use_sample_packing=false \
   trainer.resume_mode="$RESUME_MODE" \
   trainer.ckpt_path="$RESUME_CKPT_PATH" \
-  trainer.eval_batch_size=4 \
+  trainer.eval_batch_size=$EVAL_BATCH_SIZE \
   trainer.eval_interval=1 \
   trainer.max_prompt_length=2048 \
   trainer.dump_eval_results=true \

@@ -18,8 +18,8 @@
 set -euo pipefail
 
 # Defaults
-DATA_ROOT=""
-CKPT_ROOT=""
+DATA_ROOT="${DATA_ROOT:-}"
+CKPT_ROOT="${CKPT_ROOT:-}"
 USE_PYTHON_DIRECT=false
 CUDA_ENV=""
 SET_ULIMIT=false
@@ -217,8 +217,18 @@ export RAY_DISABLE_MEMORY_MONITOR=1
 # NOTE: On GCP VMs without RDMA, gIB NCCL vars are stripped above.
 # On GKE with RDMA, gIB is preserved for inter-node GPUDirect.
 
-read -r head_ip _ <<< "$SKYPILOT_NODE_IPS"
-ray_address="$head_ip:6479"
+node_ips_raw="${SKYPILOT_NODE_IPS//$'\n'/ }"
+read -ra node_ips <<< "$node_ips_raw"
+head_ip="${node_ips[0]:-}"
+node_rank="${SKYPILOT_NODE_RANK:-0}"
+node_ip="${node_ips[$node_rank]:-$head_ip}"
+if [ -z "$head_ip" ] || [ -z "$node_ip" ]; then
+  echo "ERROR: Could not resolve SkyPilot node IPs from SKYPILOT_NODE_IPS='$SKYPILOT_NODE_IPS' rank='$node_rank'" >&2
+  exit 1
+fi
+ray_address="$head_ip:6480"
+echo "Ray address: $ray_address"
+echo "Ray node IP for rank ${node_rank}: $node_ip"
 
 wait_for_ray() {
   local address=$1
@@ -251,11 +261,11 @@ cleanup_existing_ray() {
   for pattern in "${patterns[@]}"; do
     pkill -9 -f "$pattern" 2>/dev/null || true
   done
-  fuser -k 6479/tcp 2>/dev/null || true
+  fuser -k 6480/tcp 2>/dev/null || true
   rm -rf "$RAY_TMPDIR" /tmp/ray 2>/dev/null || true
   mkdir -p "$RAY_TMPDIR"
   for _ in $(seq 1 10); do
-    if ! fuser 6479/tcp >/dev/null 2>&1; then
+    if ! fuser 6480/tcp >/dev/null 2>&1; then
       break
     fi
     sleep 1
@@ -263,15 +273,34 @@ cleanup_existing_ray() {
   sleep 2
 }
 
-cleanup_existing_ray
+# On SkyPilot, the orchestration raylet lives on its own port and must not be
+# touched. But we still need to clean up OUR ray cluster from any prior run on
+# this node (otherwise `ray start --port 6480` errors with "already running").
+# So under SkyPilot do a TARGETED cleanup: only kill what's on our port + temp
+# dir, never the broad `pkill -9 raylet` that would take SkyPilot's down too.
+if [ -n "${SKYPILOT_NODE_RANK:-}" ]; then
+  echo "SkyPilot detected (rank=${SKYPILOT_NODE_RANK}); targeted cleanup of port 6480 + ${RAY_TMPDIR} + /tmp/ray"
+  fuser -k 6480/tcp 2>/dev/null || true
+  # Kill only OUR ray processes (tagged by our temp dir path), not SkyPilot's.
+  pkill -9 -f "$RAY_TMPDIR" 2>/dev/null || true
+  rm -rf "$RAY_TMPDIR" /tmp/ray 2>/dev/null || true
+  mkdir -p "$RAY_TMPDIR"
+  for _ in $(seq 1 10); do
+    if ! fuser 6480/tcp >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  sleep 2
+else
+  cleanup_existing_ray
+fi
 
 if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   # === Head node: start Ray head + launch training ===
   # --node-ip-address: on SLURM, force Ray to use the overlay IP (from SKYPILOT_NODE_IPS)
   # instead of auto-detecting the Docker-internal IP (172.19.x.x). Without this, the head
   # registers as a ghost node and the placement group can't schedule GPU bundles.
-  env -u RAY_ADDRESS ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000 \
-    --node-ip-address="$head_ip" --temp-dir="$RAY_TMPDIR"
+  env -u RAY_ADDRESS ray start --head --disable-usage-stats --port 6480 --object-store-memory=10000000000 \
+    --node-ip-address="$node_ip" --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   # Tell ray.init() where to find the cluster (needed when --temp-dir differs
   # from Ray's default, since auto-detection looks in the default temp dir).
@@ -351,7 +380,8 @@ else
   # === Worker node: join Ray cluster and wait ===
   echo "=== Worker node (rank ${SKYPILOT_NODE_RANK}), joining Ray cluster at $ray_address ==="
   wait_for_ray "$ray_address"
-  env -u RAY_ADDRESS ray start --address "$ray_address" --disable-usage-stats --temp-dir="$RAY_TMPDIR"
+  env -u RAY_ADDRESS ray start --address "$ray_address" --disable-usage-stats \
+    --node-ip-address="$node_ip" --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   export RAY_ADDRESS="$ray_address"
   echo "Worker node joined. Sleeping..."
