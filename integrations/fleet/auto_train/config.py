@@ -20,16 +20,16 @@ EXCLUDED_ENVS: frozenset[str] = frozenset({"google-maps", "carlisle"})
 
 # Modality -> SkyPilot task YAML (relative to repo root).
 #
-# fos-* computer_use envs use the SAME VL YAML as browser_use. Both are
-# MCP-based, single-container, VL-policy. The only runtime difference is
-# image_type: OpenEnv's FleetTaskEnv auto-sets image_type="mcp" when
-# task_modality == "computer_use" (which exposes the `computer` tool on
-# port 8081). gym-anything CUA is a separate two-VM pipeline and is NOT
-# what fos-* tasks are.
+# CI variants of the production YAMLs: NUM_EPOCHS=1, otherwise identical.
+# bu and cu both use the VL training path (same base YAML, MODALITY env
+# differs). OpenEnv's FleetTaskEnv auto-sets image_type="mcp" when
+# task_modality == "computer_use" (exposes the `computer` tool on port
+# 8081). gym-anything CUA is a separate two-VM pipeline and is NOT what
+# fos-* tasks are.
 MODALITY_YAML_MAP: dict[str, str] = {
-    "tool_use": "tasks/openenv-fleet-grpo-qwen3_5-35b.yaml",
-    "browser_use": "tasks/openenv-fleet-grpo-vl.yaml",
-    "computer_use": "tasks/openenv-fleet-grpo-vl.yaml",
+    "tool_use": "tasks/openenv-fleet-grpo-qwen3_5-35b-ci.yaml",
+    "browser_use": "tasks/openenv-fleet-grpo-vl-browser-use-ci.yaml",
+    "computer_use": "tasks/openenv-fleet-grpo-vl-computer-use-ci.yaml",
 }
 
 # Fields written to the OpenEnv JSON (must match what fleet-common-setup.sh
