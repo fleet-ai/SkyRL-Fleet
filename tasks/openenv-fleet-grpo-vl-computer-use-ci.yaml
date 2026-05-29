@@ -84,4 +84,11 @@ setup: |
     --extra-setup scripts/fleet-qwen35-extra-setup.sh
 
 run: |
-  bash scripts/fleet-vl-run.sh
+  # Reduced concurrency for fos-* MCP transport stability (fleet-prod sessions
+  # drop under ~200 concurrent computer_use envs). 8 prompts x 2 samples = 16
+  # concurrent envs total. ckpt_interval=2 so a checkpoint lands quickly.
+  bash scripts/fleet-vl-run.sh \
+    trainer.train_batch_size=16 \
+    trainer.policy_mini_batch_size=16 \
+    trainer.ckpt_interval=2 \
+    generator.n_samples_per_prompt=2
