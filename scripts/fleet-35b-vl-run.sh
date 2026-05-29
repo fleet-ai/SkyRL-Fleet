@@ -45,6 +45,10 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 : "${FLEET_API_KEY:?Set FLEET_API_KEY before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
 
+# REQUIRED for Qwen3.5/3.6-35B-A3B: FlashInfer GDN JIT hangs silently on
+# GCP/RunPod (memory: commit 31098293). Matches fleet-task-gen-35b-run.sh.
+export VLLM_GDN_PREFILL_BACKEND=triton
+
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf \
