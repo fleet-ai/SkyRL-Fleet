@@ -29,9 +29,9 @@ EXCLUDED_ENVS: frozenset[str] = frozenset({"google-maps", "carlisle"})
 # port 8081). gym-anything CUA is a separate two-VM pipeline and is NOT
 # what fos-* tasks are.
 MODALITY_YAML_MAP: dict[str, str] = {
-    "tool_use": "tasks/openenv-fleet-grpo-qwen3_5-35b.yaml",
-    "browser_use": "tasks/openenv-fleet-grpo-vl.yaml",
-    "computer_use": "tasks/openenv-fleet-grpo-vl.yaml",
+    "tool_use": "tasks/openenv-fleet-grpo-qwen3_5-35b-tool-use-ci.yaml",
+    "browser_use": "tasks/openenv-fleet-grpo-vl-browser-use-ci.yaml",
+    "computer_use": "tasks/openenv-fleet-grpo-vl-computer-use-ci.yaml",
 }
 
 # Fields written to the OpenEnv JSON (must match what fleet-common-setup.sh
