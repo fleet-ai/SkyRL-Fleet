@@ -1,6 +1,13 @@
 #!/bin/bash
 # One-time setup for RunPod Slurm cluster access via SkyPilot.
-# Requires: ~/.ssh/runpod_key (or set RUNPOD_SSH_KEY to override)
+#
+# Defaults match an on-cluster login node (SSH to localhost:22 with
+# ~/.ssh/id_ed25519, submitting as your own user). Override any of these via
+# env vars when running from a remote host:
+#   SLURM_HOST  (default: localhost)        e.g. 31.24.80.55
+#   SLURM_PORT  (default: 22)               e.g. 13122
+#   SLURM_USER  (default: current user)     e.g. root
+#   SLURM_SSH_KEY (default: ~/.ssh/id_ed25519)  e.g. ~/.ssh/runpod_key
 #
 # This script handles EVERYTHING needed for Slurm training:
 #   1. Creates ~/.slurm/config (SSH connection to Slurm controller)
@@ -8,33 +15,60 @@
 #   3. Adds slurm.cluster_configs (workdir, gpu_partition_map) to ~/.sky/config.yaml
 #   4. Restarts the SkyPilot API server to pick up the new config
 #   5. Verifies connectivity and GPU detection
+#   6. Configures InfiniBand (NCCL) on all cluster nodes
 #
 # The SkyPilot API server ignores allowed_clouds and cluster_configs from
 # the project-level .sky.yaml, so these MUST be in ~/.sky/config.yaml.
 set -euo pipefail
 
 RUNPOD_CLUSTER_NAME="runpod-cluster-y8puzql3juawue"
-RUNPOD_KEY="${RUNPOD_SSH_KEY:-$HOME/.ssh/runpod_key}"
+# Connection defaults to the on-cluster login node, submitting as your own user
+# (not root). All four are overridable via the env vars documented in the header.
+SLURM_HOST="${SLURM_HOST:-localhost}"
+SLURM_PORT="${SLURM_PORT:-22}"
+SLURM_USER="${SLURM_USER:-$(whoami)}"
+RUNPOD_KEY="${SLURM_SSH_KEY:-$HOME/.ssh/id_ed25519}"
 if [ ! -f "$RUNPOD_KEY" ]; then
-  echo "ERROR: $RUNPOD_KEY not found."
-  echo "Save your RunPod private key as ~/.ssh/runpod_key"
-  echo "(or set RUNPOD_SSH_KEY to point to it)."
+  echo "ERROR: SSH key $RUNPOD_KEY not found."
+  echo "Set SLURM_SSH_KEY to point to a valid private key for $SLURM_USER@$SLURM_HOST."
   exit 1
 fi
 
 # 1. SSH config for Slurm controller
-echo "[1/5] Setting up ~/.slurm/config..."
+echo "[1/5] Setting up ~/.slurm/config ($SLURM_USER@$SLURM_HOST:$SLURM_PORT)..."
 mkdir -p ~/.slurm
 cat > ~/.slurm/config <<EOF
 Host runpod-cluster $RUNPOD_CLUSTER_NAME
-    HostName 31.24.80.55
-    Port 13122
-    User root
+    HostName $SLURM_HOST
+    Port $SLURM_PORT
+    User $SLURM_USER
     IdentityFile $RUNPOD_KEY
     IdentitiesOnly yes
     BatchMode yes
     StrictHostKeyChecking no
 EOF
+
+# 1b. Make shared SkyPilot dirs writable by every user (not just root).
+# /workspace is a shared filesystem. .sky_provision (provision scripts) and
+# .sky_clusters (synced workdirs) get created by whoever launches first — often
+# root — which then blocks other users' rsync during provisioning with
+# "Permission denied". Sticky + world-writable (like /tmp) lets any user submit
+# while still protecting each user's own files. Done over the root SSH
+# connection because the dirs are root-owned.
+echo "[1b/5] Making shared /workspace dirs writable across users..."
+ssh -F ~/.slurm/config -l root "$RUNPOD_CLUSTER_NAME" '
+  set -e
+  # SkyPilot provisioning dirs: sticky + world-writable (like /tmp) so each user
+  # keeps their own provision scripts / synced workdirs without clobbering others.
+  mkdir -p /workspace/.sky_provision /workspace/.sky_clusters
+  chmod 1777 /workspace/.sky_provision /workspace/.sky_clusters
+  # Shared dataset cache: world-writable, NO sticky bit, so any user can
+  # re-download and overwrite the version-pinned dataset files regardless of who
+  # created them (the dataset content is identical per DATA_VERSION).
+  mkdir -p /workspace/data/fleet
+  chmod -R a+rwX /workspace/data
+  stat -c "  %a %n" /workspace/.sky_provision /workspace/.sky_clusters /workspace/data
+' || echo "  WARNING: could not set permissions (continuing) — fix manually as root: chmod 1777 /workspace/.sky_{provision,clusters}; chmod -R a+rwX /workspace/data"
 
 # 2. Ensure slurm is in allowed_clouds
 echo "[2/5] Checking allowed_clouds..."
@@ -91,10 +125,60 @@ sky api stop 2>/dev/null || true
 sky api start 2>&1 | tail -3
 
 # 5. Verify
-echo "[5/5] Verifying..."
+echo "[5/6] Verifying..."
 echo "  SSH connectivity..."
 ssh -F ~/.slurm/config "$RUNPOD_CLUSTER_NAME" "sinfo -N" || { echo "FAIL: Cannot connect to Slurm controller"; exit 1; }
 echo "  SkyPilot detection..."
 sky check slurm 2>&1 | grep -E "Slurm:|enabled|disabled"
+
+# 6. Configure InfiniBand (NCCL) on all cluster nodes
+# Detects active IB HCAs and training interface, then writes NCCL settings
+# to /etc/environment on every node so all Slurm processes inherit them.
+echo "[6/6] Configuring InfiniBand (consistent cross-node intersection)..."
+
+# Helper that computes the cross-node IB-HCA intersection. Lives next to this script and
+# must be on the shared FS so every allocated node can execute it.
+_IB_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ib-hca-intersection.sh"
+
+# Bootstrap NIC (consistent across nodes): highest-MTU non-virtual interface.
+SOCK_IFACE=$(ssh -F ~/.slurm/config -l root "$RUNPOD_CLUSTER_NAME" bash << 'EOF'
+ip -o link show | awk '!/lo|docker|veth|br-/ && /mtu/ {
+  split($2,a,"@"); for(i=1;i<=NF;i++) if($i=="mtu") m=$(i+1)
+  if(m+0>M+0) { M=m; I=a[1] }
+} END { print I }'
+EOF
+)
+echo "  Interface: ${SOCK_IFACE:-none}"
+
+# Device names (mlx5_N) are NOT identical across nodes here: mlx5_3 is a live IB port on some
+# nodes while on others mlx5_3 is DOWN and mlx5_5 is live instead. Broadcasting one node's list
+# names a dead NIC on the others, and per-node detection makes ranks DISAGREE -- either way NCCL
+# DEADLOCKS the first cross-node collective. So every node computes the INTERSECTION (NICs live
+# on ALL nodes) via the shared-NFS barrier helper and writes that one consistent list. Per-job
+# launches recompute the per-allocation intersection in fleet-common-run.sh (keeping all rails
+# when the allocation is homogeneous); this is the safe, always-consistent static floor.
+ssh -F ~/.slurm/config -l root "$RUNPOD_CLUSTER_NAME" bash << EOF
+N=\$(sinfo -h -o '%D' | awk '{s+=\$1} END{print s}')
+export BARRIER=/workspace/.sky_ib_setup/setup-\$(date +%s)
+echo "  Applying consistent NCCL_IB_HCA to \${N} node(s)..."
+srun --ntasks="\$N" --ntasks-per-node=1 bash -c '
+  HCA=\$(bash "${_IB_HELPER}" "\$BARRIER" "\$SLURM_NTASKS")
+  sed -i "/^NCCL_/d" /etc/environment
+  cat >> /etc/environment << ENVEOF
+NCCL_IB_HCA=\$HCA
+NCCL_IB_DISABLE=0
+NCCL_IB_GDR_LEVEL=2
+NCCL_IB_QPS_PER_CONNECTION=4
+NCCL_IB_TIMEOUT=23
+NCCL_PROTO=LL128
+NCCL_SOCKET_IFNAME=${SOCK_IFACE}
+ENVEOF
+  printf "%s\n" /workspace/rdma_libs /workspace/rdma_libs/libibverbs \\
+    > /etc/ld.so.conf.d/rdma.conf
+  ldconfig 2>/dev/null || true
+  printf "  [%s] NCCL_IB_HCA=%s\n" "\$(hostname)" "\$HCA"
+'
+EOF
+
 echo ""
 echo "Done. Run 'sky show-gpus --cloud slurm' to see available GPUs."

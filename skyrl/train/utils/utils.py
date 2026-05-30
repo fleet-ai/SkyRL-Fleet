@@ -731,7 +731,16 @@ def initialize_ray(cfg: SkyRLTrainConfig):
 
     # Set up log file for infrastructure logs (skip when dumping to stdout)
     if not verbose_logging:
+        # Make the log dir per-user (and per-job). The configured path (default
+        # /tmp/skyrl-logs) is node-local and shared, so a dir created by another
+        # user blocks this one with PermissionError. Appending the uid puts it
+        # directly under /tmp (world-writable 1777), so each user owns their own
+        # dir — no root or chmod needed. SLURM_JOB_ID (same across all nodes in the
+        # allocation) keeps concurrent jobs from sharing a dir; no-op off Slurm.
         log_path = Path(cfg.trainer.log_path).resolve()
+        log_path = log_path.with_name(f"{log_path.name}-{os.getuid()}")
+        if os.environ.get("SLURM_JOB_ID"):
+            log_path = log_path / f"job-{os.environ['SLURM_JOB_ID']}"
         log_path.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
         log_file = str(log_path / f"infra-{timestamp}.log")

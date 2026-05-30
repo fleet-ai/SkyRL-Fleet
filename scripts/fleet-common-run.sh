@@ -99,15 +99,35 @@ mkdir -p "$TMP_DIR"
 # and SkyPilot sets HOME to /workspace/.sky_clusters/... so ~/.cache is also NFS.
 # - filelock on NFS causes ESTALE (errno 116) when concurrent vLLM engines race
 # - Ray needs local temp for Unix domain sockets (UDS don't work over NFS)
-RAY_TMPDIR="/tmp/skyrl-ray"
+# Ray's temp dir AND ports must be unique per job. These SLURM nodes are
+# multi-tenant: other users' SkyPilot jobs share the physical node, and Ray's
+# temp dir + ports are global per node. A bare /tmp/skyrl-ray + fixed port 6479
+# collide with a co-tenant's root-owned Ray (which we can't kill) — our head then
+# connects to their GCS and dies with a session-name mismatch. Key everything on
+# SLURM_JOB_ID: it's identical across all nodes in the allocation, so head and
+# workers independently derive the same temp dir and ports and still agree.
+JOB_KEY="${SLURM_JOB_ID:-${SLURM_JOBID:-}}"
+[ -n "$JOB_KEY" ] || JOB_KEY=$(pwd | cksum | cut -d' ' -f1)  # cwd = shared NFS workdir
+RAY_TMPDIR="/tmp/skyrl-ray-${JOB_KEY}"
+# A 500-port block per job in [20000,60000): GCS, client-server, dashboard, plus a
+# worker-port range clear of a co-tenant's default 10002-19999.
+RAY_PORT_BASE=$(( 20000 + (10#$JOB_KEY % 80) * 500 ))
+RAY_GCS_PORT=$RAY_PORT_BASE
+RAY_CLIENT_PORT=$(( RAY_PORT_BASE + 1 ))
+RAY_DASHBOARD_PORT=$(( RAY_PORT_BASE + 2 ))
+RAY_WORKER_PORT_MIN=$(( RAY_PORT_BASE + 50 ))
+RAY_WORKER_PORT_MAX=$(( RAY_PORT_BASE + 499 ))
 mkdir -p "$RAY_TMPDIR"
 export TMPDIR="/tmp"
 export RAY_TMPDIR="$RAY_TMPDIR"
-export HF_HOME="/tmp/hf_cache"
+# Namespace local caches by UID. /tmp is shared by all users on a node, so a
+# bare /tmp/hf_cache created by an earlier root job is root-owned and not
+# writable by other users (PermissionError under .../hub/models--...).
+export HF_HOME="/tmp/hf_cache-$(id -u)"
 mkdir -p "$HF_HOME"
 # Triton's JIT cache must also be LOCAL: shared NFS causes ESTALE during
 # concurrent kernel compilation across nodes (errno 116, "Stale file handle").
-export TRITON_CACHE_DIR="/tmp/triton_cache"
+export TRITON_CACHE_DIR="/tmp/triton_cache-$(id -u)"
 mkdir -p "$TRITON_CACHE_DIR"
 
 TASKS_FILE="${DATA_ROOT}/data/fleet/tasks_${MODALITY}.json"
@@ -224,8 +244,33 @@ export RAY_DISABLE_MEMORY_MONITOR=1
 # NOTE: On GCP VMs without RDMA, gIB NCCL vars are stripped above.
 # On GKE with RDMA, gIB is preserved for inter-node GPUDirect.
 
+# === Consistent NCCL_IB_HCA across all allocated nodes (per-job intersection) ===
+# IB device names are NOT identical across nodes on this cluster: e.g. mlx5_3 is a live
+# InfiniBand port on some nodes while on others mlx5_3 is DOWN and mlx5_5 is live instead.
+# Two failure modes follow if NCCL_IB_HCA isn't handled carefully:
+#   (A) one list naming a NIC that's down on some node  -> that rail hangs the first collective
+#   (B) different lists across ranks (per-node detection) -> NCCL deadlocks (rails don't line up)
+# Both show up as a ~10-min gloo/NCCL timeout during init. Fix: ib-hca-intersection.sh has each
+# node publish its own active IB HCAs to a shared (NFS) dir, then returns the INTERSECTION -> a
+# single consistent list containing only NICs live on ALL nodes. Overrides /etc/environment.
+#
+# NB: this script runs under `set -euo pipefail`. The intersection MUST run in its own process
+# (`bash <helper>`), not inline -- an inline detection pipeline returns non-zero on its last
+# (non-IB) device and `pipefail`+`set -e` would abort the whole run. The `|| true` is a second
+# guard so a missing helper / no-IB host falls back to the inherited /etc/environment value.
+if [ -d /sys/class/infiniband ] && [ -n "$(ls -A /sys/class/infiniband 2>/dev/null)" ]; then
+  _ib_helper="$(dirname "${BASH_SOURCE[0]}")/ib-hca-intersection.sh"
+  _ib_csv=$(bash "$_ib_helper" "/workspace/.sky_ib_hca/${JOB_KEY:-nojob}" "${SKYPILOT_NUM_NODES:-1}" 2>/dev/null || true)
+  if [ -n "$_ib_csv" ]; then
+    export NCCL_IB_HCA="$_ib_csv"
+    echo "[NCCL] consistent NCCL_IB_HCA across ${SKYPILOT_NUM_NODES:-1} node(s) = $NCCL_IB_HCA"
+  else
+    echo "[NCCL] intersection helper produced nothing; keeping inherited NCCL_IB_HCA=${NCCL_IB_HCA:-unset}"
+  fi
+fi
+
 read -r head_ip _ <<< "$SKYPILOT_NODE_IPS"
-ray_address="$head_ip:6479"
+ray_address="$head_ip:$RAY_GCS_PORT"
 
 wait_for_ray() {
   local address=$1
@@ -240,29 +285,18 @@ wait_for_ray() {
 }
 
 cleanup_existing_ray() {
-  echo "Cleaning local Ray state before launch..."
-  env -u RAY_ADDRESS ray stop --force >/dev/null 2>&1 || true
-  local patterns=(
-    gcs_server
-    raylet
-    plasma_store
-    'ray::'
-    ray.dashboard
-    dashboard_agent
-    runtime_env_agent
-    log_monitor
-    monitor.py
-    default_worker.py
-  )
-  local pattern
-  for pattern in "${patterns[@]}"; do
-    pkill -9 -f "$pattern" 2>/dev/null || true
-  done
-  fuser -k 6479/tcp 2>/dev/null || true
-  rm -rf "$RAY_TMPDIR" /tmp/ray 2>/dev/null || true
+  echo "Cleaning this job's Ray state (temp dir: $RAY_TMPDIR, gcs port: $RAY_GCS_PORT)..."
+  # Only touch THIS job's namespaced state. Broad pkill of gcs_server/raylet or
+  # fuser on a shared port would (a) no-op against a co-tenant's root-owned Ray
+  # and (b) kill another of our own concurrent jobs on this shared node. Matching
+  # on our unique RAY_TMPDIR (present in every Ray process's --temp-dir) and our
+  # per-job port targets only this job.
+  pkill -9 -f "$RAY_TMPDIR" 2>/dev/null || true
+  fuser -k "${RAY_GCS_PORT}/tcp" 2>/dev/null || true
+  rm -rf "$RAY_TMPDIR" 2>/dev/null || true
   mkdir -p "$RAY_TMPDIR"
   for _ in $(seq 1 10); do
-    if ! fuser 6479/tcp >/dev/null 2>&1; then
+    if ! fuser "${RAY_GCS_PORT}/tcp" >/dev/null 2>&1; then
       break
     fi
     sleep 1
@@ -277,7 +311,10 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   # --node-ip-address: on SLURM, force Ray to use the overlay IP (from SKYPILOT_NODE_IPS)
   # instead of auto-detecting the Docker-internal IP (172.19.x.x). Without this, the head
   # registers as a ghost node and the placement group can't schedule GPU bundles.
-  env -u RAY_ADDRESS ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000 \
+  env -u RAY_ADDRESS ray start --head --disable-usage-stats --port "$RAY_GCS_PORT" \
+    --ray-client-server-port "$RAY_CLIENT_PORT" --dashboard-port "$RAY_DASHBOARD_PORT" \
+    --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
+    --object-store-memory=10000000000 \
     --node-ip-address="$head_ip" --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   # Tell ray.init() where to find the cluster (needed when --temp-dir differs
@@ -350,7 +387,7 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
     echo "--- cgroup memory events ---"
     cat /sys/fs/cgroup/memory.events 2>/dev/null || cat /sys/fs/cgroup/memory/memory.oom_control 2>/dev/null || true
     echo "--- Ray worker logs (last errors) ---"
-    grep -r "SIGKILL\|SIGABRT\|SIGSEGV\|SYSTEM_ERROR\|RuntimeError\|NCCL" /tmp/ray/session_latest/logs/ 2>/dev/null | tail -30 || true
+    grep -r "SIGKILL\|SIGABRT\|SIGSEGV\|SYSTEM_ERROR\|RuntimeError\|NCCL" "$RAY_TMPDIR/session_latest/logs/" 2>/dev/null | tail -30 || true
     exit $EXIT_CODE
   fi
 
@@ -358,7 +395,9 @@ else
   # === Worker node: join Ray cluster and wait ===
   echo "=== Worker node (rank ${SKYPILOT_NODE_RANK}), joining Ray cluster at $ray_address ==="
   wait_for_ray "$ray_address"
-  env -u RAY_ADDRESS ray start --address "$ray_address" --disable-usage-stats --temp-dir="$RAY_TMPDIR"
+  env -u RAY_ADDRESS ray start --address "$ray_address" --disable-usage-stats \
+    --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
+    --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   export RAY_ADDRESS="$ray_address"
   echo "Worker node joined. Sleeping..."
