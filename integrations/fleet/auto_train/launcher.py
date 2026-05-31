@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from .config import MODALITY_YAML_MAP, REQUIRED_LAUNCH_ENV_VARS, SUPPORTED_MODALITIES
@@ -91,12 +92,43 @@ def launch_training(
         return True
 
     logger.info("Launching: %s/%s", dataset_key, modality)
-    result = subprocess.run(cmd, cwd=str(_repo_root()))
-    if result.returncode != 0:
+
+    # SkyPilot's sync_workdir does a git clone on the launch target, which on
+    # the runpod slurm head intermittently fails ("Git clone failed on
+    # 31.24.80.55-13122: /workspace/.sky_clusters/sky-XXXX-runner-NNN/sky_workdir").
+    # Sky's --retry-until-up only retries cluster provisioning, not the
+    # post-provision workdir sync. Retry the whole launch up to 3 times when
+    # we see that exact failure mode. The workflow's "Best-effort cluster
+    # cleanup" step downs any orphan sky-*-runner clusters between launches.
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        proc = subprocess.Popen(
+            cmd, cwd=str(_repo_root()),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        tail: list[str] = []
+        for line in iter(proc.stdout.readline, ""):  # type: ignore[arg-type]
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            tail.append(line)
+            if len(tail) > 200:
+                tail.pop(0)
+        proc.wait()
+        if proc.returncode == 0:
+            logger.info("fleet-launch.sh succeeded for %s/%s (attempt %d)",
+                        dataset_key, modality, attempt)
+            return True
+        tail_text = "".join(tail)
+        if "Git clone failed" in tail_text and attempt < max_attempts:
+            logger.warning(
+                "fleet-launch.sh hit Git clone failure (attempt %d/%d) for %s/%s; retrying",
+                attempt, max_attempts, dataset_key, modality,
+            )
+            continue
         logger.error(
-            "fleet-launch.sh failed (exit=%d) for %s/%s",
-            result.returncode, dataset_key, modality,
+            "fleet-launch.sh failed (exit=%d, attempt %d) for %s/%s",
+            proc.returncode, attempt, dataset_key, modality,
         )
         return False
-    logger.info("fleet-launch.sh succeeded for %s/%s", dataset_key, modality)
-    return True
+    return False
