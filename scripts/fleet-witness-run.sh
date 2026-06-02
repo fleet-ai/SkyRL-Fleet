@@ -28,6 +28,18 @@ export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-8}"
 # 35B GatedDeltaNet: FlashInfer GDN-prefill JIT hangs on RunPod → use triton (team convention).
 export VLLM_GDN_PREFILL_BACKEND=triton
 
+# --- Cross-node NCCL: force TCP sockets (2026-06-02) ---
+# Inter-node IB is broken for our node pair: a 3.5 MB BROADCAST (SeqNum=1) hung 10 min on
+# rails that are "active" on BOTH nodes (verified /workspace/.sky_ib_hca: node-8 & node-9
+# both expose mlx5_0,1,2,3,6,7,8,9, yet the collective never connected → the IB fabric
+# doesn't route between these nodes on those rails). FM/NVLink are healthy (Fabric:
+# Completed/Success, NVLink up), so it's specifically inter-node IB. Disable IB → NCCL uses
+# TCP over NCCL_SOCKET_IFNAME (ens1, from /etc/environment). NCCL_DEBUG=INFO prints the
+# chosen transport + per-interface speeds, so if TCP is too slow we can switch to RoCE on
+# the 200G Ethernet NICs (mlx5_10/11) instead.
+export NCCL_IB_DISABLE=1
+export NCCL_DEBUG=INFO
+
 # Reward / harness env consumed by the witness env + agent harness.
 export ENABLE_PLAN_DIVERSITY_PENALTY PLAN_DIVERSITY_SCHEME PLAN_DIVERSITY_PENALTY
 export ENABLE_RULE_JUDGE_REWARD RULE_JUDGE_MODEL RULE_JUDGE_SAMPLE_RATE RULE_JUDGE_MAX_REWARD
