@@ -25,6 +25,8 @@ export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
 export DATA_VERSION="${DATA_VERSION:-v6}"
 export MODALITY="${MODALITY:-browser_use}"
+export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-35B-A3B}"
+export MODEL_TAG="${MODEL_TAG:-qwen35}"
 export NUM_EPOCHS="${NUM_EPOCHS:-10}"
 export MAX_TURNS="${MAX_TURNS:-80}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-80000}"
@@ -43,6 +45,10 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 : "${FLEET_API_KEY:?Set FLEET_API_KEY before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
 
+# REQUIRED for Qwen3.5/3.6-35B-A3B: FlashInfer GDN JIT hangs silently on
+# GCP/RunPod (memory: commit 31098293). Matches fleet-task-gen-35b-run.sh.
+export VLLM_GDN_PREFILL_BACKEND=triton
+
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf \
@@ -51,10 +57,7 @@ bash scripts/fleet-common-run.sh \
   environment.skyrl_gym.fleet_task.partial_reward=true \
   environment.skyrl_gym.fleet_task.enable_hints=false \
   trainer.algorithm.advantage_estimator=grpo \
-  trainer.policy.model.path="Qwen/Qwen3.5-35B-A3B" \
-  trainer.policy.language_model_only=false \
-  trainer.ref.language_model_only=false \
-  generator.inference_engine.language_model_only=false \
+  trainer.policy.model.path="$MODEL_PATH" \
   trainer.flash_attn=false \
   trainer.loss_chunk_size=4096 \
   trainer.use_sample_packing=false \
@@ -75,7 +78,7 @@ bash scripts/fleet-common-run.sh \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
   trainer.max_ckpts_to_keep=1 \
-  trainer.max_prompt_length=2048 \
+  trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
   generator.sampling_params.max_generate_length=$MAX_GENERATE_LENGTH \
   generator.sampling_params.temperature=0.9 \
@@ -101,9 +104,9 @@ bash scripts/fleet-common-run.sh \
   generator.trajectory_timeout_seconds=900 \
   trainer.logger="$LOGGER" \
   trainer.project_name="fleet-browser-use-grpo" \
-  trainer.run_name="fleet_qwen35_35b_${MODALITY}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \
+  trainer.run_name="fleet_${MODEL_TAG}_35b_${MODALITY}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \
   trainer.resume_mode=latest \
-  trainer.ckpt_path="$HOME/ckpts/fleet_qwen35_35b_${MODALITY}" \
+  trainer.ckpt_path="$HOME/ckpts/fleet_${MODEL_TAG}_35b_${MODALITY}" \
   trainer.export_path="$HOME/exports" \
   trainer.dump_data_batch=true \
   "$@"
