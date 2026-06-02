@@ -62,6 +62,21 @@ When reporting task-gen training metrics, distinguish between:
 
 Report binary variance reward count (how many tasks got `reward >= 1.0`) separately from gate-pass count. Check `EVAL` log lines for `total=1.0000` vs `total=0.0000`.
 
+## Colocated Training Memory Model
+
+SkyRL uses **colocated training**: vLLM inference engines and FSDP training share the same GPUs but **alternate, never run simultaneously**. The cycle is:
+
+1. vLLM wakes: loads model weights + allocates KV cache
+2. Generate trajectories
+3. vLLM sleeps: frees KV cache + offloads weights
+4. FSDP wakes: loads sharded weights + gradients + runs forward/backward
+5. FSDP sleeps
+6. Repeat
+
+`generator.gpu_memory_utilization` controls how much GPU memory vLLM claims during **its phase only**. It does NOT reduce memory available for FSDP. Setting it low "to leave room for training" wastes KV cache capacity without helping training.
+
+When sizing `gpu_memory_utilization`: consider model weights under TP sharding + desired KV cache for your context length. FSDP memory budget is a separate, independent calculation. Typical values: 0.65-0.80.
+
 ## Branch
 
 Primary development branch: `main`

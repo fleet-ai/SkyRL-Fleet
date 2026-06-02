@@ -1,0 +1,58 @@
+# Fleet MiniMax-M2.7 (230B/10B MoE) GRPO Training via SkyPilot
+# Usage: bash scripts/fleet-launch.sh tasks/openenv-fleet-grpo-minimax-m27.yaml --env FLEET_API_KEY=<key> --env WANDB_API_KEY=<key>
+#
+# MiniMax-M2.7: 230B total, 10B active, 256 experts, 8 active per token.
+# Day-0 vLLM support with NVIDIA-optimized kernels.
+# FSDP2 with CPU optimizer offload for training (230B doesn't fit GPU-only).
+#
+# Multi-node (4-node, 32 GPUs total): 8x H200 per node, TP=4
+# RunPod Slurm reserved cluster only (GCP spot lacks RDMA for multi-node).
+
+name: fleet-minimax-m27-grpo
+
+resources:
+  disk_size: 1000
+  memory: 2000+
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 4
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: main
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  DATA_VERSION: "v6"
+  ENV_KEYS: ""
+  DIFFICULTY: ""
+  MODALITY: "tool_use"
+  MAX_TURNS: 50
+  MAX_INPUT_LENGTH: 128000
+  MAX_GENERATE_LENGTH: 4096
+  NUM_EPOCHS: 10
+  RUN_ID: ""
+  MAX_TASKS: ""
+  RESUME_RUN_NAME: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+  # TP=4 -> 8 engines (each uses 4 GPUs) across 32 GPUs
+  NUM_INFERENCE_ENGINES: 8
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-minimax-m27-extra-setup.sh
+
+run: |
+  bash scripts/fleet-minimax-m27-run.sh
