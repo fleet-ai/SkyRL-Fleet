@@ -14,7 +14,10 @@
 # `ModuleNotFoundError: transformers.model_debugging_utils` / `flash_attn_2_cuda` on re-runs.
 set -euo pipefail
 
-SENTINEL=".venv/.witness_setup_complete"
+# Key the sentinel on SLURM_JOB_ID (same across all nodes in the allocation) so a stale
+# sentinel left on the shared-NFS .venv by a PRIOR job can't be mistaken for this job's →
+# workers correctly wait for THIS job's rank-0 install, not an old one.
+SENTINEL=".venv/.witness_setup_complete_${SLURM_JOB_ID:-${SLURM_JOBID:-nojob}}"
 
 # --- Worker nodes: the shared-NFS .venv is installed once by rank 0. Just wait + activate. ---
 if [ "${SLURM_PROCID:-${SKYPILOT_NODE_RANK:-0}}" != "0" ]; then
@@ -32,7 +35,10 @@ rm -f "$SENTINEL"
 if ! command -v c++ &>/dev/null; then
   sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
 fi
-uv venv --python 3.12 --seed
+# Reuse an existing .venv — the cluster dir persists on the shared /workspace network volume
+# across runs, and `uv venv` ERRORS if .venv already exists. Create only when missing; the
+# `uv sync` below reconciles a reused venv to the lockfile. (Matches fleet-common-setup.sh.)
+[ -d .venv ] || uv venv --python 3.12 --seed
 source .venv/bin/activate
 uv sync --extra fsdp
 for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
