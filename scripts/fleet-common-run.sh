@@ -124,6 +124,17 @@ RAY_PORT_BASE=$(( 20000 + (10#$JOB_KEY % 80) * 500 ))
 RAY_GCS_PORT=$RAY_PORT_BASE
 RAY_CLIENT_PORT=$(( RAY_PORT_BASE + 1 ))
 RAY_DASHBOARD_PORT=$(( RAY_PORT_BASE + 2 ))
+# Pin Ray's per-node agent ports (BASE+3..+6) explicitly, BELOW the worker-port floor.
+# Without this, Ray auto-picks them from the OS ephemeral range (32768-60999); when a high
+# JOB_KEY pushes the worker range [BASE+50,BASE+499] into that ephemeral range, an auto-picked
+# agent port can land INSIDE the worker range and Ray refuses to start with
+# "ValueError: Ray component worker_ports is trying to use a port number N used by other
+# components" (observed: JOB_KEY=1259 -> worker 49550-49999, dashboard_agent_grpc=49960).
+# These are within this job's 500-port block, so they stay clear of co-tenant ports too.
+RAY_DASH_AGENT_GRPC_PORT=$(( RAY_PORT_BASE + 3 ))
+RAY_DASH_AGENT_HTTP_PORT=$(( RAY_PORT_BASE + 4 ))
+RAY_RUNTIME_ENV_AGENT_PORT=$(( RAY_PORT_BASE + 5 ))
+RAY_METRICS_EXPORT_PORT=$(( RAY_PORT_BASE + 6 ))
 RAY_WORKER_PORT_MIN=$(( RAY_PORT_BASE + 50 ))
 RAY_WORKER_PORT_MAX=$(( RAY_PORT_BASE + 499 ))
 mkdir -p "$RAY_TMPDIR"
@@ -322,6 +333,10 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   # registers as a ghost node and the placement group can't schedule GPU bundles.
   env -u RAY_ADDRESS ray start --head --disable-usage-stats --port "$RAY_GCS_PORT" \
     --ray-client-server-port "$RAY_CLIENT_PORT" --dashboard-port "$RAY_DASHBOARD_PORT" \
+    --dashboard-agent-grpc-port "$RAY_DASH_AGENT_GRPC_PORT" \
+    --dashboard-agent-listen-port "$RAY_DASH_AGENT_HTTP_PORT" \
+    --runtime-env-agent-port "$RAY_RUNTIME_ENV_AGENT_PORT" \
+    --metrics-export-port "$RAY_METRICS_EXPORT_PORT" \
     --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
     --object-store-memory=10000000000 \
     --node-ip-address="$head_ip" --temp-dir="$RAY_TMPDIR"
@@ -405,6 +420,10 @@ else
   echo "=== Worker node (rank ${SKYPILOT_NODE_RANK}), joining Ray cluster at $ray_address ==="
   wait_for_ray "$ray_address"
   env -u RAY_ADDRESS ray start --address "$ray_address" --disable-usage-stats \
+    --dashboard-agent-grpc-port "$RAY_DASH_AGENT_GRPC_PORT" \
+    --dashboard-agent-listen-port "$RAY_DASH_AGENT_HTTP_PORT" \
+    --runtime-env-agent-port "$RAY_RUNTIME_ENV_AGENT_PORT" \
+    --metrics-export-port "$RAY_METRICS_EXPORT_PORT" \
     --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
     --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
