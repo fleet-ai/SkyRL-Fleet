@@ -40,7 +40,11 @@ fi
 # `uv sync` below reconciles a reused venv to the lockfile. (Matches fleet-common-setup.sh.)
 [ -d .venv ] || uv venv --python 3.12 --seed
 source .venv/bin/activate
-uv sync --extra fsdp
+# --inexact: do NOT prune packages absent from the lockfile. The wandb/boto3/awscli/openai below
+# are intentionally `uv pip install`ed (not in the project lockfile); on a REUSED venv a default
+# (exact) `uv sync` tries to remove them and dies removing their __pycache__ on the NFS volume
+# (`failed to remove directory ... awscli/__pycache__: Directory not empty (os error 39)`).
+uv sync --extra fsdp --inexact
 for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
   [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
 done
