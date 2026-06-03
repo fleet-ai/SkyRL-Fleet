@@ -25,17 +25,54 @@ export HYDRA_FULL_ERROR=1
 # TASKS_FILE path that witness never uses) — give it a harmless value.
 export MODALITY="${MODALITY:-witness}"
 export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-8}"
-# 35B GatedDeltaNet: FlashInfer GDN-prefill JIT hangs on RunPod → use triton (team convention).
-export VLLM_GDN_PREFILL_BACKEND=triton
+# 35B GatedDeltaNet: FlashInfer GDN-prefill JIT hangs on RunPod → force triton.
+# IMPORTANT: vLLM reads the backend from additional_config["gdn_prefill_backend"] (qwen3_next.py),
+# NOT from any env var. `VLLM_GDN_PREFILL_BACKEND` was a NO-OP — vLLM never read it, so FlashInfer
+# was used regardless and its JIT hung post-maintenance (cold cache) → EngineCore startup hang
+# (`Failed core proc(s): {}`). The REAL switch is the hydra override on the fleet-common-run line:
+#   +generator.engine_init_kwargs.gdn_prefill_backend=triton   (passed straight to AsyncEngineArgs)
 
-# --- Cross-node NCCL (2026-06-03: BACK TO TCP) ---
-# IB was re-enabled post-maintenance, but on node-9/10 the vLLM inference engines failed to start
-# (empty "Failed core proc(s): {}" = a startup-handshake HANG, not a crash) — the same signature
-# as the node-8/9 cross-node IB hang. node-9/10's IB HCA lists are symmetric but cross-node IB
-# routing was never verified. TCP is the config that trained pre-maintenance. Revert to it to get
-# running; revisit IB (verify it actually routes via NCCL_DEBUG NET/IB) only after a clean run.
-export NCCL_IB_DISABLE=1       # force TCP (proven). Comment out to retry IB once routing is verified.
+# --- Cross-node NCCL: force TCP (NCCL_IB_DISABLE=1) — REQUIRED on this node pair ---
+# EVIDENCE (2026-06-03, run yp2hjk1x): after clearing the Ray-port + GPU-orphan issues, training
+# reached trainer.build_models() and the FIRST cross-node collective hung:
+#   [Rank 5/6/7] Watchdog caught collective operation timeout:
+#   WorkNCCL(SeqNum=1, OpType=BROADCAST, ...) ran for 600090 ms before timing out  -> SIGABRT
+# The vLLM inference NCCL that "Init COMPLETE"d earlier was INTRA-node (via P2P/IPC) — it never
+# proved cross-node IB. The training FSDP process group spans BOTH nodes and its first cross-node
+# BROADCAST never completed => cross-node IB does NOT route on this node pair (node-9/10).
+# fleet-common-run.sh's ib-hca-intersection helper "produced nothing" this run (fell back to the
+# static /etc/environment NCCL_IB_HCA, which can name a NIC that's DOWN on one node -> the first
+# collective hangs). TCP is the config that TRAINED pre-maintenance. Forcing it is not a gratuitous
+# deviation — it's the correct response to broken cross-node IB here.
+# Proper IB fix (revisit separately): make ib-hca-intersection.sh actually emit a both-nodes-live
+# HCA list; once a clean cross-node IB run is verified, this line can be removed.
+export NCCL_IB_DISABLE=1
 export NCCL_DEBUG=INFO
+
+# --- Startup GPU self-cleanup: reap OUR OWN orphan GPU procs from a prior crashed run ---
+# A crashed SkyRL run leaves VLLM::Worker / torch procs holding ~115 GB/GPU that SURVIVE
+# `sky down` (children reparent to init, escaping Slurm's cgroup reap). On a reused node they
+# starve THIS run's engine -> EngineCore dies with "Failed core proc(s): {}" on the dirty node
+# (debugged 2026-06-03: node-10 held 4-day-old VLLM::Worker orphans, only 27 GB/GPU free).
+# This run-block executes per node BEFORE fleet-common-run starts Ray/engines, so we hold NO
+# live GPU procs of our own yet => any GPU-compute proc owned by THIS uid is an orphan -> kill it.
+# Co-tenant / root procs (different uid) are skipped — can't and shouldn't touch them.
+# Best-effort: wrapped so it can never fail the run; skipped under SMOKE_ONLY.
+if [ "${SMOKE_ONLY:-0}" != "1" ] && command -v nvidia-smi >/dev/null 2>&1; then
+  ( set +e
+    _me=$(id -u)
+    for _pid in $(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | tr -d ' '); do
+      [ -n "$_pid" ] || continue
+      _owner=$(stat -c '%u' "/proc/$_pid" 2>/dev/null) || continue
+      if [ "$_owner" = "$_me" ]; then
+        echo "[gpu-cleanup] $(hostname): killing own orphan GPU pid $_pid ($(cat /proc/$_pid/comm 2>/dev/null))"
+        kill -9 "$_pid" 2>/dev/null || true
+      fi
+    done
+    sleep 2
+    echo "[gpu-cleanup] $(hostname) free MiB/GPU: $(nvidia-smi --query-gpu=memory.free --format=csv,noheader 2>/dev/null | tr '\n' ' ')"
+  ) || true
+fi
 
 # Reward / harness env consumed by the witness env + agent harness.
 export ENABLE_PLAN_DIVERSITY_PENALTY PLAN_DIVERSITY_SCHEME PLAN_DIVERSITY_PENALTY
@@ -169,6 +206,7 @@ bash scripts/fleet-common-run.sh \
   generator.n_samples_per_prompt="${N_SAMPLES_PER_PROMPT}" \
   generator.eval_n_samples_per_prompt="${EVAL_N_SAMPLES_PER_PROMPT}" \
   generator.gpu_memory_utilization="${GPU_MEMORY_UTILIZATION}" \
+  +generator.engine_init_kwargs.gdn_prefill_backend=triton \
   trainer.logger="${LOGGER}" \
   trainer.project_name="arc-agi-3" \
   trainer.run_name="witness_grpo_v5b7_${RUN_LABEL}" \

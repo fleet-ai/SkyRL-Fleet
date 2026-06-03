@@ -68,9 +68,12 @@ resources:
 
 num_nodes: 2
 
-workdir:
-  url: https://github.com/fleet-ai/SkyRL-Fleet.git
-  ref: guanghan/b7-phase2-judge-rewards
+# DEV-LOOP: local workdir → `sky launch` rsyncs THIS local checkout to the cluster, so edits to
+# scripts/fleet-witness-*.sh take effect on the next launch with NO git commit/push. (The git-url
+# form below is the reproducible record; switch back to it for the canonical run.)
+#   url: https://github.com/fleet-ai/SkyRL-Fleet.git
+#   ref: guanghan/b7-phase2-judge-rewards
+workdir: ~/Documents/obsidian/research-repos/SkyRL-Fleet
 
 file_mounts:
   # Adjust source paths to match your local arc-witness-agent / arc-witness-envs worktree.
@@ -124,7 +127,7 @@ envs:
   MAX_GENERATE_LENGTH: 2048          # give 35B reasoning room (vs 9B's 1024)
   MAX_PROMPT_LENGTH: 8192            # trainer-side prompt cap; doubled from 9B's 4096
   GPU_MEMORY_UTILIZATION: "0.65"     # 0.8 → 0.65 for 35B safety margin
-  INFERENCE_TENSOR_PARALLEL_SIZE: 2  # 8 engines × TP=2 = 16 GPUs total
+  INFERENCE_TENSOR_PARALLEL_SIZE: 2  # 8 engines × TP=2 = 16 GPUs total (known-good pre-maintenance)
   NUM_INFERENCE_ENGINES: 8
 
   # === R1/R3/R4/R5 reward + harness knobs ===

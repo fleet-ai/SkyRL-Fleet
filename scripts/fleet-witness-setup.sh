@@ -36,37 +36,34 @@ if ! command -v c++ &>/dev/null; then
   sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
 fi
 # ---------------------------------------------------------------------------------------------
-# Reuse the persistent /workspace NFS venv WITHOUT re-syncing it.
+# Clean venv rebuild every launch — reproduces the team's effective "fresh disk" behavior.
 #
-# The venv lives on the shared /workspace network volume and persists across jobs. A prior job
-# built it complete, but it has DIVERGED from the lockfile (the `uv pip install`s below add
-# transitive deps like rich). On a re-run, ANY `uv sync` then tries to MUTATE package dirs to
-# reconcile them and dies removing their __pycache__ on NFS (`os error 39 / ENOTEMPTY` — first
-# awscli, then rich, then the next...). Per-package flags (--inexact) don't help: the whole class
-# of NFS-removal failures only goes away by NOT re-syncing a venv that is already good.
+# Witness is pinned to a persistent /workspace NFS volume, so a venv from a prior job survives.
+# Because we pip-install extras beyond the lockfile (arc-agi/openai/pyyaml), a REUSED venv has
+# DIVERGED from it — and `uv sync` then tries to prune those extras, dying while removing their
+# __pycache__ on NFS (`os error 39 / ENOTEMPTY`), leaving a half-pruned, gutted venv. The team
+# never hits this: their clouds hand out a fresh disk per launch, so `uv sync` only INSTALLS,
+# never prunes. We reproduce that deterministically — clear any prior venv, then build clean
+# (install-only on an empty venv can't hit the NFS-removal ENOTEMPTY). No skip-sync probe, no
+# --inexact: those were workarounds that drifted from the team and could still trust a bad venv.
+# Trade-off: one cold build (~10-15 min) per launch, accepted for determinism.
 #
-# So: if the venv already imports every heavy dep AND the CUDA env file exists, it's the complete
-# one a prior job built — skip the entire (re)install and fall through to the light, per-job steps.
-# Only build when the venv is genuinely missing/incomplete (i.e. a truly fresh cluster).
-# To FORCE a rebuild (e.g. after a deliberate dep bump), delete .venv before launching.
-HEAVY_DEPS_PROBE='import vllm, causal_conv1d, flash_attn, transformers, ray, wandb, boto3'
-if [ -d .venv ] && [ -f "$HOME/.cuda_env" ] && .venv/bin/python -c "$HEAVY_DEPS_PROBE" 2>/dev/null; then
-  source .venv/bin/activate
-  echo "[witness-setup] reused venv already complete (all heavy deps import + .cuda_env present) — skipping uv sync + dep build (NFS-safe)"
-else
-  echo "[witness-setup] venv missing/incomplete — building from scratch"
-  [ -d .venv ] || uv venv --python 3.12 --seed
-  source .venv/bin/activate
-  uv sync --extra fsdp
-  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
-    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
-  done
-  uv pip install wandb boto3 awscli pyyaml openai
-  # 35B-specific deps (shared with the team's task-gen): transformers 5.3.0, flash-attn 2.8.3,
-  # CUDA toolkit (writes $HOME/.cuda_env), causal-conv1d built from source.
-  source scripts/fleet-qwen35-extra-setup.sh
-  uv pip install arc-agi
-fi
+# NFS-safe clear: `mv` (rename) a populated venv aside, never `rm -rf`. If orphan processes from a
+# prior job still hold its .so files open, NFS silly-renames deleted-but-open files to .nfsXXXX and
+# rmdir reports ENOTEMPTY. `mv` works regardless of open handles. The .venv.broken.* dirs are
+# harmless — delete them later once no process holds them.
+if [ -d .venv ]; then mv .venv ".venv.broken.${SLURM_JOB_ID:-nojob}" || rm -rf .venv; fi
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv sync --extra fsdp
+for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+  [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+done
+uv pip install wandb boto3 awscli pyyaml openai
+# 35B-specific deps (shared with the team's task-gen): transformers 5.3.0, flash-attn 2.8.3,
+# CUDA toolkit (writes $HOME/.cuda_env), causal-conv1d built from source.
+source scripts/fleet-qwen35-extra-setup.sh
+uv pip install arc-agi
 
 export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
 export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
