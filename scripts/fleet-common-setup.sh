@@ -153,6 +153,7 @@ else
   PREPARE_CMD="python -m integrations.fleet.prepare_dataset --tasks-json $TASKS_FILE --output-dir $DATA_DIR --modality $MODALITY --env-class $ENV_CLASS"
   [ -n "${ENV_KEYS:-}" ] && PREPARE_CMD="$PREPARE_CMD --env-filter $ENV_KEYS"
   [ -n "${DIFFICULTY:-}" ] && PREPARE_CMD="$PREPARE_CMD --difficulty-filter $DIFFICULTY"
+  [ -n "${MAX_TASKS:-}" ] && PREPARE_CMD="$PREPARE_CMD --max-tasks $MAX_TASKS"
   eval "$PREPARE_CMD"
 fi
 
