@@ -35,26 +35,38 @@ rm -f "$SENTINEL"
 if ! command -v c++ &>/dev/null; then
   sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
 fi
-# Reuse an existing .venv — the cluster dir persists on the shared /workspace network volume
-# across runs, and `uv venv` ERRORS if .venv already exists. Create only when missing; the
-# `uv sync` below reconciles a reused venv to the lockfile. (Matches fleet-common-setup.sh.)
-[ -d .venv ] || uv venv --python 3.12 --seed
-source .venv/bin/activate
-# --inexact: do NOT prune packages absent from the lockfile. The wandb/boto3/awscli/openai below
-# are intentionally `uv pip install`ed (not in the project lockfile); on a REUSED venv a default
-# (exact) `uv sync` tries to remove them and dies removing their __pycache__ on the NFS volume
-# (`failed to remove directory ... awscli/__pycache__: Directory not empty (os error 39)`).
-uv sync --extra fsdp --inexact
-for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
-  [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
-done
-uv pip install wandb boto3 awscli pyyaml openai
-
-# 35B-specific deps (shared with the team's task-gen): transformers 5.3.0, flash-attn 2.8.3,
-# CUDA toolkit (writes $HOME/.cuda_env), causal-conv1d built from source.
-source scripts/fleet-qwen35-extra-setup.sh
-
-uv pip install arc-agi
+# ---------------------------------------------------------------------------------------------
+# Reuse the persistent /workspace NFS venv WITHOUT re-syncing it.
+#
+# The venv lives on the shared /workspace network volume and persists across jobs. A prior job
+# built it complete, but it has DIVERGED from the lockfile (the `uv pip install`s below add
+# transitive deps like rich). On a re-run, ANY `uv sync` then tries to MUTATE package dirs to
+# reconcile them and dies removing their __pycache__ on NFS (`os error 39 / ENOTEMPTY` — first
+# awscli, then rich, then the next...). Per-package flags (--inexact) don't help: the whole class
+# of NFS-removal failures only goes away by NOT re-syncing a venv that is already good.
+#
+# So: if the venv already imports every heavy dep AND the CUDA env file exists, it's the complete
+# one a prior job built — skip the entire (re)install and fall through to the light, per-job steps.
+# Only build when the venv is genuinely missing/incomplete (i.e. a truly fresh cluster).
+# To FORCE a rebuild (e.g. after a deliberate dep bump), delete .venv before launching.
+HEAVY_DEPS_PROBE='import vllm, causal_conv1d, flash_attn, transformers, ray, wandb, boto3'
+if [ -d .venv ] && [ -f "$HOME/.cuda_env" ] && .venv/bin/python -c "$HEAVY_DEPS_PROBE" 2>/dev/null; then
+  source .venv/bin/activate
+  echo "[witness-setup] reused venv already complete (all heavy deps import + .cuda_env present) — skipping uv sync + dep build (NFS-safe)"
+else
+  echo "[witness-setup] venv missing/incomplete — building from scratch"
+  [ -d .venv ] || uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb boto3 awscli pyyaml openai
+  # 35B-specific deps (shared with the team's task-gen): transformers 5.3.0, flash-attn 2.8.3,
+  # CUDA toolkit (writes $HOME/.cuda_env), causal-conv1d built from source.
+  source scripts/fleet-qwen35-extra-setup.sh
+  uv pip install arc-agi
+fi
 
 export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
 export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
