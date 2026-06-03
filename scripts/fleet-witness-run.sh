@@ -28,15 +28,13 @@ export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-8}"
 # 35B GatedDeltaNet: FlashInfer GDN-prefill JIT hangs on RunPod → use triton (team convention).
 export VLLM_GDN_PREFILL_BACKEND=triton
 
-# --- Cross-node NCCL (2026-06-02, post-maintenance: IB RE-ENABLED) ---
-# The 10-min cross-node BROADCAST hang was on the OLD node-8/9 pair, PRE-maintenance (IB rails
-# active locally but didn't route between those nodes). RunPod's data-center maintenance is now
-# done and jobs run on fresh node pairs, so cross-node IB should route again → re-enable it for
-# full bandwidth. IB rails come from the /etc/environment floor (mlx5_0,1,2,6,7,8,9), valid on
-# these nodes. NCCL_DEBUG=INFO shows the chosen transport (look for NET/IB) + where it stalls.
-# IF the first cross-node broadcast hangs again (no progress ~2-3 min): kill the job and
-# uncomment NCCL_IB_DISABLE=1 below to fall back to TCP.
-# export NCCL_IB_DISABLE=1     # <- uncomment to force TCP fallback if IB hangs
+# --- Cross-node NCCL (2026-06-03: BACK TO TCP) ---
+# IB was re-enabled post-maintenance, but on node-9/10 the vLLM inference engines failed to start
+# (empty "Failed core proc(s): {}" = a startup-handshake HANG, not a crash) — the same signature
+# as the node-8/9 cross-node IB hang. node-9/10's IB HCA lists are symmetric but cross-node IB
+# routing was never verified. TCP is the config that trained pre-maintenance. Revert to it to get
+# running; revisit IB (verify it actually routes via NCCL_DEBUG NET/IB) only after a clean run.
+export NCCL_IB_DISABLE=1       # force TCP (proven). Comment out to retry IB once routing is verified.
 export NCCL_DEBUG=INFO
 
 # Reward / harness env consumed by the witness env + agent harness.
