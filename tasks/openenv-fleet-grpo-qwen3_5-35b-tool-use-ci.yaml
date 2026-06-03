@@ -80,6 +80,8 @@ setup: |
 
 run: |
   # CI variant: ckpt_interval=2 so a checkpoint lands within a few steps for
-  # the S3 upload validation criterion.
+  # the S3 upload validation criterion. eval_before_train=false skips the
+  # expensive pre-training eval pass that adds ~20h to CI smoke tests.
   bash scripts/fleet-35b-run.sh \
-    trainer.ckpt_interval=2
+    trainer.ckpt_interval=2 \
+    trainer.eval_before_train=false
