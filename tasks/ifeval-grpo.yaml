@@ -14,26 +14,10 @@ name: ifeval-grpo-qwen25-7b
 resources:
   disk_size: 500
   ordered:
-    # RunPod on-demand (API provisioned)
+    # RunPod Slurm cluster (reserved H200s, no preemption)
     - accelerators: H200:8
-      cloud: runpod
-      ports: 6479
-    # GCP fallback
-    - accelerators: H200:8
-      cloud: gcp
-      use_spot: true
-      ports: 6479
-      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
-    # Other providers
-    - accelerators: H200:8
-      cloud: lambda
-      ports: 6479
-    - accelerators: H200:8
-      cloud: nebius
-      ports: 6479
-    - accelerators: H200-SXM:8
-      cloud: vast
-      ports: 6479
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
 
 num_nodes: 1
 
