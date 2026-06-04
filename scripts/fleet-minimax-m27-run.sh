@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root
 # Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v6}"
+export DATA_VERSION="${DATA_VERSION:-v7}"
 export MODALITY="${MODALITY:-tool_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-10}"
 export MAX_TURNS="${MAX_TURNS:-50}"

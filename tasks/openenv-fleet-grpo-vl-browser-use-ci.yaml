@@ -57,7 +57,7 @@ envs:
   FLEET_API_KEY: ""
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
-  DATA_VERSION: "v6"
+  DATA_VERSION: "v7"
   ENV_KEYS: ""
   DIFFICULTY: ""
   MODALITY: "browser_use"

@@ -23,7 +23,7 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo roo
 # Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v6}"
+export DATA_VERSION="${DATA_VERSION:-v7}"
 export MODALITY="${MODALITY:-browser_use}"
 export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-35B-A3B}"
 export MODEL_TAG="${MODEL_TAG:-qwen35}"
