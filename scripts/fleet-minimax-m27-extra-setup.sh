@@ -13,11 +13,13 @@ set -euo pipefail
 # --- Upgrade torch to 2.11 (required by vLLM 0.22) ---
 echo "=== Upgrading torch to 2.11 for vLLM 0.22 ==="
 pip install --force-reinstall --no-deps torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+pip install --force-reinstall --no-deps torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu128
 # torch 2.11 needs NCCL 2.28.9+ (ncclDevCommCreate API). --no-deps leaves
 # the old nvidia-nccl-cu12==2.27.5 from torch 2.10 in place.
 pip install "nvidia-nccl-cu12>=2.28.9"
 python -c "import torch; print(f'torch={torch.__version__}, cuda={torch.version.cuda}')"
 python -c "import torch; print(f'NCCL version: {torch.cuda.nccl.version()}')"
+python -c "import torchvision; print(f'torchvision={torchvision.__version__}')"
 
 # --- Upgrade vLLM to 0.22 (MiniMax M2.7 support) ---
 echo "=== Upgrading vLLM to 0.22.0 ==="
