@@ -1,0 +1,71 @@
+# IFEval GRPO RLVR Training via SkyPilot - Qwen2.5-7B-Instruct
+# Usage: bash scripts/fleet-launch.sh --skip-gcloud -- tasks/ifeval-grpo.yaml --env WANDB_API_KEY=<key>
+#   (fleet-launch.sh runs scripts/fleet-preflight.sh first; using `sky launch` directly skips that safety net.)
+#
+# Single-turn, rule-based RLVR on the google/IFEval benchmark. Rewards are the
+# fraction of verifiable instruction constraints satisfied (0.0-1.0), computed
+# deterministically by skyrl_gym.envs.ifeval (no judge model, no S3/Fleet deps).
+#
+# Model: Qwen/Qwen2.5-7B-Instruct (standard dense model)
+# GPUs: 8x H200 (single node, TP=1, one vLLM engine per GPU)
+
+name: ifeval-grpo-qwen25-7b
+
+resources:
+  disk_size: 500
+  ordered:
+    # RunPod on-demand (API provisioned)
+    - accelerators: H200:8
+      cloud: runpod
+      ports: 6479
+    # GCP fallback
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    # Other providers
+    - accelerators: H200:8
+      cloud: lambda
+      ports: 6479
+    - accelerators: H200:8
+      cloud: nebius
+      ports: 6479
+    - accelerators: H200-SXM:8
+      cloud: vast
+      ports: 6479
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: agu/ifeval
+
+envs:
+  WANDB_API_KEY: ""
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  NUM_GPUS: "8"
+  DATA_DIR: "~/data/ifeval"
+
+setup: |
+  set -euo pipefail
+
+  # Some cloud images ship without a C++ compiler (needed by a few wheels).
+  if ! command -v c++ &>/dev/null; then
+    echo "Installing build-essential..."
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential
+  fi
+
+  # Resolve the project environment (vLLM + FSDP2 training stack).
+  uv sync --extra fsdp
+  # langdetect improves the language:response_language constraint checker.
+  uv pip install wandb langdetect
+
+  # Build the IFEval parquet dataset from HuggingFace (google/IFEval).
+  uv run --extra fsdp examples/train/ifeval/ifeval_dataset.py --output_dir "$DATA_DIR"
+
+run: |
+  set -euo pipefail
+  export DATA_DIR="${DATA_DIR/#\~/$HOME}"
+  bash examples/train/ifeval/run_ifeval.sh
