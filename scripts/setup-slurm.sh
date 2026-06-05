@@ -95,7 +95,8 @@ if grep -q 'cluster_configs:' ~/.sky/config.yaml 2>/dev/null && grep -q "$RUNPOD
   echo "  cluster_configs.$RUNPOD_CLUSTER_NAME already exists — skipping"
 elif grep -q '^slurm:' ~/.sky/config.yaml 2>/dev/null; then
   # slurm section exists but no cluster_configs — append under it
-  sed -i.bak "/^slurm:/a\\  allowed_clusters:\\
+  sed -i.bak "/^slurm:/a\\  provision_timeout: -1\\
+  allowed_clusters:\\
     - $RUNPOD_CLUSTER_NAME\\
   cluster_configs:\\
     $RUNPOD_CLUSTER_NAME:\\
@@ -109,7 +110,7 @@ else
 slurm:
   allowed_clusters:
     - $RUNPOD_CLUSTER_NAME
-  provision_timeout: 120
+  provision_timeout: -1
   cluster_configs:
     $RUNPOD_CLUSTER_NAME:
       workdir: /workspace
