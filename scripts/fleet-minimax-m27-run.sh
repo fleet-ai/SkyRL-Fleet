@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root
 # Defaults for vars normally set by SkyPilot YAML envs block
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export DATA_VERSION="${DATA_VERSION:-v6}"
+export DATA_VERSION="${DATA_VERSION:-v7}"
 export MODALITY="${MODALITY:-tool_use}"
 export NUM_EPOCHS="${NUM_EPOCHS:-10}"
 export MAX_TURNS="${MAX_TURNS:-50}"
@@ -34,6 +34,13 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 : "${FLEET_API_KEY:?Set FLEET_API_KEY before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
 export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
+
+# Derive batch sizes from GPU count (micro_train_batch_size_per_gpu=1)
+TP_SIZE=4
+TOTAL_GPUS=$(( ${SKYPILOT_NUM_GPUS_PER_NODE:-8} * ${NUM_NODES:-4} ))
+TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-$TOTAL_GPUS}
+POLICY_MINI_BATCH_SIZE=${POLICY_MINI_BATCH_SIZE:-$TOTAL_GPUS}
+echo "=== Batch sizing: ${TOTAL_GPUS} GPUs, train_batch=${TRAIN_BATCH_SIZE}, mini_batch=${POLICY_MINI_BATCH_SIZE} ==="
 
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
@@ -56,10 +63,10 @@ bash scripts/fleet-common-run.sh \
   trainer.eval_before_train=false \
   trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
-  trainer.train_batch_size=16 \
+  trainer.train_batch_size=$TRAIN_BATCH_SIZE \
   trainer.use_hybrid_env_sampling=true \
   trainer.min_samples_per_env=1 \
-  trainer.policy_mini_batch_size=16 \
+  trainer.policy_mini_batch_size=$POLICY_MINI_BATCH_SIZE \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
