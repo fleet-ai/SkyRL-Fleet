@@ -28,6 +28,9 @@ echo "=== Upgrading vLLM to 0.22.0 ==="
 VLLM_VERSION=0.22.0
 CPU_ARCH=$(uname -m)
 pip install "https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cu129-cp38-abi3-manylinux_2_28_${CPU_ARCH}.whl"
+# vLLM 0.22 pulls flashinfer 0.6.11, but RunPod has stale flashinfer-jit-cache 0.6.6.
+# Sync the JIT cache to match.
+pip install --force-reinstall "flashinfer-jit-cache==$(python -c 'import flashinfer; print(flashinfer.__version__)')"
 
 # --- flash-attn (rebuild for torch 2.11) ---
 # The prebuilt wheel is for torch 2.10; need to check compat or rebuild.
