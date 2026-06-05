@@ -34,6 +34,9 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 : "${FLEET_API_KEY:?Set FLEET_API_KEY before running}"
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
 export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-}"
+# Safety net: flashinfer-jit-cache version suffix (+cu128/+cu129) may not
+# match exactly even after upgrade. The kernels are compatible.
+export FLASHINFER_DISABLE_VERSION_CHECK=1
 
 # Derive batch sizes from GPU count (micro_train_batch_size_per_gpu=1)
 TP_SIZE=4
