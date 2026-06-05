@@ -41,6 +41,7 @@ envs:
   FLEET_API_KEY: ""
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-9B"
   DATA_VERSION: "v55"
   MODALITY: "tool_use"
   MAX_TURNS: 10

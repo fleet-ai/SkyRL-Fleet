@@ -53,6 +53,7 @@ envs:
   OPENROUTER_API_KEY: ""
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-35B-A3B"
   DATA_VERSION: "v7"
   ENV_KEYS: ""
   DIFFICULTY: ""

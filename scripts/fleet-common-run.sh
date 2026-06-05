@@ -143,8 +143,13 @@ export RAY_TMPDIR="$RAY_TMPDIR"
 # Namespace local caches by UID. /tmp is shared by all users on a node, so a
 # bare /tmp/hf_cache created by an earlier root job is root-owned and not
 # writable by other users (PermissionError under .../hub/models--...).
-export HF_HOME="/tmp/hf_cache-$(id -u)"
-mkdir -p "$HF_HOME"
+# Use NFS cache if pre-downloaded by setup, else fall back to local /tmp.
+if [ -d "/workspace/hf_cache/hub" ]; then
+  export HF_HOME="/workspace/hf_cache"
+else
+  export HF_HOME="/tmp/hf_cache-$(id -u)"
+  mkdir -p "$HF_HOME"
+fi
 # Triton's JIT cache must also be LOCAL: shared NFS causes ESTALE during
 # concurrent kernel compilation across nodes (errno 116, "Stale file handle").
 export TRITON_CACHE_DIR="/tmp/triton_cache-$(id -u)"
