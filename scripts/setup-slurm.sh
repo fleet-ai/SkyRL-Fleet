@@ -58,7 +58,7 @@ if [ "$SLURM_USER" != "root" ]; then
     # Create on all compute nodes (Slurm needs /home/\$USER on every node)
     NODES=\$(sinfo -N -h -o '%N' 2>/dev/null | sort -u)
     for n in \$NODES; do
-      srun --overlap -N1 --nodelist=\$n bash -c "id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER" 2>/dev/null || true
+      srun --overlap -N1 --nodelist=\$n bash -c "id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER; chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER 2>/dev/null" 2>/dev/null || true
     done
     echo "User '$SLURM_USER' ready on all nodes"
 USEREOF
