@@ -55,10 +55,13 @@ if [ "$SLURM_USER" != "root" ]; then
     chmod 700 /home/$SLURM_USER/.ssh
     chmod 600 /home/$SLURM_USER/.ssh/authorized_keys
     chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER/.ssh
+    # Passwordless sudo (needed for CUDA toolkit installs during setup)
+    echo '$SLURM_USER ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$SLURM_USER
+    chmod 440 /etc/sudoers.d/$SLURM_USER
     # Create on all compute nodes (Slurm needs /home/\$USER on every node)
     NODES=\$(sinfo -N -h -o '%N' 2>/dev/null | sort -u)
     for n in \$NODES; do
-      srun --overlap -N1 --nodelist=\$n bash -c "id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER; chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER 2>/dev/null" 2>/dev/null || true
+      srun --overlap -N1 --nodelist=\$n bash -c "id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER; chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER 2>/dev/null; echo '$SLURM_USER ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$SLURM_USER; chmod 440 /etc/sudoers.d/$SLURM_USER" 2>/dev/null || true
     done
     echo "User '$SLURM_USER' ready on all nodes"
 USEREOF
