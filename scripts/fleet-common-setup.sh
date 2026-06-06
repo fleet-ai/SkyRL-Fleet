@@ -162,7 +162,7 @@ fi
 # instead of each node downloading independently (460 GB+ for large models).
 if [ -n "${MODEL_PATH:-}" ]; then
   echo "Pre-downloading model: $MODEL_PATH"
-  HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet
+  HF_HOME=/workspace/hf_cache HF_HUB_DISABLE_PROGRESS_BARS=1 hf download "$MODEL_PATH"
   echo "Model cached at /workspace/hf_cache"
 fi
 
