@@ -29,6 +29,7 @@ envs:
   FLEET_API_KEY: ""
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "MiniMaxAI/MiniMax-M2.7"
   DATA_VERSION: "v7"
   ENV_KEYS: ""
   DIFFICULTY: ""

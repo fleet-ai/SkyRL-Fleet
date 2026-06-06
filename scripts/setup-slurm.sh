@@ -1,13 +1,17 @@
 #!/bin/bash
 # One-time setup for RunPod Slurm cluster access via SkyPilot.
 #
-# Defaults match an on-cluster login node (SSH to localhost:22 with
-# ~/.ssh/id_ed25519, submitting as your own user). Override any of these via
-# env vars when running from a remote host:
-#   SLURM_HOST  (default: localhost)        e.g. 31.24.80.55
-#   SLURM_PORT  (default: 22)               e.g. 13122
-#   SLURM_USER  (default: current user)     e.g. root
-#   SLURM_SSH_KEY (default: ~/.ssh/id_ed25519)  e.g. ~/.ssh/runpod_key
+# Remote setup (from your Mac):
+#   SLURM_HOST=31.24.80.55 SLURM_PORT=13122 SLURM_USER=yourname bash scripts/setup-slurm.sh
+#
+# SLURM_USER sets your identity on the cluster. When not "root", the script
+# creates a Linux user on the controller so squeue shows your name.
+#
+# All env vars (defaults in parens):
+#   SLURM_HOST  (localhost)           Controller IP
+#   SLURM_PORT  (22)                  Controller SSH port
+#   SLURM_USER  (current user)        Your username (shows in squeue)
+#   SLURM_SSH_KEY (~/.ssh/id_ed25519) Private key for SSH
 #
 # This script handles EVERYTHING needed for Slurm training:
 #   1. Creates ~/.slurm/config (SSH connection to Slurm controller)
@@ -34,8 +38,28 @@ if [ ! -f "$RUNPOD_KEY" ]; then
   exit 1
 fi
 
-# 1. SSH config for Slurm controller
-echo "[1/5] Setting up ~/.slurm/config ($SLURM_USER@$SLURM_HOST:$SLURM_PORT)..."
+# 1. Create Linux user on controller (if not root) so squeue shows your name.
+# SSH as root first, create user, copy SSH public key.
+if [ "$SLURM_USER" != "root" ]; then
+  echo "[1a/6] Creating user '$SLURM_USER' on controller..."
+  PUBKEY=$(cat "${RUNPOD_KEY}.pub" 2>/dev/null || ssh-keygen -y -f "$RUNPOD_KEY" 2>/dev/null || echo "")
+  if [ -z "$PUBKEY" ]; then
+    echo "ERROR: Could not read public key from ${RUNPOD_KEY}.pub or derive from $RUNPOD_KEY"
+    exit 1
+  fi
+  ssh -o StrictHostKeyChecking=no -i "$RUNPOD_KEY" -p "$SLURM_PORT" root@"$SLURM_HOST" bash <<USEREOF
+    id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER
+    mkdir -p /home/$SLURM_USER/.ssh
+    grep -qF '$PUBKEY' /home/$SLURM_USER/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /home/$SLURM_USER/.ssh/authorized_keys
+    chmod 700 /home/$SLURM_USER/.ssh
+    chmod 600 /home/$SLURM_USER/.ssh/authorized_keys
+    chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER/.ssh
+    echo "User '$SLURM_USER' ready"
+USEREOF
+fi
+
+# 1b. SSH config for Slurm controller
+echo "[1b/6] Setting up ~/.slurm/config ($SLURM_USER@$SLURM_HOST:$SLURM_PORT)..."
 mkdir -p ~/.slurm
 cat > ~/.slurm/config <<EOF
 Host runpod-cluster $RUNPOD_CLUSTER_NAME
@@ -60,8 +84,8 @@ ssh -F ~/.slurm/config -l root "$RUNPOD_CLUSTER_NAME" '
   set -e
   # SkyPilot provisioning dirs: sticky + world-writable (like /tmp) so each user
   # keeps their own provision scripts / synced workdirs without clobbering others.
-  mkdir -p /workspace/.sky_provision /workspace/.sky_clusters
-  chmod 1777 /workspace/.sky_provision /workspace/.sky_clusters
+  mkdir -p /workspace/.sky_provision /workspace/.sky_clusters /workspace/clusters
+  chmod 1777 /workspace/.sky_provision /workspace/.sky_clusters /workspace/clusters
   # Shared dataset cache: world-writable, NO sticky bit, so any user can
   # re-download and overwrite the version-pinned dataset files regardless of who
   # created them (the dataset content is identical per DATA_VERSION).

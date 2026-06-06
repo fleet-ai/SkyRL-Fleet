@@ -23,7 +23,14 @@ python -c "import torchvision; print(f'torchvision={torchvision.__version__}')"
 
 # --- Upgrade vLLM to 0.22 (MiniMax M2.7 support) ---
 echo "=== Upgrading vLLM to 0.22.0 ==="
-uv pip install "vllm==0.22.0"
+# vLLM default PyPI wheel is cu130 (libcudart.so.13); RunPod has CUDA 12.8.
+# cu129 wheel works on CUDA 12.8 (minor version backward compat).
+VLLM_VERSION=0.22.0
+CPU_ARCH=$(uname -m)
+pip install "https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cu129-cp38-abi3-manylinux_2_28_${CPU_ARCH}.whl"
+# vLLM 0.22 upgrades flashinfer-python to 0.6.11 but the base venv's
+# flashinfer-jit-cache stays at 0.6.6. Upgrade it from flashinfer's index.
+pip install --force-reinstall flashinfer-jit-cache --index-url https://flashinfer.ai/whl/cu129
 
 # --- flash-attn (rebuild for torch 2.11) ---
 # The prebuilt wheel is for torch 2.10; need to check compat or rebuild.

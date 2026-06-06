@@ -157,6 +157,15 @@ else
   eval "$PREPARE_CMD"
 fi
 
+# --- Pre-download model weights (head node only, shared NFS) ---
+# Download once to /workspace/hf_cache so all nodes read from NFS at runtime
+# instead of each node downloading independently (460 GB+ for large models).
+if [ -n "${MODEL_PATH:-}" ]; then
+  echo "Pre-downloading model: $MODEL_PATH"
+  HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet
+  echo "Model cached at /workspace/hf_cache"
+fi
+
 # --- Signal workers that install is done ---
 touch "$SETUP_SENTINEL"
 echo "=== Fleet Common Setup Complete ==="

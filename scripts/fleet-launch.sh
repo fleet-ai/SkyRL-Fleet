@@ -58,16 +58,9 @@ cd "$(dirname "$0")/.."  # repo root
 PREFLIGHT_ARGS=()
 SKY_ARGS=()
 SAW_DASHDASH=false
-KEEP_CLUSTER=false
 
 # Split argv on a literal `--`. Without `--`, every token goes to sky.
-# `--keep-cluster` is a wrapper-only flag stripped before forwarding to either
-# preflight or sky launch.
 for arg in "$@"; do
-  if [ "$arg" = "--keep-cluster" ]; then
-    KEEP_CLUSTER=true
-    continue
-  fi
   if [ "$SAW_DASHDASH" = true ]; then
     SKY_ARGS+=("$arg")
   elif [ "$arg" = "--" ]; then
@@ -82,20 +75,18 @@ if [ "$SAW_DASHDASH" = false ]; then
 fi
 
 # Auto-teardown by default: append `--down` so the cluster is released when
-# the job exits (SUCCEEDED or FAILED). Skip if the user already passed
-# `--down` themselves (sky errors on duplicate flags) or opted out via
-# `--keep-cluster`.
-if [ "$KEEP_CLUSTER" = false ]; then
-  ALREADY_HAS_DOWN=false
-  for arg in ${SKY_ARGS[@]+"${SKY_ARGS[@]}"}; do
-    if [ "$arg" = "--down" ]; then
-      ALREADY_HAS_DOWN=true
-      break
-    fi
-  done
-  if [ "$ALREADY_HAS_DOWN" = false ]; then
-    SKY_ARGS+=("--down")
+# the job exits (SUCCEEDED or FAILED). Per SkyPilot docs, --down does NOT
+# tear down during setup failures (kept for debugging). Safe with
+# provision_timeout: -1 in ~/.sky/config.yaml (set by setup-slurm.sh).
+ALREADY_HAS_DOWN=false
+for arg in ${SKY_ARGS[@]+"${SKY_ARGS[@]}"}; do
+  if [ "$arg" = "--down" ]; then
+    ALREADY_HAS_DOWN=true
+    break
   fi
+done
+if [ "$ALREADY_HAS_DOWN" = false ]; then
+  SKY_ARGS+=("--down")
 fi
 
 if [ "${SKIP_PREFLIGHT:-0}" = "1" ]; then
