@@ -163,7 +163,9 @@ fi
 if [ -n "${MODEL_PATH:-}" ]; then
   echo "Pre-downloading model: $MODEL_PATH"
   HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet
-  chmod -R a+rwX /workspace/hf_cache
+  # Make cache readable/writable by all users. Use || true because other
+  # users' files in the shared cache may not be chown-able.
+  chmod -R a+rwX /workspace/hf_cache 2>/dev/null || true
   echo "Model cached at /workspace/hf_cache"
 fi
 
