@@ -38,23 +38,29 @@ if [ ! -f "$RUNPOD_KEY" ]; then
   exit 1
 fi
 
-# 1. Create Linux user on controller (if not root) so squeue shows your name.
-# SSH as root first, create user, copy SSH public key.
+# 1. Create Linux user on ALL nodes (if not root) so squeue shows your name
+# and Slurm can chdir to /home/$USER on any compute node.
 if [ "$SLURM_USER" != "root" ]; then
-  echo "[1a/6] Creating user '$SLURM_USER' on controller..."
+  echo "[1a/6] Creating user '$SLURM_USER' on all cluster nodes..."
   PUBKEY=$(cat "${RUNPOD_KEY}.pub" 2>/dev/null || ssh-keygen -y -f "$RUNPOD_KEY" 2>/dev/null || echo "")
   if [ -z "$PUBKEY" ]; then
     echo "ERROR: Could not read public key from ${RUNPOD_KEY}.pub or derive from $RUNPOD_KEY"
     exit 1
   fi
   ssh -o StrictHostKeyChecking=no -i "$RUNPOD_KEY" -p "$SLURM_PORT" root@"$SLURM_HOST" bash <<USEREOF
+    # Create on controller
     id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER
     mkdir -p /home/$SLURM_USER/.ssh
     grep -qF '$PUBKEY' /home/$SLURM_USER/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /home/$SLURM_USER/.ssh/authorized_keys
     chmod 700 /home/$SLURM_USER/.ssh
     chmod 600 /home/$SLURM_USER/.ssh/authorized_keys
     chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER/.ssh
-    echo "User '$SLURM_USER' ready"
+    # Create on all compute nodes (Slurm needs /home/\$USER on every node)
+    NODES=\$(sinfo -N -h -o '%N' 2>/dev/null | sort -u)
+    for n in \$NODES; do
+      srun --overlap -N1 --nodelist=\$n bash -c "id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER" 2>/dev/null || true
+    done
+    echo "User '$SLURM_USER' ready on all nodes"
 USEREOF
 fi
 
