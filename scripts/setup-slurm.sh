@@ -1,13 +1,17 @@
 #!/bin/bash
 # One-time setup for RunPod Slurm cluster access via SkyPilot.
 #
-# Defaults match an on-cluster login node (SSH to localhost:22 with
-# ~/.ssh/id_ed25519, submitting as your own user). Override any of these via
-# env vars when running from a remote host:
-#   SLURM_HOST  (default: localhost)        e.g. 31.24.80.55
-#   SLURM_PORT  (default: 22)               e.g. 13122
-#   SLURM_USER  (default: current user)     e.g. root
-#   SLURM_SSH_KEY (default: ~/.ssh/id_ed25519)  e.g. ~/.ssh/runpod_key
+# Remote setup (from your Mac):
+#   SLURM_HOST=31.24.80.55 SLURM_PORT=13122 SLURM_USER=yourname bash scripts/setup-slurm.sh
+#
+# SLURM_USER sets your identity on the cluster. When not "root", the script
+# creates a Linux user on the controller so squeue shows your name.
+#
+# All env vars (defaults in parens):
+#   SLURM_HOST  (localhost)           Controller IP
+#   SLURM_PORT  (22)                  Controller SSH port
+#   SLURM_USER  (current user)        Your username (shows in squeue)
+#   SLURM_SSH_KEY (~/.ssh/id_ed25519) Private key for SSH
 #
 # This script handles EVERYTHING needed for Slurm training:
 #   1. Creates ~/.slurm/config (SSH connection to Slurm controller)
