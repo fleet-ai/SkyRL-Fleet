@@ -34,8 +34,28 @@ if [ ! -f "$RUNPOD_KEY" ]; then
   exit 1
 fi
 
-# 1. SSH config for Slurm controller
-echo "[1/5] Setting up ~/.slurm/config ($SLURM_USER@$SLURM_HOST:$SLURM_PORT)..."
+# 1. Create Linux user on controller (if not root) so squeue shows your name.
+# SSH as root first, create user, copy SSH public key.
+if [ "$SLURM_USER" != "root" ]; then
+  echo "[1a/6] Creating user '$SLURM_USER' on controller..."
+  PUBKEY=$(cat "${RUNPOD_KEY}.pub" 2>/dev/null || ssh-keygen -y -f "$RUNPOD_KEY" 2>/dev/null || echo "")
+  if [ -z "$PUBKEY" ]; then
+    echo "ERROR: Could not read public key from ${RUNPOD_KEY}.pub or derive from $RUNPOD_KEY"
+    exit 1
+  fi
+  ssh -o StrictHostKeyChecking=no -i "$RUNPOD_KEY" -p "$SLURM_PORT" root@"$SLURM_HOST" bash <<USEREOF
+    id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER
+    mkdir -p /home/$SLURM_USER/.ssh
+    grep -qF '$PUBKEY' /home/$SLURM_USER/.ssh/authorized_keys 2>/dev/null || echo '$PUBKEY' >> /home/$SLURM_USER/.ssh/authorized_keys
+    chmod 700 /home/$SLURM_USER/.ssh
+    chmod 600 /home/$SLURM_USER/.ssh/authorized_keys
+    chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER/.ssh
+    echo "User '$SLURM_USER' ready"
+USEREOF
+fi
+
+# 1b. SSH config for Slurm controller
+echo "[1b/6] Setting up ~/.slurm/config ($SLURM_USER@$SLURM_HOST:$SLURM_PORT)..."
 mkdir -p ~/.slurm
 cat > ~/.slurm/config <<EOF
 Host runpod-cluster $RUNPOD_CLUSTER_NAME
