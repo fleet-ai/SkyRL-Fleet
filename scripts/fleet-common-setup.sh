@@ -163,6 +163,7 @@ fi
 if [ -n "${MODEL_PATH:-}" ]; then
   echo "Pre-downloading model: $MODEL_PATH"
   HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet
+  chmod -R a+rwX /workspace/hf_cache
   echo "Model cached at /workspace/hf_cache"
 fi
 
