@@ -84,8 +84,8 @@ ssh -F ~/.slurm/config -l root "$RUNPOD_CLUSTER_NAME" '
   set -e
   # SkyPilot provisioning dirs: sticky + world-writable (like /tmp) so each user
   # keeps their own provision scripts / synced workdirs without clobbering others.
-  mkdir -p /workspace/.sky_provision /workspace/.sky_clusters
-  chmod 1777 /workspace/.sky_provision /workspace/.sky_clusters
+  mkdir -p /workspace/.sky_provision /workspace/.sky_clusters /workspace/clusters
+  chmod 1777 /workspace/.sky_provision /workspace/.sky_clusters /workspace/clusters
   # Shared dataset cache: world-writable, NO sticky bit, so any user can
   # re-download and overwrite the version-pinned dataset files regardless of who
   # created them (the dataset content is identical per DATA_VERSION).
