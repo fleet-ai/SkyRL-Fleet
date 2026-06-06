@@ -143,6 +143,10 @@ export RAY_TMPDIR="$RAY_TMPDIR"
 # Namespace local caches by UID. /tmp is shared by all users on a node, so a
 # bare /tmp/hf_cache created by an earlier root job is root-owned and not
 # writable by other users (PermissionError under .../hub/models--...).
+# flashinfer-jit-cache and flashinfer-python versions may have minor suffix
+# mismatches (e.g., 0.6.12+cu129 vs 0.6.11.post2). The kernels are compatible.
+# Must be set before Ray workers start (they don't inherit run script env).
+export FLASHINFER_DISABLE_VERSION_CHECK=1
 # Use NFS cache if pre-downloaded by setup, else fall back to local /tmp.
 if [ -d "/workspace/hf_cache/hub" ]; then
   export HF_HOME="/workspace/hf_cache"
