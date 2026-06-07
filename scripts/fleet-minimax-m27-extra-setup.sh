@@ -52,19 +52,19 @@ print(f'MiniMax M2.7 config loaded: model_type={cfg.model_type}, '
   exit 1
 }
 
-# --- CUDA 12.9 toolkit (required by vLLM 0.22 cu129 DeepGemm JIT) ---
-# vLLM 0.22 cu129 uses DeepGemm for FP8 MoE kernels which JIT-compiles
-# with nvcc at runtime. Needs CUDA 12.9 toolkit to match the wheel.
-CUDA_HOME="/usr/local/cuda-12.9"
-if [ ! -x "$CUDA_HOME/bin/nvcc" ]; then
-  echo "Installing CUDA 12.9 toolkit..."
-  sudo apt-get update -qq
-  UBUNTU_VER=$(lsb_release -rs 2>/dev/null | tr -d '.' || echo "2204")
-  KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb"
-  wget -qO /tmp/cuda-keyring.deb "$KEYRING_URL" 2>&1 || curl -sLo /tmp/cuda-keyring.deb "$KEYRING_URL"
-  sudo dpkg -i /tmp/cuda-keyring.deb
-  sudo apt-get update -qq
-  sudo apt-get install -y --no-install-recommends cuda-nvcc-12-9 libcublas-dev-12-9 cuda-nvrtc-dev-12-9
+# --- CUDA toolkit for JIT kernels (DeepGemm, FlashInfer) ---
+# vLLM 0.22 cu129 installs nvidia-cuda-nvcc-cu12 (12.9) as a pip package.
+# Use system CUDA 12.8 if available (driver 580 supports it). The pip nvcc
+# provides the compiler; system CUDA provides nvrtc and other runtime libs.
+CUDA_HOME=""
+for d in /usr/local/cuda /usr/local/cuda-12.9 /usr/local/cuda-12.8; do
+  if [ -x "$d/bin/nvcc" ]; then
+    CUDA_HOME="$d"
+    break
+  fi
+done
+if [ -z "$CUDA_HOME" ]; then
+  echo "WARNING: No system CUDA toolkit found. DeepGemm JIT may fail."
 fi
 export CUDA_HOME
 export PATH="$CUDA_HOME/bin:$PATH"
