@@ -100,10 +100,13 @@ fi
 # fleet-common-run.sh multiplies by SKYPILOT_NUM_NODES to size placement. Left empty it
 # yields 0 GPUs -> policy_dp_size=0 -> ZeroDivisionError in validate_batch_sizes. Derive
 # it from the visible GPUs so this works under both `sky exec` and `sky launch`.
-if [ -z "${SKYPILOT_NUM_GPUS_PER_NODE:-}" ]; then
-  export SKYPILOT_NUM_GPUS_PER_NODE="$(nvidia-smi -L 2>/dev/null | wc -l)"
-  echo "SKYPILOT_NUM_GPUS_PER_NODE was unset; derived $SKYPILOT_NUM_GPUS_PER_NODE from nvidia-smi"
-fi
+# Catch empty, non-numeric, AND the literal "0" that sky exec sets (not just unset).
+case "${SKYPILOT_NUM_GPUS_PER_NODE:-0}" in
+  ''|*[!0-9]*|0)
+    export SKYPILOT_NUM_GPUS_PER_NODE="$(nvidia-smi -L 2>/dev/null | wc -l)"
+    echo "SKYPILOT_NUM_GPUS_PER_NODE was unset/0; derived $SKYPILOT_NUM_GPUS_PER_NODE from nvidia-smi"
+    ;;
+esac
 
 # ---- Route through the shared Fleet infra ----
 bash scripts/fleet-common-run.sh \
