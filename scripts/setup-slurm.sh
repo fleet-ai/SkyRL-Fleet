@@ -61,7 +61,19 @@ if [ "$SLURM_USER" != "root" ]; then
     # Create on all compute nodes (Slurm needs /home/\$USER on every node)
     NODES=\$(sinfo -N -h -o '%N' 2>/dev/null | sort -u)
     for n in \$NODES; do
-      srun --overlap -N1 --nodelist=\$n bash -c "id $SLURM_USER 2>/dev/null || useradd -m -s /bin/bash $SLURM_USER; chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER 2>/dev/null; echo '$SLURM_USER ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$SLURM_USER; chmod 440 /etc/sudoers.d/$SLURM_USER" 2>/dev/null || true
+      # Get controller's UID to ensure consistency across nodes (NFS needs matching UIDs)
+      CTRL_UID=\$(id -u $SLURM_USER)
+      srun --overlap -N1 --nodelist=\$n bash -c "
+        CUR_UID=\\\$(id -u $SLURM_USER 2>/dev/null || echo 0)
+        if [ \\\"\\\$CUR_UID\\\" != \\\"$CTRL_UID\\\" ]; then
+          userdel $SLURM_USER 2>/dev/null; groupdel $SLURM_USER 2>/dev/null
+          groupadd -g \$CTRL_UID $SLURM_USER 2>/dev/null
+          useradd -m -s /bin/bash -u \$CTRL_UID -g \$CTRL_UID $SLURM_USER
+        fi
+        chown -R $SLURM_USER:$SLURM_USER /home/$SLURM_USER 2>/dev/null
+        echo '$SLURM_USER ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$SLURM_USER
+        chmod 440 /etc/sudoers.d/$SLURM_USER
+      " 2>/dev/null || true
     done
     echo "User '$SLURM_USER' ready on all nodes"
 USEREOF
