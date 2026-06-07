@@ -52,7 +52,7 @@ export TOP_P="${TOP_P:-1.0}"
 export GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.7}"
 
 export PROJECT_NAME="${PROJECT_NAME:-fleet-math-baseline}"
-export RUN_ID="${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}"
+export RUN_ID="${RUN_ID:-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')}"
 export RUN_NAME="${RUN_NAME:-math_l3to5_grpo_${MODEL_TAG}_${RUN_ID}}"
 export LEVELS="${LEVELS:-3 4 5}"
 
@@ -94,6 +94,15 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   fi
   echo "=== Pre-downloading model: $MODEL_PATH ==="
   HF_HOME=/workspace/hf_cache HF_HUB_DISABLE_PROGRESS_BARS=1 hf download "$MODEL_PATH"
+fi
+
+# `sky exec` (unlike `sky launch`) does not populate SKYPILOT_NUM_GPUS_PER_NODE, which
+# fleet-common-run.sh multiplies by SKYPILOT_NUM_NODES to size placement. Left empty it
+# yields 0 GPUs -> policy_dp_size=0 -> ZeroDivisionError in validate_batch_sizes. Derive
+# it from the visible GPUs so this works under both `sky exec` and `sky launch`.
+if [ -z "${SKYPILOT_NUM_GPUS_PER_NODE:-}" ]; then
+  export SKYPILOT_NUM_GPUS_PER_NODE="$(nvidia-smi -L 2>/dev/null | wc -l)"
+  echo "SKYPILOT_NUM_GPUS_PER_NODE was unset; derived $SKYPILOT_NUM_GPUS_PER_NODE from nvidia-smi"
 fi
 
 # ---- Route through the shared Fleet infra ----
