@@ -58,8 +58,10 @@ print(f'MiniMax M2.7 config loaded: model_type={cfg.model_type}, '
 CUDA_HOME="/usr/local/cuda-12.9"
 if [ ! -x "$CUDA_HOME/bin/nvcc" ]; then
   echo "Installing CUDA 12.9 toolkit..."
-  sudo apt-get update -qq
   UBUNTU_VER=$(lsb_release -rs 2>/dev/null | tr -d '.' || echo "2204")
+  # Remove legacy CUDA apt source (no signed-by) that conflicts with cuda-keyring
+  sudo rm -f /etc/apt/sources.list.d/cuda.list 2>/dev/null
+  sudo sed -i '/developer.download.nvidia.com\/compute\/cuda/d' /etc/apt/sources.list 2>/dev/null
   KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb"
   wget -qO /tmp/cuda-keyring.deb "$KEYRING_URL" 2>&1 || curl -sLo /tmp/cuda-keyring.deb "$KEYRING_URL"
   sudo dpkg -i /tmp/cuda-keyring.deb
