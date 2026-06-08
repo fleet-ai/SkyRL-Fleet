@@ -15,7 +15,7 @@ import sys
 
 import httpx
 
-from .config import MIN_TASKS_TO_LAUNCH, SUPPORTED_MODALITIES
+from .config import MIN_TASKS_TO_LAUNCH, S3_STATE_KEY, SUPPORTED_MODALITIES
 from .discovery import (
     get_dataset_modalities,
     list_active_datasets,
@@ -28,9 +28,18 @@ from .notify import (
     notify_launch_failure,
     notify_not_implemented,
     notify_smoke_failure,
+    notify_tinker_eval,
 )
 from .smoke import run_smoke_test
 from .state import ProcessedState
+from .tinker_config import (
+    DEFAULT_BASE_MODEL as TINKER_DEFAULT_BASE_MODEL,
+    DEFAULT_LORA_RANK as TINKER_DEFAULT_LORA_RANK,
+    DEFAULT_NUM_STEPS as TINKER_DEFAULT_NUM_STEPS,
+    TINKER_MODALITY_SUPPORT,
+    TINKER_STATE_KEY,
+)
+from .tinker_launcher import launch_training as launch_tinker_training
 
 logger = logging.getLogger("auto_train")
 
@@ -43,8 +52,14 @@ def _setup_logging(verbose: bool) -> None:
     )
 
 
+def _state_key_for_backend(backend: str) -> str:
+    return TINKER_STATE_KEY if backend == "tinker" else S3_STATE_KEY
+
+
 def cmd_status(args: argparse.Namespace) -> int:
-    state = ProcessedState()
+    state = ProcessedState(key=_state_key_for_backend(args.backend))
+    print(f"Backend: {args.backend}")
+    print(f"State key: {state.key}")
     print(f"Seeded at: {state._seeded_at or '(not seeded yet)'}")
     print(f"Seen datasets: {len(state.all_seen())}")
     pairs = sorted(state.all_processed())
@@ -55,7 +70,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_seed(args: argparse.Namespace) -> int:
-    state = ProcessedState()
+    state = ProcessedState(key=_state_key_for_backend(args.backend))
     if state.is_seeded and not args.force:
         logger.error("State already seeded; pass --force to overwrite")
         return 1
@@ -80,12 +95,32 @@ def _process_one(
     dry_run: bool,
     skip_smoke: bool,
     api_key: str,
+    backend: str = "sky",
+    tinker_base_model: str = TINKER_DEFAULT_BASE_MODEL,
+    tinker_num_steps: int = TINKER_DEFAULT_NUM_STEPS,
+    tinker_lora_rank: int = TINKER_DEFAULT_LORA_RANK,
 ) -> int:
     """Returns 0 on success, non-zero on failure (still marks processed if appropriate)."""
     dataset_key = dataset.dataset_key
 
+    # Backend-specific modality gate. The Tinker pipeline currently supports
+    # the same modalities as the SkyPilot pipeline, but keep the gate explicit
+    # so adding/removing one doesn't silently change behavior on the other.
+    if backend == "tinker":
+        backend_supported = TINKER_MODALITY_SUPPORT
+    else:
+        backend_supported = set(SUPPORTED_MODALITIES)
+
     if modality not in SUPPORTED_MODALITIES:
         logger.warning("Unknown modality %s for %s; skipping", modality, dataset_key)
+        return 0
+    if modality not in backend_supported:
+        logger.warning(
+            "modality %s not supported by backend=%s for %s; skipping",
+            modality, backend, dataset_key,
+        )
+        notify_not_implemented(dataset_key, modality, 0)
+        state.mark_processed(dataset_key, modality)
         return 0
 
     # Build tasks once, used by both smoke test and exporter
@@ -150,7 +185,44 @@ def _process_one(
             notify_launch_failure(dataset_key, modality, f"S3 export error: {e}")
             return 1
 
-    # Launch
+    # Launch — backend-specific.
+    if backend == "tinker":
+        ok, eval_results = launch_tinker_training(
+            dataset_key=dataset_key,
+            modality=modality,
+            tasks=tasks,
+            dry_run=dry_run,
+            base_model=tinker_base_model,
+            num_steps=tinker_num_steps,
+            lora_rank=tinker_lora_rank,
+        )
+        if not ok:
+            notify_launch_failure(
+                dataset_key, modality,
+                "fleet-tinker-tool-use-run.sh failed or produced no results JSON",
+            )
+            return 1
+        if not dry_run:
+            state.mark_processed(dataset_key, modality)
+            if eval_results is not None:
+                notify_tinker_eval(
+                    dataset_key=dataset_key,
+                    modality=modality,
+                    base_model=eval_results.get("model_name", tinker_base_model),
+                    pre_pass_rate=float(eval_results.get("pre_pass_rate") or 0.0),
+                    post_pass_rate=float(eval_results.get("post_pass_rate") or 0.0),
+                    n_holdout=int(eval_results.get("n_holdout") or 0),
+                    num_steps=int(eval_results.get("num_steps") or tinker_num_steps),
+                    wandb_url=eval_results.get("wandb_url"),
+                )
+            else:
+                # Dry run reached this branch above already; this is a real run
+                # that exited 0 but with no results JSON — already notified
+                # via notify_launch_failure above.
+                pass
+        return 0
+
+    # Default: SkyPilot launcher.
     launched = launch_training(dataset_key, modality, dry_run=dry_run)
     if not launched:
         notify_launch_failure(dataset_key, modality, "fleet-launch.sh returned non-zero")
@@ -163,8 +235,12 @@ def _process_one(
 
 
 def cmd_trigger(args: argparse.Namespace) -> int:
-    state = ProcessedState()
+    state = ProcessedState(key=_state_key_for_backend(args.backend))
     api_key = os.environ.get("FLEET_API_KEY", "")
+    # Tag the env so notify._channel() can route Tinker runs to a separate
+    # Slack channel without per-call boilerplate.
+    if args.backend == "tinker":
+        os.environ["AUTO_TRAIN_BACKEND"] = "tinker"
 
     with httpx.Client() as client:
         datasets = list_active_datasets(client, team_id=args.team_id)
@@ -227,6 +303,10 @@ def cmd_trigger(args: argparse.Namespace) -> int:
                     dry_run=args.dry_run,
                     skip_smoke=args.skip_smoke,
                     api_key=api_key,
+                    backend=args.backend,
+                    tinker_base_model=args.tinker_base_model,
+                    tinker_num_steps=args.tinker_num_steps,
+                    tinker_lora_rank=args.tinker_lora_rank,
                 )
                 if rc != 0:
                     dataset_ok = False
@@ -248,6 +328,16 @@ def cmd_trigger(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="auto_train")
     parser.add_argument("-v", "--verbose", action="store_true")
+    # Backend selects between the SkyPilot launcher (sky launch + vLLM training)
+    # and the Tinker launcher (Tinker cloud LoRA + held-out eval reporting).
+    # Each backend has a separate S3 state file so a single dataset can be
+    # processed by both pipelines independently.
+    parser.add_argument(
+        "--backend",
+        choices=("sky", "tinker"),
+        default="sky",
+        help="Training backend (default: sky, the SkyPilot/vLLM pipeline).",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_trig = sub.add_parser("trigger", help="Discover and process new (dataset, modality) pairs")
@@ -260,6 +350,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="Cap the number of new datasets processed this tick (newest-first)")
     p_trig.add_argument("--ignore-seed", action="store_true",
                         help="Treat all datasets as candidates (bypass seen_datasets and processed_pairs filters). For targeted testing.")
+    p_trig.add_argument("--tinker-base-model", default=TINKER_DEFAULT_BASE_MODEL,
+                        help="Base model for --backend tinker (HF id, e.g., moonshotai/Kimi-K2.6).")
+    p_trig.add_argument("--tinker-num-steps", type=int, default=TINKER_DEFAULT_NUM_STEPS,
+                        help="Training steps for --backend tinker.")
+    p_trig.add_argument("--tinker-lora-rank", type=int, default=TINKER_DEFAULT_LORA_RANK,
+                        help="LoRA rank for --backend tinker.")
     p_trig.set_defaults(func=cmd_trigger)
 
     p_status = sub.add_parser("status", help="Show processed pairs")
