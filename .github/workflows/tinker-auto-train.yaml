@@ -97,7 +97,10 @@ jobs:
             "tinker" \
             "omegaconf" \
             "loguru" \
-            "openenv"
+            "openenv" \
+            "ray>=2.40" \
+            "aiohttp" \
+            "pydantic>=2"
           pip install -e ./skyrl-gym
           pip install -e .
 
