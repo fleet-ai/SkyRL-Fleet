@@ -98,7 +98,7 @@ jobs:
             "omegaconf" \
             "loguru" \
             "openenv" \
-            "ray>=2.40" \
+            "ray==2.51.1" \
             "aiohttp" \
             "pydantic>=2"
           pip install -e ./skyrl-gym
