@@ -104,7 +104,8 @@ jobs:
           bash scripts/fleet-preflight.sh \
             --require TINKER_API_KEY \
             --skip-gcloud \
-            --skip-sky
+            --skip-sky \
+            --skip-wandb
 
       - name: Run Tinker auto-train trigger
         env:
