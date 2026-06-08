@@ -796,7 +796,11 @@ async def main(
     adam_params = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     # trust_remote_code is required for models like moonshotai/Kimi-K2.6 whose
     # tokenizer config references a custom processor class on the HF Hub.
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    # Tinker exposes long-context PEFT variants with a `:peft:<context>` suffix
+    # (e.g., "moonshotai/Kimi-K2.6:peft:131072"); strip it for the HF Hub lookup
+    # since only the base repo name is a valid HF identifier.
+    hf_model_name = model_name.split(":peft:")[0]
+    tokenizer = AutoTokenizer.from_pretrained(hf_model_name, trust_remote_code=True)
 
     # Create dataloader
     def create_dataloader(epoch: int):
