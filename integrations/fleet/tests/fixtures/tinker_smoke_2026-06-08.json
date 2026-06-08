@@ -1,0 +1,21 @@
+{
+  "model_name": "Qwen/Qwen3-8B",
+  "num_steps": 8,
+  "n_train": 27,
+  "n_holdout": 3,
+  "pre_pass_rate": 0.6666666666666666,
+  "post_pass_rate": 1.0,
+  "delta": 0.33333333333333337,
+  "entries": [
+    {
+      "step": -1,
+      "pass_at_1": 0.6666666666666666,
+      "num_samples": 3
+    },
+    {
+      "step": 8,
+      "pass_at_1": 1.0,
+      "num_samples": 3
+    }
+  ]
+}
