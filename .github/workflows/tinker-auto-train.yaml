@@ -78,6 +78,10 @@ jobs:
         # entrypoint (tinker SDK, torch CPU wheel, datasets, fleet-python).
         # No SkyPilot, no flash-attn, no vLLM — the runner orchestrates API
         # calls; training compute lives in Tinker cloud.
+        #
+        # `skyrl-gym` is installed editable because main_fleet_tinker imports
+        # `FleetTaskEnv` from it. The root `skyrl.*` namespace is needed for
+        # `skyrl.train.generators.utils.apply_overlong_filtering`.
         run: |
           python -m pip install --upgrade pip
           pip install \
@@ -90,7 +94,12 @@ jobs:
             "torch>=2.5" \
             "tqdm" \
             "wandb" \
-            "tinker"
+            "tinker" \
+            "omegaconf" \
+            "loguru" \
+            "openenv"
+          pip install -e ./skyrl-gym
+          pip install -e .
 
       - name: Preflight (Tinker-only)
         env:
