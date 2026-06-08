@@ -18,7 +18,38 @@ logger = logging.getLogger(__name__)
 
 
 def _channel() -> str:
+    # SLACK_TINKER_AUTO_TRAIN_CHANNEL routes Tinker pipeline notifications to a
+    # separate channel so the two pipelines' signal stays distinguishable.
+    tinker_chan = os.environ.get("SLACK_TINKER_AUTO_TRAIN_CHANNEL")
+    if tinker_chan and os.environ.get("AUTO_TRAIN_BACKEND") == "tinker":
+        return tinker_chan
     return os.environ.get("SLACK_AUTO_TRAIN_CHANNEL", SLACK_CHANNEL_DEFAULT)
+
+
+def notify_tinker_eval(
+    dataset_key: str,
+    modality: str,
+    base_model: str,
+    pre_pass_rate: float,
+    post_pass_rate: float,
+    n_holdout: int,
+    num_steps: int,
+    wandb_url: str | None = None,
+) -> None:
+    delta = post_pass_rate - pre_pass_rate
+    arrow = ":chart_with_upwards_trend:" if delta > 0 else (":chart_with_downwards_trend:" if delta < 0 else ":bar_chart:")
+    wandb_line = f"\n• wandb: {wandb_url}" if wandb_url else ""
+    slack_notify(
+        f"{arrow} Tinker training finished\n"
+        f"• dataset: `{dataset_key}`\n"
+        f"• modality: `{modality}`\n"
+        f"• base model: `{base_model}`\n"
+        f"• steps: {num_steps}, holdout: {n_holdout}\n"
+        f"• pre pass_at_1: {pre_pass_rate:.3f}\n"
+        f"• post pass_at_1: {post_pass_rate:.3f}\n"
+        f"• delta: {delta:+.3f}"
+        f"{wandb_line}"
+    )
 
 
 def slack_notify(text: str, channel: Optional[str] = None) -> bool:

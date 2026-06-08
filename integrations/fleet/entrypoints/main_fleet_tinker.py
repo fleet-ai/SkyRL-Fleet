@@ -687,11 +687,62 @@ async def main(
     top_p: float = 1.0,
     stop_sequences: List[str] = None,
     loss_fn: str = "ppo",
+    eval_before_train: bool = False,
+    results_out: str = None,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
     """
     set_seed(seed)
+    eval_entries: list[dict] = []  # populated by _run_eval below; sourced for results_out
+
+    async def _run_eval(eval_sampling_client, step_index: int) -> float | None:
+        if not eval_dataset:
+            return None
+        logger.info(f"Running held-out eval at step={step_index}...")
+        eval_dataloader = DataLoader(eval_dataset, batch_size=eval_batch_size, shuffle=False, collate_fn=collate_fn)
+        all_eval_rollouts = []
+        for eval_batch in eval_dataloader:
+            eval_rollouts = await collect_batch_rollouts(
+                batch=eval_batch,
+                tasks_file=tasks_file,
+                sampling_client=eval_sampling_client,
+                tokenizer=tokenizer,
+                max_turns=max_turns,
+                max_generate_length=max_generate_length,
+                max_input_length=max_input_length,
+                n_samples_per_prompt=1,
+                temperature=temperature,
+                top_p=top_p,
+                stop_sequences=stop_sequences,
+            )
+            all_eval_rollouts.extend([r for r in eval_rollouts if not r.error])
+        if not all_eval_rollouts:
+            logger.warning(f"step={step_index}: eval produced no valid rollouts")
+            return None
+        eval_rewards = [r.reward for r in all_eval_rollouts]
+        eval_rollouts_dicts = [r.model_dump() for r in all_eval_rollouts]
+        eval_pass_at_1 = compute_pass_at_n(eval_rollouts_dicts, 1)
+        eval_per_env = compute_per_env_metrics(eval_rollouts_dicts, 1)
+        eval_metrics = {
+            "eval/all/pass_at_1": eval_pass_at_1,
+            "eval/all/mean_positive_reward": (
+                np.mean([r for r in eval_rewards if r > 0]) if any(r > 0 for r in eval_rewards) else 0.0
+            ),
+            "eval/num_samples": len(all_eval_rollouts),
+        }
+        for key, value in eval_per_env.items():
+            eval_metrics[key.replace("reward/", "eval/")] = value
+        # step_index < 0 indicates pre-train eval; log at step 0 in WandB so the
+        # curve has a baseline point without confusing wandb's monotonic step.
+        wandb.log(eval_metrics, step=max(step_index, 0), commit=True)
+        logger.info(f"step={step_index}: eval pass@1={eval_pass_at_1:.3f}, n={len(all_eval_rollouts)}")
+        eval_entries.append({
+            "step": step_index,
+            "pass_at_1": float(eval_pass_at_1),
+            "num_samples": len(all_eval_rollouts),
+        })
+        return eval_pass_at_1
 
     # Setup WandB run name
     if wandb_name is None:
@@ -760,8 +811,16 @@ async def main(
     train_dataloader = create_dataloader(current_epoch)
     train_iterator = iter(train_dataloader)
 
+    # Pre-train eval: snapshot the base (untrained) LoRA weights and evaluate
+    # on the held-out split so we have a baseline for the post-train delta.
+    if eval_before_train and eval_dataset:
+        pre_sampling_path = training_client.save_weights_for_sampler(name="step_pretrain").result().path
+        pre_sampling_client = service_client.create_sampling_client(model_path=pre_sampling_path)
+        await _run_eval(pre_sampling_client, step_index=-1)
+
     # Training loop
     pbar = tqdm(range(max_steps), desc="Training", unit="step")
+    last_sampling_client = None
     for step in pbar:
         step_start = time.time()
         metrics = {"step": step, "epoch": step // steps_per_epoch}
@@ -769,6 +828,7 @@ async def main(
         # Get sampler weights for rollout inference
         sampling_path = training_client.save_weights_for_sampler(name=f"step_{step:06d}").result().path
         sampling_client = service_client.create_sampling_client(model_path=sampling_path)
+        last_sampling_client = sampling_client
 
         # Get batch
         try:
@@ -890,49 +950,46 @@ async def main(
             }
         )
 
-        # Evaluation
+        # Periodic eval (every eval_every steps).
         if eval_every > 0 and eval_dataset and step % eval_every == 0:
-            logger.info(f"Step {step}: Running evaluation...")
-            eval_dataloader = DataLoader(eval_dataset, batch_size=eval_batch_size, shuffle=False, collate_fn=collate_fn)
+            await _run_eval(sampling_client, step_index=step)
 
-            all_eval_rollouts = []
-            for eval_batch in eval_dataloader:
-                eval_rollouts = await collect_batch_rollouts(
-                    batch=eval_batch,
-                    tasks_file=tasks_file,
-                    sampling_client=sampling_client,
-                    tokenizer=tokenizer,
-                    max_turns=max_turns,
-                    max_generate_length=max_generate_length,
-                    max_input_length=max_input_length,
-                    n_samples_per_prompt=1,
-                    temperature=temperature,
-                    top_p=top_p,
-                    stop_sequences=stop_sequences,
-                )
-                all_eval_rollouts.extend([r for r in eval_rollouts if not r.error])
+    # Post-train eval on the final policy. Always runs when an eval dataset is
+    # provided so the launcher can report a post_pass_rate even when the
+    # last training step doesn't land on an eval_every boundary.
+    if eval_dataset and last_sampling_client is not None:
+        final_sampling_path = training_client.save_weights_for_sampler(name="step_final").result().path
+        final_sampling_client = service_client.create_sampling_client(model_path=final_sampling_path)
+        await _run_eval(final_sampling_client, step_index=max_steps)
 
-            if all_eval_rollouts:
-                eval_rewards = [r.reward for r in all_eval_rollouts]
-                # Convert to dicts for metrics functions
-                eval_rollouts_dicts = [r.model_dump() for r in all_eval_rollouts]
-                eval_pass_at_1 = compute_pass_at_n(eval_rollouts_dicts, 1)
-                eval_per_env = compute_per_env_metrics(eval_rollouts_dicts, 1)
-
-                eval_metrics = {
-                    "eval/all/pass_at_1": eval_pass_at_1,
-                    "eval/all/mean_positive_reward": (
-                        np.mean([r for r in eval_rewards if r > 0]) if any(r > 0 for r in eval_rewards) else 0.0
-                    ),
-                    "eval/num_samples": len(all_eval_rollouts),
-                }
-                # Add per-env eval metrics (rename from reward/ to eval/)
-                for key, value in eval_per_env.items():
-                    eval_key = key.replace("reward/", "eval/")
-                    eval_metrics[eval_key] = value
-
-                wandb.log(eval_metrics, step=step, commit=True)
-                logger.info(f"Step {step}: eval pass@1={eval_pass_at_1:.3f}, num_samples={len(all_eval_rollouts)}")
+    # Surface pre/post pass rates to disk for the launcher to read. The first
+    # entry (pre-train if requested, otherwise step 0) is the baseline; the
+    # last entry is the post-train number. Delta is the headline metric.
+    if results_out:
+        import json as _json
+        pre = eval_entries[0]["pass_at_1"] if eval_entries else None
+        post = eval_entries[-1]["pass_at_1"] if eval_entries else None
+        delta = (post - pre) if (pre is not None and post is not None) else None
+        try:
+            wandb_url = wandb.run.get_url() if wandb.run else None
+        except Exception:
+            wandb_url = None
+        payload = {
+            "model_name": model_name,
+            "num_steps": max_steps,
+            "n_train": len(train_dataset),
+            "n_holdout": len(eval_dataset) if eval_dataset else 0,
+            "pre_pass_rate": pre,
+            "post_pass_rate": post,
+            "delta": delta,
+            "entries": eval_entries,
+            "wandb_url": wandb_url,
+            "wandb_run_name": wandb_name,
+        }
+        os.makedirs(os.path.dirname(results_out) or ".", exist_ok=True)
+        with open(results_out, "w") as fh:
+            _json.dump(payload, fh, indent=2)
+        logger.info(f"Wrote eval results to {results_out}")
 
     wandb.finish()
     logger.info("Training completed!")
@@ -980,6 +1037,17 @@ if __name__ == "__main__":
         default="ppo",
         help="Loss function for Tinker forward_backward (e.g. ppo, grpo)",
     )
+    parser.add_argument(
+        "--eval-before-train",
+        action="store_true",
+        help="Run held-out eval once on the base (untrained) LoRA before step 0. Used by auto-train Tinker pipeline to record a pre_pass_rate baseline.",
+    )
+    parser.add_argument(
+        "--results-out",
+        type=str,
+        default=None,
+        help="Path to write a JSON summary of pre/post held-out pass rates. Consumed by the auto-train Tinker launcher.",
+    )
 
     args = parser.parse_args()
 
@@ -1011,5 +1079,7 @@ if __name__ == "__main__":
             top_p=args.top_p,
             stop_sequences=stop_sequences,
             loss_fn=args.loss_fn,
+            eval_before_train=args.eval_before_train,
+            results_out=args.results_out,
         )
     )
