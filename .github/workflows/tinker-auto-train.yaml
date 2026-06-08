@@ -97,7 +97,7 @@ jobs:
             "tinker" \
             "omegaconf" \
             "loguru" \
-            "openenv" \
+            "openenv[fleet] @ git+https://github.com/fleet-ai/OpenEnv.git@deniz/fleet-logfire" \
             "ray==2.51.1" \
             "aiohttp" \
             "pydantic>=2" \
