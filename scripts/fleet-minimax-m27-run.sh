@@ -45,8 +45,14 @@ TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE:-$TOTAL_GPUS}
 POLICY_MINI_BATCH_SIZE=${POLICY_MINI_BATCH_SIZE:-$TOTAL_GPUS}
 echo "=== Batch sizing: ${TOTAL_GPUS} GPUs, train_batch=${TRAIN_BATCH_SIZE}, mini_batch=${POLICY_MINI_BATCH_SIZE} ==="
 
+# CUDA 12.9 for DeepGemm JIT. Set here (not extra-setup) because the run
+# script executes on ALL nodes, while .cuda_env is only on the head node's
+# local /home (not shared NFS).
+export CUDA_HOME=/usr/local/cuda-12.9
+export PATH="$CUDA_HOME/bin:$PATH"
+
 bash scripts/fleet-common-run.sh \
-  --use-python-direct --cuda-env "$HOME/.cuda_env" \
+  --use-python-direct \
   --set-ulimit --no-pytorch-alloc-conf \
   --nccl-heartbeat 1800 -- \
   environment.skyrl_gym.fleet_task.ttl_seconds=900 \
