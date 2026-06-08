@@ -794,7 +794,9 @@ async def main(
     training_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
 
     adam_params = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # trust_remote_code is required for models like moonshotai/Kimi-K2.6 whose
+    # tokenizer config references a custom processor class on the HF Hub.
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
     # Create dataloader
     def create_dataloader(epoch: int):
