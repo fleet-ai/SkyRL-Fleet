@@ -100,7 +100,9 @@ jobs:
             "openenv" \
             "ray==2.51.1" \
             "aiohttp" \
-            "pydantic>=2"
+            "pydantic>=2" \
+            "tiktoken" \
+            "blobfile"
           pip install -e ./skyrl-gym
           pip install -e .
 
