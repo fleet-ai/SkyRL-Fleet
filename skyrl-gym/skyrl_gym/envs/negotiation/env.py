@@ -1,0 +1,341 @@
+"""Negotiation RLVR environment for SkyRL-Gym.
+
+The trained policy plays one side of a two-player, multi-issue negotiation
+(the "you" side); the environment plays the opponent (the "them" side) by
+calling a fixed reference LLM over an OpenAI-compatible endpoint (OpenRouter
+via litellm, matching the in-repo pattern used by ``task_gen`` and
+``hint_synthesizer``). The reward is **fully verifiable** and computed in
+exactly one place — :func:`game.evaluate` — from the parsed final allocation
+and each agent's private value vector. No judge is involved.
+
+Two reward modes (the planned ablation, see ``eval/REPORT.md``):
+  - ``outcome``        : normalized self-score (``score / max_possible``).
+                         No-deal / conflict / incomplete = 0.
+  - ``outcome_pareto`` : ``outcome + pareto_coef * pareto_bonus`` on agreement,
+                         where ``pareto_bonus`` is 1.0 iff the agreed split is
+                         on the enumerated Pareto frontier.
+
+Two protocols (see ``prompts.py`` / ``game.py``):
+  - ``single`` (default, recommended): one side proposes a full split via
+    ``<propose>{...}</propose>`` (listing what THEY keep; partner gets the
+    rest); the other finalizes with ``<accept>``. Only failure mode: no_deal.
+  - ``dual``: both sides each emit a ``<deal>{...}</deal>`` of their own keep;
+    the two claims must exactly partition the pool, else the deal fails.
+
+Turn model: the policy ("you") always speaks first. The SkyRL generator drives
+one policy generation per :meth:`step_async`; within each step we record the
+policy's message, then (if the game is not already over) generate the
+opponent's reply and return it as the next user observation. The episode ends
+on an accepted deal (single) / both-tags-present (dual), or when the policy's
+per-agent message budget (``max_turns``) is exhausted.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+from skyrl_gym.envs.base_text_env import (
+    BaseTextEnv,
+    BaseTextEnvStepOutput,
+    ConversationType,
+)
+from skyrl_gym.envs.negotiation import game, prompts
+
+logger = logging.getLogger(__name__)
+
+# Qwen3 hybrid-reasoning soft switch: appending this token disables the thinking
+# block for that turn (keeps the budget-constrained opponent from burning its
+# whole reply on a <think> block — see eval/REPORT.md "turn thinking OFF").
+NO_THINK_TOKEN = "/no_think"
+
+
+def _cfg_get(env_config: Any, key: str, default: Any) -> Any:
+    """Read a key from a DictConfig / dict / None env_config with a default."""
+    if env_config is None:
+        return default
+    if hasattr(env_config, "get"):
+        val = env_config.get(key, default)
+        return default if val is None else val
+    return getattr(env_config, key, default)
+
+
+class NegotiationEnv(BaseTextEnv):
+    """Self-play-vs-fixed-opponent negotiation env with verifiable rewards."""
+
+    def __init__(self, env_config: Any = None, extras: Dict[str, Any] = {}):
+        super().__init__()
+
+        assert "reward_spec" in extras, "reward_spec field is required"
+        gt = extras["reward_spec"].get("ground_truth")
+        assert gt is not None, "reward_spec.ground_truth (the scenario) is required"
+
+        # --- Scenario (the verifiable ground truth) ---
+        self.item_names: List[str] = list(gt["item_names"])
+        self.counts: List[int] = [int(c) for c in gt["counts"]]
+        self.you_values: List[int] = [int(v) for v in gt["you_values"]]
+        self.them_values: List[int] = [int(v) for v in gt["them_values"]]
+        self.n_items = len(self.counts)
+
+        extra_info: Dict[str, Any] = extras.get("extra_info", {}) or {}
+
+        # --- Per-agent message budget ---
+        # The generator sets extras["max_turns"] = generator.max_turns; that is
+        # the number of policy turns (= agent_loop iterations). Fall back to the
+        # value baked into the dataset, then a small default.
+        self.max_turns = int(
+            extras.get("max_turns", extra_info.get("max_turns", 6))
+        )
+
+        # --- Protocol: prefer what the prompt was built with (dataset), else config ---
+        self.protocol: str = (
+            extra_info.get("protocol")
+            or _cfg_get(env_config, "protocol", "single")
+        )
+
+        # --- Reward shaping config ---
+        self.reward_mode: str = _cfg_get(env_config, "reward_mode", "outcome")
+        self.pareto_coef: float = float(_cfg_get(env_config, "pareto_coef", 0.5))
+        self.invalid_penalty: float = float(_cfg_get(env_config, "invalid_penalty", 0.0))
+
+        # --- Opponent ("them") LLM config ---
+        self.opponent_model: str = _cfg_get(
+            env_config, "opponent_model", "openrouter/openai/gpt-4o-mini"
+        )
+        self.opponent_base_url: Optional[str] = _cfg_get(env_config, "opponent_base_url", None)
+        self.opponent_temperature: float = float(_cfg_get(env_config, "opponent_temperature", 0.7))
+        self.opponent_max_tokens: int = int(_cfg_get(env_config, "opponent_max_tokens", 512))
+        self.opponent_timeout: float = float(_cfg_get(env_config, "opponent_timeout", 60.0))
+        self.opponent_no_think: bool = bool(_cfg_get(env_config, "opponent_no_think", True))
+        self.opponent_max_retries: int = int(_cfg_get(env_config, "opponent_max_retries", 2))
+        self.openrouter_api_key: str = os.environ.get("OPENROUTER_API_KEY", "")
+
+        # --- Opponent system prompt: reuse the one baked into the dataset if
+        # present (guarantees it matches what was shown to the policy), else
+        # rebuild from the scenario + protocol. ---
+        them_sys = extra_info.get("them_system_prompt")
+        if not them_sys:
+            them_sys = prompts.build_system_prompt(
+                self.item_names, self.counts, self.them_values,
+                self.max_turns, protocol=self.protocol,
+            )
+        if self.opponent_no_think:
+            them_sys = them_sys + "\n\n" + NO_THINK_TOKEN
+        # The opponent never speaks first ("them" waits for the opener).
+        self.them_history: ConversationType = [{"role": "system", "content": them_sys}]
+
+        # --- Episode state ---
+        # `pending` (single protocol): {"by": "you"|"them", "keep": [...]} most recent valid offer.
+        self.pending: Optional[Dict[str, Any]] = None
+        # dual protocol: each side's most recent parsed <deal> claim.
+        self.you_deal: Optional[List[int]] = None
+        self.them_deal: Optional[List[int]] = None
+        # Final allocation (each side's keep), filled when the game resolves.
+        self.you_take: Optional[List[int]] = None
+        self.them_take: Optional[List[int]] = None
+        self.outcome: Optional[game.Outcome] = None
+        self.final_reward: float = 0.0
+        self.opponent_errors: int = 0
+        self.transcript: List[Dict[str, str]] = []
+
+    # ------------------------------------------------------------------ init
+    def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
+        # The policy's full opening prompt (system + opening user msg) is built
+        # in prepare_dataset.py and passed through unchanged. "You" speaks first.
+        return prompt, {}
+
+    # --------------------------------------------------------------- opponent
+    async def _opponent_reply(self) -> str:
+        """Generate the opponent's ("them") next message via litellm.
+
+        Returns the reply text, or "" on failure (treated as an empty turn).
+        """
+        if not self.openrouter_api_key and self.opponent_model.startswith("openrouter/"):
+            # Without a key we cannot drive the opponent; surface once.
+            if self.opponent_errors == 0:
+                logger.warning("OPENROUTER_API_KEY not set; opponent will be silent (deals will fail).")
+            self.opponent_errors += 1
+            return ""
+
+        kwargs: Dict[str, Any] = {
+            "model": self.opponent_model,
+            "messages": self.them_history,
+            "max_tokens": self.opponent_max_tokens,
+            "temperature": self.opponent_temperature,
+        }
+        if self.openrouter_api_key:
+            kwargs["api_key"] = self.openrouter_api_key
+        if self.opponent_base_url:
+            kwargs["base_url"] = self.opponent_base_url
+
+        try:
+            from litellm import acompletion
+        except ImportError:
+            logger.warning("litellm not installed; opponent will be silent.")
+            self.opponent_errors += 1
+            return ""
+
+        for attempt in range(self.opponent_max_retries + 1):
+            try:
+                resp = await asyncio.wait_for(acompletion(**kwargs), timeout=self.opponent_timeout)
+                choices = getattr(resp, "choices", None)
+                if not choices:
+                    return ""
+                return (choices[0].message.content or "").strip()
+            except Exception as e:  # noqa: BLE001
+                if attempt >= self.opponent_max_retries:
+                    self.opponent_errors += 1
+                    logger.warning(f"Opponent LLM call failed after retries: {e}")
+                    return ""
+                await asyncio.sleep(1.0 * (attempt + 1))
+        return ""
+
+    # ------------------------------------------------------------------ step
+    async def step_async(self, action: str) -> BaseTextEnvStepOutput:
+        self.turns += 1
+        self.transcript.append({"speaker": "you", "text": action})
+        self.them_history.append({"role": "user", "content": action})
+
+        if self.protocol == "dual":
+            return await self._step_dual(action)
+        return await self._step_single(action)
+
+    def step(self, action: str) -> BaseTextEnvStepOutput:
+        # Synchronous fallback (the generator prefers step_async when present).
+        return asyncio.run(self.step_async(action))
+
+    # --------------------------------------------------------- single protocol
+    async def _step_single(self, action: str) -> BaseTextEnvStepOutput:
+        # 1. If the policy accepts a pending opponent offer, the deal closes now
+        #    (accept wins over a co-occurring propose).
+        if game.has_accept(action) and self.pending and self.pending["by"] == "them":
+            self._finalize_single(self.pending)
+            return self._terminal_output()
+
+        # 2. Otherwise, record any proposal the policy made.
+        prop = game.parse_proposal(action, self.item_names)
+        if prop is not None:
+            keep = [min(self.counts[i], max(0, prop[i])) for i in range(self.n_items)]
+            self.pending = {"by": "you", "keep": keep}
+
+        budget_exhausted = self.turns >= self.max_turns
+
+        # 3. Opponent responds. It may accept the policy's pending offer or
+        #    counter with its own proposal.
+        them_text = await self._opponent_reply()
+        self.them_history.append({"role": "assistant", "content": them_text})
+        self.transcript.append({"speaker": "them", "text": them_text})
+
+        if game.has_accept(them_text) and self.pending and self.pending["by"] == "you":
+            self._finalize_single(self.pending)
+            return self._terminal_output()
+
+        them_prop = game.parse_proposal(them_text, self.item_names)
+        if them_prop is not None:
+            keep = [min(self.counts[i], max(0, them_prop[i])) for i in range(self.n_items)]
+            self.pending = {"by": "them", "keep": keep}
+
+        # 4. Budget check: after the opponent has had a chance to respond.
+        if budget_exhausted:
+            # No agreement reached within the budget -> no_deal (reward 0).
+            self._resolve(None, None)
+            return self._terminal_output()
+
+        # 5. Continue: hand the opponent's message back to the policy.
+        return BaseTextEnvStepOutput(
+            observations=[{"role": "user", "content": them_text}],
+            reward=0.0,
+            done=False,
+            metadata={},
+        )
+
+    def _finalize_single(self, accepted: Dict[str, Any]) -> None:
+        keep = accepted["keep"]
+        other = [self.counts[i] - keep[i] for i in range(self.n_items)]
+        if accepted["by"] == "you":
+            self._resolve(keep, other)
+        else:
+            self._resolve(other, keep)
+
+    # ----------------------------------------------------------- dual protocol
+    async def _step_dual(self, action: str) -> BaseTextEnvStepOutput:
+        deal = game.parse_deal(action, self.item_names)
+        if deal is not None:
+            self.you_deal = deal
+
+        # Both tags already in -> resolve (the opponent placed its tag on a
+        # prior turn).
+        if self.you_deal is not None and self.them_deal is not None:
+            self._resolve(self.you_deal, self.them_deal)
+            return self._terminal_output()
+
+        budget_exhausted = self.turns >= self.max_turns
+
+        them_text = await self._opponent_reply()
+        self.them_history.append({"role": "assistant", "content": them_text})
+        self.transcript.append({"speaker": "them", "text": them_text})
+        them_deal = game.parse_deal(them_text, self.item_names)
+        if them_deal is not None:
+            self.them_deal = them_deal
+
+        if self.you_deal is not None and self.them_deal is not None:
+            self._resolve(self.you_deal, self.them_deal)
+            return self._terminal_output()
+
+        if budget_exhausted:
+            # One or both tags missing -> evaluate yields no_deal/incomplete/conflict (0).
+            self._resolve(self.you_deal, self.them_deal)
+            return self._terminal_output()
+
+        return BaseTextEnvStepOutput(
+            observations=[{"role": "user", "content": them_text}],
+            reward=0.0,
+            done=False,
+            metadata={},
+        )
+
+    # --------------------------------------------------------------- resolving
+    def _resolve(self, you_take: Optional[List[int]], them_take: Optional[List[int]]) -> None:
+        """Compute the verifiable outcome and the scalar reward."""
+        self.you_take = you_take
+        self.them_take = them_take
+        self.outcome = game.evaluate(
+            self.counts, self.you_values, self.them_values, you_take, them_take
+        )
+        out = self.outcome
+        if out.agreed:
+            reward = out.you_norm
+            if self.reward_mode == "outcome_pareto":
+                reward = reward + self.pareto_coef * out.pareto_bonus
+        else:
+            reward = 0.0
+        self.final_reward = float(reward)
+
+    def _terminal_output(self) -> BaseTextEnvStepOutput:
+        return BaseTextEnvStepOutput(
+            observations=[],
+            reward=self.final_reward,
+            done=True,
+            metadata={"outcome": self.outcome.reason if self.outcome else "unknown"},
+        )
+
+    # ----------------------------------------------------------------- metrics
+    def get_metrics(self) -> Dict[str, Any]:
+        out = self.outcome
+        if out is None:
+            return {"resolved": 0.0, "num_turns": float(self.turns)}
+        return {
+            "final_reward": self.final_reward,
+            "agreed": 1.0 if out.agreed else 0.0,
+            "no_deal": 1.0 if out.reason == "no_deal" else 0.0,
+            "conflict": 1.0 if out.reason == "conflict" else 0.0,
+            "incomplete": 1.0 if out.reason == "incomplete" else 0.0,
+            "you_norm": out.you_norm,
+            "them_norm": out.them_norm,
+            "joint_efficiency": out.joint_efficiency,
+            "pareto": out.pareto_bonus,
+            "num_turns": float(self.turns),
+            "opponent_errors": float(self.opponent_errors),
+        }

@@ -1,0 +1,170 @@
+{
+  "config": {
+    "model": "openai/gpt-4o-mini",
+    "partner_model": null,
+    "base_url": "https://openrouter.ai/api/v1",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 2,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "concurrency": 2,
+    "seed": 0,
+    "out_dir": "/Users/alliegu/Work/SkyRL-Fleet/skyrl-gym/skyrl_gym/envs/negotiation/eval/results"
+  },
+  "aggregate": {
+    "n": 2,
+    "agreement_rate": 1.0,
+    "no_deal_rate": 0.0,
+    "conflict_rate": 0.0,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.6,
+    "avg_points_per_agent": 6.0,
+    "pareto_rate_of_agreements": 0.5,
+    "pareto_rate_overall": 0.5,
+    "avg_joint_efficiency_of_agreements": 0.875,
+    "avg_turns": 4.5
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          4,
+          0,
+          2
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items like this: I take the book and 2 balls, and you take the hat and 1 ball. How does that sound to you?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair! I agree with taking the hat and 1 ball while you take the book and 2 balls. \n\nJust to confirm, here's the breakdown:\n- You: 1 book, 2 balls\n- Me: 1 hat, 1 ball\n\nLet me know if you want to finalize this deal!"
+        },
+        {
+          "speaker": "you",
+          "text": "That works perfectly for me! Just to recap, here's the final breakdown:\n\n- You: 1 hat, 1 ball\n- Me: 1 book, 2 balls\n\nNow I'll finalize the deal. Here's my claim:\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! Here's my claim:\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          2
+        ],
+        "them_take": [
+          0,
+          1,
+          1
+        ],
+        "you_score": 8,
+        "them_score": 4,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.8,
+        "them_norm": 0.4,
+        "joint_score": 12,
+        "pareto_optimal": true,
+        "max_joint": 12,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          3,
+          1,
+          0
+        ],
+        "them_values": [
+          1,
+          3,
+          4
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose that I take 2 books and the hat, while you take 1 book, the ball, and the remaining hat. This way, we both get a fair share of the items. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal seems a bit off since there's only one hat. I suggest I take all 3 books and the ball, while you take the hat. This way, we both get what we want without any overlap. How does that sound?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives you all the valuable books, leaving me with just the hat, which isn't ideal for me. How about I take 2 books and the hat, and you take 1 book and the ball? This way, there's no overlap, and we both get some value. Let me know!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your flexibility! I can agree to your proposal: you take 2 books and the hat, and I take 1 book and the ball. That makes sense and avoids overlap. \n\nLet's finalize it! Here\u2019s my deal: \n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we reached an agreement. Here\u2019s my deal: \n<deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          0
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 7,
+        "them_score": 5,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.5,
+        "joint_score": 12,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.75,
+        "pareto_bonus": 0.0
+      }
+    }
+  ]
+}

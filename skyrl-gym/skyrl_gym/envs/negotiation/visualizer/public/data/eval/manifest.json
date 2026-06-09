@@ -1,0 +1,324 @@
+{
+  "datasets": [
+    {
+      "id": "qwen_qwen3.5-9b__casino__single-nothink",
+      "name": "Qwen3.5-9b \u00b7 casino \u00b7 single (no-think)",
+      "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-9b on casino \u00b7 agree 100% \u00b7 outcome 0.514 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "single-nothink",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.514
+    },
+    {
+      "id": "qwen_qwen3.5-35b-a3b__casino__single-nothink",
+      "name": "Qwen3.5-35b-a3b \u00b7 casino \u00b7 single (no-think)",
+      "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-35b-a3b on casino \u00b7 agree 100% \u00b7 outcome 0.509 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "single-nothink",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.509
+    },
+    {
+      "id": "openai_gpt-4o-mini__casino__single",
+      "name": "gpt-4o-mini \u00b7 casino \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 openai/gpt-4o-mini on casino \u00b7 agree 100% \u00b7 outcome 0.507 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "single",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.507
+    },
+    {
+      "id": "mistralai_ministral-8b-2512__casino__single",
+      "name": "mistralai/ministral-8b-2512 \u00b7 casino \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 mistralai/ministral-8b-2512 on casino \u00b7 agree 100% \u00b7 outcome 0.503 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "single",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.503
+    },
+    {
+      "id": "meta-llama_llama-3.3-70b-instruct__casino__single",
+      "name": "meta-llama/llama-3.3-70b-instruct \u00b7 casino \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 meta-llama/llama-3.3-70b-instruct on casino \u00b7 agree 95% \u00b7 outcome 0.478 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "single",
+      "agreement_rate": 0.95,
+      "avg_outcome_reward": 0.478
+    },
+    {
+      "id": "meta-llama_llama-3.1-8b-instruct__casino__single",
+      "name": "meta-llama/llama-3.1-8b-instruct \u00b7 casino \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 meta-llama/llama-3.1-8b-instruct on casino \u00b7 agree 75% \u00b7 outcome 0.378 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "single",
+      "agreement_rate": 0.75,
+      "avg_outcome_reward": 0.378
+    },
+    {
+      "id": "openai_gpt-4o-mini__casino__dual",
+      "name": "gpt-4o-mini \u00b7 casino \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 openai/gpt-4o-mini on casino \u00b7 agree 92% \u00b7 outcome 0.459 \u00b7 36 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 0.9167,
+      "avg_outcome_reward": 0.459
+    },
+    {
+      "id": "meta-llama_llama-3.3-70b-instruct__dnd__single",
+      "name": "meta-llama/llama-3.3-70b-instruct \u00b7 dnd \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 meta-llama/llama-3.3-70b-instruct on dnd \u00b7 agree 100% \u00b7 outcome 0.6 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.6
+    },
+    {
+      "id": "openai_gpt-4o-mini__dnd__single",
+      "name": "gpt-4o-mini \u00b7 dnd \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 openai/gpt-4o-mini on dnd \u00b7 agree 95% \u00b7 outcome 0.568 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single",
+      "agreement_rate": 0.95,
+      "avg_outcome_reward": 0.568
+    },
+    {
+      "id": "qwen_qwen3.5-9b__dnd__single-nothink",
+      "name": "Qwen3.5-9b \u00b7 dnd \u00b7 single (no-think)",
+      "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-9b on dnd \u00b7 agree 100% \u00b7 outcome 0.55 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single-nothink",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.55
+    },
+    {
+      "id": "mistralai_ministral-8b-2512__dnd__single",
+      "name": "mistralai/ministral-8b-2512 \u00b7 dnd \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 mistralai/ministral-8b-2512 on dnd \u00b7 agree 100% \u00b7 outcome 0.54 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.54
+    },
+    {
+      "id": "qwen_qwen3.5-35b-a3b__dnd__single-nothink",
+      "name": "Qwen3.5-35b-a3b \u00b7 dnd \u00b7 single (no-think)",
+      "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-35b-a3b on dnd \u00b7 agree 100% \u00b7 outcome 0.515 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single-nothink",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.515
+    },
+    {
+      "id": "meta-llama_llama-3.1-8b-instruct__dnd__single",
+      "name": "meta-llama/llama-3.1-8b-instruct \u00b7 dnd \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 meta-llama/llama-3.1-8b-instruct on dnd \u00b7 agree 90% \u00b7 outcome 0.415 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single",
+      "agreement_rate": 0.9,
+      "avg_outcome_reward": 0.415
+    },
+    {
+      "id": "qwen_qwen3.5-35b-a3b__dnd__dual-nothink",
+      "name": "Qwen3.5-35b-a3b \u00b7 dnd \u00b7 dual (no-think)",
+      "blurb": "Self-play eval (dual-tag \u00b7 no-think) \u00b7 qwen/qwen3.5-35b-a3b on dnd \u00b7 agree 83% \u00b7 outcome 0.583 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual-nothink",
+      "agreement_rate": 0.8333,
+      "avg_outcome_reward": 0.583
+    },
+    {
+      "id": "meta-llama_llama-3.3-70b-instruct__dnd__dual",
+      "name": "meta-llama/llama-3.3-70b-instruct \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 meta-llama/llama-3.3-70b-instruct on dnd \u00b7 agree 75% \u00b7 outcome 0.479 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 0.75,
+      "avg_outcome_reward": 0.479
+    },
+    {
+      "id": "openai_gpt-4o-mini__dnd__dual",
+      "name": "gpt-4o-mini \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 openai/gpt-4o-mini on dnd \u00b7 agree 65% \u00b7 outcome 0.423 \u00b7 80 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 0.65,
+      "avg_outcome_reward": 0.423
+    },
+    {
+      "id": "qwen_qwen3.5-9b__dnd__dual-nothink",
+      "name": "Qwen3.5-9b \u00b7 dnd \u00b7 dual (no-think)",
+      "blurb": "Self-play eval (dual-tag \u00b7 no-think) \u00b7 qwen/qwen3.5-9b on dnd \u00b7 agree 33% \u00b7 outcome 0.2 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual-nothink",
+      "agreement_rate": 0.3333,
+      "avg_outcome_reward": 0.2
+    },
+    {
+      "id": "mistralai_ministral-8b-2512__dnd__dual",
+      "name": "mistralai/ministral-8b-2512 \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 mistralai/ministral-8b-2512 on dnd \u00b7 agree 25% \u00b7 outcome 0.175 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 0.25,
+      "avg_outcome_reward": 0.175
+    },
+    {
+      "id": "meta-llama_llama-3.1-8b-instruct__dnd__dual",
+      "name": "meta-llama/llama-3.1-8b-instruct \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 meta-llama/llama-3.1-8b-instruct on dnd \u00b7 agree 33% \u00b7 outcome 0.125 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 0.3333,
+      "avg_outcome_reward": 0.125
+    },
+    {
+      "id": "deepseek_deepseek-r1-distill-qwen-32b__dnd__dual",
+      "name": "deepseek/deepseek-r1-distill-qwen-32b \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 deepseek/deepseek-r1-distill-qwen-32b on dnd \u00b7 agree 17% \u00b7 outcome 0.062 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 0.1667,
+      "avg_outcome_reward": 0.062
+    }
+  ]
+}

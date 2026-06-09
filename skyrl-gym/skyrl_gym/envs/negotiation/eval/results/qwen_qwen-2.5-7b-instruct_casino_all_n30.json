@@ -1,0 +1,1935 @@
+{
+  "config": {
+    "model": "qwen/qwen-2.5-7b-instruct",
+    "partner_model": "qwen/qwen-2.5-7b-instruct",
+    "dataset": "casino",
+    "split": "all",
+    "n": 30,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 800,
+    "seed": 1,
+    "elapsed_s": 43.7,
+    "n_errors": 0,
+    "label": "Qwen2.5-7B-Instruct"
+  },
+  "aggregate": {
+    "n": 30,
+    "agreement_rate": 0.0333,
+    "no_deal_rate": 0.0,
+    "conflict_rate": 0.9667,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.0194,
+    "avg_points_per_agent": 21.0,
+    "pareto_rate_of_agreements": 1.0,
+    "pareto_rate_overall": 0.0333,
+    "avg_joint_efficiency_of_agreements": 1.0,
+    "avg_turns": 2.87
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. I suggest you take 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood. Let me know if you agree."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me. Here's the deal: {\"food\": 3, \"water\": 3, \"firewood\": 3}"
+        },
+        {
+          "speaker": "you",
+          "text": "deal{\"food\": 3, \"water\": 3, \"firewood\": 3}"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You get 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. You take 3 food, 3 water, and 3 firewood, and I'll take 3 food, 3 water, and 3 firewood. Let's finalize this deal."
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we each take 3 units of food and 2 units of water. I'll take all the firewood. <deal>{\"food\": 3, \"water\": 2, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me. I'll take your offer. I'll take the remaining water and firewood, specifically 1 unit of food, 1 unit of water, and 3 units of firewood. <deal>{\"food\": 1, \"water\": 1, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          2,
+          3
+        ],
+        "them_take": [
+          1,
+          1,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You take all the food and water, and I'll take all the firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me. I'll take all the food and water, and you can have all the firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. I propose you take 3 food, 2 water, and 2 firewood, and I'll take the rest. \n\n<deal>{\"food\": 3, \"water\": 2, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. I'll take 3 water and 3 firewood, and you can have the remaining food.\n\n<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          2,
+          2
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. How about I take 3 food and 3 water, while you get 3 water and 3 firewood?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. You take 3 food and 3 water, and I'll take 3 water and 3 firewood. Let's finalize this deal."
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 0}</deal>\n<deal>{\"food\": 0, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          0
+        ],
+        "them_take": [
+          3,
+          3,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I suggest we split the items evenly. How about I take 3 food and 3 water, while you get 3 firewood and 3 food?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. In that case, I'll take 3 water and 3 firewood. Let's finalize this deal. \n\n<deal>{\"food\": 3, \"water\": 3, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 0, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          0,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we each take 3 food, 2 water, and 1 firewood. This splits the items evenly. <deal>{\"food\": 3, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. I agree to this proposal. <deal>{\"food\": 3, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          2,
+          1
+        ],
+        "them_take": [
+          3,
+          2,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. How about you get 3 food, 3 water, and 3 firewood, and I'll take 3 food, 3 water, and 3 firewood. Let's finalize if this works for you."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. I'll take 3 food, 3 water, and 3 firewood, and you can have 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly in terms of quantity. You take 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood. This way, we each get 18 points. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me. Let's go with that proposal. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You get 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 of each. Let's finalize this in our next message."
+        },
+        {
+          "speaker": "them",
+          "text": "Sounds fair. I'll take 3 food, 3 water, and 3 firewood, and you get the remaining 3 of each. Let's finalize this deal."
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You get 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. You get 3 food, 3 water, and 3 firewood, and I'll take 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I suggest we split the items evenly. I propose you take 3 food, 3 water, and 0 firewood, while I take 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. I'll take 3 food, 3 firewood, and 0 water. <deal>{\"food\": 3, \"water\": 0, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          0
+        ],
+        "them_take": [
+          3,
+          0,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You get 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 of each."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. You get 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 of each. \n\n<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. I suggest you take 3 food, 3 water, and 3 firewood, while I take 3 food, 3 water, and 3 firewood. This way, we each get 36 points."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. You take 3 food, 3 water, and 3 firewood, and I will take 3 food, 3 water, and 3 firewood. Let's finalize this deal."
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You take 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. You take 3 food, 3 water, and 3 firewood, and I'll take 3 food, 3 water, and 3 firewood. Let's finalize the deal. \n\n<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You take 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood. Is this acceptable?"
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me. Let's finalize the deal.\n\n<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I suggest we split the items evenly. I propose you take 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood. Let me know if you agree."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me. We can each get an equal share of each item. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. How about you get 3 food, 2 water, and 2 firewood, while I take 2 food, 2 water, and 3 firewood?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. You get 2 food, 2 water, and 3 firewood, while I get 3 food, 2 water, and 2 firewood. Let's finalize this. \n\n<deal>{\"food\": 3, \"water\": 2, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 2, \"water\": 2, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          2,
+          2,
+          3
+        ],
+        "them_take": [
+          3,
+          2,
+          2
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You get 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. I'll take 3 food, 3 water, and 3 firewood, and you can have 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You take all the food and water, and I'll take all the firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me. You get all the food and water, and I'll take all the firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. How about I take 3 food, 2 water, and 1 firewood, while you get 2 food, 1 water, and 2 firewood."
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me. You take 3 food, 2 water, and 1 firewood, and I'll take 2 food, 1 water, and 2 firewood. <deal>{\"food\": 3, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          2,
+          1
+        ],
+        "them_take": [
+          3,
+          2,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. I suggest you take 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood."
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me. Here's the deal: {\"food\": 3, \"water\": 3, \"firewood\": 3}"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. I suggest you take 3 food, 3 water, and 3 firewood. I will take the remaining 3 food, 3 water, and 3 firewood."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. I'll take 3 food, 3 water, and 3 firewood, and you can have 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You take all the food and firewood, and I'll take all the water. <deal>{\"food\": 0, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me. I'll take the food and firewood, and you can have the water. <deal>{\"food\": 3, \"water\": 0, \"firewood\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          0,
+          0
+        ],
+        "you_score": 27,
+        "them_score": 15,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.75,
+        "them_norm": 0.4166666666666667,
+        "joint_score": 42,
+        "pareto_optimal": true,
+        "max_joint": 42,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You get 3 food, 3 water, and 3 firewood, while I take the remaining 3 food, 3 water, and 3 firewood. Let's finalize if this works for you."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. I'll take 3 food, 3 water, and 3 firewood, and you can have the other 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal> Deal finalized."
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. I propose you get 3 food, 3 water, and 3 firewood, and I'll take the remaining 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me. I'll take 3 food, 3 water, and 3 firewood, and you can have the remaining 3 food, 3 water, and 3 firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we each take 3 food, 2 water, and 1 firewood. This splits the items evenly."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair. Let's finalize it then. \n\n<deal>{\"food\": 3, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          2,
+          1
+        ],
+        "them_take": [
+          3,
+          2,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. You take all the food and water, and I'll take all the firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me. You get all the food and water, and I'll take all the firewood. <deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I suggest we split the items evenly. How about you get 3 food, 3 water, and 3 firewood, and I take 3 food, 3 water, and 3 firewood. Let's confirm this works for you."
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me. Let's confirm this splits everything and we can finalize: \n<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\": 3, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          3,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    }
+  ]
+}

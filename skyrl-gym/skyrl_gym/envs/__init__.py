@@ -46,3 +46,8 @@ register(
     id="task_gen",
     entry_point="skyrl_gym.envs.task_gen.task_gen_env:TaskGenEnv",
 )
+
+register(
+    id="negotiation",
+    entry_point="skyrl_gym.envs.negotiation.env:NegotiationEnv",
+)

@@ -1,0 +1,1912 @@
+{
+  "config": {
+    "model": "qwen/qwen-2.5-coder-32b-instruct",
+    "partner_model": "qwen/qwen-2.5-coder-32b-instruct",
+    "dataset": "casino",
+    "split": "all",
+    "n": 20,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 800,
+    "seed": 1,
+    "elapsed_s": 34.8,
+    "n_errors": 0,
+    "label": "Qwen2.5-32B*",
+    "protocol": "single"
+  },
+  "aggregate": {
+    "n": 20,
+    "agreement_rate": 0.0,
+    "no_deal_rate": 1.0,
+    "conflict_rate": 0.0,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.0,
+    "avg_points_per_agent": 0.0,
+    "pareto_rate_of_agreements": 0.0,
+    "pareto_rate_overall": 0.0,
+    "avg_joint_efficiency_of_agreements": 0.0,
+    "avg_turns": 12.0
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping a bit more of that.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping a bit more of that.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping a bit more of that.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping a bit more of that.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping a bit more of that.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping two pieces of food, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping two pieces of food, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping two pieces of food, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping two pieces of food, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping two pieces of food, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to them. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to them. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to them. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to them. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to them. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to them. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each resource. Given that food is the most valuable to me, I'll propose keeping two food items, one water item, and one firewood item. This way, I get a good balance of points while still leaving some valuable items for you.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given the point values, I believe a fair split would be to prioritize the items with the highest value to each of us. Since water has the highest value for me, I'll propose keeping two waters and one food, which gives me 15 points. The rest would go to you.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that water is the most valuable to me, I'll propose keeping 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's see how this looks. I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's see how this looks. I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's see how this looks. I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Here's my proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Here's my proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Here's my proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Here's my proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Here's my proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Here's my proposal:\n\n<propose>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's see how we can balance this. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Let's see how we can balance this. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's balance it out. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's balance it out. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's see how we can balance this. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Let's see how we can balance this. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's balance it out. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's balance it out. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's balance it out. Given that food is the most valuable to you, I'll propose keeping 2 food,"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned to each. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's aim for a balanced split. Considering the point values, I'll propose keeping 1 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's aim for a balanced split. Considering the point values, I'll propose keeping 1 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Here's my complete proposal:\n\n<propose>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping 2 food,"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned to each. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping two pieces of firewood, and we can split the rest equally.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I think it's important to aim for a fair split that maximizes my points while also offering something valuable to you. Here's my initial proposal:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that firewood is the most valuable to me, I'll propose keeping 2 firewood items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that seems fair based on the values I've assigned. Given that water is the most valuable to me, I'll propose keeping 2 water items, and we can split the rest.\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given the point values, I believe a fair split would be to prioritize the items with the highest value to each of us. Since water has the highest value for me, I propose we split the items in a way that maximizes the overall points for both of us. Here's my offer:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "Given the point values, I believe a fair split would be to prioritize the items with the highest value to each of us. Since water has the highest value for me, I propose we split the items in a way that maximizes the overall points for both of us. Here's my offer:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Given the point values, I believe a fair split would be to prioritize the items with the highest value to each of us. Since water has the highest value for me, I propose we split the items in a way that maximizes the overall points for both of us. Here's my offer:\n\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<propose>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping two food items, one water item, and one firewood item. This way, I get 14 points, and you get 22 points. Here's my offer:\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping two food items, one water item, and one firewood item. This way, I get 14 points, and you get 22 points. Here's my offer:\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping two food items, one water item, and one firewood item. This way, I get 14 points, and you get 22 points. Here's my offer:\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping two food items, one water item, and one firewood item. This way, I get 14 points, and you get 22 points. Here's my offer:\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping two food items, one water item, and one firewood item. This way, I get 14 points, and you get 22 points. Here's my offer:\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items in a way that seems fair based on the values I've assigned. Given that food is the most valuable to me, I'll propose keeping two food items, one water item, and one firewood item. This way, I get 14 points, and you get 22 points. Here's my offer:\n<propose>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "final_proposal": null,
+      "protocol": "single"
+    }
+  ]
+}

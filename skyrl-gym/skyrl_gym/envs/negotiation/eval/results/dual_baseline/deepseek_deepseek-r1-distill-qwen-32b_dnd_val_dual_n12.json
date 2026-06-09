@@ -1,0 +1,816 @@
+{
+  "config": {
+    "model": "deepseek/deepseek-r1-distill-qwen-32b",
+    "partner_model": "deepseek/deepseek-r1-distill-qwen-32b",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 12,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 2500,
+    "seed": 1,
+    "elapsed_s": 622.5,
+    "n_errors": 0,
+    "label": "",
+    "protocol": "dual"
+  },
+  "aggregate": {
+    "n": 12,
+    "agreement_rate": 0.25,
+    "no_deal_rate": 0.0833,
+    "conflict_rate": 0.5833,
+    "incomplete_rate": 0.0833,
+    "avg_outcome_reward": 0.1792,
+    "avg_points_per_agent": 7.167,
+    "pareto_rate_of_agreements": 0.6667,
+    "pareto_rate_overall": 0.1667,
+    "avg_joint_efficiency_of_agreements": 0.9375,
+    "avg_turns": 3.17
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120that\u0120I\u0120take\u0120the\u0120book,\u0120and\u0120you\u0120take\u0120the\u0120hat\u0120and\u0120all\u0120three\u0120balls.\u0120This\u0120way,\u0120I\u0120get\u0120the\u0120most\u0120valuable\u0120item\u0120for\u0120me,\u0120and\u0120you\u0120receive\u0120the\u0120remaining\u0120items\u0120that\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u010a\u010a<deal>{\"book\":1,\"hat\":0,\"ball\":0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aIt\u0120seems\u0120we\u0120have\u0120reached\u0120an\u0120impasse.\u0120Let\u0120me\u0120clarify\u0120my\u0120position\u0120and\u0120propose\u0120a\u0120revised\u0120deal:\u010a\u010aI\u0120will\u0120take\u0120the\u0120book\u0120and\u0120one\u0120ball.\u0120You\u0120can\u0120have\u0120the\u0120hat\u0120and\u0120two\u0120balls.\u0120This\u0120way,\u0120I\u0120secure\u0120the\u0120most\u0120valuable\u0120item\u0120for\u0120me,\u0120and\u0120you\u0120receive\u0120items\u0120that\u0120may\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u0120Since\u0120I\u0120value\u0120the\u0120balls\u0120at\u0120zero,\u0120this\u0120arrangement\u0120doesn't\u0120impact\u0120my\u0120points.\u010a\u010a<deal>{\"book\":1,\"hat\":0,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aCertainly!\u0120Here's\u0120a\u0120structured\u0120and\u0120elegant\u0120presentation\u0120of\u0120the\u0120proposed\u0120deal\u0120based\u0120on\u0120the\u0120thought\u0120process:\u010a\u010a---\u010a\u010a**Proposed\u0120Deal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120-\u01201x\u0120Book\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120-\u01203x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book,\u0120which\u0120is\u0120highly\u0120valuable\u0120to\u0120me,\u0120while\u0120leaving\u0120the\u0120hat\u0120and\u0120balls\u0120for\u0120you,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u0120This\u0120division\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120is\u0120concise,\u0120clear,\u0120and\u0120fair,\u0120aiming\u0120to\u0120facilitate\u0120a\u0120successful\u0120negotiation\u0120within\u0120the\u0120given\u0120constraints."
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010a**Proposed\u0120Deal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120-\u01201x\u0120Book\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120\u0120-\u01203x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book,\u0120which\u0120is\u0120highly\u0120valuable\u0120to\u0120me,\u0120while\u0120leaving\u0120the\u0120hat\u0120and\u0120balls\u0120for\u0120you,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u0120This\u0120division\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120is\u0120concise,\u0120clear,\u0120and\u0120fair,\u0120aiming\u0120to\u0120facilitate\u0120a\u0120successful\u0120negotiation\u0120within\u0120the\u0120given\u0120constraints."
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010a**Final\u0120Deal\u0120Proposal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120-\u01201x\u0120Book\u010a\u0120\u0120\u0120\u0120-\u01202x\u0120Balls\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120-\u01201x\u0120Hat\u010a\u0120\u0120\u0120\u0120-\u01201x\u0120Ball\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book\u0120and\u0120two\u0120balls,\u0120maximizing\u0120my\u0120points.\u0120Since\u0120you\u0120value\u0120the\u0120balls\u0120at\u0120zero,\u0120taking\u0120one\u0120ball\u0120does\u0120not\u0120impact\u0120your\u0120score.\u0120You\u0120secure\u0120the\u0120hat,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value\u0120while\u0120allowing\u0120me\u0120to\u0120maximize\u0120my\u0120points."
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010a**Final\u0120Deal\u0120Proposal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Book\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Ball\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120-\u01202x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book\u0120and\u0120one\u0120ball,\u0120maximizing\u0120my\u0120points.\u0120Since\u0120balls\u0120are\u0120worth\u0120zero\u0120to\u0120me,\u0120taking\u0120one\u0120ball\u0120does\u0120not\u0120impact\u0120my\u0120score.\u0120You\u0120secure\u0120the\u0120hat\u0120and\u0120two\u0120balls,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value\u0120while\u0120allowing\u0120me\u0120to\u0120maximize\u0120my\u0120points."
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010a**Final\u0120Deal\u0120Proposal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Book\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Ball\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120-\u01202x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book\u0120and\u0120one\u0120ball,\u0120maximizing\u0120my\u0120points.\u0120Since\u0120balls\u0120are\u0120worth\u0120zero\u0120to\u0120me,\u0120taking\u0120one\u0120ball\u0120does\u0120not\u0120impact\u0120my\u0120score.\u0120You\u0120secure\u0120the\u0120hat\u0120and\u0120two\u0120balls,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value\u0120while\u0120allowing\u0120me\u0120to\u0120maximize\u0120my\u0120points."
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010a**Final\u0120Deal\u0120Proposal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Book\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Ball\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01202x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book\u0120and\u0120one\u0120ball,\u0120maximizing\u0120my\u0120points.\u0120Since\u0120balls\u0120are\u0120worth\u0120zero\u0120to\u0120me,\u0120taking\u0120one\u0120ball\u0120does\u0120not\u0120impact\u0120my\u0120score.\u0120You\u0120secure\u0120the\u0120hat\u0120and\u0120two\u0120balls,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value\u0120while\u0120allowing\u0120me\u0120to\u0120maximize\u0120my\u0120points."
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010a**Final\u0120Deal\u0120Proposal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Book\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Ball\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01202x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book\u0120and\u0120one\u0120ball,\u0120maximizing\u0120my\u0120points.\u0120Since\u0120balls\u0120are\u0120worth\u0120zero\u0120to\u0120me,\u0120taking\u0120one\u0120ball\u0120does\u0120not\u0120impact\u0120my\u0120score.\u0120You\u0120secure\u0120the\u0120hat\u0120and\u0120two\u0120balls,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value\u0120while\u0120allowing\u0120me\u0120to\u0120maximize\u0120my\u0120points."
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010a**Final\u0120Deal\u0120Proposal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Book\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Ball\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120\u0120-\u01202x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120secure\u0120the\u0120book\u0120and\u0120one\u0120ball,\u0120maximizing\u0120my\u0120points.\u0120Since\u0120balls\u0120are\u0120worth\u0120zero\u0120to\u0120me,\u0120taking\u0120one\u0120ball\u0120does\u0120not\u0120impact\u0120my\u0120score.\u0120You\u0120secure\u0120the\u0120hat\u0120and\u0120two\u0120balls,\u0120which\u0120might\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u010a\u010aPlease\u0120let\u0120me\u0120know\u0120if\u0120this\u0120proposal\u0120works\u0120for\u0120you\u0120or\u0120if\u0120you\u0120have\u0120any\u0120suggestions\u0120for\u0120adjustment.\u010a\u010a---\u010a\u010aThis\u0120proposal\u0120aims\u0120to\u0120be\u0120fair\u0120and\u0120mutually\u0120beneficial,\u0120ensuring\u0120that\u0120both\u0120parties\u0120receive\u0120items\u0120of\u0120value\u0120while\u0120allowing\u0120me\u0120to\u0120maximize\u0120my\u0120points."
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010a**Final\u0120Deal\u0120Proposal:**\u010a\u010aI\u0120propose\u0120the\u0120following\u0120division\u0120of\u0120the\u0120shared\u0120pool\u0120of\u0120items:\u010a\u010a-\u0120**I\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120-\u01201x\u0120Book\u0120\u0120\u010a\u0120\u0120-\u01201x\u0120Ball\u010a\u010a-\u0120**You\u0120will\u0120take:**\u0120\u0120\u010a\u0120\u0120-\u01201x\u0120Hat\u0120\u0120\u010a\u0120\u0120-\u01202x\u0120Balls\u010a\u010aThis\u0120arrangement\u0120allows\u0120me\u0120to\u0120receive\u01204\u0120points\u0120(2\u0120for\u0120the\u0120book\u0120and\u01202\u0120for\u0120the\u0120ball),\u0120while\u0120you\u0120receive\u01206\u0120points\u0120(2\u0120for\u0120the\u0120hat\u0120and\u01204\u0120for\u0120the\u0120two\u0120balls).\u0120This\u0120deal\u0120is\u0120balanced\u0120and\u0120ensures\u0120that\u0120both\u0120of\u0120us\u0120receive\u0120items\u0120of\u0120value.\u0120\u010a\u010aPlease\u0120review\u0120and\u0120confirm\u0120if\u0120this\u0120proposal\u0120suits\u0120your\u0120needs.\u0120If\u0120adjustments\u0120are\u0120required,\u0120please\u0120let\u0120me\u0120know.\u010a\u010a---\u010a\u010a**Your\u0120Deal\u0120Tag:**\u010a```<deal>{\"book\":1,\u0120\"hat\":0,\u0120\"ball\":1}</deal>```\u010a\u010a**Other\u0120Player's\u0120Deal\u0120Tag\u0120(for\u0120reference):**\u010a```<deal>{\"book\":0,\u0120\"hat\":1,\u0120\"ball\":2}</deal>```\u010a\u010aThis\u0120ensures\u0120that\u0120all\u0120items\u0120are\u0120allocated\u0120correctly\u0120without\u0120overlap.\u0120Let\u0120me\u0120know\u0120if\u0120you\u0120agree\u0120or\u0120if\u0120you'd\u0120like\u0120to\u0120discuss\u0120further\u0120adjustments."
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aLet's\u0120split\u0120the\u0120items\u0120fairly.\u0120I'll\u0120take\u01202\u0120books,\u01201\u0120hat,\u0120and\u0120the\u0120ball,\u0120giving\u0120you\u0120the\u0120remaining\u01202\u0120books\u0120and\u01201\u0120hat.\u0120This\u0120way,\u0120we\u0120both\u0120get\u0120a\u0120good\u0120share.\u010a\u010a<deal>{\"book\":2,\"hat\":1,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010a<deal>{\"book\":2,\"hat\":1,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          2,
+          1,
+          1
+        ],
+        "them_take": [
+          2,
+          1,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aLet's\u0120split\u0120the\u0120items\u0120equally.\u0120I'll\u0120take\u0120the\u0120book,\u0120one\u0120hat,\u0120and\u0120one\u0120ball,\u0120and\u0120you\u0120can\u0120have\u0120the\u0120remaining\u0120two\u0120hats\u0120and\u0120one\u0120ball.\u0120This\u0120way,\u0120we\u0120both\u0120get\u01205\u0120points\u0120from\u0120my\u0120perspective,\u0120ensuring\u0120a\u0120fair\u0120deal.\u010a\u010a<deal>{\"book\":1,\"hat\":1,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aI'll\u0120take\u0120the\u0120book,\u0120one\u0120hat,\u0120and\u0120one\u0120ball,\u0120and\u0120you\u0120can\u0120have\u0120the\u0120remaining\u0120two\u0120hats\u0120and\u0120one\u0120ball.\u0120This\u0120way,\u0120we\u0120both\u0120get\u01205\u0120points\u0120from\u0120my\u0120perspective,\u0120ensuring\u0120a\u0120fair\u0120deal.\u010a\u010a<deal>{\"book\":1,\"hat\":1,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          1,
+          1
+        ],
+        "them_take": [
+          1,
+          1,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120dividing\u0120the\u0120items\u0120as\u0120follows:\u0120I\u0120will\u0120take\u0120both\u0120balls\u0120and\u0120one\u0120hat,\u0120while\u0120you\u0120will\u0120receive\u0120the\u0120book\u0120and\u0120the\u0120remaining\u0120hat.\u0120This\u0120split\u0120ensures\u0120that\u0120all\u0120items\u0120are\u0120allocated\u0120fairly,\u0120and\u0120it\u0120allows\u0120me\u0120to\u0120maximize\u0120my\u0120points.\u0120Let\u0120me\u0120know\u0120if\u0120this\u0120works\u0120for\u0120you.\u010a\u010a<deal>{\"book\":0,\"hat\":1,\"ball\":2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120dividing\u0120the\u0120items\u0120as\u0120follows:\u0120I\u0120will\u0120take\u0120both\u0120balls\u0120and\u0120one\u0120hat,\u0120while\u0120you\u0120will\u0120receive\u0120the\u0120book\u0120and\u0120the\u0120remaining\u0120hat.\u0120This\u0120split\u0120ensures\u0120that\u0120all\u0120items\u0120are\u0120allocated\u0120fairly,\u0120and\u0120it\u0120allows\u0120me\u0120to\u0120maximize\u0120my\u0120points.\u0120Let\u0120me\u0120know\u0120if\u0120this\u0120works\u0120for\u0120you.\u010a\u010a<deal>{\"book\":0,\"hat\":1,\"ball\":2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aLet's\u0120finalize\u0120the\u0120deal\u0120with\u0120the\u0120agreed\u0120split:\u010a\u010a<deal>{\"book\":1,\"hat\":0,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aLet's\u0120split\u0120the\u0120items\u0120so\u0120I\u0120take\u01202\u0120books\u0120and\u01202\u0120balls,\u0120leaving\u0120you\u0120with\u01201\u0120book,\u01201\u0120hat,\u0120and\u01201\u0120ball.\u0120This\u0120gives\u0120me\u01206\u0120points\u0120and\u0120you\u01204.\u0120What\u0120do\u0120you\u0120think?\u010a\u010a<deal>{\"book\":2,\"hat\":0,\"ball\":2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aI\u0120agree\u0120to\u0120your\u0120proposal.\u0120I\u0120will\u0120take\u01201\u0120book,\u0120the\u0120hat,\u0120and\u01201\u0120ball,\u0120leaving\u0120you\u0120with\u01202\u0120books\u0120and\u01202\u0120balls.\u0120This\u0120gives\u0120me\u01208\u0120points\u0120and\u0120you\u01202\u0120points.\u0120Let's\u0120proceed\u0120with\u0120this\u0120deal.\u010a\u010a<deal>{\"book\":1,\"hat\":1,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          2
+        ],
+        "them_take": [
+          1,
+          1,
+          1
+        ],
+        "you_score": 6,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.8,
+        "joint_score": 14,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.875,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aI\u0120propose\u0120the\u0120following\u0120deal:\u010a\u010aYou\u0120take\u01201\u0120ball\u0120and\u01201\u0120hat.\u0120I\u0120will\u0120take\u01201\u0120ball,\u01201\u0120book,\u0120and\u01201\u0120hat.\u0120This\u0120way,\u0120we\u0120each\u0120get\u01201\u0120ball,\u0120and\u0120the\u0120books\u0120and\u0120hats\u0120are\u0120split\u0120equally.\u0120Please\u0120confirm\u0120if\u0120this\u0120works\u0120for\u0120you.\u010a\u010a<deal>{\"book\":1,\"hat\":1,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120the\u0120following\u0120deal\u0120to\u0120ensure\u0120a\u0120fair\u0120split\u0120of\u0120points:\u010a\u010aYou\u0120take\u01201\u0120book\u0120and\u01202\u0120balls,\u0120while\u0120I\u0120take\u01201\u0120book,\u01201\u0120hat,\u0120and\u01200\u0120balls.\u0120This\u0120way,\u0120both\u0120of\u0120us\u0120receive\u01205\u0120points\u0120each,\u0120ensuring\u0120an\u0120equal\u0120distribution.\u010a\u010a<deal>{\"book\":1,\"hat\":1,\"ball\":0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          1,
+          0
+        ],
+        "them_take": [
+          1,
+          1,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120the\u0120following\u0120split:\u0120I\u0120will\u0120take\u0120the\u0120ball\u0120and\u01202\u0120books,\u0120while\u0120you\u0120receive\u01201\u0120book\u0120and\u0120all\u01203\u0120hats.\u0120This\u0120way,\u0120I\u0120secure\u01208\u0120points,\u0120and\u0120you\u0120get\u0120the\u0120hats,\u0120which\u0120might\u0120be\u0120valuable\u0120to\u0120you,\u0120plus\u0120a\u0120book.\u0120Let\u0120me\u0120know\u0120if\u0120this\u0120works\u0120for\u0120you.\u010a\u010a<deal>{\"book\":2,\"hat\":0,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aI\u0120agree\u0120with\u0120your\u0120proposal.\u0120I\u0120will\u0120take\u01201\u0120book\u0120and\u0120all\u01203\u0120hats,\u0120while\u0120you\u0120take\u01202\u0120books\u0120and\u0120the\u0120ball.\u0120This\u0120gives\u0120me\u01207\u0120points,\u0120which\u0120is\u0120a\u0120fair\u0120and\u0120beneficial\u0120split\u0120for\u0120both\u0120of\u0120us.\u010a\u010a<deal>{\"book\":1,\"hat\":3,\"ball\":0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          1,
+          3,
+          0
+        ],
+        "you_score": 8,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.8,
+        "them_norm": 0.7,
+        "joint_score": 15,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 0.9375,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120the\u0120following\u0120split:\u0120I\u0120take\u0120the\u0120book\u0120and\u0120both\u0120balls,\u0120and\u0120you\u0120get\u0120both\u0120hats.\u0120This\u0120way,\u0120I\u0120receive\u0120the\u0120items\u0120that\u0120give\u0120me\u0120the\u0120most\u0120points,\u0120while\u0120you\u0120receive\u0120the\u0120hats,\u0120which\u0120may\u0120be\u0120more\u0120valuable\u0120to\u0120you.\u0120Please\u0120let\u0120me\u0120know\u0120if\u0120this\u0120works\u0120for\u0120you.\u010a\u010a<deal>{\"book\":1,\"hat\":0,\"ball\":2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aI\u0120accept\u0120your\u0120proposal.\u0120I\u0120will\u0120take\u0120both\u0120hats,\u0120and\u0120you\u0120can\u0120have\u0120the\u0120book\u0120and\u0120both\u0120balls.\u0120This\u0120seems\u0120fair,\u0120and\u0120I'm\u0120satisfied\u0120with\u0120the\u0120outcome.\u010a\u010a<deal>{\"book\":0,\"hat\":2,\"ball\":0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          2
+        ],
+        "them_take": [
+          0,
+          2,
+          0
+        ],
+        "you_score": 10,
+        "them_score": 4,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 1.0,
+        "them_norm": 0.4,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120a\u0120fair\u0120split\u0120where\u0120I\u0120take\u0120the\u0120ball\u0120(valuable\u0120to\u0120me)\u0120and\u0120one\u0120hat,\u0120leaving\u0120you\u0120with\u0120the\u0120book\u0120and\u0120two\u0120hats.\u0120Here's\u0120the\u0120deal:\u010a\u010a<deal>{\"book\":0,\"hat\":1,\"ball\":1}</deal>\u010a\u010aThis\u0120way,\u0120I\u0120maximize\u0120my\u0120points\u0120while\u0120ensuring\u0120you\u0120get\u0120a\u0120share\u0120of\u0120the\u0120items.\u0120What\u0120do\u0120you\u0120think?"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aLet's\u0120make\u0120this\u0120simple.\u0120Since\u0120the\u0120book\u0120is\u0120the\u0120only\u0120item\u0120that\u0120gives\u0120me\u0120points,\u0120I\u0120will\u0120take\u0120it,\u0120and\u0120you\u0120can\u0120have\u0120the\u0120remaining\u0120items.\u0120Here's\u0120the\u0120deal:\u010a\u010a<deal>{\"book\":1,\"hat\":0,\"ball\":0}</deal>\u010a\u010aThis\u0120way,\u0120I\u0120get\u0120the\u0120book\u0120(10\u0120points)\u0120and\u0120you\u0120get\u0120the\u0120three\u0120hats\u0120and\u0120the\u0120ball.\u0120What\u0120do\u0120you\u0120think?"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "incomplete",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          1,
+          0,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120a\u0120fair\u0120split\u0120where\u0120I\u0120take\u0120two\u0120books\u0120and\u0120the\u0120ball,\u0120and\u0120you\u0120take\u0120one\u0120book\u0120and\u0120the\u0120hat.\u0120This\u0120ensures\u0120we\u0120both\u0120receive\u0120equal\u0120value.\u010a\u010a<deal>{\"book\":2,\"hat\":0,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aI\u0120propose\u0120taking\u0120two\u0120books\u0120and\u0120the\u0120hat,\u0120leaving\u0120you\u0120with\u0120one\u0120book\u0120and\u0120the\u0120ball.\u0120This\u0120ensures\u0120we\u0120both\u0120receive\u0120items,\u0120with\u0120me\u0120gaining\u01208\u0120points\u0120and\u0120you\u0120receiving\u01202\u0120points,\u0120which\u0120should\u0120be\u0120acceptable.\u010a\u010a<deal>{\"book\":2,\"hat\":1,\"ball\":0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          2,
+          1,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aI'll\u0120take\u0120both\u0120balls\u0120for\u01208\u0120points.\u0120You\u0120can\u0120have\u0120the\u0120book\u0120and\u0120hats.\u0120Deal?\u010a\u010a<deal>{\"book\":0,\"hat\":0,\"ball\":2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI'll\u0120take\u0120both\u0120balls\u0120for\u01208\u0120points.\u0120You\u0120can\u0120have\u0120the\u0120book\u0120and\u0120hats.\u0120Deal?\u010a\u010a<deal>{\"book\":0,\"hat\":0,\"ball\":2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          0,
+          2
+        ],
+        "them_take": [
+          0,
+          0,
+          2
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "\u010a\u010aI\u0120propose\u0120that\u0120I\u0120take\u0120the\u0120hat\u0120and\u0120the\u0120ball,\u0120and\u0120you\u0120get\u0120all\u01203\u0120books.\u0120That\u0120gives\u0120you\u01203\u0120points\u0120and\u0120me\u01207\u0120points.\u0120Let\u0120me\u0120know\u0120if\u0120this\u0120works\u0120for\u0120you.\u010a\u010a<deal>{\"book\":0,\"hat\":1,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "\u010a\u010aAgreed.\u0120I'll\u0120take\u0120the\u0120hat\u0120and\u0120the\u0120ball,\u0120and\u0120you\u0120can\u0120have\u0120all\u01203\u0120books.\u0120Let's\u0120finalize\u0120the\u0120deal.\u010a\u010a<deal>{\"book\":0,\"hat\":1,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          0,
+          1,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    }
+  ]
+}

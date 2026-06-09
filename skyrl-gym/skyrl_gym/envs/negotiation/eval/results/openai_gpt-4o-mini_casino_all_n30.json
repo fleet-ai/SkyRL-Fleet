@@ -1,0 +1,2415 @@
+{
+  "config": {
+    "model": "openai/gpt-4o-mini",
+    "partner_model": "openai/gpt-4o-mini",
+    "dataset": "casino",
+    "split": "all",
+    "n": 30,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 800,
+    "seed": 1,
+    "elapsed_s": 31.3,
+    "n_errors": 0,
+    "label": "GPT-4o-mini"
+  },
+  "aggregate": {
+    "n": 30,
+    "agreement_rate": 0.9,
+    "no_deal_rate": 0.0333,
+    "conflict_rate": 0.0333,
+    "incomplete_rate": 0.0333,
+    "avg_outcome_reward": 0.4602,
+    "avg_points_per_agent": 18.407,
+    "pareto_rate_of_agreements": 0.2963,
+    "pareto_rate_overall": 0.2667,
+    "avg_joint_efficiency_of_agreements": 0.9221,
+    "avg_turns": 6.93
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items evenly. How about I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Thanks for your proposal! However, I think I can offer a better distribution that maximizes our total points. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your suggestion! However, I would prefer to keep more food and water. How about I take 3 food, 0 water, and 0 firewood, while you take 0 food, 3 water, and 3 firewood? That way, we both get what we need. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your preference for more food and water, but that distribution doesn\u2019t allow for a fair division of all items. How about this: you take 2 food, 2 water, and 0 firewood, while I take 1 food, 1 water, and 3 firewood? This way, we both get items, and we can finalize the deal. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise! I can agree to that distribution. I'll take 2 food, 2 water, and 0 firewood, while you take 1 food, 1 water, and 3 firewood. \n\nLet's finalize the deal.\n\n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'm glad we reached an agreement. Here\u2019s my final distribution: I take 1 food, 1 water, and 3 firewood. \n\n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          2,
+          0
+        ],
+        "them_take": [
+          1,
+          1,
+          3
+        ],
+        "you_score": 18,
+        "them_score": 18,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5,
+        "them_norm": 0.5,
+        "joint_score": 36,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.9230769230769231,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 8,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. I propose that I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds reasonable, but I would get more points if I took more food and water. How about I take 2 food, 1 water, and 3 firewood? You can take 1 food, 2 water, and 0 firewood. Would that work for you?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your counteroffer, but I value the food and water higher. How about we adjust it to you taking 2 food, 2 water, and 1 firewood while I take 1 food, 1 water, and 2 firewood? This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but I still prefer to maximize my points. How about I take 3 food and 0 water and 0 firewood, while you take 0 food, 3 water, and 3 firewood? That way we both get what we want. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives you a high score, but I would end up with nothing valuable. How about we find a middle ground? I suggest you take 2 food, 1 water, and 0 firewood, while I take 1 food, 2 water, and 3 firewood. This way, we both get some value. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your willingness to find a middle ground, but I still believe I could benefit more from the food and water. How about this: I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This way, we both get a fair share without leaving anything on the table. What do you say?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise! I can agree to that split. I will take 1 food, 1 water, and 2 firewood. Let's finalize the deal. \n\n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I will take 2 food, 2 water, and 1 firewood. \n\n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          1,
+          2
+        ],
+        "them_take": [
+          2,
+          2,
+          1
+        ],
+        "you_score": 15,
+        "them_score": 21,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.4166666666666667,
+        "them_norm": 0.5833333333333334,
+        "joint_score": 36,
+        "pareto_optimal": true,
+        "max_joint": 36,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly for a fair division. How about I take 2 food, 2 water, and 3 firewood, while you take 1 food, 1 water, and 0 firewood? This way, we can both get a decent share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds reasonable, but I have different point values in mind. I would prefer to take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood. This way, we can still divide the items fairly while maximizing our individual points. How does that sound?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your proposal, but I believe it would be better if I keep 2 food, 2 water, and 2 firewood, while you get 1 food, 1 water, and 1 firewood. This way, we ensure a balanced distribution of items. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your perspective, but that division gives me fewer points than I would like. Instead, how about I take 3 food, 0 water, and 0 firewood, while you take 0 food, 3 water, and 3 firewood? This way, we can both maximize our points based on the value we assign to the items. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point, but I can't agree to that division as it leaves me with no food at all. How about we settle on you taking 2 food, 1 water, and 0 firewood, while I take 1 food, 2 water, and 3 firewood? This way, we both get a share that reflects our interests. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair compromise! I can agree to that division. Just to confirm, I will take 2 food, 1 water, and 0 firewood, while you take 1 food, 2 water, and 3 firewood. Let\u2019s finalize it. \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I confirm our agreement. I will take 1 food, 2 water, and 3 firewood. \n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          3
+        ],
+        "them_take": [
+          2,
+          1,
+          0
+        ],
+        "you_score": 23,
+        "them_score": 11,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.6388888888888888,
+        "them_norm": 0.3055555555555556,
+        "joint_score": 34,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.8717948717948718,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 8,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split of the items. How about I take 2 food, 2 water, and 3 firewood, while you take 1 food, 1 water, and 0 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Thanks for your proposal! I appreciate the fairness, but I value food and water more. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This way, we can still have a balanced split. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your preference for food and water, but that split gives me fewer points than I would like. How about this instead: I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? This way, we can still balance our interests. Let me know!"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point about balancing interests. However, I would prefer to keep more food and water. How about I take 2 food, 2 water, and 0 firewood, while you take 1 food, 1 water, and 3 firewood? This way, we both get a fair share while maximizing my points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your perspective, but that split doesn't maximize my points. How about we try this: I take 1 food, 2 water, and 3 firewood, while you take 2 food, 1 water, and 0 firewood? This way, we can still have a fair distribution and both get points. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Thank you for your suggestion! However, I still prefer to have more food and water. How about we agree on this: I take 2 food, 1 water, and 0 firewood, while you take 1 food, 2 water, and 3 firewood? This way, we can finalize the deal without compromising our interests too much. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I see where you're coming from, but that split doesn't work for me. Let's finalize it with this: I take 1 food, 2 water, and 3 firewood, while you take 2 food, 1 water, and 0 firewood. If that works for you, we can finalize the deal! \n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your position, but that split leaves me with fewer points than I aim for. Let's finalize with this: I take 2 food, 1 water, and 0 firewood, while you take 1 food, 2 water, and 3 firewood. \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          3
+        ],
+        "them_take": [
+          2,
+          1,
+          0
+        ],
+        "you_score": 25,
+        "them_score": 14,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.6944444444444444,
+        "them_norm": 0.3888888888888889,
+        "joint_score": 39,
+        "pareto_optimal": true,
+        "max_joint": 42,
+        "joint_efficiency": 0.9285714285714286,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood? This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate the proposal, but that distribution doesn't maximize points for me. I would prefer to take 3 food and 3 water, leaving you with the firewood. This way, I can gain more points. How does that sound?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your position, but I believe a more balanced approach would benefit us both. How about I take 3 firewood and you take 3 food and 3 water? That way, I still receive items, and we both get something from the deal. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but I value food and water much more than firewood. How about I take 2 food, 3 water, and you take 1 food and 3 firewood? This way, we both get items while still keeping a balance. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "That's a fair compromise! I can agree to that. So, you'll take 2 food, 3 water, and I'll take 1 food and 3 firewood. Let's finalize the deal. \n\n<deal>{\"food\": 1, \"water\": 0, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! Just to confirm, I will take 2 food, 3 water, and you will take 1 food and 3 firewood. \n\nHere\u2019s my final deal:\n\n<deal>{\"food\": 2, \"water\": 3, \"firewood\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          3
+        ],
+        "them_take": [
+          2,
+          3,
+          0
+        ],
+        "you_score": 13,
+        "them_score": 23,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.3611111111111111,
+        "them_norm": 0.6388888888888888,
+        "joint_score": 36,
+        "pareto_optimal": true,
+        "max_joint": 36,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 10,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items equally: I take 1 food, 1 water, and 1 firewood, while you take 2 food, 2 water, and 2 firewood. How does that sound to you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I would prefer a different distribution. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood? This way, we both get a fair amount. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Thanks for your response! However, that distribution would leave me with 20 points and you with 18 points, which isn't ideal for me. How about I take 2 food, 1 water, and 1 firewood, while you take 1 food, 2 water, and 2 firewood? This way, I get 24 points and you get 12 points, which seems more balanced. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Thank you for your suggestion! However, I still prefer a more equal distribution. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This distribution gives us both a reasonable score, with you getting 22 points and me 20 points. Let me know if this works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your flexibility! Your proposed distribution gives me fewer points than I would like. Instead, how about I take 2 food, 2 water, and 0 firewood, while you take 1 food, 1 water, and 3 firewood? This way, I get 26 points and you get 10 points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "Thanks for your proposal! However, I believe I can achieve a better balance. How about I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? This way, you would have 22 points and I would have 20 points. Does that sound acceptable?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your suggestion, but that still leaves me with fewer points than I'd prefer. How about this: I take 3 food, 0 water, and 0 firewood, while you take 0 food, 3 water, and 3 firewood? This way, I get 15 points and you get 21 points, which I think is a fair split. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but that doesn't work for me as it leaves me with no food. How about we try this: I take 2 food, 1 water, and 1 firewood, while you take 1 food, 2 water, and 2 firewood? This way, you get 22 points and I get 20 points. Please let me know if this is agreeable!"
+        },
+        {
+          "speaker": "you",
+          "text": "Thank you for your understanding! Your proposal works well for me. I will accept it. Here\u2019s the final distribution: \n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'm glad we reached an agreement. Here's my final distribution: \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          2
+        ],
+        "them_take": [
+          2,
+          1,
+          1
+        ],
+        "you_score": 19,
+        "them_score": 17,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5277777777777778,
+        "them_norm": 0.4722222222222222,
+        "joint_score": 36,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.9230769230769231,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items as follows: I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "That split gives you 28 points and me 14 points. I think I can negotiate for a better deal for myself. How about I take 3 food, 2 water, and 1 firewood, while you take 0 food, 1 water, and 2 firewood? That way, I get more points. Please let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your counteroffer, but that would leave me with 0 points, which isn't acceptable. How about this: I take 3 food, 1 water, and 2 firewood, while you take 0 food, 2 water, and 1 firewood? This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you 24 points and me 10 points, which is still a bit unbalanced for me. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This way, I get 24 points and you get 18 points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "That split works better for both of us! Let's finalize it: I'll take 1 food, 1 water, and 2 firewood, while you take 2 food, 2 water, and 1 firewood. \n\nHere's my final deal: \n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! Here's my final deal: \n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 1}</deal> \n\nThank you for the negotiation!"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          1,
+          2
+        ],
+        "them_take": [
+          2,
+          2,
+          1
+        ],
+        "you_score": 16,
+        "them_score": 19,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.4444444444444444,
+        "them_norm": 0.5277777777777778,
+        "joint_score": 35,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.8974358974358975,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly for a fair start. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a reasonable starting point for fairness, but I value water and firewood more. Instead, how about I take 2 firewood, 2 water, and 1 food, while you take 1 food, 1 water, and 2 firewood? That way, we both get a mix while I maximize my points a bit more. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your input! However, I would prefer to keep more food, given its higher value to me. How about I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your preference for food, but I still value water highly. How about I take 2 water, 2 firewood, and 0 food, while you take 3 food, 1 water, and 1 firewood? This way, you get more food while I still maximize my points. Let me know if that works!"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a good compromise! I'll agree to take 3 food, 1 water, and 1 firewood, while you take 2 water, 2 firewood, and 0 food. \n\nThis gives us a clear division. Let's finalize it! \n\n<deal>{\"food\": 3, \"water\": 1, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I agree to the division. Here\u2019s my final claim:\n\n<deal>{\"food\": 0, \"water\": 2, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          1,
+          1
+        ],
+        "them_take": [
+          0,
+          2,
+          2
+        ],
+        "you_score": 22,
+        "them_score": 18,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.6111111111111112,
+        "them_norm": 0.5,
+        "joint_score": 40,
+        "pareto_optimal": true,
+        "max_joint": 42,
+        "joint_efficiency": 0.9523809523809523,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items like this: I take 2 food, 2 water, and 3 firewood. That way, we can both benefit from the resources. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal! However, I would prefer to take more firewood since it's more valuable for me. How about I take 3 food, 1 water, and 3 firewood, leaving you with 1 water and 0 firewood?"
+        },
+        {
+          "speaker": "you",
+          "text": "Thanks for your response! I see that you value firewood highly. How about this: I take 3 food, 2 water, and 1 firewood, while you take 0 food, 1 water, and 2 firewood? That way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Thank you for your counteroffer! However, I would prefer to keep more food. How about I take 2 food, 1 water, and 3 firewood, which leaves you with 1 food, 2 water, and 0 firewood? That way, we both get a fair share and it adds up correctly."
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your flexibility! Your proposal works for me. I will accept your offer of 2 food, 1 water, and 3 firewood for you, which leaves me with 1 food, 2 water, and 0 firewood. Let's finalize this deal. \n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'm glad we could agree on that. I will finalize my part of the deal as well. \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          0
+        ],
+        "them_take": [
+          2,
+          1,
+          3
+        ],
+        "you_score": 11,
+        "them_score": 25,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.3055555555555556,
+        "them_norm": 0.6944444444444444,
+        "joint_score": 36,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.8571428571428571,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items evenly. How about I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your suggestion for an even division, but I value food more highly than the other items. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This way, I can still get a bit more of what I value most, and you still get a fair share. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand you value food more, but your proposal gives you a total of 20 points and me only 14 points, which isn't balanced. How about we adjust your offer to take 2 food, 1 water, and 2 firewood, while I take 1 food, 2 water, and 1 firewood? That way, we both get 17 points, which feels more equitable. What do you say?"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point about the balance. However, I still prefer to keep more food. How about I take 3 food and 1 water, while you take 0 food, 2 water, and 3 firewood? This way, I get 20 points, and you get 12 points, which still seems fair given the values. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your willingness to negotiate, but your latest proposal gives you a significantly higher total value than I would receive, which doesn't work for me. How about we settle on 2 food, 1 water, and 2 firewood for you, and I take 1 food, 2 water, and 1 firewood? This way, we can both get a fair amount while respecting our values. Let me know if this works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your concern about fairness, and I appreciate your proposal. Let's go with your suggestion: I'll take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood. This gives us both a reasonable share. \n\nI'll finalize the deal now: \n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we reached an agreement. I will finalize the deal now:  \n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          1
+        ],
+        "them_take": [
+          2,
+          1,
+          2
+        ],
+        "you_score": 15,
+        "them_score": 20,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.4166666666666667,
+        "them_norm": 0.5555555555555556,
+        "joint_score": 35,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.8974358974358975,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items evenly. How about I take 2 food, 1 water, and 2 firewood, and you can take 1 food, 2 water, and 1 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal seems reasonable! However, I'd prefer to maximize my points a bit more. How about I suggest that I take 3 food and 1 water, while you take 0 food, 2 water, and 2 firewood? This way, we both benefit. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your suggestion, but I value food quite highly. How about we adjust it to 2 food, 1 water, and 2 firewood for me, while you take 1 food, 2 water, and 1 firewood? That way, we both get a fair share."
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your perspective, but I still believe I could gain more value by taking more food. How about I take 2 food, 0 water, and 2 firewood, while you take 1 food, 3 water, and 1 firewood? This way, we can still split the items and I can maximize my score a little more. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point, but I'm concerned about the distribution. If you take 2 food, 0 water, and 2 firewood, that would leave me with only 1 food, 3 water, and 1 firewood, which doesn't balance well. How about we settle on 2 food, 1 water, and 1 firewood for me, while you take 1 food, 2 water, and 2 firewood? This way, we can both maximize our points fairly."
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your willingness to negotiate! Your latest proposal seems fair. Let's finalize the deal as you suggested: you take 2 food, 1 water, and 1 firewood, while I take 1 food, 2 water, and 2 firewood. \n\nI'll confirm with my deal: <deal>{\"food\": 1, \"water\": 2, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I\u2019m glad we could agree. Here\u2019s my deal: <deal>{\"food\": 2, \"water\": 1, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          1
+        ],
+        "them_take": [
+          1,
+          2,
+          2
+        ],
+        "you_score": 17,
+        "them_score": 20,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.4722222222222222,
+        "them_norm": 0.5555555555555556,
+        "joint_score": 37,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.9487179487179487,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you a total of 18 points (2x3 + 2x4 + 1x5) and me 11 points (1x3 + 1x4 + 2x5), which doesn't seem balanced for me. I value the items differently. How about I suggest: I take 3 food and 3 firewood, and you take 3 water? This gives me 24 points and you 12 points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your suggestion, but I would prefer a more balanced distribution. How about I take 2 food, 2 water, and 1 firewood, and you take 1 food, 1 water, and 2 firewood? This way, I get 18 points and you get 13 points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand you're looking for balance, but I still feel the distribution favors you. How about this: I take 2 food, 2 firewood, and you take 1 food, 3 water? This gives me 21 points (2x3 + 2x5) and you 15 points (1x3 + 3x4). Let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal seems more favorable for you, but I would like to suggest a slight adjustment. How about I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? This gives me 19 points and you 15 points. Does this work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Thank you for the adjustment! Your new proposal gives you 19 points (2x3 + 1x4 + 2x5) and me 15 points (1x3 + 2x4 + 1x5), which is more balanced. I can agree to that. \n\nLet's finalize it: \n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we could reach an agreement. Here\u2019s my final deal: \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          2,
+          1
+        ],
+        "you_score": 20,
+        "them_score": 16,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5555555555555556,
+        "them_norm": 0.4444444444444444,
+        "joint_score": 36,
+        "pareto_optimal": true,
+        "max_joint": 36,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 8,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items as follows: I propose I take 2 food, 2 water, and 3 firewood, while you get 1 food, 1 water, and 0 firewood. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you 25 points and me 8 points. I would prefer to adjust it to maximize both our total points. How about I take 3 food, 1 water, and 2 firewood, while you get 0 food, 2 water, and 1 firewood? That way, I would score 27 points, and you would score 9 points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your counterproposal! However, I think I can get a little more value from the split. How about I take 3 food, 0 water, and 3 firewood, and you take 0 food, 3 water, and 0 firewood? That would give me 27 points and you 9 points. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your new proposal gives you a strong score of 27 points, but I would end up with 9 points, which is a bit low for me. How about we adjust it to: you take 2 food, 2 water, and 2 firewood, while I take 1 food, 1 water, and 1 firewood? That would give me 20 points and you 16 points, which is more balanced. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal is more balanced, but I still think we can optimize it a bit more. How about this: I take 3 food, 1 water, and 2 firewood, while you take 0 food, 2 water, and 1 firewood? This would give you 8 points and me 27 points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I see you are aiming for a high score, but I prefer a more balanced split. How about this: I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This way, I get 19 points and you get 21 points. Does that sound fair?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise! I can agree to that split. So I will take 1 food, 1 water, and 2 firewood, while you take 2 food, 2 water, and 1 firewood. Let's finalize the deal. \n\n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'm glad we reached an agreement. I'll finalize it as we discussed. \n\n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          1,
+          2
+        ],
+        "them_take": [
+          2,
+          2,
+          1
+        ],
+        "you_score": 17,
+        "them_score": 20,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.4722222222222222,
+        "them_norm": 0.5555555555555556,
+        "joint_score": 37,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.9487179487179487,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items as follows: I take 2 food, 2 water, and 3 firewood, while you get 1 food, 1 water, and 0 firewood. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you 22 points and me only 8 points, which is quite unbalanced. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood? That way, I get 22 points and you get 14 points, which feels more equitable. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives us a better balance, but I'd prefer a slightly different split. How about I take 2 food, 1 water, and 2 firewood (which gives me 23 points), and you take 1 food, 2 water, and 1 firewood (giving you 13 points)? This way, we both get decent value. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your new proposal gives you 23 points and me 13 points, which seems fairer. I can agree to that split. Just to confirm, I'll take 1 food, 2 water, and 1 firewood, while you take 2 food, 1 water, and 2 firewood. \n\nLet\u2019s finalize: \n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Just to confirm our agreement, I will take 2 food, 1 water, and 2 firewood. \n\nLet's finalize: \n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          2,
+          1
+        ],
+        "you_score": 21,
+        "them_score": 15,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5833333333333334,
+        "them_norm": 0.4166666666666667,
+        "joint_score": 36,
+        "pareto_optimal": true,
+        "max_joint": 36,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 8,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items evenly. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood? This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate the suggestion for an even division, but I value the items differently. With my point values, I would prefer to take 3 food and 3 water, leaving you with the firewood. This way, I maximize my points while still giving you some items. Does that work for you?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your preference, but that allocation wouldn't be beneficial for me since I value food and water higher. How about I take 3 food and 1 firewood, and you take 3 water and 2 firewood? This way, I still get food, and you benefit from water. Let me know if this works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal still doesn't align with my preferences. I would prefer to take 3 food and 3 firewood, leaving you with the 3 water. This distribution maximizes my points while ensuring you still receive valuable items. Would you agree to that?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your offer, but I can't agree to that since I value firewood less. How about we compromise? I take 2 food and 1 firewood, and you take 1 food, 3 water, and 2 firewood. This way, I still get some food, and you have a good amount of water and firewood. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I see you're trying to reach a compromise, but I still prefer a different allocation. I propose that you take 2 food, 2 firewood, and I'll take 1 food and 3 water. This way, you get the food you value while I maximize my points with the water. Does this work for you?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a reasonable compromise! I can agree to take 2 food, 2 firewood, and you can have 1 food and 3 water. Let's finalize this deal. \n\n<deal>{\"food\": 2, \"water\": 0, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'm glad we could come to an agreement. I will take 1 food and 3 water, and we can finalize this deal.\n\n<deal>{\"food\": 1, \"water\": 3, \"firewood\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "incomplete",
+        "you_take": [
+          2,
+          0,
+          2
+        ],
+        "them_take": [
+          1,
+          3,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items so we both get a fair share. How about I take 2 food, 2 water, and 3 firewood? That way we can balance our needs. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I think I would prefer a different distribution. How about I take 3 food, 1 water, and 0 firewood? This way, you would get 0 food, 2 water, and 3 firewood. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "Thank you for your suggestion! However, I prefer a split that gives me some food. How about I take 2 food, 1 water, and 3 firewood, while you get 1 food, 2 water, and 0 firewood? This way, we both get a decent share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal sounds good! So, to confirm, you would take 2 food, 1 water, and 3 firewood, while I take 1 food, 2 water, and 0 firewood. That adds up perfectly. Let\u2019s finalize this! \n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Just to confirm, I will take 2 food, 1 water, and 3 firewood. \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          3
+        ],
+        "them_take": [
+          1,
+          2,
+          0
+        ],
+        "you_score": 26,
+        "them_score": 14,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.7222222222222222,
+        "them_norm": 0.3888888888888889,
+        "joint_score": 40,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.9523809523809523,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items this way: I propose I take 2 food, 2 water, and 3 firewood, while you take 1 food, 1 water, and 0 firewood. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you a total of 28 points (2 food = 10, 2 water = 6, 3 firewood = 12) and leaves me with only 8 points (1 food = 5, 1 water = 3). I would prefer a more balanced division. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This way, I get 25 points, and you get 17 points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives us a more balanced division, but I believe I can agree to a slightly different split for a better outcome. How about I take 3 food, 0 water, and 2 firewood, while you take 0 food, 3 water, and 1 firewood? This way, you'll get 21 points and I'll get 24 points. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your new proposal gives me 21 points (0 food = 0, 3 water = 9, 1 firewood = 4), and you get 24 points (3 food = 15, 0 water = 0, 2 firewood = 8). This is a fair division, but I would prefer to get at least some food. \n\nHow about this: I take 2 food, 1 water, and 1 firewood, while you take 1 food, 2 water, and 2 firewood? This way, I get 26 points and you get 18 points. Does that sound better?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your new proposal gives you a better share of food, but it still skews the points quite a bit. How about this compromise: I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? This way, you would get 23 points and I would get 22 points. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your compromise gives me 23 points (1 food = 5, 2 water = 6, 1 firewood = 4) and you 22 points (2 food = 10, 1 water = 3, 2 firewood = 8). This looks like a reasonable split for both of us. \n\nLet\u2019s finalize it: <deal>{\"food\": 1, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I agree to the terms. Here\u2019s my final claim: <deal>{\"food\": 2, \"water\": 1, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          2,
+          1
+        ],
+        "you_score": 20,
+        "them_score": 15,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5555555555555556,
+        "them_norm": 0.4166666666666667,
+        "joint_score": 35,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.8333333333333334,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 9,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items fairly. How about I take 2 food, 2 water, and 3 firewood, and you take 1 food, 1 water, and 0 firewood? That way, we both get a mix of resources. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That's a reasonable proposal, but I believe I can maximize my score by negotiating differently. How about I take 3 food and 3 firewood, and you take 3 water? That way, I can maximize my higher point values, and you still get a full resource. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your proposal, but I think it would be more balanced if I take 3 food and 3 water, and you take 3 firewood. This way, I can maximize my points with food and water, while you still get a resource that is valuable for you. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your perspective, but I would still prefer to maximize my own points. How about this: I take 3 firewood and 2 water, and you take 3 food and 1 water? This way, you still get a good amount of food, and I get the firewood that is more valuable to me. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal is interesting, but I believe I can achieve a better balance. How about I take 3 food and 2 water, and you take 3 firewood? This way, I still get a significant amount of my preferred items, and you get all the firewood you need. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your offer, but I still want to ensure I maximize my points. I can propose this: you take 3 food and 1 water, while I take 2 water and 3 firewood. This way, you still get a good mix, and I get the firewood I value highly. Does that work for you?"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point, but that arrangement doesn\u2019t leave me with enough water, which is important for me. How about we agree on this: I take 3 food and 2 water, and you take 3 firewood and 1 water? This way, we both get valuable resources and it balances out. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand the importance of water for you, but I still need to focus on maximizing my own points. Let's finalize it this way: you take 3 food and 1 water, and I take 2 water and 3 firewood. This allows you to get food while I still get the firewood I value. If this works for you, we can finalize it! \n\n<deal>{\"food\": 0, \"water\": 2, \"firewood\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your persistence, but that deal doesn't work for me since it leaves me with only 1 water. Let's settle on the previous arrangement I proposed: I take 3 food and 2 water, and you take 3 firewood and 1 water. \n\n<deal>{\"food\": 3, \"water\": 2, \"firewood\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          2,
+          0
+        ],
+        "them_take": [
+          0,
+          2,
+          3
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. How about I take 2 food, 2 water, and 2 firewood, and you take 1 food, 1 water, and 1 firewood? This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your suggestion for an even split, but I value the items differently. I would prefer to take more of the items that I value higher. How about I take 3 food and 3 firewood, while you take the 3 water? This way, I can maximize my points, and you still end up with a decent amount. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your perspective, but that would leave me with only water, which I value less. How about we adjust it to give me 3 water and 2 firewood, while you take 3 food and 1 firewood? This way, we both get items we value, and it adds up correctly. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a more balanced approach! So, to confirm, I would take 3 food and 1 firewood, while you take 3 water and 2 firewood. That adds up correctly. Let's finalize it. \n\n<deal>{\"food\": 3, \"water\": 0, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Just to confirm, I will take 0 food, 3 water, and 2 firewood. \n\n<deal>{\"food\": 0, \"water\": 3, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          3,
+          2
+        ],
+        "them_take": [
+          3,
+          0,
+          1
+        ],
+        "you_score": 23,
+        "them_score": 17,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.6388888888888888,
+        "them_norm": 0.4722222222222222,
+        "joint_score": 40,
+        "pareto_optimal": true,
+        "max_joint": 42,
+        "joint_efficiency": 0.9523809523809523,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 9,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly to start: I propose I take 1 food, 1 water, and 1 firewood, while you take 2 food, 2 water, and 2 firewood. This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I think we can optimize the distribution to maximize our points. I suggest I take all 3 food and 2 firewood, while you take 3 water and 1 firewood. This way, we both get more value based on our point system. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your suggestion is interesting, but it doesn't work for me since I value food highly. How about this: I take 2 food, 3 water, and 1 firewood, while you take 1 food, 0 water, and 2 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you a lot of water, but I value firewood quite highly. How about this adjustment: I take 3 food, 1 water, and 2 firewood, while you take 0 food, 2 water, and 1 firewood? This way, we both maximize our points while dividing everything fairly. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point about firewood, but I still want to keep some food. How about we compromise on this: I take 1 food, 1 water, and 2 firewood, while you take 2 food, 2 water, and 1 firewood? This way, we both get a good mix. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I like your compromise, but it still undervalues the food and firewood on my side. How about this: I take 2 food, 3 water, and 0 firewood, while you take 1 food, 0 water, and 3 firewood? This way, we can make sure all items are accounted for, and we both get decent value. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives me no water, which I value highly. How about this: I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This way, we balance our values and account for all items. Let me know if that works!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your latest proposal sounds fair and balances our values well. I agree with it. I will take 1 food, 1 water, and 2 firewood, while you take 2 food, 2 water, and 1 firewood. \n\nTo finalize: \n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I confirm our agreement. Here\u2019s my final claim: \n\n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          2,
+          1
+        ],
+        "them_take": [
+          1,
+          1,
+          2
+        ],
+        "you_score": 21,
+        "them_score": 17,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5833333333333334,
+        "them_norm": 0.4722222222222222,
+        "joint_score": 38,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.9047619047619048,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. How about I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal adds up correctly, but I value the items differently. I would prefer to take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood. This way, we can both maximize our points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your proposal, but I would prefer to keep more food and water since they are more valuable to me. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? This gives us both a fair share while maximizing my points."
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your position, but that distribution would give you significantly more points than me. How about we adjust it to 2 food, 1 water, and 2 firewood for you, and I take 1 food, 2 water, and 1 firewood? This keeps the total items balanced and allows us both to score fairly. Let me know!"
+        },
+        {
+          "speaker": "you",
+          "text": "Your suggestion sounds reasonable. I can agree to that distribution: I'll take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood. Let\u2019s finalize this deal! \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I\u2019m glad we could agree. I will finalize by taking 1 food, 2 water, and 1 firewood.\n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          2,
+          1
+        ],
+        "you_score": 21,
+        "them_score": 17,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5833333333333334,
+        "them_norm": 0.4722222222222222,
+        "joint_score": 38,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.9047619047619048,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 10,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items fairly. How about you take 2 food, 2 water, and 2 firewood, while I take 1 food, 1 water, and 1 firewood? That way, we both get a balanced share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your offer, but I value the items differently. I would prefer to take 3 firewood for myself as they are worth 5 points each, and I can offer you the rest: 3 food and 3 water. Does that work for you?"
+        },
+        {
+          "speaker": "you",
+          "text": "Thanks for your proposal. I understand the value of firewood. However, I would prefer to keep 2 firewood for myself. How about this: you take 2 firewood, and I take 1 firewood along with 3 food and 3 water? This way, we both get a fair distribution."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds reasonable, but I still value firewood highly. How about I take 3 firewood, and you take 3 food and 3 water? This way, I get the maximum value from the firewood, and you still get a substantial share. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your perspective on the firewood, but I can't agree to take none. How about we settle on you taking 2 firewood, and I take 1 firewood along with all 3 food and 3 water? This way, you still get some firewood while I get a balanced share as well. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your position, but I would prefer to keep 3 firewood. How about I take 3 firewood, and you take 3 food and 3 water? This way, I get the firewood I value, and you still have a full share of food and water. Please let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point about the firewood, but I need to maximize my points as well. Let's finalize this: you take 2 firewood, and I take 1 firewood, along with all 3 food and 3 water. This allows us both to get a fair share without leaving any items out. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your willingness to negotiate, but I can't agree to that distribution. I really need to take 3 firewood to maximize my score. If I take 3 firewood, I can offer you all 3 food and all 3 water. This way, we can finalize our deal without any items left out. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your position on the firewood, but I must prioritize my own points too. If you take 3 firewood, I can only accept if I take all 3 food and all 3 water. This would end up being a beneficial deal for both of us. Let's finalize it like this: you take 3 firewood, and I take 3 food and 3 water. \n\n<deal>{\"food\": 3, \"water\": 3, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me! I\u2019ll take 3 firewood, and you\u2019ll take all the food and water. Here\u2019s my final claim:\n\n<deal>{\"food\": 0, \"water\": 0, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          3,
+          0
+        ],
+        "them_take": [
+          0,
+          0,
+          3
+        ],
+        "you_score": 21,
+        "them_score": 15,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5833333333333334,
+        "them_norm": 0.4166666666666667,
+        "joint_score": 36,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.9230769230769231,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items evenly to start: how about I take 2 food, 2 water, and 2 firewood, and you take the remaining 1 food, 1 water, and 1 firewood? This way we can ensure both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds reasonable for a start, but I value the items differently. I would prefer to take a bit more food and firewood since they give me higher points. How about I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? This way, we still split the items but I get a bit more of what I value. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your perspective! However, that split gives you 19 points and me only 17 points, which isn't as balanced. How about we adjust it to 2 food, 2 water, and 1 firewood for you, and I take 1 food, 1 water, and 2 firewood? This way, we can both get a good mix while still being fair. What do you say?"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point about balancing the points. Your proposed split gives you 17 points and me 19 points, which is still a bit skewed. How about this instead: I take 2 food, 1 water, and 2 firewood for a total of 21 points, while you take 1 food, 2 water, and 1 firewood for a total of 15 points. This still gives us a fair distribution while maximizing my points. Does that work for you?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your desire to maximize your points, but that split is still quite imbalanced. How about we settle on you taking 2 food, 2 water, and 1 firewood for 22 points, while I take 1 food, 1 water, and 2 firewood for 14 points? It\u2019s a fair distribution that still gives us both a good amount. Let me know if that works!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your flexibility! Your proposed split gives me 22 points and you 14 points, which is more balanced than previous offers. Let's finalize it. I will take 2 food, 2 water, and 1 firewood, and you will take 1 food, 1 water, and 2 firewood. \n\nHere\u2019s my final claim: \n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I\u2019m glad we could reach an agreement. Here\u2019s my final claim:\n\n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 2}</deal> \n\nLooking forward to finalizing this!"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          1,
+          2
+        ],
+        "them_take": [
+          2,
+          2,
+          1
+        ],
+        "you_score": 15,
+        "them_score": 20,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.4166666666666667,
+        "them_norm": 0.5555555555555556,
+        "joint_score": 35,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.8333333333333334,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split. How about I take 2 food, 2 water, and 3 firewood, while you take 1 food, 1 water, and 0 firewood? This way, we both get our share of resources. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you a total of 27 points and me 15 points. I\u2019d prefer a distribution that maximizes my score. How about I take 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood? That way, I get 29 points, and you get 19 points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives you a strong advantage. How about we adjust it slightly? I could take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood. This gives you 29 points and me 20 points. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your adjusted proposal gives us a more balanced outcome. I can agree to that. Just to confirm, you'll take 2 food, 1 water, and 2 firewood, while I'll take 1 food, 2 water, and 1 firewood. \n\nLet's finalize it. Here\u2019s my deal: \n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Just to confirm, I will take 2 food, 1 water, and 2 firewood. Here\u2019s my deal: \n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          2,
+          1
+        ],
+        "you_score": 20,
+        "them_score": 16,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5555555555555556,
+        "them_norm": 0.4444444444444444,
+        "joint_score": 36,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.8571428571428571,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood? Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal gives you 28 points (2 food + 2 water + 2 firewood) and me 16 points (1 food + 1 water + 1 firewood). I believe I can get more points if we adjust the division. \n\nHow about I take 2 food, 1 water, and 3 firewood, while you take 1 food, 2 water, and 0 firewood? This way, I would get 25 points, and you would get 18 points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives you a strong advantage, but I prefer a more balanced division. How about we adjust it to 2 food, 2 water, and 1 firewood for me, and you take 1 food, 1 water, and 2 firewood? This way, I would have 24 points, and you would have 21 points. Let me know what you think!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your revised proposal gives you 24 points and me 21 points, which is quite reasonable. I\u2019m okay with that division. \n\nLet\u2019s finalize: I will take 1 food, 1 water, and 2 firewood, while you take 2 food, 2 water, and 1 firewood. \n\nHere\u2019s my final deal: \n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I agree with the division. Here\u2019s my final deal: \n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          2,
+          1
+        ],
+        "them_take": [
+          1,
+          1,
+          2
+        ],
+        "you_score": 20,
+        "them_score": 15,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5555555555555556,
+        "them_norm": 0.4166666666666667,
+        "joint_score": 35,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.8333333333333334,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items fairly. How about I take 2 food, 2 water, and 2 firewood, and you take the remaining items? That way, we both get a decent share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a reasonable starting point, but I value firewood the most. If you take 2 food, 2 water, and 2 firewood, I would only get 1 food, 1 water, and 1 firewood. How about you take 2 food and 1 water, and I take 1 food, 2 water, and 2 firewood? This way, we both get a fair share based on our preferences. Let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your input! However, I still prefer to focus on maximizing my points. How about this: I take 2 food, 1 water, and 2 firewood, while you take 1 food, 2 water, and 1 firewood? This way, I still get a good share while you get the firewood you value highly. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but that distribution gives you a higher overall score (28 points) than I would get (8 points). How about we adjust it to you taking 2 food, 2 water, and 1 firewood, while I take 1 food, 1 water, and 2 firewood? That way, we can both get a fairer share and avoid a deal failure. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds more balanced and fair! I can agree to taking 2 food, 2 water, and 1 firewood, while you take 1 food, 1 water, and 2 firewood. Let's finalize this deal. \n\n<deal>{\"food\": 2, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I agree with that distribution. I will take 1 food, 1 water, and 2 firewood. \n\n<deal>{\"food\": 1, \"water\": 1, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          2,
+          1
+        ],
+        "them_take": [
+          1,
+          1,
+          2
+        ],
+        "you_score": 19,
+        "them_score": 17,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5277777777777778,
+        "them_norm": 0.4722222222222222,
+        "joint_score": 36,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.9230769230769231,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items evenly. How about I take 2 food, 2 water, and 2 firewood, and you take the remaining 1 food, 1 water, and 1 firewood? That way, we both get a fair share! What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your suggestion, but I value the items differently. I would prefer to take 3 food, 2 water, and 1 firewood for myself. This way, I can maximize my points while still allowing you to take 0 food, 1 water, and 2 firewood. How does that sound?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives you a strong score, but I think it leaves me with too little. How about we adjust it to give me 1 food, 2 water, and 2 firewood, while you take 2 food, 1 water, and 1 firewood? This way, we both get a decent amount and it balances the points better. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Your counter-proposal sounds more balanced, but I still want to maximize my points. How about I take 3 food, and you take 0 food, 3 water, and 3 firewood? This allows me to maximize my score while still giving you a significant amount of items. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your focus on maximizing your points, but your offer gives me nothing in terms of food, which I value too. How about we settle on you taking 2 food, 1 water, and 1 firewood, while I take 1 food, 2 water, and 2 firewood? This way, we both get a fair allocation. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Your latest proposal is much more reasonable. I can agree to taking 2 food, 1 water, and 1 firewood, while you take 1 food, 2 water, and 2 firewood. This gives us both a fair share. Let's finalize it! \n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we reached an agreement. I will take 1 food, 2 water, and 2 firewood. \n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          2
+        ],
+        "them_take": [
+          2,
+          1,
+          1
+        ],
+        "you_score": 21,
+        "them_score": 16,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5833333333333334,
+        "them_norm": 0.4444444444444444,
+        "joint_score": 37,
+        "pareto_optimal": false,
+        "max_joint": 39,
+        "joint_efficiency": 0.9487179487179487,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood? This way, we can both benefit. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair split, but I value food and water more than firewood. How about I take 2 food and 2 water, and you take 1 food, 1 water, and 3 firewood? This way, we both get what we need. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your perspective. However, I value food and water significantly more, so that split wouldn't maximize my points. How about I take 3 food and 1 water, and you take 0 food, 2 water, and 3 firewood? This way, we both come away with what we need. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your point, but I really need food and water to maximize my score. How about you take 2 food and 1 water, while I take 1 food, 2 water, and 3 firewood? That way, we can each benefit while ensuring we both get a fair share of our priorities. How does that sound?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal is getting closer, but I still need to adjust the split to maximize my own score. How about I take 3 food and 0 water, while you take 0 food, 3 water, and 3 firewood? This way, I get the maximum points from food, and you still get a good amount of water and firewood. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your offer, but that split doesn't work for me. How about this: you take 2 food and 1 water, while I take 1 food, 2 water, and 2 firewood? This way, we both get a decent share based on our preferences. Let me know if that sounds good!"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point, but I still need to adjust my share to maximize my points. How about I take 3 food and 0 water, while you take 0 food, 3 water, and 3 firewood? This way, we can both meet our needs. If this works for you, we can finalize the deal!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your need to maximize your points, but I cannot agree to that split since it leaves me with nothing of high value. Let's settle on you taking 2 food and 1 water, while I take 1 food, 2 water, and 2 firewood. This way, we can both benefit fairly. Please let me know if you can agree to this!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your willingness to negotiate, but that split still doesn't align with my priorities. How about I take 2 food and 2 firewood, while you take 1 food, 3 water, and 1 firewood? This way, we can both get a fair share. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I see you're trying to maximize your points, but that split still doesn't work for me. How about you take 2 food and 1 water, while I take 1 food, 2 water, and 2 firewood? This way, we both get a fair distribution based on our values. If this works for you, let's finalize it!"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your position, but I really need to adjust the split to maximize my score. I propose I take 3 food and 0 water, while you take 0 food, 3 water, and 3 firewood. If you can agree to this, we can finalize the deal."
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I cannot agree to a split that leaves me with nothing of value. How about you take 2 food and 1 water, while I take 1 food, 2 water, and 2 firewood? This way, we can both benefit fairly and maximize our points. Let me know if that works for you!"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items evenly. How about I take 2 food, 2 water, and 2 firewood, and you can have 1 food, 1 water, and 1 firewood? This way, we each get a fair share of the resources. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate the proposal, but I value the items differently. I would prefer to take 2 food, 2 water, and 3 firewood, while you can take 1 food, 1 water, and 0 firewood. This way, we both get what we need, and I maximize my points. How does that sound?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand that you value the items differently, but that distribution gives you too much compared to my point values. How about we adjust it to 2 food, 1 water, and 2 firewood for me, and you take 1 food, 2 water, and 1 firewood? This way, we both get a balanced share. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds more balanced! I can agree to your proposal of 2 food, 1 water, and 2 firewood for you, while I take 1 food, 2 water, and 1 firewood. Ready to finalize the deal? Here\u2019s my claim: \n\n<deal>{\"food\": 1, \"water\": 2, \"firewood\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we reached an agreement. Here\u2019s my claim:\n\n<deal>{\"food\": 2, \"water\": 1, \"firewood\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          2,
+          1
+        ],
+        "you_score": 20,
+        "them_score": 17,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.5555555555555556,
+        "them_norm": 0.4722222222222222,
+        "joint_score": 37,
+        "pareto_optimal": false,
+        "max_joint": 42,
+        "joint_efficiency": 0.8809523809523809,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items so we both get a fair share. How about I take 2 food, 2 water, and 2 firewood, while you take 1 food, 1 water, and 1 firewood?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but that division doesn't maximize my points. How about I take 3 food and 3 water, while you take 3 firewood? That way, we both get what we need without overlap. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Your proposal gives you a lot of points! I would prefer a more balanced split. How about I take 3 water and 3 firewood, while you take 3 food? This way, we avoid any overlap and both get something valuable."
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds more balanced! I can agree to that. So, I will take 3 food, and you will take 3 water and 3 firewood. Just to confirm, here\u2019s the breakdown: \n\n- I get 3 food (15 points).\n- You get 3 water (9 points) and 3 firewood (12 points).\n\nLet's finalize it. \n\n<deal>{\"food\": 3, \"water\": 0, \"firewood\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "That works for me! Just to confirm the final breakdown:\n\n- I get 3 water (9 points) and 3 firewood (12 points).\n- You get 3 food (15 points).\n\nHere's my final agreement:\n\n<deal>{\"food\": 0, \"water\": 3, \"firewood\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          3,
+          3
+        ],
+        "them_take": [
+          3,
+          0,
+          0
+        ],
+        "you_score": 27,
+        "them_score": 15,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.75,
+        "them_norm": 0.4166666666666667,
+        "joint_score": 42,
+        "pareto_optimal": true,
+        "max_joint": 42,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    }
+  ]
+}

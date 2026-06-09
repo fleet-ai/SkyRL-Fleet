@@ -1,0 +1,985 @@
+{
+  "config": {
+    "model": "openai/gpt-4o-mini",
+    "partner_model": "openai/gpt-4o-mini",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 12,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 800,
+    "seed": 1,
+    "elapsed_s": 23.0,
+    "n_errors": 0,
+    "label": "",
+    "protocol": "dual",
+    "no_think": false
+  },
+  "aggregate": {
+    "n": 12,
+    "agreement_rate": 0.8333,
+    "no_deal_rate": 0.0,
+    "conflict_rate": 0.0833,
+    "incomplete_rate": 0.0833,
+    "avg_outcome_reward": 0.5,
+    "avg_points_per_agent": 6.0,
+    "pareto_rate_of_agreements": 0.3,
+    "pareto_rate_overall": 0.25,
+    "avg_joint_efficiency_of_agreements": 0.7696,
+    "avg_turns": 6.58
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 10,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items like this: I take the book and the hat, and you take all three balls. This way, I get the high-value items, and you get the items you might prefer. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your offer, but I value the balls more since there are three of them. How about I take the book and one ball, and you take the hat and the other two balls? This way, we both get a mix of what we want. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point about the balls. However, I still value the book significantly higher. How about we stick with my initial proposal, where I take the book and the hat, and you take all three balls? This gives me the high-value items while still allowing you to keep a full set of balls. Let me know!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your perspective, but I still prefer to have a more balanced distribution. How about this: I take the book and one ball, and you take the hat and the other two balls? This way, you still get two items, and I get the book, which I value highly. Let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your flexibility, but I have to insist on keeping the book since it's worth the most points to me. How about we finalize it this way: I keep the book and the hat, while you take all three balls? I believe this is a fair split given our differing values. Please let me know if you agree!"
+        },
+        {
+          "speaker": "them",
+          "text": "I see where you're coming from, but I still feel that the balls provide a better overall value for me as well. Let's finalize the deal like this: I'll take the book and one ball, and you take the hat and the other two balls. This way, we both get items we value. Please confirm if this works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your insistence on a balanced deal, but I really value the book too highly to agree to that split. I propose we finalize our negotiation with me taking the book and the hat, while you take all three balls. This way, I get the high-value items, and you still get a full set of balls. Please let me know if you're ready to confirm that!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand that the book is very valuable to you, but I still believe that the balls are a better option for me overall. I will agree to your proposal if we can finalize it as follows: I take the book and one ball, and you take the hat and the two remaining balls. This way, both of us get something we value. Please let me know if you can agree to that!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your suggestion, but I cannot agree to that split as it doesn't reflect my values. My final proposal is for me to take the book and the hat, while you take all three balls. I believe this is the best way to ensure we both get items that matter to us. If you're ready, let's finalize the deal! \n\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I respect your position, but I still feel that the balls are essential for my point total. I will accept your final proposal if we finalize it this way: I take the three balls, and you get the book and the hat. \n\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 3}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          1,
+          0
+        ],
+        "them_take": [
+          0,
+          0,
+          3
+        ],
+        "you_score": 10,
+        "them_score": 6,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 1.0,
+        "them_norm": 0.6,
+        "joint_score": 16,
+        "pareto_optimal": true,
+        "max_joint": 17,
+        "joint_efficiency": 0.9411764705882353,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose that I take 3 books and the ball, while you take 1 book and both hats. This way, we can share the items fairly. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I value the hats significantly more than the books or the ball. How about I take all 4 books and you take both hats and the ball? This way, I get the items I value most, and you still get the hats, which I think are also valuable. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Thanks for your input! However, I still prefer a split where I get more points. How about I take 3 books and the ball, and you take 1 book and both hats? This way, we can both get something we value. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your preference, but that split heavily favors you in terms of points. Since I value the hats much more, how about I take 4 books and you take both hats and the ball? This way, I maximize my points, and you still get the hats. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your perspective, but I really need to ensure I get some of the high-value items as well. How about I take the ball and one hat, and you take the remaining items: 4 books and 1 hat? This way, I still get something I value. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a reasonable split! I\u2019ll take the 4 books and 1 hat, and you can have the ball and 1 hat. Let\u2019s finalize it. Here\u2019s my share:\n\n<deal>{\"book\": 4, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I agree to that split. Here\u2019s my share:\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          4,
+          1,
+          0
+        ],
+        "you_score": 5,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.5,
+        "them_norm": 0.7,
+        "joint_score": 12,
+        "pareto_optimal": false,
+        "max_joint": 14,
+        "joint_efficiency": 0.8571428571428571,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ]
+      },
+      "num_turns": 11,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items in a way that maximizes value for both of us. How about I take the book and 2 hats, while you take 1 hat and both balls? This way, we both get a good mix. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate the proposal! However, I value the balls more highly than the hats. How about I take the book and 2 balls, while you can take the 3 hats? This way, we can both maximize our points. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Thanks for your response! I can see how that works for you, but I'd prefer to keep the book since I value it highly. How about I take the book and 1 ball, while you take 2 balls and the 3 hats? This way, we both get a fair share based on our values. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "Thanks for the suggestion! I understand your preference for the book. How about this: I take the book and 2 balls, and you take 1 ball and all 3 hats? This way, we both get items that we value highly. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your flexibility! However, I would still prefer to have the book. How about I take the book and 2 hats, while you take 1 hat and both balls? This way, I get the book and you still have 3 valuable items. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, and I appreciate your willingness to negotiate. However, I'd like to suggest that I take the book and both balls, while you take the 3 hats. This way, I can maximize my points, and you'll still have a good number of items. How does that sound?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your proposal, but I still prefer to keep the book. How about this: I take the book and 1 hat, while you take 2 hats and both balls? This way, we both get items we value. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "Thanks for your patience! I understand your preference for the book. How about this: I take the book and 2 balls, and you take 1 hat and 2 hats. This way, we can both get a good mix based on our values. Let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "Thank you for your suggestion! However, I still want to keep the book. How about I take the book and 2 hats, while you take the remaining hat and both balls? This way, we can both maximize our points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your persistence! Let's finalize the deal as you suggested: you take the book and 2 hats, and I will take the remaining hat and both balls. \n\nHere\u2019s my final <deal>: <deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we could agree. Here\u2019s my final <deal>: <deal>{\"book\": 1, \"hat\": 2, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          2
+        ],
+        "you_score": 6,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.7,
+        "joint_score": 13,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 0.9285714285714286,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items like this: I'll take 1 hat and 2 balls, and you can have the book and the remaining hat. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a reasonable split! I would get the book and 1 hat, while you would have 2 balls and 1 hat. \n\nJust to confirm, here's how it would look:\n- You: 1 hat, 2 balls\n- Me: 1 book, 1 hat\n\nIf that works for you, I can finalize the deal. Let me know!"
+        },
+        {
+          "speaker": "you",
+          "text": "That works for me! Just to confirm, I will take 1 hat and 2 balls, while you get the book and 1 hat. \n\nHere\u2019s my <deal>:\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'll take the book and the remaining hat. Here\u2019s my <deal>:\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "incomplete",
+        "you_take": [
+          0,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          0,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose that we split the items as follows: I take 2 books, 1 hat, and 1 ball, while you take 1 book and 2 balls. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a reasonable proposal! However, I would prefer to keep the hat since it has a higher point value for me. How about I take 1 hat, 3 balls, and you take 2 books?"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your flexibility! However, I would like to keep the hat as well. How about I take 2 books and the hat, while you take 3 balls? Would that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your preference for the hat, but since it holds a lot of value for me too, I would like to propose a compromise. How about you take 1 book, the hat, and 1 ball, while I take 2 books and 2 balls? Does that sound fair?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise! I\u2019m okay with that split. I\u2019ll take 1 book, the hat, and 1 ball, and you can have 2 books and 2 balls. \n\nLet's finalize it. Here\u2019s my deal: \n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I\u2019ll take the remaining items. Here\u2019s my deal: \n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          1,
+          1
+        ],
+        "them_take": [
+          2,
+          0,
+          2
+        ],
+        "you_score": 4,
+        "them_score": 2,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.4,
+        "them_norm": 0.2,
+        "joint_score": 6,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.375,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's consider splitting the items as follows: I'll take 1 book and the hat, while you can have 1 book and the 2 balls. This way, we can both get some items that we value. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I really value the balls more than the other items. Instead, how about I take both balls and you take the 2 books and the hat? This way, I get the maximum points, and you still get some items. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Thanks for your response! I understand that you value the balls highly. However, I would prefer to keep at least one book for myself. How about this: I'll take 1 book and the hat, and you can take 1 book and both balls. This way, we both get some items we value. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your willingness to compromise! However, I still prefer to maximize my points. How about this: you take 1 book and the hat, and I take the other book along with both balls? This way, you still get an item you value while I maximize my score. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair agreement! I can accept your proposal. So, I will take 1 book and the hat, while you take the other book and both balls. Let's finalize it. \n\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'm glad we reached an agreement. Here\u2019s my deal:\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal> \n\nThis adds up perfectly to the total pool. Thank you for the negotiation!"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          1,
+          0
+        ],
+        "them_take": [
+          1,
+          0,
+          2
+        ],
+        "you_score": 5,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.5,
+        "them_norm": 1.0,
+        "joint_score": 15,
+        "pareto_optimal": false,
+        "max_joint": 18,
+        "joint_efficiency": 0.8333333333333334,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split. I propose I take 2 books and the ball, while you take 1 book and the 3 hats. How does that sound to you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I value hats more highly. I would prefer to take 2 hats and the ball, while you can have 1 book and the remaining hats. How does that work for you?"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand that you value the hats highly. However, I would prefer to keep the ball for my points. How about I take 2 books and 1 hat, and you take 1 book, 2 hats, and the ball? Would that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a reasonable compromise. I can agree to that split. So, just to confirm, I will take 1 book, 2 hats, and the ball, while you take 2 books and 1 hat. \n\nHere\u2019s my <deal>{\"book\": 1, \"hat\": 2, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we reached an agreement. I will take 2 books and 1 hat. \n\nHere\u2019s my <deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          0
+        ],
+        "them_take": [
+          1,
+          2,
+          1
+        ],
+        "you_score": 4,
+        "them_score": 6,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.4,
+        "them_norm": 0.6,
+        "joint_score": 10,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.625,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's split the items strategically. How about I take 1 book and 2 balls, while you take the remaining items: 1 hat and 2 balls? This way, we both get something valuable. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your offer, but I would prefer to take both hats and one ball. I value the hats more since they give me more points. How about I take 2 hats and 1 ball, and you take the book and the remaining ball? Let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "Thanks for your response! I understand your preference for the hats. However, I would prefer to keep the book and both balls instead. How about I take 1 book and 2 balls, while you take 2 hats and 1 ball? This way, we can both maximize our points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair deal! I will take 2 hats and 1 ball, and you will take 1 book and 2 balls. Let's finalize our agreement. Here\u2019s my share:\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I agree with the proposed split. Here\u2019s my share:\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          0,
+          2
+        ],
+        "them_take": [
+          0,
+          2,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items like this: I take the ball and 1 hat, while you can have the book and the remaining 2 hats. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair to me! I\u2019ll take the book and the 2 hats, and you can have the ball and 1 hat. \n\nJust to confirm our split: \n- You will have: 1 hat and the ball\n- I will have: 2 hats and the book\n\nLet\u2019s finalize this deal. \n\n<deal>{\"book\": 1, \"hat\": 2, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'll take the ball and 1 hat, leaving you with the book and 2 hats. \n\nHere\u2019s my final deal:\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          1,
+          2,
+          0
+        ],
+        "you_score": 7,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 1.0,
+        "joint_score": 17,
+        "pareto_optimal": false,
+        "max_joint": 19,
+        "joint_efficiency": 0.8947368421052632,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ]
+      },
+      "num_turns": 6,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose that we split the items as follows: I take 2 books and the hat, and you can have 1 book and the ball. This way, we both get a fair share. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Thanks for your proposal! I appreciate the offer, but I would prefer to take the hat and the ball for myself, as those items have higher point values for me. How about I take 1 hat and 1 ball, and you can have the 3 books? Let me know your thoughts!"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your preference, but I value the books more highly. How about we compromise? I can take 2 books and the ball, while you take 1 book and the hat. This way, you still get a high-value item, and I get a good share as well. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your willingness to compromise! However, I'd prefer to secure the hat since it has higher value for me. How about I take the hat and 1 book, while you take the 2 remaining books and the ball? This way, we both get something we value. Let me know what you think!"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise! I can agree to take the 2 remaining books and the ball, while you take the hat and 1 book. Let's finalize this split! \n\nHere\u2019s my <deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>."
+        },
+        {
+          "speaker": "them",
+          "text": "Great! I'm glad we reached an agreement. Here's my <deal>{\"book\": 1, \"hat\": 1, \"ball\": 0}</deal>."
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          1,
+          1,
+          0
+        ],
+        "you_score": 5,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.5,
+        "them_norm": 0.8,
+        "joint_score": 13,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.8125,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's divide the items in a way that benefits us both. How about I take the 2 balls and 1 hat, and you can have the book and the remaining hat? This way, we both get a fair share based on our preferences. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a reasonable proposal! If I understand correctly, you would take 2 balls and 1 hat, while I would take the book and 1 hat. \n\nHere\u2019s how it breaks down:\n- You: 2 balls (8 points) + 1 hat (0 points) = 8 points\n- Me: 1 book (2 points) + 1 hat (0 points) = 2 points\n\nIt seems you would be getting a significantly better deal. Would you be open to adjusting this so we both get a more equitable share? Perhaps I could take both balls and you could take the book and the hats? Let me know!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your willingness to find a more equitable split! How about this adjustment: you take both balls and the book, while I take the 2 hats? This way, you would get a total of 10 points (8 from the balls and 2 from the book), and I would get 2 points from the hats. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "That adjustment sounds fair! To confirm:\n\n- I would take both balls (8 points) and the book (2 points), totaling 10 points.\n- You would take both hats (0 points each), totaling 0 points.\n\nWhile this gives me all the points, it's important for you to get something valuable too. Let\u2019s finalize this split:\n\nI\u2019ll keep 2 balls and 1 book, while you take the 2 hats. \n\nHere\u2019s my deal:\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal> \n\nPlease confirm your share!"
+        },
+        {
+          "speaker": "you",
+          "text": "Thank you for confirming the split! Here\u2019s my share based on our agreement:\n\nI will take the 2 hats, which means my deal is:\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 0}</deal> \n\nThis way, we have a complete agreement."
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          2,
+          0
+        ],
+        "them_take": [
+          1,
+          0,
+          2
+        ],
+        "you_score": 2,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.2,
+        "them_norm": 1.0,
+        "joint_score": 12,
+        "pareto_optimal": true,
+        "max_joint": 12,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ]
+      },
+      "num_turns": 11,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose that I take 2 books and the hat, while you take 1 book and the ball. This way, we both get valuable items, and we can avoid any conflict over the division. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your proposal, but I value the ball much more highly than the hat. I suggest I take 3 books, and you can have the ball and the hat. This way, I get 3 points, and you get 8 points, which seems fair for both of us. What do you think?"
+        },
+        {
+          "speaker": "you",
+          "text": "Thank you for your response! However, I would prefer to keep at least 2 books for myself, as I find them valuable too. How about I take 2 books and the ball, while you take 1 book and the hat? This way, we can both get items we value. Let me know your thoughts!"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your preference for the books, but I value the ball significantly more. How about this: I take all 3 books, and you take the ball and the hat? This gives me 3 points and you 7 points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I appreciate your offer, but I really need at least one book to maximize my points. How about this: I take 2 books and the hat, and you can have 1 book and the ball? This way, I still get some value, and you also get the ball that you desire. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your position, but I still prefer to keep all 3 books since they add up to my total points. How about I take all 3 books, and you take the ball and the hat? This way, you get 7 points, and I get 3 points. Let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point, but I really want to keep some books for my score. How about this: I take 2 books and the ball, and you can have 1 book and the hat? This way, we both get to keep items we value. Let me know if that's acceptable!"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your willingness to negotiate, but I still value the ball too highly to agree to that split. How about we go with my previous suggestion? I take all 3 books, and you take the ball and the hat. This maximizes both our points while ensuring you get the ball you value. Please let me know if that works for you!"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand that you value the ball highly, but I really need to secure at least one book for my points. Let's compromise: how about I take 1 book and the ball, and you take the remaining 2 books and the hat? This way, I still get something I value, and you still get a majority of the items. What do you think?"
+        },
+        {
+          "speaker": "them",
+          "text": "Thank you for your suggestion! I can agree to that split. So, you take 1 book and the ball, while I take 2 books and the hat. This gives you 8 points and me 2 points. I'm satisfied with this arrangement. Here\u2019s my <deal>: <deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great, I'm glad we reached an agreement! Based on our discussion, I will take 1 book and the ball. Here\u2019s my <deal>: <deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          2,
+          1,
+          0
+        ],
+        "you_score": 4,
+        "them_score": 2,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.4,
+        "them_norm": 0.2,
+        "joint_score": 6,
+        "pareto_optimal": false,
+        "max_joint": 14,
+        "joint_efficiency": 0.42857142857142855,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    }
+  ]
+}

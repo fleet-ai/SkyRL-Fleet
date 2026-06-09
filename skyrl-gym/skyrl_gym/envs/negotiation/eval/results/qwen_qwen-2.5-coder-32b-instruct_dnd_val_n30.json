@@ -1,0 +1,1995 @@
+{
+  "config": {
+    "model": "qwen/qwen-2.5-coder-32b-instruct",
+    "partner_model": "qwen/qwen-2.5-coder-32b-instruct",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 30,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 800,
+    "seed": 1,
+    "elapsed_s": 35.9,
+    "n_errors": 0,
+    "label": "Qwen2.5-Coder-32B"
+  },
+  "aggregate": {
+    "n": 30,
+    "agreement_rate": 0.3667,
+    "no_deal_rate": 0.0667,
+    "conflict_rate": 0.5,
+    "incomplete_rate": 0.0667,
+    "avg_outcome_reward": 0.22,
+    "avg_points_per_agent": 6.0,
+    "pareto_rate_of_agreements": 0.2727,
+    "pareto_rate_overall": 0.1,
+    "avg_joint_efficiency_of_agreements": 0.7788,
+    "avg_turns": 3.5
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my values, I believe the book is the most valuable item for me. How about I take the book and the hat, and you get all three balls? This way, I get 10 points, and you get 0 points from the balls, but you might still have some value from the hat.\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's try to find a more balanced deal. If you take the book and the hat, you get 4 points, and I get 6 points from the balls. This way, we both get some value.\n\nLet's try this:\n- You get the book and one ball ("
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a more balanced approach. If I get the book and one ball, I'll have 9 points. If you get the hat and two balls, you'll have 3 points. This way, we both get some value.\n\nLet's finalize this deal:\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Sounds good to me. Here's my final deal:\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          1,
+          2
+        ],
+        "you_score": 9,
+        "them_score": 6,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.9,
+        "them_norm": 0.6,
+        "joint_score": 15,
+        "pareto_optimal": false,
+        "max_joint": 17,
+        "joint_efficiency": 0.8823529411764706,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I think it would be beneficial to prioritize the ball since it's worth 4 points. How about I take the ball and we split the books and hats evenly? That way, I get 4 points from the ball and 2 points from a book, totaling 6 points. You would get 2 points from a book and 2 points from the hats, totaling 4 points. What do you think?\n\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but the ball is worthpoints to me, so it doesn't make sense for you to take it. Instead, let's focus on the items that have value. How about this: you take 2 hats (6 points) and I take 4 books (4 points)? This way, you maximize your points, and I still get a decent score.\n\n<deal>{\"book\": 4, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          1,
+          1
+        ],
+        "them_take": [
+          4,
+          0,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that maximizes our points. How about I take the book and two hats, and you get the remaining hat and both balls? This way, I get 6 points (2 for the book and 4 for the hats), and you get 4 points (2 for the hat and 2 for the balls).\n\n<deal>{\"book\": 1, \"hat\": 2, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your proposal. However, I believe we can do better. If I take the book and one hat, and you take the remaining two hats and both balls, I would get 4 points (1 for the book and 3 for the hat), and you would get 8 points (2 for the hats and 6 for the balls). This way, you maximize your points, and I still get a decent score.\n\nLet me know what you think.\n\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          2,
+          0
+        ],
+        "them_take": [
+          1,
+          1,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the book and one hat, and I'll take the other hat and both balls? This way, you get 2 points, and I get 9 points, totaling 11 points between us. What do you think?\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's aim for a deal that maximizes your points while also ensuring I get a reasonable share. Given your values, you value the book highly and the hats not at all. If you take the book and one ball, you get 7 points. I can take the other ball and both hats, which gives me 3 points. This way, we both get a fair share, and the total points are 10.\n\nWhat do you think about this?\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          1,
+          2
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, I'll take the hat since it's worth 7 points for you. That leaves us with"
+        },
+        {
+          "speaker": "you",
+          "text": "It seems there might be a misunderstanding. The hat is worth"
+        },
+        {
+          "speaker": "them",
+          "text": "Ah, I see. The hat is worth 7 points for you, so it makes sense for you to take it. Let's proceed with that. How about you take the hat, and I take all the balls? That way, you get 7 points from the hat, and I get 3 points from the balls. We can split the books since they are worth 0 points each. What do you think?\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "I see, you're suggesting I take the hat and all the books, and you take all the balls. That would give me 7 points (2 from the books and 5 from the hat) and you 3 points from the balls. Let's finalize this deal.\n\n<deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          0
+        ],
+        "them_take": [
+          1,
+          0,
+          3
+        ],
+        "you_score": 5,
+        "them_score": 3,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.5,
+        "them_norm": 0.3,
+        "joint_score": 8,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.5,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the two books and the other ball? This way, you get 3 points, and I get 7 points. What do you think?\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but since the books are worthpoints to me, I would prefer to get the hat and both balls. This way, I get 10 points, and you get. However, I understand that you want to maximize our combined points. How about this compromise: you take the hat and one ball, and I take the two books and the other ball. This way, you get 5 points, and I get 5 points. What do you think?\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          2,
+          0,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I propose you take the 3 hats since they are worthpoints to me, and I'll take the 3 books and the ball. This way, I get 10 points. What do you think?\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but since hats are worth more to you, it might be better to give you at least some hats. How about this: you take 2 hats and"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's adjust that. If you take 2 hats, I'll take the 3 books and the ball. This way, you get some value from the hats, and I still maximize my points. What do you think?\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's make sure we both agree on the final deal. If you take 2 hats, I'll take the 3 books and the ball. This way, you get 4 points from the hats, and I get 4 points from the books and the ball. \n\nHere's my final proposal:\n<deal>{\"book\": 3, \"hat\": 1, \"ball\": 1}</deal>\n\nPlease confirm if this works for you."
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          3,
+          0,
+          1
+        ],
+        "them_take": [
+          3,
+          1,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I propose you take both hats since they are worthpoints to me, and I'll take the book and both balls. This way, I get 10 points, and you get 0 points from the hats but potentially some value from the book and balls. What do you think?\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's try to find a more balanced deal that benefits both of us. Since the hats are worth 2 points each to you andpoints to me, it makes sense for you to take them. However, I should get something valuable as well. How about this: you take the two hats and one ball, and I take the book and the other ball? This way, you get 7 points (2 from hats and 3 from the ball), and I get 3 points (3 from the ball). What do you think about this proposal?\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          0,
+          2
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ]
+      },
+      "num_turns": 9,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given the high value of the ball, I propose you take the two hats and the book, while I take the ball. This way, I get 6 points, and you get 3 points. What do you think?\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but since the hats have no value to me, I would prefer to take the book and leave the hats for you. This way, I get 10 points, and you get 0 points from the hats but still get the ball, which is better than nothing.\n\nHow about this:\n- You take the book ("
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your perspective, but if you take the book and all the hats, you'll end up with 4 points, and I'll get 6 points from the ball. This seems more balanced and fair given the values we've assigned to the items.\n\nLet's try this:\n- You take the book and one hat (1 point + 1 point ="
+        },
+        {
+          "speaker": "them",
+          "text": "I see where you're coming from, but since the hats have no value to me, I would prefer to maximize my points by taking the book. The ball has no value to me either, so I don't gain anything from it. \n\nLet's finalize the deal with me taking the book and you taking the hats and the ball. This way, I get 10 points, and you get 1 point from the ball.\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "I see your point, but taking the book and leaving me with no valuable items doesn't seem fair given the values we've assigned. Let's aim for a more balanced deal.\n\nHow about this:\n- You take the book (1 point) and one hat (1 point) ="
+        },
+        {
+          "speaker": "them",
+          "text": "I understand your perspective, but since the hats have no value to me, taking the book is the best option for maximizing my points. The ball also has no value to me, so I don't gain anything from it. \n\nLet's finalize the deal with me taking the book and you taking the hats and the ball. This way, I get 10 points, and you get 1 point from the ball.\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "I understand your position, but let's try to find a more balanced deal that respects the values we've assigned to the items. If you take the book and one hat, you get 2 points, and I get 4 points from the ball and two hats. This way, we both get some value.\n\nLet's try this:\n- You take the book and one hat (1 point + 1 point ="
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate your effort to find a balanced deal, but since the hats have no value to me, taking the book is the best option for maximizing my points. The ball also has no value to me, so I don't gain anything from it.\n\nLet's finalize the deal with me taking the book and you taking the hats and the ball. This way, I get 10 points, and you get 1 point from the ball.\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Understood. Since the hats have no value to you and the ball has no value to you either, taking the book is indeed the best option for you to maximize your points.\n\nLet's finalize the deal with you taking the book and me taking the hats and the ball.\n\n<deal>{\"book\": 0, \"hat\": 3, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          3,
+          1
+        ],
+        "them_take": [
+          1,
+          0,
+          0
+        ],
+        "you_score": 9,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.9,
+        "them_norm": 1.0,
+        "joint_score": 19,
+        "pareto_optimal": true,
+        "max_joint": 19,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that maximizes our points. How about I take the hat and one book, and you take the other two books and the ball? This way, I get 5 points (3 from the hat and 2 from the book), and you get 5 points (4 from the books and 1 from the ball).\n\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your proposal. However, I believe we can do better for you. Since the books are worth 0 points to you, I propose you take the hat and the ball, and I take the three books. This way, you get 10 points (8 from the hat and 2 from the ball), and I get 0 points, but at least we have a deal.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          1,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I think it makes sense to focus on the balls since they have the highest value. How about I take both balls and you get both hats? This way, I get 8 points and you get 2 points. What do you think?\n\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's make sure we both agree on the division before finalizing. You're suggesting I get both hats (0 points for me) and you get both balls (8 points for you). That leaves the book unassigned. How about we also decide on the book to avoid any confusion?\n\nLet's finalize the deal with the book included. How about this: you take both balls (8 points) and the book (2 points), and I take both hats (0 points)? This way, you get 1points and I get 0 points. Does this work for you?\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          0,
+          2
+        ],
+        "them_take": [
+          1,
+          0,
+          2
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I think it would be beneficial to prioritize the hat and the ball. How about this: I take the hat and the ball, and you get all three books? This way, I get 7 points, and you get 3 points. What do you think?\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's make sure we both agree on the division before finalizing. You're suggesting I get all three books and you get the hat and the ball. This would give you 7 points and me 3 points. Does that sound fair to you, or do you want to negotiate further?\n\nLet me know your thoughts before we finalize the deal."
+        },
+        {
+          "speaker": "you",
+          "text": "Your restatement is correct. I'm suggesting you get all three books and I get the hat and the ball, which would give you 3 points and me 7 points. This division maximizes my points while still giving you something. If this sounds fair to you, we can finalize the deal. Otherwise, let me know if you have a different proposal.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"book\": 3, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          3,
+          0,
+          0
+        ],
+        "you_score": 7,
+        "them_score": 3,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.3,
+        "joint_score": 10,
+        "pareto_optimal": false,
+        "max_joint": 14,
+        "joint_efficiency": 0.7142857142857143,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          1,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          4,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would propose you take the hat since it has no value to me, and I take both balls and one book. This way, I maximize my points. Here's the proposed split:\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's make sure we both agree on the division before finalizing. You're proposing I take the hat (0 points for me) and you take both balls (6 points for you) and one book (0 points for you). This would give you 6 points and me 0 points. \n\nLet's confirm this is what you want and that I should take the hat and you take the two balls and one book. If that's correct, I'll finalize the deal.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "incomplete",
+        "you_take": [
+          1,
+          0,
+          2
+        ],
+        "them_take": [
+          0,
+          1,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          5,
+          0,
+          5
+        ],
+        "them_values": [
+          5,
+          1,
+          2
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I propose you take the 3 hats since they are worthpoints to me, and I'll take the book and the ball. This way, I get 10 points, and you get 0 points from the hats, but you might have higher value for them. What do you think?\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's try to find a more balanced deal. Since the hats are worth 1 point each to you, they might be worth more to me. How about this: you take the book and one hat, and I take the ball and the remaining two hats? This way, you get 6 points (5 from the book and 1 from the hat), and I get 4 points (2 from the ball and 2 from the hats). What do you think about this proposal?\n\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          1,
+          1,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          0,
+          4,
+          2
+        ],
+        "them_values": [
+          2,
+          1,
+          0
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given that books are worthpoints to me, hats are worth 4 points each, and the ball is worth 2 points, I propose you take the"
+        },
+        {
+          "speaker": "them",
+          "text": "It seems there might be a small mistake in your point values for the items. You mentioned that books are worth 2 points each and hats are worth"
+        },
+        {
+          "speaker": "you",
+          "text": "Thank you for the correction. Given that books are worth 0 points each, hats are worth 4 points each, and the ball is worth 2 points, I propose you take the 4 books and the ball, while I take the 2 hats. This way, I get 8 points, and you get 2 points. Here's the deal:\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see. Given your point values, your proposal makes sense for you. However, since hats are worth 4 points each for you, it might be more beneficial for you to take the hats. Let's adjust the deal to maximize your points while ensuring we divide all items.\n\nHow about this:\n- You take the 2 hats (8 points for you).\n- I take the 4 books and the ball (2 points for me).\n\nHere's the deal:\n\n<deal>{\"book\": 4, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          2,
+          0
+        ],
+        "them_take": [
+          4,
+          0,
+          1
+        ],
+        "you_score": 8,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.8,
+        "them_norm": 0.8,
+        "joint_score": 16,
+        "pareto_optimal": false,
+        "max_joint": 18,
+        "joint_efficiency": 0.8888888888888888,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          1,
+          5
+        ],
+        "them_values": [
+          1,
+          2,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I think it would be beneficial to prioritize the ball since it's worth the most points. How about I take the ball and you get the book and all three hats? This way, I get 5 points and you get 5 points as well. What do you think?\n\n<deal>{\"book\": 0, \"hat\": 3, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair split, but let's make sure we both agree on the final deal before we submit it. You get the ball (3 points) and I get the book (1 point) and all three hats (6 points), which totals 7 points for me and 3 points for you. \n\nLet's adjust it slightly to make it more balanced. How about I take the ball (3 points) and you get the book (1 point) and two hats (4 points)? This way, we both get 4 points each.\n\nLet me know if you agree with this split.\n\n<deal>{\"book\": 1, \"hat\": 2, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          3,
+          1
+        ],
+        "them_take": [
+          1,
+          2,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          5
+        ],
+        "them_values": [
+          1,
+          2,
+          4
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given the point values, I propose you take the hat and the ball, while I take the 4 books. This way, you get 6 points (1 for the hat and 5 for the ball), and I get 4 points (1 per book). What do you think?\n\n<deal>{\"book\": 4, \"hat\": 0, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's make sure we both agree on the final division before we submit our deals. You're proposing I take the hat and the ball, which totals 6 points for me, and you take the 4 books, which totals 4 points for you. \n\nLet's confirm:\n- You get 4 books (4 points)\n- I get 1 hat (2 points) and 1 ball (4 points), totaling 6 points\n\nIf this is correct, we can both submit our deals. \n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          4,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          1
+        ],
+        "you_score": 4,
+        "them_score": 6,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.4,
+        "them_norm": 0.6,
+        "joint_score": 10,
+        "pareto_optimal": false,
+        "max_joint": 11,
+        "joint_efficiency": 0.9090909090909091,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          2,
+          1
+        ],
+        "you_values": [
+          2,
+          2,
+          2
+        ],
+        "them_values": [
+          0,
+          5,
+          0
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by splitting the items evenly. How about you take one book and one hat, and I'll take the other book, the other hat, and the ball? This way, we both get 6 points.\n\n<deal>{\"book\": 1, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but given my values, I would prefer to get both hats since they are the only items with points for me. How about this: you take both books and the ball, and I take both hats. This way, I get 10 points and you get 0 points, but it's better than a failed deal.\n\nLet me know if you agree or if you have a better proposal.\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          1,
+          1,
+          1
+        ],
+        "them_take": [
+          0,
+          2,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          2,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          6
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I believe it would be most beneficial for me to take the ball and one of the books. Here's my proposal:\n- I take 1 ball (6 points) and 1 book (2 points), totaling 8 points.\n- You take the other book (2 points) and both hats (0 points), totaling 2 points.\nWhat do you think? Let me know if you have any adjustments or if you agree.\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Your proposal seems fair based on the points you've assigned, but let's make sure we both agree on the distribution to avoid any misunderstandings. Here's a quick summary of your proposal:\n\n- You take 1 book (2 points) and 1 ball (2 points), totaling"
+        },
+        {
+          "speaker": "you",
+          "text": "It looks like there was a small mistake in your summary of my proposal. Let me clarify:\n\n- I take 1 book (2 points) and 1 ball (6 points), totaling 8 points.\n- You take the other book (2 points) and both hats (0 points), totaling"
+        },
+        {
+          "speaker": "them",
+          "text": "Ah, I see the mistake now. Let's correct that and ensure we both understand the proposal clearly:\n\n- You take 1 book (2 points) and 1 ball (2 points), totaling"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's correct that and ensure we both understand the proposal clearly:\n\n- You take 1 book (2 points) and 1 ball (6 points), totaling"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's clarify the proposal:\n\n- You take 1 book (2 points) and 1 ball (2 points), totaling"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's clarify the proposal:\n\n- You take 1 book (2 points) and 1 ball (6 points), totaling"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's clarify the proposal:\n\n- You take 1 book (2 points) and 1 ball (2 points), totaling"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's clarify the proposal:\n\n- You take 1 book (2 points) and 1 ball (6 points), totaling"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's clarify the proposal:\n\n- You take 1 book (2 points) and 1 ball (2 points), totaling"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's clarify the proposal:\n\n- You take 1 book (2 points) and 1 ball (6 points), totaling"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's clarify the proposal:\n\n- You take 1 book (2 points) and 1 ball (2 points), totaling"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          4
+        ],
+        "you_values": [
+          1,
+          8,
+          0
+        ],
+        "them_values": [
+          1,
+          0,
+          2
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my values, the hat is the most valuable item for me. How about I take both hats and you get all the books and balls? This way, I get 8 points, and you get 2 points. What do you think?\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but the hat is worthpoints to me, so it doesn't make sense for you to take it. Let's try to maximize the points for both of us. How about this: you take both books and two balls, and I take the other two balls. This way, you get 6 points (2 books + 4 points from 2 balls), and I get 4 points (4 points from 2 balls). What do you think about this deal?\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          2,
+          0
+        ],
+        "them_take": [
+          2,
+          0,
+          2
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          1
+        ],
+        "them_values": [
+          9,
+          1,
+          0
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's start by dividing the items in a way that maximizes our points. How about you take the book (3 points) and the hat (4 points), and I take all three balls (3 points)? This way, you get 7 points, and I get 3 points. What do you think?\n\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 3}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but given my values, the book is worth"
+        },
+        {
+          "speaker": "you",
+          "text": "Ah, I see. Let's adjust the proposal based on the understanding that the book might be more valuable to you. How about this: you take the book (3 points) and two balls (2 points), and I take the hat (4 points) and one ball (1 point)? This way, you get 5 points, and I get 5 points. What do you think?\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds fair and balanced given our values. I'll take the book and two balls.\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          1,
+          0,
+          2
+        ],
+        "you_score": 5,
+        "them_score": 9,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.5,
+        "them_norm": 0.9,
+        "joint_score": 14,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.875,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          1,
+          1,
+          2
+        ],
+        "them_values": [
+          1,
+          7,
+          0
+        ]
+      },
+      "num_turns": 5,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, I'll take the hat since it's worth 7 points for you. That leaves us with"
+        },
+        {
+          "speaker": "you",
+          "text": "It seems there might be a misunderstanding. The hat is worth"
+        },
+        {
+          "speaker": "them",
+          "text": "Ah, I see. The hat is worth 7 points for you, so it makes sense for you to take it. Let's finalize the deal then. You take the hat, and I'll take the books and balls. \n\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it! I'll take the hat, and you'll take the books and balls. Let's finalize the deal.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          1,
+          0
+        ],
+        "them_take": [
+          3,
+          0,
+          3
+        ],
+        "you_score": 1,
+        "them_score": 3,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.1,
+        "them_norm": 0.3,
+        "joint_score": 4,
+        "pareto_optimal": false,
+        "max_joint": 16,
+        "joint_efficiency": 0.25,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          4,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          0
+        ],
+        "them_values": [
+          6,
+          0,
+          2
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would like to propose that I take the book and all the hats, as they provide the most points for me. This would leave you with the two balls. Here's the proposed split:\n<deal>{\"book\": 1, \"hat\": 4, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but taking all the hats doesn't seem to benefit you since they have 0 points. How about we split it differently? I can take the two balls, and you can take the book. This way, you get 6 points from the book, and I get 4 points from the balls. Here's my proposal:\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 2}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          4,
+          0
+        ],
+        "them_take": [
+          0,
+          0,
+          2
+        ],
+        "you_score": 10,
+        "them_score": 4,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 1.0,
+        "them_norm": 0.4,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 18,
+        "joint_efficiency": 0.7777777777777778,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          3,
+          1
+        ],
+        "you_values": [
+          0,
+          1,
+          7
+        ],
+        "them_values": [
+          4,
+          0,
+          2
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I believe the ball is the most valuable item. How about I take both books and the ball, and you get the three hats? This way, I get 7 points, and you get 3 points. What do you think?\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but since hats are worth 0 points to you, I would prefer to get at least one hat to balance the deal a bit more in my favor. How about this: you take both books and one hat, and I take the ball and two hats? This way, you get 9 points, and I get 2 points. What do you think?\n\n<deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          2,
+          1,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          1,
+          1,
+          2
+        ],
+        "them_values": [
+          3,
+          1,
+          0
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 +"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 + 0 ="
+        },
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 +"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 + 0 ="
+        },
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 +"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 + 0 ="
+        },
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 +"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 + 0 ="
+        },
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 +"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 + 0 ="
+        },
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 +"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's aim for a fair split that maximizes our points. How about you take the hat and one ball, and I'll take the 3 books and the other 2 balls? This way, you get 1 + 0 ="
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          1,
+          1
+        ],
+        "you_values": [
+          0,
+          4,
+          6
+        ],
+        "them_values": [
+          1,
+          3,
+          3
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I propose you take the 4 books (0 points for me), and I take the hat (4 points) and the ball (6 points), totaling 10 points for me. Let me know if you agree or if you have a better proposal.\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but I think we can do better. If you take the hat and the ball, you get 6 points, but you're leaving me with 0 points. Let's try to split the points more evenly. How about this: you take 2 books (2 points) and the hat (3 points), and I take the other 2 books (2 points) and the ball (3 points)? This way, we both get 5 points each.\n\nLet me know what you think.\n<deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          2,
+          1,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          1,
+          4
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would propose you take the two hats since they have no value to me, and I'll take the book and both balls. This way, I get 10 points and you get 0, but let's see if we can find a more balanced split that works for both of us. \n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's try to find a more balanced split. Since the hats have no value to you, I can take them. However, I think we can do better than you getting all the balls. How about this: you take the book and one ball, and I take the two hats and the other ball. This way, you get"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise. With your proposal, I would get 6 points (2 points for the book and 4 points for the ball), and you would get 4 points (4 points for the ball). This way, we both get some value from the items.\n\nLet's finalize this deal:\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Sounds good to me! Here's my final deal:\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          2,
+          1
+        ],
+        "you_score": 6,
+        "them_score": 6,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.6,
+        "joint_score": 12,
+        "pareto_optimal": true,
+        "max_joint": 12,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          1,
+          6
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I think it would be beneficial to prioritize the hat and the ball. How about this: I take the hat and the ball, and you get all three books? This way, I get 7 points, and you get 3 points. What do you think?\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair division based on your point values. I'll take the three books. Let's finalize the deal.\n\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          1,
+          1
+        ],
+        "them_take": [
+          3,
+          0,
+          0
+        ],
+        "you_score": 7,
+        "them_score": 3,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.3,
+        "joint_score": 10,
+        "pareto_optimal": false,
+        "max_joint": 13,
+        "joint_efficiency": 0.7692307692307693,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          2,
+          2
+        ],
+        "you_values": [
+          3,
+          0,
+          2
+        ],
+        "them_values": [
+          1,
+          2,
+          2
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I propose you take both hats since they are worthpoints to me, and I'll take both books and both balls. This way, I get 10 points, and you get 0 points from the hats, but you can still maximize your points from the books and balls if you prefer those.\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's try to find a more balanced deal. Since the hats are worth 2 points each to you and only 2 points each to me, it makes sense for you to take them. However, I can take one hat and one ball, which will give me 4 points, and you can take the other hat, the two books, and the other ball, which will give you 8 points. This way, we both get some points.\n\nLet's finalize this deal:\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          2,
+          0,
+          2
+        ],
+        "them_take": [
+          2,
+          0,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          2,
+          1
+        ],
+        "you_values": [
+          2,
+          1,
+          4
+        ],
+        "them_values": [
+          0,
+          1,
+          8
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I think it would be beneficial to prioritize the ball since it's worth the most points. How about I take the ball and one book, and you get the other book and both hats? This way, I get 6 points and you get 4 points. What do you think?\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I see your point, but let's coordinate to ensure we both agree on the division before finalizing. You suggested you take the ball and one book, and I take the other book and both hats. This would give you 8 points (1 from the book and 8 from the ball) and me 2 points (1 from each hat). \n\nLet's confirm this division before we finalize it.\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "incomplete",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          2,
+          0
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    }
+  ]
+}
