@@ -717,12 +717,14 @@ async def main(
     loss_fn: str = "ppo",
     eval_before_train: bool = False,
     results_out: str = None,
+    save_state_every: int = 10,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
     """
     set_seed(seed)
     eval_entries: list[dict] = []  # populated by _run_eval below; sourced for results_out
+    state_checkpoints: list[dict] = []  # path + step of every save_state call
 
     async def _run_eval(eval_sampling_client, step_index: int) -> float | None:
         if not eval_dataset:
@@ -847,6 +849,8 @@ async def main(
 
     # Pre-train eval: snapshot the base (untrained) LoRA weights and evaluate
     # on the held-out split so we have a baseline for the post-train delta.
+    pre_sampling_path: str | None = None
+    final_sampling_path: str | None = None
     if eval_before_train and eval_dataset:
         pre_sampling_path = training_client.save_weights_for_sampler(name="step_pretrain").result().path
         pre_sampling_client = service_client.create_sampling_client(model_path=pre_sampling_path)
@@ -870,10 +874,14 @@ async def main(
         # Periodic state checkpoint for resumability. Persists LoRA adapter +
         # Adam moments + step counter so a transient crash (Tinker 402, 5xx,
         # runner timeout) doesn't lose the hours of sampling that preceded the
-        # last gradient step. Cadence: every 10 steps.
-        if step > 0 and step % 10 == 0:
+        # last gradient step. Cadence is --save-state-every; 0 disables.
+        if save_state_every > 0 and step > 0 and step % save_state_every == 0:
             try:
-                training_client.save_state(name=f"state_{step:06d}")
+                state_path = training_client.save_state(
+                    name=f"state_{step:06d}"
+                ).result().path
+                state_checkpoints.append({"step": step, "path": state_path})
+                logger.info(f"Saved training state at step {step}: {state_path}")
             except Exception as e:
                 logger.warning(f"save_state at step {step} failed: {e}")
 
@@ -1032,6 +1040,15 @@ async def main(
             "entries": eval_entries,
             "wandb_url": wandb_url,
             "wandb_run_name": wandb_name,
+            # Tinker checkpoint paths — feed any of these to
+            # `service_client.create_sampling_client(model_path=...)` for
+            # inference, or to `tinker checkpoint push-hf <path>` to export the
+            # LoRA adapter to HuggingFace Hub as a PEFT adapter.
+            "checkpoints": {
+                "step_pretrain": pre_sampling_path,
+                "step_final": final_sampling_path,
+                "states": state_checkpoints,
+            },
         }
         os.makedirs(os.path.dirname(results_out) or ".", exist_ok=True)
         with open(results_out, "w") as fh:
@@ -1095,6 +1112,12 @@ if __name__ == "__main__":
         default=None,
         help="Path to write a JSON summary of pre/post held-out pass rates. Consumed by the auto-train Tinker launcher.",
     )
+    parser.add_argument(
+        "--save-state-every",
+        type=int,
+        default=10,
+        help="Save a full training state checkpoint every N steps (default 10). 0 disables.",
+    )
 
     args = parser.parse_args()
 
@@ -1128,5 +1151,6 @@ if __name__ == "__main__":
             loss_fn=args.loss_fn,
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
+            save_state_every=args.save_state_every,
         )
     )
