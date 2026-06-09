@@ -871,20 +871,6 @@ async def main(
         )
         last_sampling_client = sampling_client
 
-        # Periodic state checkpoint for resumability. Persists LoRA adapter +
-        # Adam moments + step counter so a transient crash (Tinker 402, 5xx,
-        # runner timeout) doesn't lose the hours of sampling that preceded the
-        # last gradient step. Cadence is --save-state-every; 0 disables.
-        if save_state_every > 0 and step > 0 and step % save_state_every == 0:
-            try:
-                state_path = training_client.save_state(
-                    name=f"state_{step:06d}"
-                ).result().path
-                state_checkpoints.append({"step": step, "path": state_path})
-                logger.info(f"Saved training state at step {step}: {state_path}")
-            except Exception as e:
-                logger.warning(f"save_state at step {step} failed: {e}")
-
         # Get batch
         try:
             batch = next(train_iterator)
@@ -1004,6 +990,27 @@ async def main(
                 "time": f"{metrics['time/total']:.1f}s",
             }
         )
+
+        # Periodic state checkpoint for resumability. Persists LoRA adapter +
+        # Adam moments + step counter so a transient crash (Tinker 402, infra
+        # 5xx, runner timeout) doesn't lose the hours of sampling that
+        # preceded the last gradient step. Fires AFTER optim_step has landed,
+        # so the saved state reflects the policy resulting from this step's
+        # gradient update. (step+1) % N == 0 means: after every N steps of
+        # progress. Save again at the very last step regardless of cadence
+        # so a completed run always has at least one resume point.
+        is_last_step = step == max_steps - 1
+        if save_state_every > 0 and ((step + 1) % save_state_every == 0 or is_last_step):
+            try:
+                state_path = training_client.save_state(
+                    name=f"state_{step + 1:06d}"
+                ).result().path
+                state_checkpoints.append({"step": step + 1, "path": state_path})
+                logger.info(
+                    f"Saved training state after step {step}: {state_path}"
+                )
+            except Exception as e:
+                logger.warning(f"save_state after step {step} failed: {e}")
 
         # Periodic eval (every eval_every steps).
         if eval_every > 0 and eval_dataset and step % eval_every == 0:
