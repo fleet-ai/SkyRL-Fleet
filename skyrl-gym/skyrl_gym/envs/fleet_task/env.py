@@ -83,6 +83,32 @@ def clear_caches():
     _TASK_CACHE = {}
 
 
+def tool_result_to_message_content(tool_result: Any) -> Any:
+    """Normalize a Fleet tool_result into a user-message `content` value.
+
+    Returns one of:
+      - the input list unchanged, if it is a non-empty list of OpenAI
+        content blocks (each element a dict carrying a "type" key —
+        text / image_url / etc.). These ride through `apply_chat_template`
+        as native multimodal content.
+      - a string body, for every other shape (str / int / dict / plain
+        list[dict] / list[str] / empty list / mixed list). Sending those
+        raw as `content` crashes `apply_chat_template` with "Input is
+        not valid. Should be a string, a list/tuple of strings or a
+        list/tuple of integers."
+    """
+    if isinstance(tool_result, list) and tool_result and all(
+        isinstance(b, dict) and "type" in b for b in tool_result
+    ):
+        return tool_result
+    body = (
+        json.dumps(tool_result, indent=2)
+        if isinstance(tool_result, (list, dict))
+        else tool_result
+    )
+    return f"Tool result:\n{body}"
+
+
 class FleetTaskEnv(BaseTextEnv):
     """SkyRL environment for Fleet-hosted tasks.
 
@@ -685,48 +711,29 @@ class FleetTaskEnv(BaseTextEnv):
             self._tool_error_messages.append(str(error)[:500])
             obs_content = f"Error: {error}"
         elif tool_result:
-            # A list result can be one of two shapes:
-            #   (a) OpenAI multimodal content blocks — list of dicts each with a
-            #       "type" key ("text" / "image_url" / etc.). Goes through the
-            #       VL message path so apply_chat_template handles it natively.
-            #   (b) A plain list of records returned by a Fleet tool call (e.g.
-            #       a list of emails, calendars, atlas teams). These must be
-            #       JSON-serialized into a text message — feeding them through
-            #       the multimodal path causes apply_chat_template to error
-            #       with "Input [...] is not valid. Should be a string,
-            #       a list/tuple of strings or a list/tuple of integers."
-            if isinstance(tool_result, list) and tool_result and all(
-                isinstance(b, dict) and "type" in b for b in tool_result
-            ):
-                # (a) Multimodal: return as structured content for VL models
-                new_obs = {"role": "user", "content": tool_result}
+            content = tool_result_to_message_content(tool_result)
+            if isinstance(content, list):
+                # Multimodal content blocks — pass through to the chat template
+                # unchanged so VL models render image_url / audio / etc.
+                new_obs = {"role": "user", "content": content}
                 self.chat_history.append(new_obs)
                 if self.context_manager:
                     self.context_manager.track_message(new_obs)
-
-                step_time = time.time() - step_start
-                metadata = {
-                    "task_key": self.task_key,
-                    "turn": self.turns,
-                    "tool_call": tool_call,
-                    "error": None,
-                    "done_reason": "agent_done" if agent_done else None,
-                    "step_time": step_time,
-                    "mcp_time": mcp_time,
-                }
                 return BaseTextEnvStepOutput(
                     observations=[new_obs],
                     reward=reward,
                     done=episode_done,
-                    metadata=metadata,
+                    metadata={
+                        "task_key": self.task_key,
+                        "turn": self.turns,
+                        "tool_call": tool_call,
+                        "error": None,
+                        "done_reason": "agent_done" if agent_done else None,
+                        "step_time": time.time() - step_start,
+                        "mcp_time": mcp_time,
+                    },
                 )
-            elif isinstance(tool_result, (list, dict)):
-                # (b) Plain structured tool result — render as JSON text.
-                obs_content = (
-                    f"Tool result:\n{json.dumps(tool_result, indent=2)}"
-                )
-            else:
-                obs_content = f"Tool result:\n{tool_result}"
+            obs_content = content
         elif agent_done:
             obs_content = "Task marked as complete."
         elif not tool_call:
