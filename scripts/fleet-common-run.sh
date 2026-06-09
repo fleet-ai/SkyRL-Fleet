@@ -147,6 +147,11 @@ export RAY_TMPDIR="$RAY_TMPDIR"
 # mismatches (e.g., 0.6.12+cu129 vs 0.6.11.post2). The kernels are compatible.
 # Must be set before Ray workers start (they don't inherit run script env).
 export FLASHINFER_DISABLE_VERSION_CHECK=1
+# Disable DeepGemm JIT. Multi-process race condition during simultaneous
+# kernel compilation causes "runtime != nullptr" assertion failure when
+# multiple TP workers try to compile the same kernel concurrently.
+# See: https://github.com/deepseek-ai/DeepGEMM/issues/301
+export VLLM_USE_DEEP_GEMM=0
 # Use NFS cache if pre-downloaded by setup, else fall back to local /tmp.
 if [ -d "/workspace/hf_cache/hub" ]; then
   export HF_HOME="/workspace/hf_cache"
