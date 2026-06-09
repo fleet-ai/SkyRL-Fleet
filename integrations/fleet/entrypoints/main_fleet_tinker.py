@@ -859,10 +859,23 @@ async def main(
         step_start = time.time()
         metrics = {"step": step, "epoch": step // steps_per_epoch}
 
-        # Get sampler weights for rollout inference
-        sampling_path = training_client.save_weights_for_sampler(name=f"step_{step:06d}").result().path
-        sampling_client = service_client.create_sampling_client(model_path=sampling_path)
+        # On-policy sampler for this step's rollouts. Use the ephemeral variant
+        # so we don't persist an 8.7 GB named checkpoint at every step — only
+        # step_pretrain and step_final are durable (eval needs to replay them).
+        sampling_client = (
+            await training_client.save_weights_and_get_sampling_client_async()
+        )
         last_sampling_client = sampling_client
+
+        # Periodic state checkpoint for resumability. Persists LoRA adapter +
+        # Adam moments + step counter so a transient crash (Tinker 402, 5xx,
+        # runner timeout) doesn't lose the hours of sampling that preceded the
+        # last gradient step. Cadence: every 10 steps.
+        if step > 0 and step % 10 == 0:
+            try:
+                training_client.save_state(name=f"state_{step:06d}")
+            except Exception as e:
+                logger.warning(f"save_state at step {step} failed: {e}")
 
         # Get batch
         try:
