@@ -54,6 +54,8 @@ from integrations.fleet.trace_judge import (
     calibrate_batch,
     direct_judge,
     divergence_judge,
+    math_divergence_judge,
+    parse_math_steps,
     parse_steps,
 )
 
@@ -82,11 +84,30 @@ def load_traces(path: str) -> List[Dict[str, Any]]:
     return records
 
 
+def _task_key(rec: Dict[str, Any]) -> str:
+    """Identity of the task a rollout belongs to.
+
+    Fleet/Supabase rollouts key on ``base_task_key`` (a stable per-task id; the
+    per-rollout ``eval_task_id``/``session_id`` are unique and must NOT be used
+    for grouping). DAPO-math rollouts key on ``problem_index``. Falls back to
+    ``task_key`` for legacy/synthetic traces.
+    """
+    if rec.get("problem_index") is not None and not rec.get("task_key"):
+        return f"problem_{rec['problem_index']}"
+    return rec.get("task_key") or rec.get("base_task_key") or rec.get("eval_task_id") or "unknown"
+
+
+def _reward(rec: Dict[str, Any]) -> float:
+    """Terminal reward, coercing missing/None to 0.0."""
+    r = rec.get("reward")
+    return float(r) if isinstance(r, (int, float)) else 0.0
+
+
 def group_by_task(records: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    """Group trace records by task_key."""
+    """Group trace records by task identity."""
     groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for rec in records:
-        groups[rec["task_key"]].append(rec)
+        groups[_task_key(rec)].append(rec)
     return dict(groups)
 
 
@@ -95,10 +116,25 @@ def group_by_task(records: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any
 # ---------------------------------------------------------------------------
 
 
+def _fleet_step_parser(rec: Dict[str, Any]) -> List["TraceStep"]:
+    return parse_steps(rec["chat_history"])
+
+
+def _math_step_parser(rec: Dict[str, Any]) -> List["TraceStep"]:
+    return parse_math_steps(rec.get("completion") or "")
+
+
 def run_divergence_analysis(
     task_groups: Dict[str, List[Dict[str, Any]]],
+    step_parser=_fleet_step_parser,
+    divergence_fn=divergence_judge,
 ) -> Dict[str, List[StepScore]]:
-    """Run divergence judge for all tasks that have ≥2 rollouts."""
+    """Run divergence judge for all tasks that have ≥2 rollouts.
+
+    ``step_parser`` maps a record to its list of TraceSteps and ``divergence_fn``
+    scores a list of step-lists; the defaults handle Fleet tool-call traces, and
+    the math variants handle chunked single-turn math completions.
+    """
     task_to_scores: Dict[str, List[StepScore]] = {}
     skipped = 0
 
@@ -106,8 +142,8 @@ def run_divergence_analysis(
         if len(records) < 2:
             skipped += 1
             continue
-        all_steps = [parse_steps(r["chat_history"]) for r in records]
-        scores = divergence_judge(all_steps)
+        all_steps = [step_parser(r) for r in records]
+        scores = divergence_fn(all_steps)
         task_to_scores[task_key] = scores
 
     if skipped:
@@ -116,11 +152,26 @@ def run_divergence_analysis(
     return task_to_scores
 
 
+def _fleet_prompt(rec: Dict[str, Any]) -> str:
+    hist = rec.get("chat_history", [])
+    for msg in hist:
+        if msg.get("role") == "user":
+            content = msg.get("content")
+            return content if isinstance(content, str) else str(content)[:500]
+    return ""
+
+
+def _math_prompt(rec: Dict[str, Any]) -> str:
+    return rec.get("raw_problem") or _fleet_prompt(rec)
+
+
 def run_direct_analysis(
     task_groups: Dict[str, List[Dict[str, Any]]],
     model: str,
     base_url: Optional[str],
     max_tasks: int = 50,
+    step_parser=_fleet_step_parser,
+    prompt_fn=_fleet_prompt,
 ) -> Dict[str, List[StepScore]]:
     """Run direct LLM judge for all tasks (first rollout per task only)."""
     try:
@@ -129,27 +180,29 @@ def run_direct_analysis(
         logger.error("openai package not installed. Run: pip install openai")
         return {}
 
-    api_key = os.environ.get("OPENAI_API_KEY")
+    # Prefer OPENROUTER_API_KEY when pointed at OpenRouter, else OPENAI_API_KEY.
+    is_openrouter = bool(base_url) and "openrouter" in base_url
+    api_key = (
+        (os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+        if is_openrouter
+        else (os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENROUTER_API_KEY"))
+    )
     if not api_key:
-        logger.error("OPENAI_API_KEY not set")
+        logger.error("No API key set (OPENAI_API_KEY / OPENROUTER_API_KEY)")
         return {}
 
     client = OpenAI(api_key=api_key, base_url=base_url)
     task_to_scores: Dict[str, List[StepScore]] = {}
-    tasks = list(task_groups.items())[:max_tasks]
+    # Restrict to tasks with >=2 rollouts so reward variance (and thus the
+    # calibration Spearman) is meaningful and comparable to the divergence judge.
+    eligible = [(k, v) for k, v in task_groups.items() if len(v) >= 2]
+    tasks = eligible[:max_tasks]
 
     logger.info(f"Direct judge: scoring {len(tasks)} tasks with {model}")
     for i, (task_key, records) in enumerate(tasks):
         rec = records[0]  # first rollout per task
-        steps = parse_steps(rec["chat_history"])
-        # Extract task prompt from chat_history (second message = initial user msg)
-        task_prompt = ""
-        hist = rec["chat_history"]
-        for msg in hist:
-            if msg["role"] == "user":
-                content = msg["content"]
-                task_prompt = content if isinstance(content, str) else str(content)[:500]
-                break
+        steps = step_parser(rec)
+        task_prompt = prompt_fn(rec)
 
         scores = direct_judge(steps, task_prompt, client=client, model=model)
         task_to_scores[task_key] = scores
@@ -196,6 +249,50 @@ def print_top_findings(
         print(f"  Top interesting steps:")
         for s in top:
             print(f"    turn {s.turn_idx:>2d}  score={s.score:.3f}  {s.rationale[:80]}")
+
+
+def write_calibration_csv(
+    csv_path: str,
+    div_scores: Dict[str, List[StepScore]],
+    direct_scores: Dict[str, List[StepScore]],
+    task_to_rewards: Dict[str, List[float]],
+    task_groups: Dict[str, List[Dict[str, Any]]],
+) -> None:
+    """Write the per-task calibration table.
+
+    Columns: task_key, env_key, n_rollouts, reward_variance, mean_reward,
+             max_div_score, max_llm_score.
+    """
+    import csv
+    import statistics
+
+    expanded = os.path.expanduser(csv_path)
+    os.makedirs(os.path.dirname(expanded) or ".", exist_ok=True)
+
+    # Union of tasks scored by either judge.
+    task_keys = sorted(set(div_scores) | set(direct_scores))
+    with open(expanded, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "task_key", "env_key", "n_rollouts", "reward_variance",
+            "mean_reward", "max_div_score", "max_llm_score",
+        ])
+        for tk in task_keys:
+            rewards = task_to_rewards.get(tk, [])
+            env_key = task_groups.get(tk, [{}])[0].get("env_key", "?")
+            reward_var = statistics.variance(rewards) if len(rewards) >= 2 else 0.0
+            mean_reward = statistics.mean(rewards) if rewards else 0.0
+            div = div_scores.get(tk)
+            llm = direct_scores.get(tk)
+            max_div = max((s.score for s in div), default="") if div else ""
+            max_llm = max((s.score for s in llm), default="") if llm else ""
+            w.writerow([
+                tk, env_key, len(rewards), round(reward_var, 4),
+                round(mean_reward, 4),
+                round(max_div, 4) if max_div != "" else "",
+                round(max_llm, 4) if max_llm != "" else "",
+            ])
+    logger.info(f"Calibration table written to {expanded} ({len(task_keys)} tasks)")
 
 
 def write_results(
@@ -277,7 +374,7 @@ def run_smoke_test() -> None:
 
     task_groups = group_by_task(records)
     task_to_rewards = {
-        k: [r["reward"] for r in v] for k, v in task_groups.items()
+        k: [_reward(r) for r in v] for k, v in task_groups.items()
     }
 
     # Divergence judge
@@ -311,6 +408,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Trace interestingness analysis")
     parser.add_argument("--traces", help="Path to JSONL trace file")
     parser.add_argument(
+        "--format",
+        choices=["fleet", "dapo-math"],
+        default="fleet",
+        help=(
+            "Trace format. 'fleet': tool-call chat_history (default). "
+            "'dapo-math': single-turn math completions, chunked into reasoning "
+            "steps with text-content (token-Jaccard) divergence."
+        ),
+    )
+    parser.add_argument(
         "--method",
         choices=["divergence", "direct", "both"],
         default="divergence",
@@ -338,6 +445,11 @@ def main() -> None:
         help="Output path for results JSON",
     )
     parser.add_argument(
+        "--csv",
+        default=None,
+        help="Optional path to write the per-task calibration table as CSV",
+    )
+    parser.add_argument(
         "--smoke-test",
         action="store_true",
         help="Run with synthetic traces (no real data or API key needed)",
@@ -354,19 +466,27 @@ def main() -> None:
     records = load_traces(args.traces)
     task_groups = group_by_task(records)
     task_to_rewards = {
-        k: [r["reward"] for r in v] for k, v in task_groups.items()
+        k: [_reward(r) for r in v] for k, v in task_groups.items()
     }
+
+    is_math = args.format == "dapo-math"
+    step_parser = _math_step_parser if is_math else _fleet_step_parser
+    divergence_fn = math_divergence_judge if is_math else divergence_judge
+    prompt_fn = _math_prompt if is_math else _fleet_prompt
 
     logger.info(
         f"Loaded {len(records)} traces across {len(task_groups)} tasks "
-        f"({sum(1 for v in task_groups.values() if len(v) >= 2)} with ≥2 rollouts)"
+        f"({sum(1 for v in task_groups.values() if len(v) >= 2)} with ≥2 rollouts) "
+        f"[format={args.format}]"
     )
 
     div_scores: Dict[str, List[StepScore]] = {}
     direct_scores: Dict[str, List[StepScore]] = {}
 
     if args.method in ("divergence", "both"):
-        div_scores = run_divergence_analysis(task_groups)
+        div_scores = run_divergence_analysis(
+            task_groups, step_parser=step_parser, divergence_fn=divergence_fn
+        )
         div_cal = calibrate_batch(div_scores, task_to_rewards)
         print_top_findings(div_scores, task_to_rewards, task_groups, "divergence")
         print(f"\nAggregate (divergence):")
@@ -381,6 +501,8 @@ def main() -> None:
             model=args.model,
             base_url=args.base_url,
             max_tasks=args.max_tasks,
+            step_parser=step_parser,
+            prompt_fn=prompt_fn,
         )
         if direct_scores:
             dir_cal = calibrate_batch(direct_scores, task_to_rewards)
@@ -404,6 +526,11 @@ def main() -> None:
         divergence_results=_scores_to_dict(div_scores) if div_scores else {},
         direct_results=_scores_to_dict(direct_scores) if direct_scores else None,
     )
+
+    if args.csv:
+        write_calibration_csv(
+            args.csv, div_scores, direct_scores, task_to_rewards, task_groups
+        )
 
 
 if __name__ == "__main__":

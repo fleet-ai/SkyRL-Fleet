@@ -120,6 +120,7 @@ bash scripts/fleet-common-run.sh \
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.kl_loss_coef=0.001 \
   trainer.algorithm.loss_reduction=token_mean \
+  trainer.loss_chunk_size=4096 \
   trainer.policy.model.path="${MODEL_PATH}" \
   trainer.epochs="${NUM_EPOCHS}" \
   trainer.train_batch_size="${TRAIN_BATCH_SIZE}" \

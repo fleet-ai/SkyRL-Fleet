@@ -121,7 +121,7 @@ _TOOL_CALL_RE = re.compile(
 
 
 def _parse_tool_call(content: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
-    """Extract tool name and arguments from an assistant message."""
+    """Extract tool name and arguments from a legacy <tool_call>...</tool_call> message."""
     m = _TOOL_CALL_RE.search(content)
     if not m:
         return None, None
@@ -132,47 +132,105 @@ def _parse_tool_call(content: str) -> Tuple[Optional[str], Optional[Dict[str, An
         return None, None
 
 
+def _parse_native_tool_calls(
+    tool_calls: Any,
+) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]]]:
+    """Extract a canonical (name, args) representation from native OpenAI tool_calls.
+
+    A single assistant turn may issue multiple (parallel) tool calls. We collapse
+    them into:
+      - tool_name: the tool names joined by " + " in call order (captures which
+        tools were chosen — used for name-diversity in divergence_judge).
+      - tool_args: an ordered list of {"name", "arguments"} dicts (JSON-serializable,
+        captures argument values — used for args-diversity in divergence_judge).
+
+    Returns (None, None) if there are no tool calls.
+    """
+    if not tool_calls:
+        return None, None
+
+    names: List[str] = []
+    calls: List[Dict[str, Any]] = []
+    for tc in tool_calls:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function") or {}
+        name = fn.get("name")
+        raw_args = fn.get("arguments")
+        if isinstance(raw_args, str):
+            try:
+                parsed_args = json.loads(raw_args)
+            except (json.JSONDecodeError, TypeError):
+                parsed_args = raw_args
+        else:
+            parsed_args = raw_args
+        if name:
+            names.append(name)
+        calls.append({"name": name, "arguments": parsed_args})
+
+    if not calls:
+        return None, None
+
+    tool_name = " + ".join(names) if names else None
+    return tool_name, calls
+
+
 def parse_steps(chat_history: List[Dict[str, Any]]) -> List[TraceStep]:
     """Parse a chat_history into a list of TraceStep objects.
 
-    Pairs each assistant turn with the immediately following user (observation)
-    turn. The system prompt and initial task message are excluded.
+    One TraceStep is created per assistant turn. Each step's observation is the
+    concatenation of the environment messages that follow it (role "tool" results,
+    and any mid-trajectory "user" follow-ups) until the next assistant turn. The
+    system prompt and the initial task message are excluded.
+
+    Supports two trace formats transparently:
+      1. Native OpenAI tool calling — assistant messages carry a ``tool_calls``
+         list and observations arrive as role "tool" messages. (Fleet / Supabase
+         rollouts.)
+      2. Legacy inline format — tool calls embedded as ``<tool_call>...</tool_call>``
+         in assistant content and observations as role "user" messages. (Smoke test.)
 
     Args:
-        chat_history: List of {"role": ..., "content": ...} dicts from FleetTaskEnv.
+        chat_history: List of {"role": ..., "content": ..., "tool_calls": ...} dicts.
 
     Returns:
         List of TraceStep, one per assistant action.
     """
     steps: List[TraceStep] = []
     turn_idx = 0
+    n = len(chat_history)
 
     i = 0
-    # Skip system + initial user message
-    while i < len(chat_history) and chat_history[i]["role"] in ("system", "user"):
-        if chat_history[i]["role"] == "user" and steps:
-            break  # first user message after an assistant turn — handled below
-        i += 1
-
-    # Now walk assistant → user pairs
-    while i < len(chat_history):
+    while i < n:
         msg = chat_history[i]
-
-        if msg["role"] != "assistant":
+        if msg.get("role") != "assistant":
             i += 1
             continue
 
-        assistant_content = _extract_text(msg["content"])
-        tool_name, tool_args = _parse_tool_call(assistant_content)
+        assistant_content = _extract_text(msg.get("content"))
+
+        # Prefer native tool_calls; fall back to legacy inline <tool_call> parsing.
+        tool_name, tool_args = _parse_native_tool_calls(msg.get("tool_calls"))
+        if tool_name is None:
+            tool_name, tool_args = _parse_tool_call(assistant_content)
+
+        # Gather observation messages until the next assistant turn.
+        j = i + 1
+        obs_parts: List[str] = []
+        while j < n and chat_history[j].get("role") in ("tool", "user"):
+            text = _extract_text(chat_history[j].get("content"))
+            if text:
+                obs_parts.append(text)
+            j += 1
+        obs_content = "\n".join(obs_parts)
+
+        # A turn with no tool call ends the episode (agent stopped calling tools),
+        # as does an explicit done marker.
         is_done = (
-            "<done>" in assistant_content.lower()
+            tool_name is None
+            or "<done>" in assistant_content.lower()
             or "[done]" in assistant_content.lower()
         )
-
-        # Find the next observation (user turn)
-        obs_content = ""
-        if i + 1 < len(chat_history) and chat_history[i + 1]["role"] == "user":
-            obs_content = _extract_text(chat_history[i + 1]["content"])
 
         steps.append(
             TraceStep(
@@ -185,13 +243,15 @@ def parse_steps(chat_history: List[Dict[str, Any]]) -> List[TraceStep]:
             )
         )
         turn_idx += 1
-        i += 2  # skip the observation message we just consumed
+        i = j
 
     return steps
 
 
 def _extract_text(content: Any) -> str:
     """Flatten multimodal content blocks to plain text."""
+    if content is None:
+        return ""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -231,6 +291,37 @@ Respond with a JSON object:
   "rationale": "<one sentence>"
 }
 Do not include any other text."""
+
+_JSON_OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _parse_judge_json(raw: str) -> Dict[str, Any]:
+    """Parse a judge response into a dict, tolerant of markdown fences / prose.
+
+    Models behind OpenAI-compatible endpoints (incl. OpenRouter) sometimes wrap
+    JSON in ```json fences or add leading/trailing prose. Try strict parse first,
+    then strip fences, then fall back to the first {...} object found.
+    """
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        # Drop the opening fence (``` or ```json) and any closing fence.
+        cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+        try:
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    m = _JSON_OBJ_RE.search(cleaned)
+    if m:
+        return json.loads(m.group(0))
+    raise ValueError(f"no JSON object found in judge response: {raw[:120]!r}")
+
 
 _DIRECT_JUDGE_TEMPLATE = """\
 TASK: {task_prompt}
@@ -302,8 +393,8 @@ def direct_judge(
                 temperature=0.0,
                 max_tokens=200,
             )
-            raw = response.choices[0].message.content.strip()
-            obj = json.loads(raw)
+            raw = (response.choices[0].message.content or "").strip()
+            obj = _parse_judge_json(raw)
             score = float(obj.get("score", 0.0))
             score = max(0.0, min(1.0, score))
             rationale = str(obj.get("rationale", ""))
@@ -395,6 +486,148 @@ def divergence_judge(
             ),
         ))
 
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Method 2b: Math reasoning chunking + text-content divergence
+# ---------------------------------------------------------------------------
+#
+# Single-turn math rollouts (e.g. DAPO / AIME completions) have no tool calls,
+# so parse_steps() collapses the whole solution into one step and the tool-call
+# divergence judge has nothing to compare. We instead chunk each completion into
+# reasoning steps (paragraphs) and measure cross-rollout divergence on the chunk
+# *text* via token-set (Jaccard) distance. Aligning by chunk index mirrors the
+# turn-index alignment used by the tool-call divergence judge.
+
+_MATH_CHUNK_SPLIT_RE = re.compile(r"\n\s*\n")
+_MATH_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[^\sA-Za-z0-9]")
+
+
+def chunk_math_completion(completion: str, min_chars: int = 24) -> List[str]:
+    """Split a free-text math solution into reasoning-step chunks.
+
+    Chunks on blank lines (paragraph boundaries — the natural unit for
+    step-by-step math reasoning). Tiny fragments (e.g. a lone ``\\[`` display
+    block shorter than ``min_chars``) are merged into the preceding chunk so a
+    single logical step isn't split across multiple entries.
+
+    Args:
+        completion: The raw assistant completion text.
+        min_chars: Fragments shorter than this are merged into the prior chunk.
+
+    Returns:
+        Ordered list of chunk strings (may be empty for empty input).
+    """
+    if not completion or not completion.strip():
+        return []
+    raw = [c.strip() for c in _MATH_CHUNK_SPLIT_RE.split(completion)]
+    raw = [c for c in raw if c]
+    chunks: List[str] = []
+    for c in raw:
+        if chunks and len(c) < min_chars:
+            chunks[-1] = chunks[-1] + "\n\n" + c
+        else:
+            chunks.append(c)
+    return chunks
+
+
+def parse_math_steps(completion: str, min_chars: int = 24) -> List[TraceStep]:
+    """Parse a math completion into TraceStep objects, one per reasoning chunk.
+
+    The chunk text is stored in ``assistant_content``; there is no observation
+    and no tool call. ``is_done`` marks the final chunk.
+    """
+    chunks = chunk_math_completion(completion, min_chars=min_chars)
+    steps: List[TraceStep] = []
+    for i, chunk in enumerate(chunks):
+        steps.append(
+            TraceStep(
+                turn_idx=i,
+                assistant_content=chunk,
+                observation_content="",
+                tool_name=None,
+                tool_args=None,
+                is_done=(i == len(chunks) - 1),
+            )
+        )
+    return steps
+
+
+def _tokenize_math(text: str) -> set:
+    """Lowercase token set: alphanumeric words plus individual symbols.
+
+    Splitting symbols individually keeps math operators / delimiters
+    (``=``, ``+``, ``\\``, ``{`` ...) as discriminating tokens, which matters
+    for distinguishing different algebraic moves.
+    """
+    return set(_MATH_TOKEN_RE.findall(text.lower()))
+
+
+def _token_jaccard_diversity(texts: List[str]) -> float:
+    """Mean pairwise token-set Jaccard *distance* (1 - Jaccard) in [0, 1].
+
+    Robust to length (unlike edit distance) and meaningful for free text:
+    chunks that share most tokens (same reasoning move) score low; chunks that
+    use disjoint tokens (divergent approaches) score near 1.
+    """
+    if len(texts) <= 1:
+        return 0.0
+    sets = [_tokenize_math(t) for t in texts]
+    pairs = 0
+    total = 0.0
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            a, b = sets[i], sets[j]
+            if not a and not b:
+                dist = 0.0
+            else:
+                union = len(a | b)
+                dist = 1.0 - (len(a & b) / union if union else 0.0)
+            total += dist
+            pairs += 1
+    return total / pairs if pairs > 0 else 0.0
+
+
+def math_divergence_judge(all_steps: List[List[TraceStep]]) -> List[StepScore]:
+    """Score reasoning-step interestingness by cross-rollout text divergence.
+
+    Companion to :func:`divergence_judge` for tool-free (math) traces. Given N
+    rollouts of the same problem (each chunked via :func:`parse_math_steps`),
+    aligns chunks by index and scores each step by the token-Jaccard diversity
+    of the chunk text across the rollouts that reached that step.
+
+    Args:
+        all_steps: List of step lists, one per rollout (from parse_math_steps()).
+
+    Returns:
+        List of StepScore indexed by turn_idx; 0.0 where fewer than 2 rollouts
+        reached the step.
+    """
+    if len(all_steps) < 2:
+        logger.warning("math_divergence_judge requires ≥2 traces; returning empty scores")
+        return []
+
+    max_turns = max((steps[-1].turn_idx + 1 for steps in all_steps if steps), default=0)
+    indexed: List[Dict[int, TraceStep]] = [
+        {s.turn_idx: s for s in steps} for steps in all_steps
+    ]
+
+    result: List[StepScore] = []
+    for turn in range(max_turns):
+        present = [idx[turn] for idx in indexed if turn in idx]
+        if len(present) < 2:
+            result.append(StepScore(turn_idx=turn, score=0.0, method="math_divergence",
+                                    rationale=f"only {len(present)} trace(s) reached this step"))
+            continue
+        texts = [s.assistant_content for s in present]
+        div = _token_jaccard_diversity(texts)
+        result.append(StepScore(
+            turn_idx=turn,
+            score=round(div, 4),
+            method="math_divergence",
+            rationale=f"{len(present)} traces: token_jaccard_div={div:.2f}",
+        ))
     return result
 
 

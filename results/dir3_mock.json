@@ -1,0 +1,95 @@
+{
+  "config": {
+    "n": 200,
+    "seed": 42,
+    "buf_size": 12,
+    "out": "results/dir3_mock.json"
+  },
+  "n_seed": 100,
+  "n_eval": 100,
+  "baseline_accuracy": 0.7877094972067039,
+  "feedback_accuracy": 0.9050279329608939,
+  "delta": 0.11731843575418999,
+  "baseline_per_type": {
+    "keywords:existence": 0.625,
+    "length_constraints:number_words": 0.7906976744186046,
+    "detectable_format:number_bullet_lists": 1.0,
+    "detectable_content:postscript": 0.9,
+    "keywords:forbidden_words": 0.8947368421052632,
+    "startend:end_checker": 0.75,
+    "change_case:english_lowercase": 0.8888888888888888,
+    "detectable_format:json_format": 0.9285714285714286,
+    "length_constraints:number_sentences": 0.7777777777777778,
+    "keywords:frequency": 0.7142857142857143,
+    "punctuation:no_comma": 1.0
+  },
+  "feedback_per_type": {
+    "keywords:existence": 0.8333333333333334,
+    "length_constraints:number_words": 0.9069767441860465,
+    "detectable_format:number_bullet_lists": 1.0,
+    "detectable_content:postscript": 1.0,
+    "keywords:forbidden_words": 0.8947368421052632,
+    "startend:end_checker": 0.875,
+    "change_case:english_lowercase": 1.0,
+    "detectable_format:json_format": 0.9285714285714286,
+    "length_constraints:number_sentences": 0.8888888888888888,
+    "keywords:frequency": 1.0,
+    "punctuation:no_comma": 1.0
+  },
+  "buffer": [
+    {
+      "instruction_type": "detectable_content:postscript",
+      "critique": "The response did not contain the required postscript marker 'P.S.'. Add a postscript section at the end of the response using that exact marker.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "keywords:existence",
+      "critique": "The response was missing required keyword(s): ['data', 'approach']. The model must include the exact word (case-insensitive). Synonyms do not count.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "keywords:frequency",
+      "critique": "The response failed to use a keyword a specific number of times. Check this constraint carefully \u2014 it is easy to miss.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "length_constraints:number_sentences",
+      "critique": "The response had ~3 sentences but the constraint required exactly 6. Note: bullet points and list items each count as a sentence.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "detectable_format:json_format",
+      "critique": "The response was not valid JSON. The entire response must be a single JSON object or array, with no surrounding prose. Markdown code fences (```json ... ```) are acceptable.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "length_constraints:number_words",
+      "critique": "The response had 37 words but the constraint required at least 99. The model should count words carefully, including words in lists and headings.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "startend:end_checker",
+      "critique": "The response did not end with the required phrase: 'I hope this helps.'. The very last characters of the response (ignoring trailing whitespace) must match exactly.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "change_case:english_lowercase",
+      "critique": "The response failed to write the entire response in lowercase. Check this constraint carefully \u2014 it is easy to miss.",
+      "source": "auto",
+      "step": 0
+    },
+    {
+      "instruction_type": "detectable_format:number_bullet_lists",
+      "critique": "The response had 0 bullet point(s) but the constraint required exactly 3. Count each '- ' or '* ' line as one bullet.",
+      "source": "auto",
+      "step": 0
+    }
+  ]
+}
