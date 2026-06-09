@@ -99,6 +99,31 @@ async def _run_in_executor(func, *args):
     return await loop.run_in_executor(_get_env_executor(), func, *args)
 
 
+async def _env_init(env, *args, **kwargs):
+    """Prefer FleetTaskEnv.init_async when present so the verifier's Fleet
+    client stays on the running event loop. Falling back to env.init via the
+    thread pool causes 'Event loop is closed' once a worker thread's loop is
+    torn down between rollouts. Pattern lifted from
+    skyrl/train/generators/skyrl_gym_generator.py."""
+    if hasattr(env, "init_async"):
+        return await env.init_async(*args, **kwargs)
+    return await _run_in_executor(env.init, *args)
+
+
+async def _env_step(env, action):
+    """Async-preferring env.step wrapper. See _env_init for rationale."""
+    if hasattr(env, "step_async"):
+        return await env.step_async(action)
+    return await _run_in_executor(env.step, action)
+
+
+async def _env_close(env):
+    """Async-preferring env.close wrapper. See _env_init for rationale."""
+    if hasattr(env, "close_async"):
+        return await env.close_async()
+    return await _run_in_executor(env.close)
+
+
 class RolloutOutput(BaseModel):
     """Output from a single rollout collection."""
 
@@ -450,7 +475,7 @@ async def collect_fleet_rollout(
 
     try:
         # Initialize environment in thread pool - isolates MCP connections
-        chat_history, metadata = await _run_in_executor(env.init, [])
+        chat_history, metadata = await _env_init(env, [])
         env_key = metadata.get("env_key", "unknown")
 
         # Tokenize initial prompt
@@ -532,7 +557,7 @@ async def collect_fleet_rollout(
 
             # Step environment in thread pool - isolates MCP connections
             step_start = time.time()
-            step_output = await _run_in_executor(env.step, output_text)
+            step_output = await _env_step(env, output_text)
             step_time = time.time() - step_start
             total_step_time += step_time
             total_tokens += len(output_ids)
@@ -568,7 +593,10 @@ async def collect_fleet_rollout(
         )
 
     finally:
-        env.close()
+        try:
+            await _env_close(env)
+        except Exception as e:
+            logger.warning(f"env close failed for {task_key}: {e}")
 
 
 async def collect_batch_rollouts(
