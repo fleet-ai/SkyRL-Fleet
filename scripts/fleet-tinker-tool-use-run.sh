@@ -64,8 +64,8 @@ python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --lora-rank "$LORA_RANK" \
     --max-steps "$MAX_STEPS" \
     --max-turns 50 \
-    --max-generate-length 4096 \
-    --max-input-length 96000 \
+    --max-generate-length 3000 \
+    --max-input-length 128000 \
     --n-samples-per-prompt "$N_SAMPLES_PER_PROMPT" \
     --eval-every "$EVAL_EVERY" \
     --temperature 0.9 \
