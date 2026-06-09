@@ -685,9 +685,20 @@ class FleetTaskEnv(BaseTextEnv):
             self._tool_error_messages.append(str(error)[:500])
             obs_content = f"Error: {error}"
         elif tool_result:
-            # Handle multimodal results (list with image_url blocks)
-            if isinstance(tool_result, list):
-                # Multimodal: return as structured content for VL models
+            # A list result can be one of two shapes:
+            #   (a) OpenAI multimodal content blocks — list of dicts each with a
+            #       "type" key ("text" / "image_url" / etc.). Goes through the
+            #       VL message path so apply_chat_template handles it natively.
+            #   (b) A plain list of records returned by a Fleet tool call (e.g.
+            #       a list of emails, calendars, atlas teams). These must be
+            #       JSON-serialized into a text message — feeding them through
+            #       the multimodal path causes apply_chat_template to error
+            #       with "Input [...] is not valid. Should be a string,
+            #       a list/tuple of strings or a list/tuple of integers."
+            if isinstance(tool_result, list) and tool_result and all(
+                isinstance(b, dict) and "type" in b for b in tool_result
+            ):
+                # (a) Multimodal: return as structured content for VL models
                 new_obs = {"role": "user", "content": tool_result}
                 self.chat_history.append(new_obs)
                 if self.context_manager:
@@ -709,7 +720,8 @@ class FleetTaskEnv(BaseTextEnv):
                     done=episode_done,
                     metadata=metadata,
                 )
-            elif isinstance(tool_result, dict):
+            elif isinstance(tool_result, (list, dict)):
+                # (b) Plain structured tool result — render as JSON text.
                 obs_content = (
                     f"Tool result:\n{json.dumps(tool_result, indent=2)}"
                 )
