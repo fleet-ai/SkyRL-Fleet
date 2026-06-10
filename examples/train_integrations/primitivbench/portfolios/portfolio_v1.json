@@ -1,0 +1,36 @@
+{
+  "version": "portfolio_v1 (Sprint 1 exit, 2026-06-09)",
+  "purpose": "Top-K generated games for the mini-flywheel GRPO treatment arm B (witness-13 + this portfolio). Headline contrast per D-15 = arm B minus arm C (witness-13 + episode-matched placebo, see portfolio_placebo_v1.json); witness-13-only arm A is descriptive. Selection = funnel_v1 ranking + diversity constraints; weights are heuristic v0, to be calibrated by the flywheel itself.",
+  "selection_rules": [
+    "must-include: all k>=2 placebo-hardened Stage-4 passers",
+    "sweet-spot: frozen-LLM p in (0,1) — the AZR/SFL/DAPO learnability band",
+    "positive ICL slope (>0.03): frozen-model in-context improvement",
+    "k=1 + tier=random confirms for primitive diversity (A4/B4 coverage)",
+    "exclude p=1.0 trivial games; cap 2 per task_id; span all 3 generators"
+  ],
+  "games": [
+    {"game": "PB-pilot-001__gemini-2.5-pro",  "why": "FLAGSHIP: k=2 (A1,A3 placebo-hardened) + sweet-spot p=0.33 + strongest ICL slope +0.285", "k": 2, "tier": "random"},
+    {"game": "PB-pilot-002__gemini-2.5-pro",  "why": "k=2 (A1,A3) via BFS re-solve; deep game (rw unwinnable, BFS len 6-11)", "k": 2, "tier": "bfs"},
+    {"game": "PB-pilot-001__claude-opus-4-7", "why": "k=1 (A1) + sweet-spot p=0.33 + ICL slope +0.174", "k": 1, "tier": "random"},
+    {"game": "PB-pilot-012__gpt-5",           "why": "sweet-spot p=0.67 (ideal learnability band)", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-012__gemini-2.5-pro",  "why": "sweet-spot p=0.33 (task-012 family is learnable across generators)", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-015__gemini-2.5-pro",  "why": "sweet-spot p=0.33 on a BFS-deep game", "k": 0, "tier": "bfs"},
+    {"game": "PB-pilot-013__gemini-2.5-pro",  "why": "ICL slope +0.192 (frozen model learns it in-context despite p=0)", "k": 1, "tier": "random"},
+    {"game": "PB-pilot-003__claude-opus-4-7", "why": "k=1 (A3) + positive slope +0.044; BFS-deep", "k": 1, "tier": "bfs"},
+    {"game": "PB-pilot-017__claude-opus-4-7", "why": "k=1 (A4 confirm — geometry coverage) tier=random", "k": 1, "tier": "random"},
+    {"game": "PB-pilot-019__gpt-5",           "why": "k=1 (B4 confirm — multi-step coverage) tier=random", "k": 1, "tier": "random"},
+    {"game": "PB-pilot-011__gpt-5",           "why": "k=1 confirm, tier=random, placebo-clean", "k": 1, "tier": "random"},
+    {"game": "PB-pilot-009__gpt-5",           "why": "EXPLORATION PICK: slope +0.084 despite tier=none — tests whether ICL-slope finds value CPU probes miss", "k": 0, "tier": "none"}
+  ],
+  "composition": {
+    "n": 12,
+    "by_generator": {"gemini-2.5-pro": 5, "claude-opus-4-7": 4, "gpt-5": 3},
+    "by_task": ["001×2", "002", "003", "009", "011", "012×2", "013", "015", "017", "019"],
+    "k2_passers": 2, "k1": 6, "k0": 4
+  },
+  "training_notes": {
+    "instance_multiplication": "each game supports reset(seed) — sample 50-100 seeds/game for instance density",
+    "trivial_excluded": ["PB-pilot-012__claude-opus-4-7 (p=1.0)", "PB-pilot-013__claude-opus-4-7 (p=1.0)", "PB-pilot-020__gemini-2.5-pro (p=1.0)", "PB-pilot-020__gpt-5 (p=1.0)"],
+    "harness": "generic text-render harness (render('text') + enumerated valid_actions) — NOT the witness semantic-ASCII scaffold; same recipe for all arms"
+  }
+}

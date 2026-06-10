@@ -1,0 +1,11 @@
+{
+  "task_id": "PB-pilot-018",
+  "generator": "claude-opus-4-7",
+  "requested_primitives": [
+    "B1_perception_transform",
+    "B2_meta_reasoning",
+    "B3_multi_rule_composition"
+  ],
+  "layer_composition": "3B",
+  "source_run": "pilot-v2-T1"
+}

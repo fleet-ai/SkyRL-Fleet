@@ -1,0 +1,11 @@
+{
+  "task_id": "PB-pilot-001",
+  "generator": "gpt-5",
+  "requested_primitives": [
+    "A1_objectness",
+    "A3_agency",
+    "A4_geometry_topology"
+  ],
+  "layer_composition": "3A",
+  "source_run": "pilot-v2-T1"
+}

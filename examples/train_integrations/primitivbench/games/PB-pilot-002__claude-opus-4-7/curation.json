@@ -1,0 +1,11 @@
+{
+  "task_id": "PB-pilot-002",
+  "generator": "claude-opus-4-7",
+  "requested_primitives": [
+    "A1_objectness",
+    "A3_agency",
+    "B1_perception_transform"
+  ],
+  "layer_composition": "2A1B",
+  "source_run": "pilot-v2-T1"
+}

@@ -1,0 +1,39 @@
+{
+  "version": "portfolio_placebo_v1 (D-15 active control, 2026-06-10)",
+  "purpose": "Token/episode-matched ACTIVE CONTROL for the mini-flywheel arm C. Controls the data-quantity confound (corpus vs corpus+portfolio compares MORE vs LESS data): arm C gets the same number of extra games x seeds as arm B, but drawn from the BOTTOM of the funnel. Headline contrast = arm B (top-12) minus arm C (this file). Design rationale: reports/2026-06-10_growth-score-precedents-and-validity.md (criterion repo), fatal-2.",
+  "selection_rules": [
+    "disjoint from portfolio_v1 games",
+    "all gate-passed (executable, terminating) — this is an ACTIVE control, not dead weight",
+    "k_confirmed = 0 only (failed the necessity test entirely)",
+    "include the 4 p=1.0 trivial games portfolio_v1 excluded: winnable and reward-dense but shallow — ensures arm C has real RL signal, so B-C isolates content quality, not 'any RL happened' (spurious-reward concern, arXiv 2506.10947)",
+    "fill with k=0 tier=random (random-walk winnable: reward reachable for GRPO), then k=0 tier=bfs, minimal tier=none",
+    "match arm B episode budget exactly: 12 games x same seeds-per-game"
+  ],
+  "games": [
+    {"game": "PB-pilot-012__claude-opus-4-7",  "why": "TRIVIAL: p=1.0 (frozen model always wins) — reward-dense, zero depth; k=0, B4 perturbation fails_necessity", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-013__claude-opus-4-7",  "why": "TRIVIAL: p=1.0; k=0, B4 fails_necessity", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-020__gemini-2.5-pro",   "why": "TRIVIAL: p=1.0; k=0, B3+B4 both fail_necessity", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-020__gpt-5",            "why": "TRIVIAL: p=1.0; k=0, B3+B4 both fail_necessity", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-001__gpt-5",            "why": "k=0 (A1 fails_necessity), tier=random — random-walk winnable, no confirmed primitive", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-011__gemini-2.5-pro",   "why": "k=0 (B3+B4 fail), tier=random", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-016__claude-opus-4-7",  "why": "k=0 (B3 fails), tier=random", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-018__claude-opus-4-7",  "why": "k=0 (B3 fails), tier=random", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-018__gpt-5",            "why": "k=0 (B3 fails), tier=random", "k": 0, "tier": "random"},
+    {"game": "PB-pilot-006__gpt-5",            "why": "k=0 (A4 fails), tier=bfs — solvable but not by random walk", "k": 0, "tier": "bfs"},
+    {"game": "PB-pilot-007__gpt-5",            "why": "k=0 (B3 fails), tier=bfs", "k": 0, "tier": "bfs"},
+    {"game": "PB-pilot-002__claude-opus-4-7",  "why": "k=0, tier=none, funnel score 0.0 — one bottom-anchor dud (kept to 1 to avoid an all-dead control)", "k": 0, "tier": "none"}
+  ],
+  "composition": {
+    "n": 12,
+    "by_generator": {"claude-opus-4-7": 5, "gpt-5": 5, "gemini-2.5-pro": 2},
+    "by_tier": {"random": 9, "bfs": 2, "none": 1},
+    "trivial_p1": 4,
+    "mean_funnel_score": 0.83,
+    "vs_portfolio_v1_mean": 3.31
+  },
+  "training_notes": {
+    "episode_matching": "use identical --seeds-per-game as arm B (64) so arm B and arm C parquets have identical row counts (768 train / 96 val)",
+    "token_matching": "episode-matched by construction; report total prompt+rollout token counts per arm post hoc (game code/render lengths differ slightly)",
+    "harness": "identical generic text harness and GRPO recipe as arms A/B; paired seeds with arm B"
+  }
+}

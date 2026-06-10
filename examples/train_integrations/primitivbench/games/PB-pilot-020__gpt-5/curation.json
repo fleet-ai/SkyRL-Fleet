@@ -1,0 +1,11 @@
+{
+  "task_id": "PB-pilot-020",
+  "generator": "gpt-5",
+  "requested_primitives": [
+    "B2_meta_reasoning",
+    "B3_multi_rule_composition",
+    "B4_multi_step_composition"
+  ],
+  "layer_composition": "3B",
+  "source_run": "pilot-v2-T1"
+}

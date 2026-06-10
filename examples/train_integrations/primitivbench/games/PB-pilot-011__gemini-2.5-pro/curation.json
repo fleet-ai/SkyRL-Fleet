@@ -1,0 +1,11 @@
+{
+  "task_id": "PB-pilot-011",
+  "generator": "gemini-2.5-pro",
+  "requested_primitives": [
+    "A1_objectness",
+    "B3_multi_rule_composition",
+    "B4_multi_step_composition"
+  ],
+  "layer_composition": "1A2B",
+  "source_run": "pilot-v2-T1"
+}
