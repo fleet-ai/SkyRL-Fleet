@@ -32,6 +32,11 @@ DEFAULT_LORA_RANK = int(os.environ.get("TINKER_LORA_RANK", "16"))
 # Training step budget. Override via workflow input or env var.
 DEFAULT_NUM_STEPS = int(os.environ.get("TINKER_NUM_STEPS", "50"))
 
+# Max concurrent rollouts (Fleet env instances + Tinker sampling). Bottleneck
+# on per-step wall clock — 8 was the historical hardcoded value, 32 is the new
+# default. Matches scripts/fleet-tinker-tool-use-run.sh and the entrypoint.
+DEFAULT_MAX_CONCURRENT = int(os.environ.get("TINKER_MAX_CONCURRENT", "32"))
+
 # Holdout fraction. Per user: 90/10.
 HOLDOUT_FRACTION = 0.10
 

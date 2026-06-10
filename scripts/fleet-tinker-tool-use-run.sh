@@ -20,6 +20,7 @@
 #   WANDB_PROJECT        (default: fleet-tinker-grpo)
 #   WANDB_NAME           (default: auto from model + timestamp)
 #   SAVE_STATE_EVERY     (default: 10; 0 disables periodic save_state)
+#   MAX_CONCURRENT       (default: 32; max concurrent Fleet env rollouts)
 #
 # Pass-through behavior: any extra positional args are appended verbatim to
 # the python invocation so a caller can still override anything ad-hoc.
@@ -42,6 +43,7 @@ EVAL_EVERY="${EVAL_EVERY:-20}"
 LOSS_FN="${LOSS_FN:-ppo}"
 WANDB_PROJECT="${WANDB_PROJECT:-fleet-tinker-grpo}"
 SAVE_STATE_EVERY="${SAVE_STATE_EVERY:-10}"
+MAX_CONCURRENT="${MAX_CONCURRENT:-32}"
 
 EXTRA_ARGS=()
 if [ -n "${EVAL_DATASET_FILE:-}" ]; then
@@ -75,6 +77,7 @@ python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --stop-sequences '["</tool_call>"]' \
     --loss-fn "$LOSS_FN" \
     --save-state-every "$SAVE_STATE_EVERY" \
+    --max-concurrent "$MAX_CONCURRENT" \
     --wandb-project "$WANDB_PROJECT" \
     "${EXTRA_ARGS[@]}" \
     "$@"

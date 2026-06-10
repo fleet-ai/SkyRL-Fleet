@@ -718,6 +718,7 @@ async def main(
     eval_before_train: bool = False,
     results_out: str = None,
     save_state_every: int = 10,
+    max_concurrent: int = 8,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -745,6 +746,7 @@ async def main(
                 temperature=temperature,
                 top_p=top_p,
                 stop_sequences=stop_sequences,
+                max_concurrent=max_concurrent,
             )
             all_eval_rollouts.extend([r for r in eval_rollouts if not r.error])
         if not all_eval_rollouts:
@@ -896,6 +898,7 @@ async def main(
             temperature=temperature,
             top_p=top_p,
             stop_sequences=stop_sequences,
+            max_concurrent=max_concurrent,
         )
 
         metrics["time/rollout"] = time.time() - rollout_start
@@ -1084,6 +1087,12 @@ if __name__ == "__main__":
     parser.add_argument("--max-input-length", type=int, default=30720, help="Max context length before ending rollout")
     parser.add_argument("--max-sequence-length", type=int, default=32768, help="Max sequence length for training")
     parser.add_argument("--n-samples-per-prompt", type=int, default=4)
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=32,
+        help="Max concurrent rollouts (Fleet env instances + Tinker sampling requests). Default 32.",
+    )
     parser.add_argument("--eval-every", type=int, default=20)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--wandb-project", type=str, default="fleet-tinker-grpo")
@@ -1159,5 +1168,6 @@ if __name__ == "__main__":
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
             save_state_every=args.save_state_every,
+            max_concurrent=args.max_concurrent,
         )
     )
