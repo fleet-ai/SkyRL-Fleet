@@ -64,6 +64,8 @@ export VLLM_GDN_PREFILL_BACKEND=triton
 # fleet-common-run.sh will auto-point data.train_data / data.val_data at
 # ${DATA_ROOT}/data/fleet/negotiation/, but we also pass explicit hydra overrides
 # below (after --) so $HOME-rooted paths win regardless of DATA_ROOT resolution.
+source .venv/bin/activate
+
 DATA_DIR="${HOME}/data/fleet/negotiation"
 python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --output_dir "$DATA_DIR" \
