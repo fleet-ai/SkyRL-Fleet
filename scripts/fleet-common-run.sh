@@ -289,10 +289,20 @@ export RAY_DISABLE_MEMORY_MONITOR=1
 # guard so a missing helper / no-IB host falls back to the inherited /etc/environment value.
 if [ -d /sys/class/infiniband ] && [ -n "$(ls -A /sys/class/infiniband 2>/dev/null)" ]; then
   _ib_helper="$(dirname "${BASH_SOURCE[0]}")/ib-hca-intersection.sh"
-  _ib_csv=$(bash "$_ib_helper" "/workspace/.sky_ib_hca/${JOB_KEY:-nojob}" "${SKYPILOT_NUM_NODES:-1}" 2>/dev/null || true)
+  # Use .sky_ib_hca_new (root:root 1777) — the old .sky_ib_hca (zhichao:zhichao 775) is
+  # unwritable for root jobs on this NFS (root_squash maps root→nobody, denied by 775).
+  _ib_barrier_dir="/workspace/.sky_ib_hca_new/${JOB_KEY:-nojob}"
+  _ib_csv=$(bash "$_ib_helper" "$_ib_barrier_dir" "${SKYPILOT_NUM_NODES:-1}" 2>/dev/null || true)
   if [ -n "$_ib_csv" ]; then
     export NCCL_IB_HCA="$_ib_csv"
     echo "[NCCL] consistent NCCL_IB_HCA across ${SKYPILOT_NUM_NODES:-1} node(s) = $NCCL_IB_HCA"
+  elif [ "${SKYPILOT_NUM_NODES:-1}" -gt 1 ]; then
+    # On multi-node jobs a silent fallback to a stale/wrong static list causes a 10-min
+    # NCCL deadlock. Fail fast so the job can be retried with a correct config.
+    echo "[NCCL] FATAL: IB intersection produced nothing on a ${SKYPILOT_NUM_NODES}-node job" >&2
+    echo "[NCCL] barrier dir: $_ib_barrier_dir" >&2
+    echo "[NCCL] Fix: ensure $_ib_barrier_dir is writable on all nodes (NFS root_squash?)" >&2
+    exit 1
   else
     echo "[NCCL] intersection helper produced nothing; keeping inherited NCCL_IB_HCA=${NCCL_IB_HCA:-unset}"
   fi
