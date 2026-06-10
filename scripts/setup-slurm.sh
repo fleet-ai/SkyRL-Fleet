@@ -186,26 +186,6 @@ echo "[6/6] Configuring InfiniBand (consistent cross-node intersection)..."
 # must be on the shared FS so every allocated node can execute it.
 _IB_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ib-hca-intersection.sh"
 
-# 5b. Install CUDA 12.9 toolkit on all nodes (needed for DeepGemm JIT in vLLM 0.22+).
-# CUDA toolkit is node-local (/usr/local/cuda-12.9), not on shared NFS.
-echo "[5b/6] Installing CUDA 12.9 toolkit on all nodes..."
-ssh -F ~/.slurm/config -l root "$RUNPOD_CLUSTER_NAME" bash << 'CUDA_EOF'
-N=$(sinfo -N -h -o '%N' | sort -u)
-for n in $N; do
-  ssh -o StrictHostKeyChecking=no $n bash -c '
-    if [ -x /usr/local/cuda-12.9/bin/nvcc ]; then echo "$(hostname): already installed"; exit 0; fi
-    rm -f /etc/apt/sources.list.d/cuda.list 2>/dev/null
-    sed -i "/developer.download.nvidia.com.*compute.*cuda/d" /etc/apt/sources.list 2>/dev/null
-    UBUNTU_VER=$(lsb_release -rs 2>/dev/null | tr -d . || echo 2204)
-    wget -qO /tmp/cuda-keyring.deb "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb" 2>/dev/null
-    dpkg -i /tmp/cuda-keyring.deb 2>/dev/null
-    apt-get update -qq 2>/dev/null
-    apt-get install -y --no-install-recommends cuda-nvcc-12-9 libcublas-dev-12-9 cuda-nvrtc-dev-12-9 2>/dev/null && echo "$(hostname): installed" || echo "$(hostname): failed"
-  ' &
-done
-wait
-CUDA_EOF
-
 # Bootstrap NIC (consistent across nodes): highest-MTU non-virtual interface.
 SOCK_IFACE=$(ssh -F ~/.slurm/config -l root "$RUNPOD_CLUSTER_NAME" bash << 'EOF'
 ip -o link show | awk '!/lo|docker|veth|br-/ && /mtu/ {

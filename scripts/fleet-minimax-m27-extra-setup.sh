@@ -52,30 +52,8 @@ print(f'MiniMax M2.7 config loaded: model_type={cfg.model_type}, '
   exit 1
 }
 
-# --- CUDA 12.9 toolkit (required by vLLM 0.22 cu129 DeepGemm JIT) ---
-# vLLM 0.22 cu129 uses DeepGemm for FP8 MoE kernels which JIT-compiles
-# with nvcc at runtime. Needs CUDA 12.9 toolkit to match the wheel.
-CUDA_HOME="/usr/local/cuda-12.9"
-if [ ! -x "$CUDA_HOME/bin/nvcc" ]; then
-  echo "Installing CUDA 12.9 toolkit..."
-  UBUNTU_VER=$(lsb_release -rs 2>/dev/null | tr -d '.' || echo "2204")
-  # Remove legacy CUDA apt source (no signed-by) that conflicts with cuda-keyring
-  sudo rm -f /etc/apt/sources.list.d/cuda.list 2>/dev/null
-  sudo sed -i '/developer.download.nvidia.com\/compute\/cuda/d' /etc/apt/sources.list 2>/dev/null
-  KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VER}/x86_64/cuda-keyring_1.1-1_all.deb"
-  wget -qO /tmp/cuda-keyring.deb "$KEYRING_URL" 2>&1 || curl -sLo /tmp/cuda-keyring.deb "$KEYRING_URL"
-  sudo dpkg -i /tmp/cuda-keyring.deb
-  sudo apt-get update -qq
-  sudo apt-get install -y --no-install-recommends cuda-nvcc-12-9 libcublas-dev-12-9 cuda-nvrtc-dev-12-9
-fi
-export CUDA_HOME
-export PATH="$CUDA_HOME/bin:$PATH"
-echo "CUDA_HOME=$CUDA_HOME"
-"$CUDA_HOME/bin/nvcc" --version
-
-# Write cuda_env for run phase
-echo "export CUDA_HOME=$CUDA_HOME" > "$HOME/.cuda_env"
-echo "export PATH=$CUDA_HOME/bin:\$PATH" >> "$HOME/.cuda_env"
+# CUDA toolkit not required: VLLM_USE_DEEP_GEMM=0 disables JIT compilation.
+# vLLM 0.22 cu129 wheel runs fine on CUDA 12.8 system (minor backward compat).
 
 # --- Verify versions ---
 echo "=== Final version check ==="
