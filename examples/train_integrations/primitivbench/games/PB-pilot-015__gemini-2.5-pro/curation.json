@@ -1,0 +1,11 @@
+{
+  "task_id": "PB-pilot-015",
+  "generator": "gemini-2.5-pro",
+  "requested_primitives": [
+    "A4_geometry_topology",
+    "B1_perception_transform",
+    "B2_meta_reasoning"
+  ],
+  "layer_composition": "1A2B",
+  "source_run": "pilot-v2-T1"
+}

@@ -1,0 +1,11 @@
+{
+  "task_id": "PB-pilot-012",
+  "generator": "gpt-5",
+  "requested_primitives": [
+    "A3_agency",
+    "B1_perception_transform",
+    "B4_multi_step_composition"
+  ],
+  "layer_composition": "1A2B",
+  "source_run": "pilot-v2-T1"
+}
