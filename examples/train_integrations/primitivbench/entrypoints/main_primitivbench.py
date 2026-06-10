@@ -30,14 +30,22 @@ def _strip_hydra_prefixes(args: list[str]) -> list[str]:
 
 @ray.remote(num_cpus=1)
 def skyrl_entrypoint(cfg: SkyRLTrainConfig):
-    # witness deps (arm A/B rows)
+    # witness deps (arm A/B/C rows)
     witness_dir = os.environ.get("WITNESS_ENVS_DIR", os.path.expanduser("~/arc-witness-envs"))
     if witness_dir and witness_dir not in sys.path:
         sys.path.insert(0, witness_dir)
+    agent_dir = os.environ.get("ARC_WITNESS_AGENT_DIR", os.path.expanduser("~/arc-witness-agent"))
+    if agent_dir and agent_dir not in sys.path:
+        sys.path.insert(0, agent_dir)
 
     register(
         id="witness",
         entry_point="examples.train_integrations.witness.env:WitnessEnv",
+    )
+    # v5b7 rows: merged witness parquets may carry env_class="witness_agent"
+    register(
+        id="witness_agent",
+        entry_point="examples.train_integrations.witness.env_agent:WitnessAgentEnv",
     )
     register(
         id="primitivbench",

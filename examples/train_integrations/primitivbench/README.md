@@ -14,12 +14,12 @@ ordering carries training value, not just "more game data".
 
 ## Arms (D-15, 2026-06-10)
 
-| Arm | Train data | Source |
-|---|---|---|
-| A (baseline) | witness-13 | existing witness parquet / prior runs |
-| B (treatment) | witness-13 + top-12 portfolio | `--merge-witness` → `armB_mixed.parquet` |
-| C (**active control**) | witness-13 + placebo-12 (episode-matched) | `--merge-witness` → `armC_mixed.parquet` |
-| S (optional) | arm B data, random rewards | spurious-reward floor (see student-model note) |
+| Arm                    | Train data                                | Source                                         |
+| ---------------------- | ----------------------------------------- | ---------------------------------------------- |
+| A (baseline)           | witness-13                                | existing witness parquet / prior runs          |
+| B (treatment)          | witness-13 + top-12 portfolio             | `--merge-witness` → `armB_mixed.parquet`       |
+| C (**active control**) | witness-13 + placebo-12 (episode-matched) | `--merge-witness` → `armC_mixed.parquet`       |
+| S (optional)           | arm B data, random rewards                | spurious-reward floor (see student-model note) |
 
 **Headline = Δ(B−C)** (quantity-matched, isolates content quality).
 Δ(B−A) is reported descriptively only — it confounds quality with quantity
@@ -43,32 +43,55 @@ generator-ranking Spearman) before v1.0.
 2. ARC-AGI-3 public subset locally + Kaggle submission (uncontaminated external)
 3. One external text-reasoning suite (pick at run time; decontam-checked vs portfolio)
 
-## Quickstart
+## Launch (cluster — the actual flow)
+
+Everything the cluster needs ships in this repo: 24 game dirs pre-vendored under
+`games/` (top-12 + placebo-12, committed) and both portfolio jsons under
+`portfolios/`. The SkyPilot task does the rest (witness base dataset prep +
+portfolio merge happen on the node):
 
 ```bash
 cd SkyRL-Fleet
-# 1. dataset (vendors game files + emits parquet; seeds 1000+ disjoint from proxy battery's 100-204)
-python3 examples/train_integrations/primitivbench/prepare_primitivbench_dataset.py \
-    --portfolio  <pilot>/orchestrator/curated_v2/portfolio_v1.json \
-    --games-src  <pilot>/orchestrator/curated_v2/games \
-    --seeds-per-game 64 \
-    --output examples/train_integrations/primitivbench/data/pb_train.parquet \
-    --merge-witness <existing witness train parquet>
+# arm B (treatment)
+sky launch tasks/primitivbench-grpo.yaml \
+  --env FLEET_API_KEY=... --env WANDB_API_KEY=... \
+  --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+  --env ARM=B -y --down
+# arm C (active control) — same command, same TRAIN_SEED, only ARM changes
+sky launch tasks/primitivbench-grpo.yaml ... --env ARM=C -y --down
+```
 
-# 2. arm C dataset (active control: placebo portfolio, identical seeds-per-game)
-python3 examples/train_integrations/primitivbench/prepare_primitivbench_dataset.py \
-    --portfolio  <pilot>/orchestrator/curated_v2/portfolio_placebo_v1.json \
-    --games-src  <pilot>/orchestrator/curated_v2/games \
-    --seeds-per-game 64 \
-    --output examples/train_integrations/primitivbench/data/pb_placebo.parquet \
-    --val-output examples/train_integrations/primitivbench/data/pb_placebo_val.parquet \
-    --merge-witness <existing witness train parquet> \
-    --merged-output examples/train_integrations/primitivbench/data/armC_mixed.parquet
+The YAML keeps every recipe override identical to `tasks/witness-grpo.yaml`
+except: entrypoint, train/val data, `trainer.seed=$TRAIN_SEED`, run_name.
 
-# 3. train arms B and C (same command, same seed, swap the parquet)
-python3 -m examples.train_integrations.primitivbench.entrypoints.main_primitivbench \
-    data.train_data_path=examples/train_integrations/primitivbench/data/armB_mixed.parquet \
-    <same overrides as the witness GRPO recipe>
+### Pre-flight checklist (two decisions are YOURS, blocking)
+
+1. **MODEL**: must equal the student of the reusable arm-A baseline run.
+   Repo defaults say `Qwen/Qwen3.5-9B` (run_witness.sh / witness YAML), but
+   `merge_fsdp_checkpoint.py` shows Qwen3.5-35B-A3B checkpoints also exist.
+   Pick the one whose witness baseline run you intend to reuse; if no clean
+   baseline exists, arm A must be (re)trained at the chosen size.
+2. **GAME_IDS**: must equal arm A's witness training set. WARNING: the witness
+   YAML default (`tw10 tw09 tw13 tw04`) overlaps the pre-registered held-out
+   list (tw01/09/10/12). Either the baseline run used a different game set, or
+   the held-out list must be re-derived as games ∉ train. Resolve before launch.
+3. Push the current branch (`guanghan/b7-phase2-judge-rewards`) and confirm
+   `workdir.ref` in the YAML points at it.
+4. `TRAIN_SEED` identical across arms B and C (paired-seed design).
+5. External text-reasoning suite for held-out domain 3: pick + decontam-check
+   before eval (not needed for launch).
+
+## Local dataset prep (already done; for reference / regeneration)
+
+```bash
+cd SkyRL-Fleet
+python3 examples/train_integrations/primitivbench/prepare_primitivbench_dataset.py \
+    --portfolio examples/train_integrations/primitivbench/portfolios/portfolio_v1.json \
+    --games-src /Users/guanghan.ning/Documents/obsidian/research-survey/game-creation/05-pilot-study/orchestrator/curated_v2/games \
+    --seeds-per-game 64 \
+    --output examples/train_integrations/primitivbench/data/pb_train.parquet
+# placebo: same with portfolio_placebo_v1.json (+ --val-output pb_placebo_val.parquet)
+# --games-src defaults to the in-repo games/, so on the cluster vendoring is a no-op
 ```
 
 `data_source = primitivbench/<game>` → SkyRL per-dataset eval splits give
@@ -88,8 +111,10 @@ python3 -m examples.train_integrations.primitivbench.entrypoints.main_primitivbe
 
 ## Files
 
-- `env.py` — PrimitivBenchEnv (BaseTextEnv; generic text harness)
-- `prepare_primitivbench_dataset.py` — vendor games + emit parquet (arms B/C)
-- `entrypoints/main_primitivbench.py` — registers witness + primitivbench envs
-- `games/` — vendored portfolio game.py files (created by the prep script)
+- `env.py` — PrimitivBenchEnv (BaseTextEnv; generic text harness; verified against `skyrl_gym/envs/base_text_env.py` API)
+- `prepare_primitivbench_dataset.py` — vendor games + emit parquet (arms B/C); cluster-safe (vendoring no-ops when games ship in-repo)
+- `entrypoints/main_primitivbench.py` — registers witness + witness_agent + primitivbench envs
+- `portfolios/` — portfolio_v1.json (arm B) + portfolio_placebo_v1.json (arm C), committed for cluster access
+- `games/` — 24 vendored game.py dirs (top-12 + placebo-12), committed
+- `../../../tasks/primitivbench-grpo.yaml` — SkyPilot launch task (ARM=B|C)
 - `smoke_env.py` — keyless local smoke (stubbed skyrl_gym; scripted player)

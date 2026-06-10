@@ -44,8 +44,10 @@ def make_prompt(game_name: str) -> list:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--portfolio", required=True, help="portfolio_v1.json from the pilot repo")
-    ap.add_argument("--games-src", required=True, help="curated_v2/games dir in the pilot repo")
+    ap.add_argument("--portfolio", required=True, help="portfolio json (in-repo portfolios/ or pilot repo)")
+    ap.add_argument("--games-src", default=os.path.join(_HERE, "games"),
+                    help="curated_v2/games dir in the pilot repo; default = in-repo games/ "
+                         "(cluster: games ship pre-vendored, vendoring becomes a no-op)")
     ap.add_argument("--seeds-per-game", type=int, default=64,
                     help="instance multiplication: distinct reset seeds per game")
     ap.add_argument("--seed-offset", type=int, default=1000,
@@ -62,18 +64,29 @@ def main():
     portfolio = json.load(open(args.portfolio))
     names = [g["game"] for g in portfolio["games"]]
 
-    # 1. vendor the game files
+    # 1. vendor the game files (no-op per game when source == destination or the
+    #    game ships pre-vendored and the pilot source tree is absent, e.g. cluster)
     games_dst = os.path.join(_HERE, "games")
     os.makedirs(games_dst, exist_ok=True)
+    vendored = 0
     for name in names:
         src = os.path.join(args.games_src, name, "game.py")
         dst_dir = os.path.join(games_dst, name)
+        if os.path.abspath(os.path.dirname(src)) == os.path.abspath(dst_dir):
+            if not os.path.exists(src):
+                raise FileNotFoundError(f"{name}: not vendored and no source given ({src})")
+            continue
+        if not os.path.exists(src):
+            if os.path.exists(os.path.join(dst_dir, "game.py")):
+                continue
+            raise FileNotFoundError(src)
         os.makedirs(dst_dir, exist_ok=True)
         shutil.copy(src, os.path.join(dst_dir, "game.py"))
         cur = os.path.join(args.games_src, name, "curation.json")
         if os.path.exists(cur):
             shutil.copy(cur, os.path.join(dst_dir, "curation.json"))
-    print(f"vendored {len(names)} portfolio games → {games_dst}")
+        vendored += 1
+    print(f"vendored {vendored}/{len(names)} portfolio games → {games_dst}")
 
     # 2. emit rows
     def rows(seed_lo: int, n_seeds: int) -> list:
