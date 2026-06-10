@@ -9,10 +9,11 @@ Does two things:
      "primitivbench". Per-game `data_source` gives per-game metric splits in
      SkyRL eval for free (per-game Score attribution from a single run).
 
-Arms (per reports/2026-06-09_post-presentation-strategy §5):
-  A  witness-13 baseline      → existing witness parquet (no work here)
-  B  witness-13 + portfolio   → --merge-witness <witness.parquet>
-  C  portfolio only           → default output
+Arms (per D-15, 2026-06-10; headline = Δ(B−C)):
+  A  witness-13 baseline                → existing witness parquet (no work here)
+  B  witness-13 + top-12 portfolio      → --portfolio portfolio_v1.json --merge-witness ...
+  C  witness-13 + placebo-12 (matched)  → --portfolio portfolio_placebo_v1.json --merge-witness ...
+                                          (same --seeds-per-game as B; use --merged-output armC_mixed.parquet)
 
 Usage:
   python3 prepare_primitivbench_dataset.py \

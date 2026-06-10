@@ -6,21 +6,36 @@ the Growth-Score protocol from the PrimitivBench two-ring design
 
 ## Hypothesis (falsifiable)
 
-Adding the funnel-selected 12-game portfolio (`portfolio_v1.json`: 2× Stage-4 k≥2
-passers + sweet-spot/ICL-slope picks, placebo-hardened) to the witness-13 training
-base produces a measurable Δ on held-out reasoning vs the witness-13 baseline.
+The funnel-selected top-12 portfolio (`portfolio_v1.json`: 2× Stage-4 k≥2 passers +
+sweet-spot/ICL-slope picks, placebo-hardened) produces a larger Δ on held-out
+reasoning than an **episode-matched bottom-of-funnel portfolio**
+(`portfolio_placebo_v1.json`: k=0 games incl. 4 trivial p=1.0). I.e., the funnel
+ordering carries training value, not just "more game data".
 
-## Arms
+## Arms (D-15, 2026-06-10)
 
 | Arm | Train data | Source |
 |---|---|---|
 | A (baseline) | witness-13 | existing witness parquet / prior runs |
-| B (treatment) | witness-13 + portfolio-12 | `--merge-witness` output `armB_mixed.parquet` |
-| C (optional) | portfolio-12 only | `pb_train.parquet` |
+| B (treatment) | witness-13 + top-12 portfolio | `--merge-witness` → `armB_mixed.parquet` |
+| C (**active control**) | witness-13 + placebo-12 (episode-matched) | `--merge-witness` → `armC_mixed.parquet` |
+| S (optional) | arm B data, random rewards | spurious-reward floor (see student-model note) |
 
-Same recipe for all arms (model, GRPO hparams, steps). The PB env is a **generic
-text harness** (render + enumerated actions, `<action>N</action>`) — deliberately
-NOT the witness semantic-ASCII scaffold, so no generator style is favored.
+**Headline = Δ(B−C)** (quantity-matched, isolates content quality).
+Δ(B−A) is reported descriptively only — it confounds quality with quantity
+(criterion repo `reports/2026-06-10_growth-score-precedents-and-validity.md`, fatal-2).
+
+Same recipe for all arms (model, GRPO hparams, steps), **paired seeds + identical
+data order** across arms (within-seed paired Δ; variance reduction per common-random-numbers).
+The PB env is a **generic text harness** (render + enumerated actions,
+`<action>N</action>`) — deliberately NOT the witness semantic-ASCII scaffold, so no
+generator style is favored.
+
+**Student-model note (D-18)**: the recipe student is Qwen3.5-9B (Qwen family).
+Qwen2.5 models show GRPO gains under *random* rewards (arXiv 2506.10947); arm C
+already controls "any game RL happened", but for publication add either arm S
+(random-reward floor) or a one-time cross-family validation (Llama/OLMo student,
+generator-ranking Spearman) before v1.0.
 
 ## Held-out (3 domains, breadth-gated)
 
@@ -40,7 +55,17 @@ python3 examples/train_integrations/primitivbench/prepare_primitivbench_dataset.
     --output examples/train_integrations/primitivbench/data/pb_train.parquet \
     --merge-witness <existing witness train parquet>
 
-# 2. train arm B (mixed rows; each row carries its env_class)
+# 2. arm C dataset (active control: placebo portfolio, identical seeds-per-game)
+python3 examples/train_integrations/primitivbench/prepare_primitivbench_dataset.py \
+    --portfolio  <pilot>/orchestrator/curated_v2/portfolio_placebo_v1.json \
+    --games-src  <pilot>/orchestrator/curated_v2/games \
+    --seeds-per-game 64 \
+    --output examples/train_integrations/primitivbench/data/pb_placebo.parquet \
+    --val-output examples/train_integrations/primitivbench/data/pb_placebo_val.parquet \
+    --merge-witness <existing witness train parquet> \
+    --merged-output examples/train_integrations/primitivbench/data/armC_mixed.parquet
+
+# 3. train arms B and C (same command, same seed, swap the parquet)
 python3 -m examples.train_integrations.primitivbench.entrypoints.main_primitivbench \
     data.train_data_path=examples/train_integrations/primitivbench/data/armB_mixed.parquet \
     <same overrides as the witness GRPO recipe>
@@ -49,11 +74,17 @@ python3 -m examples.train_integrations.primitivbench.entrypoints.main_primitivbe
 `data_source = primitivbench/<game>` → SkyRL per-dataset eval splits give
 **per-game metrics from a single run** (per-game Score attribution for free).
 
-## Decision criteria (pre-registered)
+## Decision criteria (pre-registered, updated 2026-06-10 per D-15/D-16)
 
-- Δ(B−A) > 0 on ≥2 of 3 held-out domains → portfolio adds value → Growth Score protocol validated
-- Δ ≈ 0 → instance-density / curriculum diagnosis (single-level games; spec v2.1 motivation) — still publishable
+- **Δ(B−C) > 0** on held-out domains (report per-domain effect sizes with bootstrap CIs,
+  not just sign counts) → the funnel selects **training value** → Growth Score protocol validated
+- Δ(B−C) ≈ 0 but Δ(B−A) > 0 → extra game data helps regardless of funnel rank →
+  quantity/diversity effect; funnel weights need recalibration — still publishable
+- All Δ ≈ 0 → instance-density / curriculum diagnosis (single-level games; spec v2.1 motivation) — still publishable
 - Funnel/proxy scores vs per-game contribution → the proxy↔truth calibration table (S45-难点③④ answer)
+- Construct note (D-16): Growth Score measures **training value** of created games;
+  intellectual-depth claims are carried by the Ring-1 k≥2 gate, not by this Δ.
+- Pre-registered per-game prediction: PB-pilot-001__gemini-2.5-pro is arm B's top contributor.
 
 ## Files
 
