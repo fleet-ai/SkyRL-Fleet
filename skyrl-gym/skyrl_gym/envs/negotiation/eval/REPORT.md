@@ -38,9 +38,11 @@ Two agents divide a shared item pool; each has private per-item values. The same
 
 dnd is the discriminating task — outcome reward spreads 0.42–0.60. CaSiNo compresses everyone into 0.48–0.51 at ~92% joint efficiency, because its `{5,4,3}` values with no zero items leave little to optimize. llama-3.3-70b leads dnd (0.600); qwen3.5-9b (no-think) narrowly leads casino (0.514). (All qwen3.5 rows are no-think unless marked — see next section.)
 
-## Frontier models (dual self-play)
+## Frontier models (both protocols)
 
-One frontier model per closed vendor, run under the **chosen dual-tag protocol** on the same dnd/val scenarios (n=12, seed 1, max_turns 6) as the open-weight dual runs — so these are directly comparable to the dual rows elsewhere in this report.
+One frontier model per closed vendor, run on the same dnd/val scenarios (n=12, seed 1, max_turns 6) as the open-weight runs, under **both** protocols so each is directly comparable to the like-protocol rows elsewhere in this report.
+
+**Dual-tag** (the chosen protocol):
 
 | Model | Vendor | Agree | Outcome | Pareto (of deals) | Joint eff | Turns |
 |---|---|---|---|---|---|---|
@@ -50,7 +52,19 @@ One frontier model per closed vendor, run under the **chosen dual-tag protocol**
 | _ref:_ qwen3.5-35b-a3b (best open, dual) | open | 83% | 0.583 | 70% | — | 3.0 |
 | _ref:_ gpt-4o-mini (dual) | small ref | 83% | 0.500 | 30% | 77% | 6.6 |
 
-The frontier tier is a step change. All three close almost every deal in **~3.4 turns**, and the headline gap is **Pareto/efficiency**: 75–91% Pareto and 94–97% joint efficiency, versus ~30% Pareto for the open mid-tier. They don't just agree — they actually trade items to whoever values them most, the integrative skill the open models lack. Anthropic's opus trades highest joint efficiency (97%, Pareto 91%) for one lost deal (8% conflict); gemini and gpt-5.5 close 100% and lead on own-outcome. This is also the first protocol+model combo to make dual clearly worth its formatting cost.
+**Single-proposer** (same scenarios/seed):
+
+| Model | Vendor | Agree | Outcome | Pareto (of deals) | Joint eff | Turns |
+|---|---|---|---|---|---|---|
+| openai/gpt-5.5 | OpenAI | 100% | **0.738** | 92% | 96% | 2.8 |
+| anthropic/claude-opus-4.8 | Anthropic | 100% | **0.738** | 83% | 96% | 2.8 |
+| google/gemini-3.1-pro-preview | Google | 83% | **0.625** | 100% | 98% | 5.7 |
+| _ref:_ qwen3.5-9b (no-think, single) | 9B open | 100% | 0.550 | 30% | 74% | 4.2 |
+| _ref:_ gpt-4o-mini (single) | small ref | 95% | 0.568 | 26% | 80% | 5.3 |
+
+The frontier tier is a step change under **either** protocol. The headline gap is **Pareto/efficiency**: 75–100% Pareto and 94–98% joint efficiency, versus ~30% Pareto for the open mid-tier. They don't just agree — they actually trade items to whoever values them most, the integrative skill the open models lack.
+
+Crucially, unlike the open models, **the frontier doesn't need dual to reach the frontier** — its single-proposer *accepter* is already value-aware, so collapsing to single costs nothing. gpt-5.5 and opus actually score *higher* on single (0.738 vs 0.72/0.69 outcome) in **fewer turns** (~2.8 vs ~3.5) at 100% agreement; gemini is the exception, turning verbose (5.7 turns) and dropping one deal to no-deal under single (0.625), though its closed deals are 100% Pareto. So for frontier models single-proposer is at least as good and cheaper — the mirror image of the open-weight result (where single only wins because dual adds a formatting tax), here single wins because there's no acceptance tax left to recover.
 
 ## Cross-play matrix (who beats whom)
 
@@ -63,7 +77,7 @@ The frontier tier is a step change. All three close almost every deal in **~3.4 
 - **Opponent matters more than seat:** every model scores ~0.70 when its partner is GPT-5.5, but drops against Qwen. The standout failure is **Qwen ↔ Opus, 0.35 both directions** — that pairing only agrees **50%** of the time (a dual-tag coordination breakdown between a terse no-think small model and a verbose frontier one), torching both via no-deals. Llama self-play is also weak (0.33, only 67% agreement).
 - At n=6/cell the diagonal is noisier than the n=12 self-play table above (e.g. GPT-5.5 self-play 0.65 here vs 0.721 there); read the matrix for *relative* matchup structure, not absolute levels.
 
-## Hybrid reasoning: turn thinking OFF
+## Hybrid reasoning: thinking ON vs OFF
 
 Qwen3.5-9b is a hybrid-reasoning model and is the *worst* performer in default (thinking) mode — not because it negotiates badly, but because it spends its whole message budget "thinking" and rarely emits a clean `<propose>`/`<accept>` in time (~75–80% `no_deal`, ~11 turns/agent). Disabling thinking (`/no_think` soft switch + OpenRouter `reasoning.enabled=false`, via `run_eval.py --no-think`) flips it from worst to near-best:
 
@@ -72,7 +86,38 @@ Qwen3.5-9b is a hybrid-reasoning model and is the *worst* performer in default (
 | dnd | 20% → **100%** | 80% → **0%** | 0.100 → **0.550** | 11.4 → **4.2** |
 | casino | 25% → **100%** | 75% → **0%** | 0.132 → **0.514** | 11.2 → **4.2** |
 
-The larger MoE qwen3.5-35b-a3b behaves identically in no-think mode (≈0.51 on both datasets, ~3 turns/agent), landing in the gpt-4o-mini tier. **Takeaway: for short, turn-budgeted negotiation, run hybrid-reasoning models with thinking OFF** — the bottleneck is committing a tag within budget, not reasoning depth.
+But that 9b collapse is **budget starvation, not a verdict on reasoning**: at the lean budget (`max_turns 6`, `max_tokens 900`) the thinking block eats the whole turn and no tag lands. Give thinking the budget it actually needs (`max_turns 12`, `max_tokens 16000`) and re-run the larger qwen3.5-35b-a3b single-proposer self-play (n=20, seed 1), **think vs no-think on the same scenarios**:
+
+| Dataset | Mode | Agree | Outcome | Pareto (of deals) | Joint eff | Pts/agent | Turns |
+|---|---|---|---|---|---|---|---|
+| dnd | no-think | 100% | 0.515 | 30% | 70% | 5.15 | 2.9 |
+| dnd | **thinking** | 100% | **0.645** | **55%** | **86%** | **6.45** | 2.3 |
+| casino | no-think | 100% | 0.509 | 25% | 92% | 18.33 | 3.1 |
+| casino | **thinking** | 100% | 0.508 | 25% | 92% | 18.30 | 2.4 |
+
+With an adequate budget, thinking no longer breaks agreement (stays 100%) and **materially lifts quality on dnd** — outcome 0.515 → **0.645**, Pareto 30% → **55%**, joint efficiency 70% → **86%** — precisely the integrative skill the open-weight field otherwise lacks. This is *not* bought with more haggling: turns actually drop (2.9 → 2.3), so thinking yields better-targeted proposals per turn, not longer dialogues. On **casino it's a wash** (0.509 → 0.508; Pareto/efficiency flat) — as expected, since casino's compressed `{5,4,3}` values saturate everyone at ~92% efficiency and leave nothing for reasoning to steer. The full chain-of-thought for every turn in these thinking runs is captured in the result JSON (`transcript[].thinking`) and is browsable inline (a collapsible **💭 thinking** block under each message) in the visualizer's Model eval tab.
+
+**Refined takeaway:** the bottleneck is *committing a tag within budget*, not reasoning depth per se. Run hybrid-reasoning models with thinking **OFF only when the turn/token budget is tight** (the short-budget regime the rest of this report uses, where the 9b would otherwise starve); when the budget is adequate, **thinking is a clear win on the discriminating task (dnd) and harmless on the saturated one (casino)**.
+
+### Did it not think that far, or is the thinking faulty? (Pareto-gap autopsy)
+
+Thinking lifts dnd Pareto from 30%→55%, but **9 of 20 agreements are still off the frontier**. Now that the chain-of-thought is captured we can read *why*, turn by turn. Coding the proposer's and accepter's reasoning on all 9 non-Pareto dnd deals:
+
+| Signal (non-Pareto deals, n=9) | Count |
+|---|---|
+| Proposer explicitly notes "I don't know their values" | **9 / 9** |
+| Proposer defaults to a "fair" / even-item split | 8 / 9 |
+| Proposer reasons about routing each item to whoever values it most | **1 / 9** |
+| Accepter *spots* it could get a better split | 7 / 9 |
+| Accepter accepts anyway, citing no-deal risk / budget / "close fast" | 8 / 9 |
+
+The verdict is **mostly "it didn't think that far" — but not because the reasoning is wrong**. The per-side arithmetic in the traces is consistently *correct* (agents reliably compute their own scores). Three distinct failure modes, in order of frequency:
+
+1. **Proposer solves the wrong problem (the dominant driver).** Every proposer writes some variant of *"Since I don't know their values, I'll propose something fair"* and optimizes own-score against an **assumed-symmetric** partner. It never tries to *elicit or signal* private values, so it can't find the integrative trade — it's not faulty reasoning, it's competent reasoning aimed at fair division instead of joint maximization. The thinking literally stops one step short: it reasons about *its own* values, notes the partner's are unknown, and defaults to fairness rather than opening the information channel Pareto-optimality requires.
+2. **Accepter thinks far enough but won't act (the acceptance tax).** 7/9 accepters explicitly identify a better split — e.g. on `you_v=[2,3,1] them_v=[0,8,2]` the accepter reasons *"the hat is worth 8 to me, but they're keeping it… I could try to negotiate"* — then rubber-stamps anyway because *"the risk is they might reject, and we could run out of messages and get 0."* The reasoning is correct; the **reward structure (no-deal = 0) suppresses acting on it**. This is the trace-level confirmation of the value-blind-accepter finding below.
+3. **Execution slip — right thinking, wrong tag (rare, the only truly "faulty" case).** On `you_v=[1,0,4]` (balls worth 4, hat worth 0) the proposer's thinking is *correct* — *"keep the balls since they're worth 8… give them the hat worth 0"* — but the emitted tag is the inverse, `<propose>{"book":0,"hat":1,"ball":0}</propose>`, keeping the 0-value hat and giving away the balls. The chain-of-thought reached the right answer and the serialization step dropped it.
+
+So extra thinking **does** help where the loss is a *private* per-side optimization (it sharpens own-value capture, hence 30%→55% Pareto and the dnd outcome jump) but **cannot** close the rest, because the residual gap is an *interactive/information* failure — neither side ever puts its values on the table — compounded by a risk-averse accepter that the reward function actively discourages from pushing back. "Think harder" won't fix it; the levers are **(a)** prompting/training agents to exchange or probe values, and **(b)** a reward (the planned outcome+Pareto ablation) that pays the accepter to counter a value-blind split instead of banking the safe deal.
 
 ## Protocol: single-proposer vs dual-tag
 
@@ -156,4 +201,4 @@ Example: `you_v=[9,1,0] them_v=[2,2,2] → you=[1,1,1] them=[0,0,2]` — `you` p
 - **`no_deal` only** under single-proposer (no `conflict`/`incomplete`): a no-deal means no offer was accepted within the budget; raising `max_turns` slightly can reduce it.
 - **Small samples** (20 scenarios/dataset): Pareto / joint-efficiency over agreements-only are noisy when agreement counts are low.
 - **Dual baselines aren't perfectly matched** (may differ in N/max_turns); treat protocol comparisons as directional.
-- Frontier models (gpt-5.5, claude-opus-4.8, gemini-3.1-pro) are now included as a dual-protocol ceiling (see "Frontier models" and the cross-play matrix); the open-weight models remain the realistic RL training targets. The cross-play matrix uses only n=6/cell, so treat its absolute cell values as indicative and the matchup *structure* as the signal.
+- Frontier models (gpt-5.5, claude-opus-4.8, gemini-3.1-pro) are now included as a performance ceiling under **both** protocols (see "Frontier models" and the cross-play matrix); the open-weight models remain the realistic RL training targets. The cross-play matrix uses only n=6/cell, so treat its absolute cell values as indicative and the matchup *structure* as the signal.

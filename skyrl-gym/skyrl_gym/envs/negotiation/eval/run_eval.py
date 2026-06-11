@@ -49,11 +49,29 @@ def make_client(base_url: str, timeout: float = 90.0, max_retries: int = 2) -> "
     return AsyncOpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=max_retries)
 
 
-async def chat(client, model, messages, temperature, max_tokens=500, retries=4, extra_body=None):
+def _extract_reasoning(msg) -> str:
+    """Pull a reasoning model's chain-of-thought off the response message.
+
+    OpenRouter surfaces it as `reasoning` (some providers use `reasoning_content`);
+    the OpenAI SDK stashes unknown fields on `model_extra`. Returns "" if absent.
+    """
+    r = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+    if not r:
+        extra = getattr(msg, "model_extra", None) or {}
+        r = extra.get("reasoning") or extra.get("reasoning_content")
+    return (r or "").strip()
+
+
+async def chat(client, model, messages, temperature, max_tokens=500, retries=4,
+               extra_body=None, return_reasoning=False):
     """Robust chat call that adapts to reasoning-model parameter quirks.
 
     Some frontier/reasoning models reject `temperature` or require
     `max_completion_tokens` instead of `max_tokens`; we strip/swap on error.
+
+    Returns the message content (str). With `return_reasoning=True`, returns a
+    `(content, reasoning)` tuple where `reasoning` is the captured thinking trace
+    (empty string when the model/provider returns none).
     """
     kwargs = {"model": model, "messages": messages, "max_tokens": max_tokens}
     if extra_body:
@@ -66,8 +84,10 @@ async def chat(client, model, messages, temperature, max_tokens=500, retries=4, 
             # Some providers (via OpenRouter) occasionally return 200 with empty
             # `choices` or null content; treat as an empty turn rather than crashing.
             if not getattr(resp, "choices", None):
-                return ""
-            return (resp.choices[0].message.content or "").strip()
+                return ("", "") if return_reasoning else ""
+            msg = resp.choices[0].message
+            content = (msg.content or "").strip()
+            return (content, _extract_reasoning(msg)) if return_reasoning else content
         except Exception as e:  # noqa: BLE001
             msg = str(e).lower()
             if "temperature" in msg and "temperature" in kwargs:
@@ -79,7 +99,7 @@ async def chat(client, model, messages, temperature, max_tokens=500, retries=4, 
             if attempt == retries - 1:
                 raise
             await asyncio.sleep(1.5 * (attempt + 1))
-    return ""
+    return ("", "") if return_reasoning else ""
 
 
 # Qwen3 hybrid-reasoning soft switch: appending this token disables the thinking
@@ -131,18 +151,21 @@ async def _play_dual(client, sc, model_a, model_b, max_turns, temperature, max_t
 
     while True:
         if speaker == "a":
-            text = await chat(client, model_a, hist_a, temperature, max_tokens, extra_body=body)
+            text, think = await chat(client, model_a, hist_a, temperature, max_tokens, extra_body=body, return_reasoning=True)
             hist_a.append({"role": "assistant", "content": text})
             hist_b.append({"role": "user", "content": text})
             last["a"] = game.parse_deal(text, items)
             count["a"] += 1
         else:
-            text = await chat(client, model_b, hist_b, temperature, max_tokens, extra_body=body)
+            text, think = await chat(client, model_b, hist_b, temperature, max_tokens, extra_body=body, return_reasoning=True)
             hist_b.append({"role": "assistant", "content": text})
             hist_a.append({"role": "user", "content": text})
             last["b"] = game.parse_deal(text, items)
             count["b"] += 1
-        transcript.append({"speaker": "you" if speaker == "a" else "them", "text": text})
+        turn = {"speaker": "you" if speaker == "a" else "them", "text": text}
+        if think:
+            turn["thinking"] = think
+        transcript.append(turn)
 
         if last["a"] is not None and last["b"] is not None:
             break
@@ -187,11 +210,14 @@ async def _play_single(client, sc, model_a, model_b, max_turns, temperature, max
     while True:
         model = model_a if speaker == "a" else model_b
         hist = hist_a if speaker == "a" else hist_b
-        text = await chat(client, model, hist, temperature, max_tokens, extra_body=body)
+        text, think = await chat(client, model, hist, temperature, max_tokens, extra_body=body, return_reasoning=True)
         (hist_a if speaker == "a" else hist_b).append({"role": "assistant", "content": text})
         (hist_b if speaker == "a" else hist_a).append({"role": "user", "content": text})
         count[speaker] += 1
-        transcript.append({"speaker": "you" if speaker == "a" else "them", "text": text})
+        turn = {"speaker": "you" if speaker == "a" else "them", "text": text}
+        if think:
+            turn["thinking"] = think
+        transcript.append(turn)
 
         # An <accept> finalizes the OTHER agent's pending offer (accept wins over a co-occurring propose).
         if game.has_accept(text) and pending and pending["by"] != speaker:

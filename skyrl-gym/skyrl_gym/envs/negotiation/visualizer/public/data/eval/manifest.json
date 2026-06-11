@@ -2,7 +2,7 @@
   "datasets": [
     {
       "id": "qwen_qwen3.5-9b__casino__single-nothink",
-      "name": "Qwen3.5-9b \u00b7 casino \u00b7 single (no-think)",
+      "name": "Qwen3.5-9b \u00b7 casino \u00b7 single (no (thinking))",
       "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-9b on casino \u00b7 agree 100% \u00b7 outcome 0.514 \u00b7 20 scenarios",
       "splits": [
         "all"
@@ -18,7 +18,7 @@
     },
     {
       "id": "qwen_qwen3.5-35b-a3b__casino__single-nothink",
-      "name": "Qwen3.5-35b-a3b \u00b7 casino \u00b7 single (no-think)",
+      "name": "Qwen3.5-35b-a3b \u00b7 casino \u00b7 single (no (thinking))",
       "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-35b-a3b on casino \u00b7 agree 100% \u00b7 outcome 0.509 \u00b7 20 scenarios",
       "splits": [
         "all"
@@ -31,6 +31,22 @@
       "protocol": "single-nothink",
       "agreement_rate": 1.0,
       "avg_outcome_reward": 0.509
+    },
+    {
+      "id": "qwen_qwen3.5-35b-a3b__casino__single-think",
+      "name": "Qwen3.5-35b-a3b \u00b7 casino \u00b7 single (thinking)",
+      "blurb": "Self-play eval (single-proposer \u00b7 thinking) \u00b7 qwen/qwen3.5-35b-a3b on casino \u00b7 agree 100% \u00b7 outcome 0.508 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ],
+      "protocol": "single-think",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.508
     },
     {
       "id": "openai_gpt-4o-mini__casino__single",
@@ -113,6 +129,102 @@
       "avg_outcome_reward": 0.459
     },
     {
+      "id": "anthropic_claude-opus-4.8__dnd__single",
+      "name": "anthropic/claude-opus-4.8 \u00b7 dnd \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 anthropic/claude-opus-4.8 on dnd \u00b7 agree 100% \u00b7 outcome 0.737 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.737
+    },
+    {
+      "id": "openai_gpt-5.5__dnd__single",
+      "name": "gpt-5.5 \u00b7 dnd \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 openai/gpt-5.5 on dnd \u00b7 agree 100% \u00b7 outcome 0.737 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.737
+    },
+    {
+      "id": "qwen_qwen3.5-27b__dnd__single-think",
+      "name": "Qwen3.5-27b \u00b7 dnd \u00b7 single (thinking)",
+      "blurb": "Self-play eval (single-proposer \u00b7 thinking) \u00b7 qwen/qwen3.5-27b on dnd \u00b7 agree 100% \u00b7 outcome 0.705 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single-think",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.705
+    },
+    {
+      "id": "qwen_qwen3.5-9b__dnd__single-think",
+      "name": "Qwen3.5-9b \u00b7 dnd \u00b7 single (thinking)",
+      "blurb": "Self-play eval (single-proposer \u00b7 thinking) \u00b7 qwen/qwen3.5-9b on dnd \u00b7 agree 100% \u00b7 outcome 0.703 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single-think",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.703
+    },
+    {
+      "id": "qwen_qwen3.5-35b-a3b__dnd__single-think",
+      "name": "Qwen3.5-35b-a3b \u00b7 dnd \u00b7 single (thinking)",
+      "blurb": "Self-play eval (single-proposer \u00b7 thinking) \u00b7 qwen/qwen3.5-35b-a3b on dnd \u00b7 agree 100% \u00b7 outcome 0.645 \u00b7 20 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single-think",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.645
+    },
+    {
+      "id": "google_gemini-3.1-pro-preview__dnd__single",
+      "name": "google/gemini-3.1-pro-preview \u00b7 dnd \u00b7 single",
+      "blurb": "Self-play eval (single-proposer) \u00b7 google/gemini-3.1-pro-preview on dnd \u00b7 agree 83% \u00b7 outcome 0.625 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "single",
+      "agreement_rate": 0.8333,
+      "avg_outcome_reward": 0.625
+    },
+    {
       "id": "meta-llama_llama-3.3-70b-instruct__dnd__single",
       "name": "meta-llama/llama-3.3-70b-instruct \u00b7 dnd \u00b7 single",
       "blurb": "Self-play eval (single-proposer) \u00b7 meta-llama/llama-3.3-70b-instruct on dnd \u00b7 agree 100% \u00b7 outcome 0.6 \u00b7 20 scenarios",
@@ -146,7 +258,7 @@
     },
     {
       "id": "qwen_qwen3.5-9b__dnd__single-nothink",
-      "name": "Qwen3.5-9b \u00b7 dnd \u00b7 single (no-think)",
+      "name": "Qwen3.5-9b \u00b7 dnd \u00b7 single (no (thinking))",
       "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-9b on dnd \u00b7 agree 100% \u00b7 outcome 0.55 \u00b7 20 scenarios",
       "splits": [
         "all"
@@ -178,7 +290,7 @@
     },
     {
       "id": "qwen_qwen3.5-35b-a3b__dnd__single-nothink",
-      "name": "Qwen3.5-35b-a3b \u00b7 dnd \u00b7 single (no-think)",
+      "name": "Qwen3.5-35b-a3b \u00b7 dnd \u00b7 single (no (thinking))",
       "blurb": "Self-play eval (single-proposer \u00b7 no-think) \u00b7 qwen/qwen3.5-35b-a3b on dnd \u00b7 agree 100% \u00b7 outcome 0.515 \u00b7 20 scenarios",
       "splits": [
         "all"
@@ -209,8 +321,56 @@
       "avg_outcome_reward": 0.415
     },
     {
+      "id": "google_gemini-3.1-pro-preview__dnd__dual",
+      "name": "google/gemini-3.1-pro-preview \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 google/gemini-3.1-pro-preview on dnd \u00b7 agree 100% \u00b7 outcome 0.729 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.729
+    },
+    {
+      "id": "openai_gpt-5.5__dnd__dual",
+      "name": "gpt-5.5 \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 openai/gpt-5.5 on dnd \u00b7 agree 100% \u00b7 outcome 0.721 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 1.0,
+      "avg_outcome_reward": 0.721
+    },
+    {
+      "id": "anthropic_claude-opus-4.8__dnd__dual",
+      "name": "anthropic/claude-opus-4.8 \u00b7 dnd \u00b7 dual",
+      "blurb": "Self-play eval (dual-tag) \u00b7 anthropic/claude-opus-4.8 on dnd \u00b7 agree 92% \u00b7 outcome 0.688 \u00b7 12 scenarios",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ],
+      "protocol": "dual",
+      "agreement_rate": 0.9167,
+      "avg_outcome_reward": 0.688
+    },
+    {
       "id": "qwen_qwen3.5-35b-a3b__dnd__dual-nothink",
-      "name": "Qwen3.5-35b-a3b \u00b7 dnd \u00b7 dual (no-think)",
+      "name": "Qwen3.5-35b-a3b \u00b7 dnd \u00b7 dual (no (thinking))",
       "blurb": "Self-play eval (dual-tag \u00b7 no-think) \u00b7 qwen/qwen3.5-35b-a3b on dnd \u00b7 agree 83% \u00b7 outcome 0.583 \u00b7 12 scenarios",
       "splits": [
         "all"
@@ -258,7 +418,7 @@
     },
     {
       "id": "qwen_qwen3.5-9b__dnd__dual-nothink",
-      "name": "Qwen3.5-9b \u00b7 dnd \u00b7 dual (no-think)",
+      "name": "Qwen3.5-9b \u00b7 dnd \u00b7 dual (no (thinking))",
       "blurb": "Self-play eval (dual-tag \u00b7 no-think) \u00b7 qwen/qwen3.5-9b on dnd \u00b7 agree 33% \u00b7 outcome 0.2 \u00b7 12 scenarios",
       "splits": [
         "all"

@@ -65,6 +65,9 @@ export VLLM_GDN_PREFILL_BACKEND=triton
 # ${DATA_ROOT}/data/fleet/negotiation/, but we also pass explicit hydra overrides
 # below (after --) so $HOME-rooted paths win regardless of DATA_ROOT resolution.
 DATA_DIR="${HOME}/data/fleet/negotiation"
+# Activate the shared venv so prepare_dataset.py runs under the project python
+# (which has `datasets`); fleet-common-run.sh activates it again for training.
+source .venv/bin/activate
 python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --output_dir "$DATA_DIR" \
   --dataset "$NEGOTIATION_DATASET" \

@@ -10,6 +10,17 @@ const ITEM_EMOJI = {
 };
 const PAGE_SIZE = 20;
 
+// Pretty labels for the eval-mode filter dropdowns.
+const PROTO_LABEL = {
+  single: "Single-proposer",
+  dual: "Dual-tag",
+  "single-nothink": "Single · no-think",
+  "dual-nothink": "Dual · no-think",
+  "single-think": "Single · thinking",
+  "dual-think": "Dual · thinking",
+};
+const DATASET_LABEL = { dnd: "Deal-or-No-Deal", casino: "CaSiNo" };
+
 const state = {
   mode: "data", // 'data' (human dialogues) | 'eval' (model self-play)
   manifest: null,
@@ -19,6 +30,8 @@ const state = {
   filtered: [],
   page: 0,
   charts: {},
+  evalRuns: [], // [{ run, model, dataset, protocol }] derived from the eval manifest
+  evalSel: { model: null, dataset: null, protocol: null },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -48,16 +61,91 @@ async function setMode(mode) {
   setupOutcomeFilter(mode);
   const path = mode === "eval" ? "data/eval/manifest.json" : "data/manifest.json";
   state.manifest = await (await fetch(path)).json();
+
+  if (mode === "eval") {
+    $("#datasetTabs").style.display = "none";
+    $("#evalFilters").style.display = "";
+    buildEvalIndex();
+    const wanted = location.hash.replace("#eval/", "").replace("#eval", "");
+    const init = state.evalRuns.find((r) => r.run.id === wanted) || state.evalRuns[0];
+    state.evalSel = { model: init.model, dataset: init.dataset, protocol: init.protocol };
+    renderEvalFilters();
+    selectDataset(init.run);
+    return;
+  }
+
+  $("#datasetTabs").style.display = "";
+  $("#evalFilters").style.display = "none";
   renderDatasetTabs();
   let ds = state.manifest.datasets[0];
-  if (mode === "data") {
-    const wanted = location.hash.replace("#", "");
-    ds = state.manifest.datasets.find((d) => d.id === wanted) || ds;
-  } else {
-    const wanted = location.hash.replace("#eval/", "").replace("#eval", "");
-    ds = state.manifest.datasets.find((d) => d.id === wanted) || ds;
-  }
+  const wanted = location.hash.replace("#", "");
+  ds = state.manifest.datasets.find((d) => d.id === wanted) || ds;
   selectDataset(ds);
+}
+
+// Parse the flat eval manifest into model/game/protocol dimensions so the runs
+// can be browsed via dropdowns instead of one tab per (model × game × protocol).
+function buildEvalIndex() {
+  state.evalRuns = state.manifest.datasets.map((d) => {
+    const parts = d.id.split("__"); // <rawmodel>__<dataset>__<protocol>
+    return {
+      run: d,
+      model: d.name.split(" \u00b7 ")[0], // pretty model name (before the first " · ")
+      dataset: parts[1] || "",
+      protocol: d.protocol || parts[2] || "",
+    };
+  });
+}
+
+function uniq(arr) {
+  return [...new Set(arr)];
+}
+
+function fillSelect(sel, opts, value) {
+  $(sel).innerHTML = opts
+    .map(([v, l]) => `<option value="${escapeAttr(v)}"${v === value ? " selected" : ""}>${l}</option>`)
+    .join("");
+}
+
+// Game and protocol options are scoped to the chosen model (not to each other),
+// so every protocol a model was run with stays visible — e.g. picking
+// Qwen3.5-35b-a3b always surfaces its single-think run even while the game is
+// still on casino. Choosing it then relaxes the game to the matching run (dnd).
+function renderEvalFilters() {
+  const runs = state.evalRuns;
+  const sel = state.evalSel;
+  const forModel = runs.filter((r) => r.model === sel.model);
+  fillSelect("#evalModel", uniq(runs.map((r) => r.model)).map((m) => [m, m]), sel.model);
+  fillSelect("#evalDataset", uniq(forModel.map((r) => r.dataset)).map((d) => [d, DATASET_LABEL[d] || d]), sel.dataset);
+  fillSelect("#evalProto", uniq(forModel.map((r) => r.protocol)).map((p) => [p, PROTO_LABEL[p] || p]), sel.protocol);
+}
+
+// Resolve the dropdown selection to a real run, relaxing the dimensions the user
+// did NOT just change so a valid run is always selected even for sparse combos.
+function resolveEvalRun(sel, changed) {
+  const runs = state.evalRuns;
+  const dims = ["model", "dataset", "protocol"];
+  const exact = runs.find((r) => dims.every((k) => r[k] === sel[k]));
+  if (exact) return exact;
+  for (const drop of ["protocol", "dataset", "model"].filter((k) => k !== changed)) {
+    const keep = dims.filter((k) => k !== drop);
+    const cand = runs.find((r) => keep.every((k) => r[k] === sel[k]));
+    if (cand) return cand;
+  }
+  return runs.find((r) => r[changed] === sel[changed]) || runs[0];
+}
+
+function onEvalFilterChange(changed) {
+  const sel = {
+    model: $("#evalModel").value,
+    dataset: $("#evalDataset").value,
+    protocol: $("#evalProto").value,
+  };
+  const run = resolveEvalRun(sel, changed);
+  state.evalSel = { model: run.model, dataset: run.dataset, protocol: run.protocol };
+  renderEvalFilters(); // re-sync in case a dimension was relaxed
+  history.replaceState(null, "", "#eval/" + run.run.id);
+  selectDataset(run.run);
 }
 
 function setupOutcomeFilter(mode) {
@@ -329,8 +417,36 @@ function outcomeHtml(g) {
     `<div class="alloc-line">You take ${allocText(g, g.you_alloc)} &nbsp;·&nbsp; Them take ${allocText(g, g.them_alloc)}</div>` +
     `<div class="score-row"><span class="who"><span class="dot you"></span>You</span><div class="bar"><span class="you" style="width:${youPct}%"></span></div><span class="num">${g.you_score}/${max}</span></div>` +
     `<div class="score-row"><span class="who"><span class="dot them"></span>Them</span><div class="bar"><span class="them" style="width:${themPct}%"></span></div><span class="num">${g.them_score}/${max}</span></div>`;
+  html += paretoHtml(g);
   if (g.meta) html += subjectiveHtml(g);
   return html + "</div>";
+}
+
+function paretoHtml(g) {
+  // Only meaningful for agreed deals; surfaces the integrative-efficiency signal.
+  if (!g.agreed || !g.valid_alloc) return "";
+  if (typeof g.pareto_optimal === "undefined") return "";
+  const joint = (g.you_score || 0) + (g.them_score || 0);
+  const mj = g.max_joint || joint;
+  const eff = mj ? Math.round((joint / mj) * 100) : 100;
+  if (g.pareto_optimal) {
+    return (
+      '<div class="pareto ok">\u2713 Pareto-optimal' +
+      `<span class="pj">joint ${joint}/${mj} \u00B7 ${eff}% efficient</span></div>`
+    );
+  }
+  const gap = mj - joint;
+  let eline = "";
+  if (g.efficient_you && g.efficient_them) {
+    eline =
+      `<div class="pareto-eff">efficient split would be \u2192 You ${allocText(g, g.efficient_you)}` +
+      ` &nbsp;\u00B7&nbsp; Them ${allocText(g, g.efficient_them)} &nbsp;(joint ${mj})</div>`;
+  }
+  return (
+    '<div class="pareto bad">\u2717 off the Pareto frontier' +
+    `<span class="pj">joint ${joint}/${mj} \u00B7 ${eff}% efficient \u00B7 left ${gap} joint pts on the table</span></div>` +
+    eline
+  );
 }
 
 function subjectiveHtml(g) {
@@ -367,8 +483,11 @@ function dialogueHtml(turns) {
           t.annotations && t.annotations.length
             ? `<div class="anns">${t.annotations.map((a) => `<span class="ann">${a}</span>`).join("")}</div>`
             : "";
+        const think = t.thinking
+          ? `<details class="think"><summary>\uD83D\uDCAD thinking</summary><div class="think-body">${escapeHtml(t.thinking)}</div></details>`
+          : "";
         const body = highlightDeal(escapeHtml(t.text));
-        return `<div class="msg ${t.speaker}"><div class="speaker">${t.speaker === "you" ? "You" : "Them"}</div>${body}${ann}</div>`;
+        return `<div class="msg ${t.speaker}"><div class="speaker">${t.speaker === "you" ? "You" : "Them"}</div>${think}${body}${ann}</div>`;
       })
       .join("") +
     "</div>"
@@ -385,6 +504,7 @@ function gameCard(g) {
     outcomeHtml(g) +
     "</div>" +
     '<div class="game-side">' +
+    (g.model_label ? `<div class="model-label">${escapeHtml(g.model_label)}</div>` : "") +
     statusBadge(g) +
     `<div class="meta-line">${g.num_turns} turns · ${g.first_speaker === "you" ? "You" : "Them"} opened</div>` +
     dialogueHtml(g.turns) +
@@ -421,5 +541,8 @@ $("#searchBox").addEventListener("input", () => {
 });
 $("#outcomeFilter").addEventListener("change", applyFilters);
 $("#sortBy").addEventListener("change", applyFilters);
+$("#evalModel").addEventListener("change", () => onEvalFilterChange("model"));
+$("#evalDataset").addEventListener("change", () => onEvalFilterChange("dataset"));
+$("#evalProto").addEventListener("change", () => onEvalFilterChange("protocol"));
 
 init();
