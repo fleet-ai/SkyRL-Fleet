@@ -371,6 +371,7 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
     --metrics-export-port "$RAY_METRICS_EXPORT_PORT" \
     --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
     --object-store-memory=10000000000 \
+    --num-cpus="${RAY_NUM_CPUS:-32}" \
     --node-ip-address="$head_ip" --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   # Tell ray.init() where to find the cluster (needed when --temp-dir differs
@@ -457,6 +458,7 @@ else
     --runtime-env-agent-port "$RAY_RUNTIME_ENV_AGENT_PORT" \
     --metrics-export-port "$RAY_METRICS_EXPORT_PORT" \
     --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
+    --num-cpus="${RAY_NUM_CPUS:-32}" \
     --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   export RAY_ADDRESS="$ray_address"
