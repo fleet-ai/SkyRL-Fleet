@@ -25,63 +25,74 @@ ordering carries training value, not just "more game data".
 Δ(B−A) is reported descriptively only — it confounds quality with quantity
 (criterion repo `reports/2026-06-10_growth-score-precedents-and-validity.md`, fatal-2).
 
-Same recipe for all arms (model, GRPO hparams, steps), **paired seeds + identical
-data order** across arms (within-seed paired Δ; variance reduction per common-random-numbers).
-The PB env is a **generic text harness** (render + enumerated actions,
-`<action>N</action>`) — deliberately NOT the witness semantic-ASCII scaffold, so no
-generator style is favored.
+**Recipe base = the CURRENT witness stack** (v5b7-phase2 line, NOT the legacy v3
+`witness-grpo.yaml`): witness rows run through `env_class=witness_agent` (the full
+ORAI agent bridged from arc-witness-agent, file_mounted) with the R-series reward
+stack (R5_pre config: rubric ON via claude-haiku, plan-div OFF, judge OFF, secondary
+fallback ON). PB rows carry `env_class=primitivbench` → the **generic text harness**
+(render + enumerated actions, `<action>N</action>`), deliberately NOT the witness
+scaffold, so no generator style is favored. Per-row env_class routing makes the mix
+work in one run. **Paired seeds**: same `TRAIN_SEED` across arms B and C.
 
-**Student-model note (D-18)**: the recipe student is Qwen3.5-9B (Qwen family).
-Qwen2.5 models show GRPO gains under *random* rewards (arXiv 2506.10947); arm C
-already controls "any game RL happened", but for publication add either arm S
-(random-reward floor) or a one-time cross-family validation (Llama/OLMo student,
-generator-ranking Spearman) before v1.0.
+**Student model (D-18, updated 2026-06-11)**: arm A = the existing 9B R5_pre run
+(wandb `mtezmmq0`): Qwen3.5-9B initialized from the witness SFT-v5 merged checkpoint.
+Arms B/C must match both (MODEL + POLICY_CHECKPOINT_S3 in the YAML). A 35B-A3B arm A
+(`p2_r5_35b_opus`) exists but was still stabilizing multi-node as of 2026-06-03; if it
+becomes the canonical baseline, re-launch B/C with its exact config instead. Qwen
+spurious-reward caveat stands (arXiv 2506.10947): arm C absorbs the bulk; add arm S
+(random-reward floor) or a cross-family validation before v1.0.
 
 ## Held-out (3 domains, breadth-gated)
 
-1. Witness held-out: tw01/09/10/12 (pre-registered, workshop-paper protocol)
+1. Witness held-out: tw01/09/10/12 — **identical to the current stack's VAL_GAME_IDS**,
+   so this domain is evaluated automatically during training (eval_interval), and the
+   former held-out/train overlap concern is moot: the v5b7 split already pre-registers it.
 2. ARC-AGI-3 public subset locally + Kaggle submission (uncontaminated external)
 3. One external text-reasoning suite (pick at run time; decontam-checked vs portfolio)
 
 ## Launch (cluster — the actual flow)
 
-Everything the cluster needs ships in this repo: 24 game dirs pre-vendored under
-`games/` (top-12 + placebo-12, committed) and both portfolio jsons under
-`portfolios/`. The SkyPilot task does the rest (witness base dataset prep +
-portfolio merge happen on the node):
+Everything ships with the launch: 24 game dirs pre-vendored under `games/` +
+both portfolio jsons under `portfolios/` (in this repo, rsynced via the YAML's
+local-workdir dev-loop), and arc-witness-agent / arc-witness-envs via file_mounts
+(same as the witness YAMLs). Setup runs `fleet-witness-setup.sh` unchanged
+(witness-8 dataset prep, SFT ckpt download, spot-resume), then adds the PB
+portfolio prep + merge and a PB env smoke. Run delegates to `fleet-witness-run.sh`
+with three trailing Hydra overrides (train/val data, trainer.seed) that win via `"$@"`.
 
 ```bash
 cd SkyRL-Fleet
 # arm B (treatment)
 sky launch tasks/primitivbench-grpo.yaml \
-  --env FLEET_API_KEY=... --env WANDB_API_KEY=... \
+  --env PB_ARM=B --env RUN_LABEL=pb_armB_s42 \
+  --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
   --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
-  --env ARM=B -y --down
-# arm C (active control) — same command, same TRAIN_SEED, only ARM changes
-sky launch tasks/primitivbench-grpo.yaml ... --env ARM=C -y --down
+  -y
+# arm C (active control) — same TRAIN_SEED, only PB_ARM + RUN_LABEL change
+sky launch tasks/primitivbench-grpo.yaml --env PB_ARM=C --env RUN_LABEL=pb_armC_s42 ... -y
 ```
 
-The YAML keeps every recipe override identical to `tasks/witness-grpo.yaml`
-except: entrypoint, train/val data, `trainer.seed=$TRAIN_SEED`, run_name.
+Cheap preflight without GPUs-burn: add `--env SMOKE_ONLY=1` (validates mounts,
+venv, env imports, reward hooks, then exits before the trainer).
 
-### Pre-flight checklist (two decisions are YOURS, blocking)
+### Pre-flight checklist
 
-1. **MODEL**: must equal the student of the reusable arm-A baseline run.
-   Repo defaults say `Qwen/Qwen3.5-9B` (run_witness.sh / witness YAML), but
-   `merge_fsdp_checkpoint.py` shows Qwen3.5-35B-A3B checkpoints also exist.
-   Pick the one whose witness baseline run you intend to reuse; if no clean
-   baseline exists, arm A must be (re)trained at the chosen size.
-2. **GAME_IDS**: must equal arm A's witness training set. WARNING: the witness
-   YAML default (`tw10 tw09 tw13 tw04`) overlaps the pre-registered held-out
-   list (tw01/09/10/12). Either the baseline run used a different game set, or
-   the held-out list must be re-derived as games ∉ train. Resolve before launch.
-3. Push the current branch (`guanghan/b7-phase2-judge-rewards`) and confirm
-   `workdir.ref` in the YAML points at it.
-4. `TRAIN_SEED` identical across arms B and C (paired-seed design).
+1. **Align with arm A (mtezmmq0)**: diff this YAML's envs against the mtezmmq0
+   wandb config — LR / KL / entropy / NUM_EPOCHS / SECONDARY_MODEL especially.
+   The defaults here are reconstructed from the 35B YAML's "matches 9B R5" comments,
+   not read from the run itself.
+2. `OPENROUTER_API_KEY` required (rubric reward + secondary fallback hit OpenRouter).
+3. `TRAIN_SEED` identical across arms B and C (paired-seed design).
+4. file_mounts paths point at your local arc-witness-agent / arc-witness-envs
+   worktrees (same convention as witness-grpo-v5b7-phase2-r5-35b.yaml).
 5. External text-reasoning suite for held-out domain 3: pick + decontam-check
    before eval (not needed for launch).
 
-## Local dataset prep (already done; for reference / regeneration)
+Registration note: `main_witness.py` now also registers `primitivbench` (lazy
+entry_point, inert for witness-only datasets), so the standard witness entrypoint
+drives the mixed run; `entrypoints/main_primitivbench.py` remains for standalone use.
+
+## Local dataset prep (for reference / regeneration)
 
 ```bash
 cd SkyRL-Fleet
@@ -116,5 +127,5 @@ python3 examples/train_integrations/primitivbench/prepare_primitivbench_dataset.
 - `entrypoints/main_primitivbench.py` — registers witness + witness_agent + primitivbench envs
 - `portfolios/` — portfolio_v1.json (arm B) + portfolio_placebo_v1.json (arm C), committed for cluster access
 - `games/` — 24 vendored game.py dirs (top-12 + placebo-12), committed
-- `../../../tasks/primitivbench-grpo.yaml` — SkyPilot launch task (ARM=B|C)
+- `../../../tasks/primitivbench-grpo.yaml` — SkyPilot launch task (PB_ARM=B|C; reuses fleet-witness-setup/run.sh)
 - `smoke_env.py` — keyless local smoke (stubbed skyrl_gym; scripted player)

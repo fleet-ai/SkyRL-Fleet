@@ -43,6 +43,13 @@ def skyrl_entrypoint(cfg: SkyRLTrainConfig):
         id="witness_agent",
         entry_point="examples.train_integrations.witness.env_agent:WitnessAgentEnv",
     )
+    # PrimitivBench mini-flywheel rows (arms B/C mixed datasets carry
+    # env_class="primitivbench"). Lazy entry_point string — inert for
+    # witness-only datasets.
+    register(
+        id="primitivbench",
+        entry_point="examples.train_integrations.primitivbench.env:PrimitivBenchEnv",
+    )
     exp = BasePPOExp(cfg)
     exp.run()
 
