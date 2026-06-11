@@ -515,6 +515,19 @@ class GeneratorConfig(BaseConfig):
     apply_overlong_filtering: bool = False
     """Apply DAPO Overlong Filtering: mask out all tokens in the loss mask for trajectories that
     exceed max length (truncated, no EOS token)."""
+    length_penalty_coef: float = 0.0
+    """Subtract a sublinear length penalty from each trajectory's final reward, computed from the
+    total number of response tokens (the same quantity logged as ``policy/response_length``).
+    ``0.0`` disables it. The penalty discourages length runaway (e.g. multi-turn rollouts that
+    burn the whole generation budget on prose and never commit a terminal action)."""
+    length_penalty_alpha: float = 0.5
+    """Exponent for the ``"power"`` length penalty (``0 < alpha < 1`` keeps it sublinear; ``0.5`` = sqrt)."""
+    length_penalty_fn: str = "power"
+    """Shape of the length penalty: ``"power"`` -> ``coef * (tokens / ref) ** alpha`` (sqrt at alpha=0.5),
+    or ``"log"`` -> ``coef * log1p(tokens / ref) / log(2)`` (both normalized so penalty == coef at tokens == ref)."""
+    length_penalty_ref: int = 0
+    """Reference token length that normalizes the penalty. When ``<= 0`` it defaults to
+    ``max_turns * sampling_params.max_generate_length`` (the full multi-turn generation budget)."""
     rope_scaling: Optional[Dict[str, Any]] = None
     """Can differ from the trainer's ``rope_scaling``, useful for thinking models."""
     rope_theta: Optional[float] = None

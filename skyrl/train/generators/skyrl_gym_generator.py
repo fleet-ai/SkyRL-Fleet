@@ -7,6 +7,7 @@ For details, see https://docs.skyrl.ai/docs/tutorials/skyrl_gym_generator
 
 import asyncio
 import copy
+import math
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
@@ -1059,6 +1060,10 @@ class SkyRLGymGenerator(GeneratorInterface):
 
         rollout_metrics = get_rollout_metrics(responses, rewards, env_metrics, env_classes)
 
+        if self.generator_cfg.length_penalty_coef:
+            rewards, mean_length_penalty = self._apply_length_penalty(rewards, truncated_responses)
+            rollout_metrics["generate/length_penalty_mean"] = mean_length_penalty
+
         if self.generator_cfg.apply_overlong_filtering:
             # set loss mask to 0 if the stop reason is not "stop"
             loss_masks = apply_overlong_filtering(loss_masks, stop_reasons)
@@ -1292,6 +1297,10 @@ class SkyRLGymGenerator(GeneratorInterface):
             if isinstance(m, dict):
                 m.pop("chat_history", None)
 
+        if self.generator_cfg.length_penalty_coef:
+            rewards, mean_length_penalty = self._apply_length_penalty(rewards, responses)
+            rollout_metrics["generate/length_penalty_mean"] = mean_length_penalty
+
         if self.generator_cfg.zero_reward_on_non_stop:
             # set reward to 0 if the stop reason is not "stop"
             rewards = self._zero_reward_if_not_stop(rewards, stop_reasons)
@@ -1320,6 +1329,51 @@ class SkyRLGymGenerator(GeneratorInterface):
         }
 
         return generator_output
+
+    def _apply_length_penalty(
+        self,
+        rewards: List[Union[float, List[float]]],
+        responses: List[List[int]],
+    ) -> Tuple[List[Union[float, List[float]]], float]:
+        """Subtract a sublinear length penalty (from total response tokens) off each final reward.
+
+        The penalty is a function of the number of response tokens — the same quantity logged as
+        ``policy/response_length`` — normalized by a reference length and shaped sublinearly so it
+        never dominates the task reward:
+
+            fn="power":  coef * (tokens / ref) ** alpha     (alpha=0.5 -> sqrt)
+            fn="log":    coef * log1p(tokens / ref) / log(2)
+
+        For per-token reward trajectories the penalty is folded into the last response token (where
+        the verifiable final reward lives); for scalar trajectories it is subtracted directly.
+        Returns ``(rewards, mean_penalty)`` for metric logging.
+        """
+        coef = float(self.generator_cfg.length_penalty_coef)
+        if not coef:
+            return rewards, 0.0
+
+        ref = int(self.generator_cfg.length_penalty_ref or 0)
+        if ref <= 0:
+            ref = max(1, self.max_turns * self.generator_cfg.sampling_params.max_generate_length)
+        alpha = float(self.generator_cfg.length_penalty_alpha)
+        fn = self.generator_cfg.length_penalty_fn
+
+        total_penalty = 0.0
+        for i, response in enumerate(responses):
+            frac = len(response) / ref
+            if fn == "log":
+                shaped = math.log1p(frac) / math.log(2.0)
+            else:  # "power" (sqrt when alpha == 0.5)
+                shaped = frac**alpha
+            penalty = coef * shaped
+            total_penalty += penalty
+            if isinstance(rewards[i], list):
+                if rewards[i]:
+                    rewards[i][-1] -= penalty
+            else:
+                rewards[i] -= penalty
+        mean_penalty = total_penalty / len(responses) if responses else 0.0
+        return rewards, mean_penalty
 
     def _zero_reward_if_not_stop(
         self, rewards: List[Union[float, List[float]]], stop_reasons: List[str]

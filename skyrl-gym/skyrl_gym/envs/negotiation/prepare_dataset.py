@@ -24,7 +24,7 @@ import scenarios as scenarios_mod  # noqa: E402
 import datasets  # noqa: E402
 
 
-def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: int) -> dict:
+def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: int, proactive: bool) -> dict:
     """Build a single RLVR dataset row from a Scenario."""
     item_names = list(sc.item_names)
     counts = list(sc.counts)
@@ -32,10 +32,10 @@ def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: i
     them_values = list(sc.them_values)
 
     you_system_prompt = prompts.build_system_prompt(
-        item_names, counts, you_values, max_turns, protocol=protocol
+        item_names, counts, you_values, max_turns, protocol=protocol, proactive=proactive
     )
     them_system_prompt = prompts.build_system_prompt(
-        item_names, counts, them_values, max_turns, protocol=protocol
+        item_names, counts, them_values, max_turns, protocol=protocol, proactive=proactive
     )
 
     return {
@@ -60,6 +60,7 @@ def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: i
             "index": idx,
             "protocol": protocol,
             "max_turns": max_turns,
+            "proactive": proactive,
             "them_system_prompt": them_system_prompt,
         },
     }
@@ -81,10 +82,21 @@ if __name__ == "__main__":
     )
     parser.add_argument("--max_turns", type=int, default=6)
     parser.add_argument(
+        "--proactive",
+        action="store_true",
+        help="Inject the proactive preference-elicitation instruction into both system prompts (ablation arm).",
+    )
+    parser.add_argument(
         "--max_train",
         type=int,
         default=0,
         help="Cap on training scenarios (0 = use all).",
+    )
+    parser.add_argument(
+        "--max_val",
+        type=int,
+        default=0,
+        help="Cap on validation scenarios (0 = use all). Subsampled with the same seed.",
     )
     parser.add_argument(
         "--seed",
@@ -104,14 +116,17 @@ if __name__ == "__main__":
         train_scenarios = train_scenarios[: args.max_train]
 
     val_scenarios = scenarios_mod.load_scenarios(args.dataset, args.val_split)
+    if args.max_val and args.max_val > 0:
+        rng.shuffle(val_scenarios)
+        val_scenarios = val_scenarios[: args.max_val]
 
     # --- Build rows ---
     train_rows = [
-        make_row(sc, idx, args.dataset, args.train_split, args.protocol, args.max_turns)
+        make_row(sc, idx, args.dataset, args.train_split, args.protocol, args.max_turns, args.proactive)
         for idx, sc in enumerate(train_scenarios)
     ]
     val_rows = [
-        make_row(sc, idx, args.dataset, args.val_split, args.protocol, args.max_turns)
+        make_row(sc, idx, args.dataset, args.val_split, args.protocol, args.max_turns, args.proactive)
         for idx, sc in enumerate(val_scenarios)
     ]
 
@@ -128,7 +143,7 @@ if __name__ == "__main__":
     val_ds.to_parquet(val_path)
 
     print(
-        f"dataset={args.dataset}  protocol={args.protocol}  max_turns={args.max_turns}\n"
+        f"dataset={args.dataset}  protocol={args.protocol}  max_turns={args.max_turns}  proactive={args.proactive}\n"
         f"  train rows : {len(train_rows):>5}  -> {train_path}\n"
         f"  val   rows : {len(val_rows):>5}  -> {val_path}"
     )

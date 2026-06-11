@@ -287,12 +287,35 @@ export RAY_DISABLE_MEMORY_MONITOR=1
 # (`bash <helper>`), not inline -- an inline detection pipeline returns non-zero on its last
 # (non-IB) device and `pipefail`+`set -e` would abort the whole run. The `|| true` is a second
 # guard so a missing helper / no-IB host falls back to the inherited /etc/environment value.
-if [ -d /sys/class/infiniband ] && [ -n "$(ls -A /sys/class/infiniband 2>/dev/null)" ]; then
+if [ "${SKIP_IB_INTERSECTION:-0}" = "1" ]; then
+  # Read the IB-only HCA list from /etc/nccl.conf and set it explicitly.
+  # DO NOT leave NCCL_IB_HCA unset: NCCL auto-detection on nodes 8/9 includes mlx5_4 (Ethernet
+  # 10GbE) alongside the IB ports, causing mismatched communicator rails and BROADCAST hangs.
+  # /etc/nccl.conf lists only InfiniBand ports (mlx5_0,1,2,3,6,7,8,9), excluding mlx5_4/5.
+  _nccl_conf_hca=$(grep '^NCCL_IB_HCA=' /etc/nccl.conf 2>/dev/null | cut -d= -f2- | tr -d '"')
+  if [ -n "$_nccl_conf_hca" ]; then
+    export NCCL_IB_HCA="$_nccl_conf_hca"
+    echo "[NCCL] SKIP_IB_INTERSECTION=1: set NCCL_IB_HCA=$NCCL_IB_HCA (IB-only, from /etc/nccl.conf)"
+  else
+    unset NCCL_IB_HCA
+    echo "[NCCL] SKIP_IB_INTERSECTION=1: /etc/nccl.conf missing NCCL_IB_HCA, left unset (fallback)"
+  fi
+elif [ -d /sys/class/infiniband ] && [ -n "$(ls -A /sys/class/infiniband 2>/dev/null)" ]; then
   _ib_helper="$(dirname "${BASH_SOURCE[0]}")/ib-hca-intersection.sh"
-  _ib_csv=$(bash "$_ib_helper" "/workspace/.sky_ib_hca/${JOB_KEY:-nojob}" "${SKYPILOT_NUM_NODES:-1}" 2>/dev/null || true)
+  # Use .sky_ib_hca_new (root:root 1777) — the old .sky_ib_hca (zhichao:zhichao 775) is
+  # unwritable for root jobs on this NFS (root_squash maps root→nobody, denied by 775).
+  _ib_barrier_dir="/workspace/.sky_ib_hca_new/${JOB_KEY:-nojob}"
+  _ib_csv=$(bash "$_ib_helper" "$_ib_barrier_dir" "${SKYPILOT_NUM_NODES:-1}" 2>/dev/null || true)
   if [ -n "$_ib_csv" ]; then
     export NCCL_IB_HCA="$_ib_csv"
     echo "[NCCL] consistent NCCL_IB_HCA across ${SKYPILOT_NUM_NODES:-1} node(s) = $NCCL_IB_HCA"
+  elif [ "${SKYPILOT_NUM_NODES:-1}" -gt 1 ]; then
+    # On multi-node jobs a silent fallback to a stale/wrong static list causes a 10-min
+    # NCCL deadlock. Fail fast so the job can be retried with a correct config.
+    echo "[NCCL] FATAL: IB intersection produced nothing on a ${SKYPILOT_NUM_NODES}-node job" >&2
+    echo "[NCCL] barrier dir: $_ib_barrier_dir" >&2
+    echo "[NCCL] Fix: ensure $_ib_barrier_dir is writable on all nodes (NFS root_squash?)" >&2
+    exit 1
   else
     echo "[NCCL] intersection helper produced nothing; keeping inherited NCCL_IB_HCA=${NCCL_IB_HCA:-unset}"
   fi
@@ -348,6 +371,7 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
     --metrics-export-port "$RAY_METRICS_EXPORT_PORT" \
     --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
     --object-store-memory=10000000000 \
+    --num-cpus="${RAY_NUM_CPUS:-32}" \
     --node-ip-address="$head_ip" --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   # Tell ray.init() where to find the cluster (needed when --temp-dir differs
@@ -434,6 +458,7 @@ else
     --runtime-env-agent-port "$RAY_RUNTIME_ENV_AGENT_PORT" \
     --metrics-export-port "$RAY_METRICS_EXPORT_PORT" \
     --min-worker-port "$RAY_WORKER_PORT_MIN" --max-worker-port "$RAY_WORKER_PORT_MAX" \
+    --num-cpus="${RAY_NUM_CPUS:-32}" \
     --temp-dir="$RAY_TMPDIR"
   wait_for_ray "$ray_address"
   export RAY_ADDRESS="$ray_address"

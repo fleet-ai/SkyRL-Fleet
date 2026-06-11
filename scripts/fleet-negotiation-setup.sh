@@ -63,6 +63,10 @@ if ! command -v c++ &>/dev/null; then
 fi
 
 # --- Python environment ---
+if [ -d ".venv" ] && [ ! -f ".venv/bin/activate" ]; then
+  echo "Stale/broken .venv found (no bin/activate) — removing and recreating"
+  rm -rf .venv
+fi
 if [ -d ".venv" ]; then
   echo "Virtual environment already exists, reusing"
 else
