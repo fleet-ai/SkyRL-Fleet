@@ -44,6 +44,20 @@ export PARETO_COEF="${PARETO_COEF:-0.5}"
 # based on the prose; the verifiable reward reads only the JSON — rate grew
 # 10%->25% over steps 1-17 of the outcome baseline). Set 0 to disable.
 export DECEPTION_PENALTY="${DECEPTION_PENALTY:--0.1}"
+# Sublinear length penalty on total response tokens (policy/response_length), applied to the
+# final reward in the generator. Counters the observed length runaway: in the outcome baseline
+# (wandb sjwub9f2) response_length climbed ~1.5k->7k tokens over steps 9-63, saturating the
+# 6*1024=6144 generation budget; no_deal then exploded 0.01->0.85 and you_norm collapsed
+# 0.80->0.12 as the policy wrote essays and never committed a <propose>/<accept> in time.
+# penalty = COEF * (tokens / REF) ** ALPHA  (fn=power; sqrt at ALPHA=0.5)
+#   REF=0 -> auto = MAX_TURNS * MAX_GENERATE_LENGTH = 6144 (full budget).
+# With COEF=0.2, ALPHA=0.5: a concise ~1.5k-token episode loses ~0.10, a budget-saturating
+# ~6k-token one loses ~0.20 — a ~0.10 reward gap (on the scale of you_norm and DECEPTION_PENALTY)
+# that nudges toward brevity without punishing legitimate multi-turn bargaining. Set 0 to disable.
+export LENGTH_PENALTY_COEF="${LENGTH_PENALTY_COEF:-0.2}"
+export LENGTH_PENALTY_ALPHA="${LENGTH_PENALTY_ALPHA:-0.5}"
+export LENGTH_PENALTY_FN="${LENGTH_PENALTY_FN:-power}"  # power (sqrt at alpha=0.5) | log
+export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-0}"    # 0 -> MAX_TURNS * MAX_GENERATE_LENGTH
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
 export MAX_TURNS="${MAX_TURNS:-6}"  # per-agent message budget; must match dataset prep --max_turns
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"  # negotiation transcripts are short
@@ -131,6 +145,10 @@ bash scripts/fleet-common-run.sh \
   generator.sampling_params.max_generate_length=$MAX_GENERATE_LENGTH \
   generator.sampling_params.temperature=0.9 \
   generator.sampling_params.top_p=0.95 \
+  generator.length_penalty_coef=$LENGTH_PENALTY_COEF \
+  generator.length_penalty_alpha=$LENGTH_PENALTY_ALPHA \
+  generator.length_penalty_fn=$LENGTH_PENALTY_FN \
+  generator.length_penalty_ref=$LENGTH_PENALTY_REF \
   'generator.sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]' \
   'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]' \
   trainer.policy.optimizer_config.lr=5.0e-7 \
