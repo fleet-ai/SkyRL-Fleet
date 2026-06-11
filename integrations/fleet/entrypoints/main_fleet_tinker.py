@@ -883,7 +883,6 @@ async def main(
 
     # Training loop
     pbar = tqdm(range(max_steps), desc="Training", unit="step")
-    last_sampling_client = None
     for step in pbar:
         step_start = time.time()
         metrics = {"step": step, "epoch": step // steps_per_epoch}
@@ -894,7 +893,6 @@ async def main(
         sampling_client = (
             await training_client.save_weights_and_get_sampling_client_async()
         )
-        last_sampling_client = sampling_client
 
         # Get batch
         try:
@@ -1038,21 +1036,21 @@ async def main(
             except Exception as e:
                 logger.warning(f"save_state after step {step} failed: {e}")
 
-        # Periodic eval (every eval_every steps). Skip step 0: the policy has
-        # had at most one optim_step here, so periodic eval at step=0 is
-        # indistinguishable from the untrained baseline. For an untrained
-        # baseline, use --eval-before-train (runs once at step_index=-1).
-        # Final-step eval runs unconditionally below.
-        if eval_every > 0 and eval_dataset and step > 0 and step % eval_every == 0:
-            await _run_eval(sampling_client, step_index=step)
-
-    # Post-train eval on the final policy. Always runs when an eval dataset is
-    # provided so the launcher can report a post_pass_rate even when the
-    # last training step doesn't land on an eval_every boundary.
-    if eval_dataset and last_sampling_client is not None:
-        final_sampling_path = training_client.save_weights_for_sampler(name="step_final").result().path
-        final_sampling_client = service_client.create_sampling_client(model_path=final_sampling_path)
-        await _run_eval(final_sampling_client, step_index=max_steps)
+        # Periodic + final-step eval, parity with skyrl/train/trainer.py:374.
+        # Periodic: every eval_every steps after step 0 (step=0 is
+        # indistinguishable from the untrained baseline; use --eval-before-train
+        # for that). Final-step: always runs, with a durable "step_final"
+        # checkpoint so the auto-train launcher can record post_pass_rate and
+        # resume from it.
+        is_final_step = step == max_steps - 1
+        is_periodic = eval_every > 0 and step > 0 and step % eval_every == 0
+        if eval_dataset and (is_periodic or is_final_step):
+            if is_final_step:
+                final_sampling_path = training_client.save_weights_for_sampler(name="step_final").result().path
+                eval_client = service_client.create_sampling_client(model_path=final_sampling_path)
+                await _run_eval(eval_client, step_index=max_steps)
+            else:
+                await _run_eval(sampling_client, step_index=step)
 
     # Surface pre/post pass rates to disk for the launcher to read. The first
     # entry (pre-train if requested, otherwise step 0) is the baseline; the
