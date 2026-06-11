@@ -11,9 +11,13 @@ and each agent's private value vector. No judge is involved.
 Two reward modes (the planned ablation, see ``eval/REPORT.md``):
   - ``outcome``        : normalized self-score (``score / max_possible``).
                          No-deal / conflict / incomplete = 0.
-  - ``outcome_pareto`` : ``outcome + pareto_coef * pareto_bonus`` on agreement,
-                         where ``pareto_bonus`` is 1.0 iff the agreed split is
-                         on the enumerated Pareto frontier.
+  - ``outcome_pareto`` : ``outcome + pareto_coef * joint_efficiency`` on agreement,
+                         where ``joint_efficiency`` is the achieved joint score over
+                         the best achievable joint score (continuous in [0, 1]). This
+                         is a denser gradient than the binary Pareto flag, which is
+                         sparse, orthogonal to slice size, and would reward a
+                         lopsided-but-technically-frontier split. No-deal / conflict /
+                         incomplete still = 0, preserving the no-deal deterrent.
 
 Two protocols (see ``prompts.py`` / ``game.py``):
   - ``single`` (default, recommended): one side proposes a full split via
@@ -366,7 +370,10 @@ class NegotiationEnv(BaseTextEnv):
         if out.agreed:
             reward = out.you_norm
             if self.reward_mode == "outcome_pareto":
-                reward = reward + self.pareto_coef * out.pareto_bonus
+                # Continuous joint-efficiency shaping (not the binary Pareto flag):
+                # denser gradient, and it won't reward a lopsided split just because
+                # it happens to sit on the frontier.
+                reward = reward + self.pareto_coef * out.joint_efficiency
         else:
             reward = 0.0
         # Deception penalty applies regardless of outcome: a deceptive promise

@@ -9,7 +9,8 @@
 #
 # Reward ablation arms:
 #   outcome       (default) — pure self-score reward
-#   outcome_pareto          — self-score + weighted Pareto bonus (PARETO_COEF)
+#   outcome_pareto          — self-score + PARETO_COEF * joint_efficiency (continuous
+#                             joint-efficiency shaping, not the sparse binary Pareto flag)
 # Switch arms by setting REWARD_MODE=outcome_pareto before launch.
 #
 # Orthogonal prompt ablation:
