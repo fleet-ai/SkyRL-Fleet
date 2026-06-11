@@ -82,6 +82,13 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("mcp").setLevel(logging.WARNING)
 
+# Per-await timeouts. Tinker's 120-min progress_timeout is shared across the
+# SamplingClient and starvation-prone under concurrent rollouts.
+TINKER_SAMPLE_TIMEOUT_S = 300
+ENV_INIT_TIMEOUT_S = 90
+ENV_STEP_TIMEOUT_S = 120
+ENV_CLOSE_TIMEOUT_S = 30
+
 # Thread pool for env operations - isolates MCP connections per thread (like SkyRL)
 _env_executor: ThreadPoolExecutor = None
 
@@ -474,8 +481,12 @@ async def collect_fleet_rollout(
     env = FleetTaskEnv(env_config=env_config, extras=extras)
 
     try:
-        # Initialize environment in thread pool - isolates MCP connections
-        chat_history, metadata = await _env_init(env, [])
+        # Initialize environment in thread pool - isolates MCP connections.
+        # On timeout, let the TimeoutError raise to collect_single_rollout's
+        # generic Exception handler.
+        chat_history, metadata = await asyncio.wait_for(
+            _env_init(env, []), ENV_INIT_TIMEOUT_S
+        )
         env_key = metadata.get("env_key", "unknown")
 
         # Tokenize initial prompt
@@ -517,12 +528,19 @@ async def collect_fleet_rollout(
                 sampling_params_kwargs["stop"] = stop_sequences
             sampling_params = types.SamplingParams(**sampling_params_kwargs)
 
-            # Use async sampling to avoid blocking the event loop
-            result = await sampling_client.sample_async(
-                prompt=types.ModelInput.from_ints(tokens=input_ids),
-                num_samples=1,
-                sampling_params=sampling_params,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    sampling_client.sample_async(
+                        prompt=types.ModelInput.from_ints(tokens=input_ids),
+                        num_samples=1,
+                        sampling_params=sampling_params,
+                    ),
+                    TINKER_SAMPLE_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[{task_key}] Turn {turn_num}: tinker sample timeout ({TINKER_SAMPLE_TIMEOUT_S}s)")
+                stop_reason = "tinker_timeout"
+                break
             gen_time = time.time() - gen_start
             total_gen_time += gen_time
 
@@ -557,7 +575,12 @@ async def collect_fleet_rollout(
 
             # Step environment in thread pool - isolates MCP connections
             step_start = time.time()
-            step_output = await _env_step(env, output_text)
+            try:
+                step_output = await asyncio.wait_for(_env_step(env, output_text), ENV_STEP_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                logger.warning(f"[{task_key}] Turn {turn_num}: env step timeout ({ENV_STEP_TIMEOUT_S}s)")
+                stop_reason = "env_step_timeout"
+                break
             step_time = time.time() - step_start
             total_step_time += step_time
             total_tokens += len(output_ids)
@@ -594,9 +617,9 @@ async def collect_fleet_rollout(
 
     finally:
         try:
-            await _env_close(env)
+            await asyncio.wait_for(_env_close(env), ENV_CLOSE_TIMEOUT_S)
         except Exception as e:
-            logger.warning(f"env close failed for {task_key}: {e}")
+            logger.warning(f"env close failed/timeout for {task_key}: {e}")
 
 
 async def collect_batch_rollouts(
