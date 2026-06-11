@@ -1,0 +1,439 @@
+# OFFICIAL ARC-AGI-3 efficiency-score eval on the held-out witness games.
+#
+# Difference from witness-eval-arc-score.yaml:
+#   That task runs tools/evaluate_arc_score.py, which uses a SIMPLIFIED score
+#   `min(S_ref/S_agent, 1) * 1[solved]` summed over levels — NOT the official
+#   ARC-AGI-3 formula.
+#   THIS task runs arc-witness-agent/evaluate.py, which scores via
+#   arc-witness-envs/bench/scoring.py — bit-for-bit equivalent to
+#   `arc_agi.scorecard.EnvironmentScoreCalculator` (verified by
+#   bench/tests/test_scoring.py::test_parity_with_arc_agi_calculator):
+#
+#     per level (if completed):  min( (S_ref/S_agent)^2 * 100 , 115 )
+#     per game:                  level-index(1-based)-weighted mean of level scores
+#     multi-seed:                MAX over seeds   (== EnvironmentScoreList.score)
+#     overall:                   mean of per-game scores  (summary_official.overall_score)
+#
+# So `summary_official.overall_score` in the output JSON IS the ARC-AGI-3-style
+# headline number (0–115 scale), computed the same way the public leaderboard does.
+#
+# Serving path (FSDP->HF merge + vision-strip + vllm_minimal_server + TP) is
+# reused verbatim from witness-eval-arc-score.yaml — it is the validated way to
+# host Qwen3.5-35B-A3B for inference.
+#
+# Required env vars (pass via --env):
+#   CKPT_LABEL        — descriptive label, e.g. "R5-35B-step51"
+#   CKPT_FSDP_S3      — S3 path to the FSDP-sharded ckpt dir, e.g.
+#                       s3://fleet-guanghan/witness_grpo_v5b7_p2_r5_35b/global_step_51/
+#                       (must contain policy/model_world_size_*_rank_*.pt)
+#   POLICY_SIZE_HINT  — "9b" or "35b" (auto-inferred from path if empty)
+#
+# Optional (defaults reflect the locked-in eval design — see launcher script):
+#   GAMES                              default "tw01 tw09 tw10 tw12" (4 held-out)
+#   SEEDS                              default "0 1 2"  (best-of-3, max-aggregated)
+#   SCORE_CAP                          default "5"      (first 5 levels per game)
+#   MAX_LEVELS                         default "5"      (agent stops after 5 levels)
+#   MAX_TOTAL_STEPS                    default "1500"   (matches Kaggle harness)
+#   MAX_LEVEL_STEPS                    default "200"    (matches Kaggle harness)
+#   TEMPERATURE                        default "0.0"
+#   ENABLE_SECONDARY_PROVIDER_FALLBACK default "1"      (R5 scaffold: Sonnet on non-ORAI)
+#   SECONDARY_MODEL                    default anthropic/claude-sonnet-4.5
+#
+# Usage:
+#   sky launch tasks/witness-eval-arc-score-official.yaml \
+#     -c arc-eval-official-r5-35b-${USER} \
+#     --env CKPT_LABEL=R5-35B-step51 \
+#     --env CKPT_FSDP_S3=s3://fleet-guanghan/witness_grpo_v5b7_p2_r5_35b/global_step_51/ \
+#     --env POLICY_SIZE_HINT=35b \
+#     --env ENABLE_SECONDARY_PROVIDER_FALLBACK=1 \
+#     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+#     -y --detach-run
+
+name: witness-eval-arc-score-official
+
+resources:
+  # Slurm-only FLAT resource (mirrors witness-grpo-v5b7-phase2-r5-35b.yaml). Two
+  # Slurm footguns deliberately avoided:
+  #   1. NO `ports:` — Slurm doesn't support open_ports (NotSupportedError). The
+  #      vLLM server + evaluate.py run on the SAME node and talk over localhost:8000,
+  #      so no SkyPilot ingress is needed.
+  #   2. NO `any_of:`/`ordered:` multi-cloud block — with `--infra slurm` the GCP
+  #      entry's image_id gets dragged onto Slurm → Slurm.get_image_size
+  #      NotImplementedError. Keep it flat slurm-only.
+  # H200:8 is the GPU type validated for vllm.LLM()+ray on Qwen3.5-35B-A3B.
+  disk_size: 600
+  accelerators: H200:8
+  cloud: slurm
+  region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 1
+
+workdir:
+  url: https://github.com/fleet-ai/SkyRL-Fleet.git
+  ref: guanghan/b7-phase2-judge-rewards
+
+file_mounts:
+  ~/arc-witness-agent: ~/Documents/obsidian/research-directions/repos/arc-witness-agent
+  ~/arc-witness-envs: ~/Documents/obsidian/research-directions/repos/arc-witness-envs
+
+envs:
+  CKPT_LABEL: ""
+  CKPT_FSDP_S3: ""
+  MERGED_HF_DIR: ""             # if set: REUSE this pre-merged HF dir on /workspace and SKIP S3 download + merge
+                                #   e.g. /workspace/guanghan/p2_r5_35b_opus_step51/merged-bf16
+  HF_MODEL_ID: ""               # if set: STOCK model straight from HF hub (no RL ckpt, no merge) —
+                                #   e.g. Qwen/Qwen3.5-9B for the harness-only / no-RL baseline
+  POLICY_SIZE_HINT: ""          # "9b" or "35b"; auto-detect from path if empty
+
+  # Eval design (locked-in defaults; see launcher for rationale)
+  GAMES: "tw01 tw09 tw10 tw12"  # 4 held-out games
+  SEEDS: "0 1 2"                # best-of-3 (official max-aggregate)
+  SCORE_CAP: "5"                # official score over first 5 levels per game
+  MAX_LEVELS: "5"               # agent stops after 5 levels (don't burn budget on unscored levels)
+  MAX_TOTAL_STEPS: "1500"       # match Kaggle ARC-AGI-3 harness
+  MAX_LEVEL_STEPS: "200"        # match Kaggle ARC-AGI-3 harness
+  TEMPERATURE: "0.0"
+  MAX_GEN_TOKENS: "1024"        # cap policy generation per call — MATCHES TRAINING
+                                # (generator max_generate_length=1024). config.yaml's
+                                # max_tokens=16000 was tuned for Claude scaffolding; a
+                                # no-SFT policy runs to the cap → 10-min vLLM calls ×
+                                # 3 SDK retries = 30-min hangs (R4-35B job 1, 2026-06-05).
+  ENABLE_SECONDARY_PROVIDER_FALLBACK: "1"   # R5 scaffold
+  SECONDARY_MODEL: "anthropic/claude-sonnet-4.5"
+
+  # Inference settings (overridden by POLICY_SIZE_HINT in run section)
+  # NB: do NOT define VLLM_PORT here — that is a RESERVED vLLM env var for vLLM's
+  # INTERNAL ZMQ (engine<->workers), not the HTTP server port. Setting it makes
+  # vLLM bind that port internally; if our HTTP server uses the same value they
+  # collide ("address already in use"). We use SERVE_PORT (a plain local var) for
+  # the HTTP server and `unset VLLM_PORT` in run so vLLM auto-picks its own.
+  MAX_MODEL_LEN: "32768"
+
+  # S3 output destination
+  OUTPUT_S3_BASE: "s3://fleet-guanghan/arc_score_eval_official"
+
+  # Credentials
+  WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+
+setup: |
+  set -euo pipefail
+
+  # Preflight: need a label, and ONE model source: S3 FSDP ckpt (merge), pre-merged
+  # dir (reuse), or HF hub id (stock baseline).
+  if [ -z "${CKPT_LABEL}" ]; then echo "ERROR: CKPT_LABEL must be set." >&2; exit 1; fi
+  if [ -z "${CKPT_FSDP_S3}" ] && [ -z "${MERGED_HF_DIR:-}" ] && [ -z "${HF_MODEL_ID:-}" ]; then
+    echo "ERROR: set CKPT_FSDP_S3 (download+merge) OR MERGED_HF_DIR (reuse) OR HF_MODEL_ID (stock)." >&2
+    exit 1
+  fi
+
+  # Build the venv on NODE-LOCAL disk (/tmp), NOT in sky_workdir — which lives on
+  # the shared /workspace NFS (slurm cluster_config workdir=/workspace). On NFS,
+  # deleting a still-open file silly-renames it to .nfsXXXX, so `uv venv --clear`
+  # / `rm -rf` can't empty .venv/bin → "Directory not empty (os error 39)" on a
+  # cluster re-launch. Node-local /tmp deletes cleanly and is much faster.
+  # Idempotent across re-launches: if a COMPLETE venv already exists (sentinel
+  # written only after ALL installs succeeded under `set -e`), reuse it and do
+  # NOT delete/rebuild — which also sidesteps the NFS delete problem entirely.
+  VENV="/tmp/witness_eval_venv"
+  if [ -f "$VENV/.installs_done" ]; then
+    echo "[setup] reusing complete node-local venv at $VENV"
+    source "$VENV/bin/activate"
+  else
+    echo "[setup] building node-local venv at $VENV"
+    rm -rf "$VENV" 2>/dev/null || true
+    uv venv "$VENV" --python 3.12 --seed
+    source "$VENV/bin/activate"
+    uv pip install awscli boto3 pyyaml openai huggingface_hub
+    uv pip install "vllm==0.18.0"                   # same version the trainer uses (cu128/nvidia-570)
+    uv pip install --upgrade "transformers==5.3.0"  # qwen3_5_moe AutoConfig; matches b7 cluster (5.8.1 crashed 35B)
+    uv pip install "ray[default]==2.49.2"           # for --distributed-executor-backend=ray (35B serve)
+    uv pip install arc-agi
+    uv pip install --quiet numpy pillow anthropic loguru  # evaluate.py runtime deps
+    touch "$VENV/.installs_done"
+  fi
+
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+  export MERGE_SCRIPT="$HOME/sky_workdir/examples/train_integrations/witness/merge_fsdp_checkpoint.py"
+
+  # Sanity-check file_mounts + tooling
+  test -f "$ARC_WITNESS_AGENT_DIR/agent/core.py" || { echo "ERROR: arc-witness-agent file_mount missing"; exit 1; }
+  test -f "$ARC_WITNESS_AGENT_DIR/evaluate.py" || { echo "ERROR: evaluate.py missing — local repo out of date"; exit 1; }
+  test -f "$WITNESS_ENVS_DIR/bench/scoring.py" || { echo "ERROR: bench/scoring.py missing — envs repo out of date"; exit 1; }
+  test -d "$WITNESS_ENVS_DIR/environment_files" || { echo "ERROR: environment_files missing"; exit 1; }
+  test -f "$MERGE_SCRIPT" || { echo "ERROR: merge_fsdp_checkpoint.py missing at $MERGE_SCRIPT"; exit 1; }
+  echo "[ok] file_mounts + merge script present | CKPT_LABEL=$CKPT_LABEL"
+
+  # Decide base model name (used by merge for config templating)
+  if [ "${POLICY_SIZE_HINT}" = "35b" ] || echo "$CKPT_FSDP_S3" | grep -qi "35b" || echo "${MERGED_HF_DIR:-}" | grep -qi "35b" || echo "${HF_MODEL_ID:-}" | grep -qi "35b"; then
+    BASE_MODEL="Qwen/Qwen3.5-35B-A3B"
+    SIZE_HINT="35b"
+  else
+    BASE_MODEL="Qwen/Qwen3.5-9B"
+    SIZE_HINT="9b"
+  fi
+  echo "POLICY_SIZE=${SIZE_HINT}" > $HOME/.eval_meta
+  echo "BASE_MODEL=${BASE_MODEL}" >> $HOME/.eval_meta
+
+  # === Obtain a vLLM-loadable HF checkpoint ===
+  # FAST PATH: if MERGED_HF_DIR is set (a pre-merged HF dir on the shared
+  # /workspace NFS, e.g. /workspace/guanghan/p2_r5_35b_opus_step51/merged-bf16),
+  # REUSE it and skip the S3 download + ~15-min merge entirely. We SYMLINK the
+  # ~70 GB weight shards (no copy) and COPY the small files, so the vision-strip
+  # below patches OUR copy's config.json and never mutates the shared source.
+  # NODE-LOCAL staging (/tmp), NOT $HOME (=/workspace NFS). The merged 70GB model
+  # is a per-run artifact: building it on /tmp means it's reclaimed when the node
+  # is released (sky down) and NEVER leaves a 70GB residue on the shared NFS that
+  # has to be hand-cleaned. The MERGED_HF_DIR reuse cache (deliberately on
+  # /workspace) is untouched — we only symlink INTO /tmp from it. Same rationale
+  # as the node-local venv. (setup→run share the node, so /tmp persists between.)
+  MERGED_DIR="/tmp/policy_ckpt"
+  rm -rf "$MERGED_DIR"; mkdir -p "$MERGED_DIR"   # clean slate on a reused node
+  if [ -n "${HF_MODEL_ID:-}" ]; then
+    # STOCK baseline: pull the complete official model from HF hub (config +
+    # tokenizer + ALL weights incl. vision). No merge, no patching needed — this
+    # IS the canonical model. Used for the harness-only / no-RL comparison arm.
+    echo "[ckpt] STOCK model from HF hub: $HF_MODEL_ID (baseline; no RL ckpt, no merge)"
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$HF_MODEL_ID', local_dir='$MERGED_DIR', local_dir_use_symlinks=False)" 2>&1 | tail -3
+    [ -f "$MERGED_DIR/config.json" ] || { echo "ERROR: HF download incomplete (no config.json) for $HF_MODEL_ID" >&2; exit 1; }
+    ls "$MERGED_DIR"/*.safetensors >/dev/null 2>&1 || { echo "ERROR: HF download has no *.safetensors" >&2; exit 1; }
+    echo "[ckpt] stock model ready: $(du -sh "$MERGED_DIR" | cut -f1)"
+  elif [ -n "${MERGED_HF_DIR:-}" ]; then
+    echo "[ckpt] REUSE pre-merged HF dir: $MERGED_HF_DIR (skip S3 download + merge)"
+    test -f "$MERGED_HF_DIR/config.json" || { echo "ERROR: no config.json in $MERGED_HF_DIR" >&2; exit 1; }
+    ls "$MERGED_HF_DIR"/*.safetensors >/dev/null 2>&1 || ls "$MERGED_HF_DIR"/pytorch_model*.bin >/dev/null 2>&1 \
+      || { echo "ERROR: no weights (*.safetensors / *.bin) in $MERGED_HF_DIR" >&2; exit 1; }
+    for f in "$MERGED_HF_DIR"/*.safetensors "$MERGED_HF_DIR"/*.bin; do [ -e "$f" ] && ln -sf "$f" "$MERGED_DIR/"; done
+    # copy everything that is NOT a weight shard (config.json, *.index.json, tokenizer, chat_template)
+    find "$MERGED_HF_DIR" -maxdepth 1 -type f ! -name '*.safetensors' ! -name '*.pt' ! -name '*.bin' \
+      -exec cp -f {} "$MERGED_DIR/" \;
+    echo "[ckpt] linked $(ls "$MERGED_DIR"/*.safetensors 2>/dev/null | wc -l | tr -d ' ') weight shard(s) + copied configs"
+  else
+    # SLOW PATH: download FSDP shards from S3 (model + extra_state only; skip optim) and merge.
+    FSDP_DIR="/tmp/fsdp_ckpt"   # node-local: ~140GB download, reclaimed on sky down
+    mkdir -p "$FSDP_DIR"
+    echo "[ckpt] downloading FSDP shards from $CKPT_FSDP_S3 (excluding optim)"
+    aws s3 sync "$CKPT_FSDP_S3" "$FSDP_DIR/" \
+        --exclude "*" \
+        --include "policy/model_*" \
+        --include "policy/extra_state_*" \
+        --include "data.pt" \
+        --include "trainer_state.pt" \
+        2>&1 | tail -10
+    du -sh "$FSDP_DIR/policy" || true
+    ls -la "$FSDP_DIR/policy" | head -20 || true
+
+    echo "[merge] running merge_fsdp_checkpoint.py (base=$BASE_MODEL)"
+    python "$MERGE_SCRIPT" \
+        --checkpoint_dir "$FSDP_DIR/policy" \
+        --output_dir "$MERGED_DIR" \
+        --model_name "$BASE_MODEL" \
+        2>&1 | tee "$HOME/merge.log"
+    if ! ls "$MERGED_DIR"/*.safetensors >/dev/null 2>&1 && ! ls "$MERGED_DIR"/pytorch_model*.bin >/dev/null 2>&1; then
+      echo "ERROR: merge did not produce weights file in $MERGED_DIR" >&2
+      tail -40 "$HOME/merge.log"; exit 1
+    fi
+    [ -f "$MERGED_DIR/config.json" ] || { echo "ERROR: merge produced no config.json" >&2; exit 1; }
+    echo "[merge] OK"
+  fi
+
+  # Patch multimodal config (save_hf_model/merge omits these — see memory note
+  # feedback_save_hf_model_missing_mm_files). Idempotent; the reuse path usually
+  # already has these files.
+  echo "[ckpt] patching multimodal config from $BASE_MODEL"
+  python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$BASE_MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$MERGED_DIR', local_dir_use_symlinks=False)" 2>&1 | tail -5
+
+  # For 35B: wrap config.json in a MULTIMODAL SHELL (do NOT strip to text-only).
+  # vLLM's qwen3_5_moe only implements the multimodal path and REJECTS a plain
+  # text config with "Expected Qwen3_5MoeConfig, found Qwen3_5MoeTextConfig".
+  # The Kaggle-proven fix (2026-06-03 eval guide): keep architectures=
+  # Qwen3_5MoeForCausalLM + nest the real config under text_config + attach the
+  # official Qwen3.5-35B-A3B vision_config + vision token-ids. vLLM then builds
+  # Qwen3_5MoeConfig, loads ONLY the language weights (no vision tower present),
+  # and `--limit-mm-per-prompt-image 0` keeps it text-only at inference.
+  # (Plain vision-strip was NEVER validated for 35B — see paper appendix footnote;
+  #  this wrapper is what actually loaded the 35B on Kaggle vLLM.)
+  # We drop quantization_config (this eval is BF16, not FP8) and pre-strip any
+  # vision_*/token-id keys from text_config so it works whether the merged
+  # config.json is flat-text or already multimodal. Patches the COPY in
+  # $MERGED_DIR, so the shared source (reuse path) is left intact.
+  if [ "$SIZE_HINT" = "35b" ]; then
+    echo "[ckpt] wrapping config.json in multimodal shell (Qwen3_5MoeForCausalLM, text-only weights)"
+    MERGED_DIR_ENV="$MERGED_DIR" python -c 'import json,os; p=os.environ["MERGED_DIR_ENV"]+"/config.json"; o=json.load(open(p)); drop=("quantization_config","architectures","vision_config","image_token_id","video_token_id","vision_start_token_id","vision_end_token_id","vision_token_id"); t={k:v for k,v in o.items() if k not in drop}; t["model_type"]="qwen3_5_moe_text"; mm={"architectures":["Qwen3_5MoeForCausalLM"],"model_type":"qwen3_5_moe","text_config":t,"vision_config":{"deepstack_visual_indexes":[],"depth":27,"hidden_act":"gelu_pytorch_tanh","hidden_size":1152,"in_channels":3,"initializer_range":0.02,"intermediate_size":4304,"model_type":"qwen3_5_moe","num_heads":16,"num_position_embeddings":2304,"out_hidden_size":2048,"patch_size":16,"spatial_merge_size":2,"temporal_patch_size":2},"image_token_id":248056,"video_token_id":248057,"vision_start_token_id":248053,"vision_end_token_id":248054,"tie_word_embeddings":False}; json.dump(mm,open(p,"w"),indent=2); print("[wrap] arch=",mm["architectures"]," top model_type=",mm["model_type"]," text_config.model_type=",t["model_type"])'
+  fi
+
+  # Free FSDP shards only if we downloaded them (reuse path has none).
+  # NOTE: `df ... || true` — head closes the pipe early and df gets SIGPIPE (exit
+  # 141); under `set -o pipefail` that would FAIL the whole setup. (This is exactly
+  # what killed the previous run, AFTER a fully successful merge.)
+  if [ -z "${MERGED_HF_DIR:-}" ] && [ -z "${HF_MODEL_ID:-}" ]; then
+    echo "[cleanup] removing FSDP shards (merge succeeded)"
+    rm -rf /tmp/fsdp_ckpt
+  fi
+  df -h | head -5 || true
+
+run: |
+  set -euo pipefail
+  # node-local venv built in setup (same node/job; /tmp persists across setup→run)
+  source /tmp/witness_eval_venv/bin/activate
+  source $HOME/.eval_meta
+
+  export WITNESS_ENVS_DIR=$HOME/arc-witness-envs
+  export ARC_WITNESS_AGENT_DIR=$HOME/arc-witness-agent
+  # R5 secondary-provider fallback (read from env by LLMClient).
+  export ENABLE_SECONDARY_PROVIDER_FALLBACK
+  export SECONDARY_MODEL
+  export OPENROUTER_API_KEY
+
+  # Size-dependent vLLM config (matches witness-eval-arc-score.yaml).
+  if [ "$POLICY_SIZE" = "35b" ]; then
+    TP_SIZE=2
+    MEM_UTIL=0.65
+  else
+    TP_SIZE=1
+    MEM_UTIL=0.75
+  fi
+  echo "[vllm] POLICY_SIZE=$POLICY_SIZE  TP=$TP_SIZE  MEM=$MEM_UTIL"
+
+  LOG_DIR=$HOME/run_logs
+  mkdir -p "$LOG_DIR"
+  VLLM_LOG="$LOG_DIR/vllm_server.log"
+
+  # CRITICAL: VLLM_PORT is a RESERVED vLLM env var for vLLM's INTERNAL ZMQ
+  # (engine<->workers), NOT the HTTP server port (per vLLM docs). We previously
+  # set VLLM_PORT and also pointed our uvicorn server at the SAME value → vLLM
+  # bound it internally during LLM() init, then uvicorn bind hit "address already
+  # in use". This was the real cause of the 8000/33339/18080 failures (juggling
+  # the number never helped — it moved BOTH sides together). Unset it so vLLM
+  # auto-picks its own internal port; serve HTTP on a SEPARATE var, SERVE_PORT.
+  unset VLLM_PORT
+  # Pick SERVE_PORT OUTSIDE the OS ephemeral range (32768-60999) and verify free,
+  # so it won't collide with vLLM's auto-picked (ephemeral) internal port or a
+  # stale holder. Connect-probe each candidate; first with nothing listening wins.
+  SERVE_PORT=""
+  for cand in 18080 19090 21000 22222 23456 24680 26000 28000 29999 31000; do
+    if ! (echo > "/dev/tcp/127.0.0.1/$cand") 2>/dev/null; then SERVE_PORT="$cand"; break; fi
+  done
+  [ -n "$SERVE_PORT" ] || { echo "ERROR: no free non-ephemeral port among candidates" >&2; exit 1; }
+  echo "[vllm] HTTP serve port = ${SERVE_PORT} (vLLM internal port auto-picked separately)"
+
+  echo "[vllm] launching server on port ${SERVE_PORT}"
+  export FLASHINFER_DISABLE_VERSION_CHECK=1
+  if [ "$POLICY_SIZE" = "35b" ]; then
+    # `&` (NOT nohup): keep the server as a child of this run script so it dies
+    # with the job and never orphans into a port/GPU-holding zombie.
+    python "$ARC_WITNESS_AGENT_DIR/tools/vllm_minimal_server.py" \
+      --model /tmp/policy_ckpt \
+      --port "${SERVE_PORT}" \
+      --host 0.0.0.0 \
+      --tensor-parallel-size "$TP_SIZE" \
+      --gpu-memory-utilization "$MEM_UTIL" \
+      --max-model-len "${MAX_MODEL_LEN}" \
+      --dtype bfloat16 \
+      --served-model-name witness-policy \
+      --enforce-eager \
+      --distributed-executor-backend mp \
+      --limit-mm-per-prompt-image 0 \
+      > "$VLLM_LOG" 2>&1 &
+      # NOTE: backend = mp (NOT ray). This is single-node TP=2 on a node we own
+      # entirely (H200:8), so mp spawns 2 local workers — no GCS/discovery/ports.
+      # Ray backend auto-DISCOVERED a co-tenant's Ray cluster on the shared Slurm
+      # cluster and hung connecting to its (unreachable) GCS. Ray was originally
+      # chosen to dodge an mp-spawn crash whose real cause was the config.json
+      # arch / dropped-vision-weights — now fixed by the multimodal config-wrapper
+      # above, so mp works. (If mp ever regresses: re-add `--distributed-executor-
+      # backend ray` AND `export RAY_ADDRESS=local` before launch to force a fresh
+      # isolated local Ray instead of discovering co-tenants.)
+  else
+    python -m vllm.entrypoints.openai.api_server \
+      --model /tmp/policy_ckpt \
+      --port "${SERVE_PORT}" \
+      --host 0.0.0.0 \
+      --tensor-parallel-size "$TP_SIZE" \
+      --gpu-memory-utilization "$MEM_UTIL" \
+      --max-model-len "${MAX_MODEL_LEN}" \
+      --dtype bfloat16 \
+      --served-model-name witness-policy \
+      --no-enable-log-requests \
+      > "$VLLM_LOG" 2>&1 &
+  fi
+  VLLM_PID=$!
+  echo "[vllm] pid=$VLLM_PID"
+
+  # Wait for /health (up to 15 min — 35B eager load of a 70GB ckpt over 2 GPUs is
+  # legitimately slow; health only comes up AFTER vllm.LLM() finishes loading).
+  echo "[vllm] waiting for ready..."
+  READY=0
+  for i in $(seq 1 180); do
+    if curl -s -f -o /dev/null "http://localhost:${SERVE_PORT}/health"; then READY=1; break; fi
+    if ! kill -0 $VLLM_PID 2>/dev/null; then
+      echo "[vllm] server died during startup; tail of log:"; tail -80 "$VLLM_LOG"; exit 1
+    fi
+    sleep 5
+  done
+  if [ "$READY" != "1" ]; then
+    echo "[vllm] server not ready after 15 min; tail of log:"; tail -80 "$VLLM_LOG"
+    kill $VLLM_PID 2>/dev/null || true; exit 1
+  fi
+  echo "[vllm] ready"
+
+  # === Run the OFFICIAL-scoring eval (evaluate.py → bench/scoring.py) ===
+  OUTPUT_JSON="$LOG_DIR/arc_score_official_${CKPT_LABEL}.json"
+  echo "[eval] running evaluate.py (official bench scoring)"
+  echo "[eval] games=$GAMES seeds=$SEEDS score_cap=$SCORE_CAP max_levels=$MAX_LEVELS"
+  echo "[eval] budget: total=$MAX_TOTAL_STEPS per_level=$MAX_LEVEL_STEPS  fallback=$ENABLE_SECONDARY_PROVIDER_FALLBACK"
+  cd "$ARC_WITNESS_AGENT_DIR"
+  # evaluate.py 偶尔在【存完结果后】的 teardown(关 vLLM client / asyncio / CUDA)抛非零退出。
+  # 在 set -o pipefail 下这会让整个 job 判失败、跳过下面的 S3 上传。关掉 errexit,
+  # 改用"结果 JSON 是否存在 + 主结果上传是否成功"来判定成败。
+  set +e
+  python evaluate.py \
+    --games $GAMES \
+    --seeds $SEEDS \
+    --score-cap-levels "$SCORE_CAP" \
+    --max-levels "$MAX_LEVELS" \
+    --max-steps "$MAX_TOTAL_STEPS" \
+    --max-level-steps "$MAX_LEVEL_STEPS" \
+    --llm-provider vllm \
+    --llm-base-url "http://localhost:${SERVE_PORT}/v1" \
+    --llm-model witness-policy \
+    --llm-fallback-model witness-policy \
+    --llm-temperature "$TEMPERATURE" \
+    --llm-max-tokens "$MAX_GEN_TOKENS" \
+    --disable-mllm \
+    --enable-secondary-fallback "$ENABLE_SECONDARY_PROVIDER_FALLBACK" \
+    --secondary-model "$SECONDARY_MODEL" \
+    --output "$OUTPUT_JSON" \
+    2>&1 | tee "$LOG_DIR/eval_${CKPT_LABEL}.log"
+  EVAL_RC=${PIPESTATUS[0]}
+  echo "[eval] evaluate.py exit code: $EVAL_RC (≠0 常见为存完结果后的无害 teardown 崩溃)"
+  if [ ! -f "$OUTPUT_JSON" ]; then
+    echo "ERROR: 没有产出 $OUTPUT_JSON —— eval 是真失败 (rc=$EVAL_RC)" >&2
+    kill ${VLLM_PID:-0} 2>/dev/null || true
+    exit 1
+  fi
+
+  # === Headline number: summary_official.overall_score (ARC-AGI-3-style, 0–115) ===
+  echo
+  echo "================= ARC-AGI-3-style OFFICIAL score ($CKPT_LABEL) ================="
+  OUTPUT_JSON_ENV="$OUTPUT_JSON" python -c 'import json,os; d=json.load(open(os.environ["OUTPUT_JSON_ENV"])); off=d.get("summary_official",{}); print("overall_score (mean of per-game official scores, 0-115):", round(off.get("overall_score",0.0),3)); print("per-game scores:"); [print("  %s: score=%.3f  levels=%d/%d  actions=%d" % (g["game_id"], g["score"].get("score",0), g["score"].get("levels_completed",0), g["score"].get("levels_total",0), g["score"].get("actions",0))) for g in d.get("games",[])]; print("first_n_completed:", off.get("first_n_completed"))'
+  echo "==============================================================================="
+
+  # Upload artifacts to S3
+  S3_DEST="${OUTPUT_S3_BASE}/${CKPT_LABEL}.json"
+  echo "[s3] uploading result to $S3_DEST"
+  # 主结果上传失败才算 job 失败;日志类上传 best-effort。
+  if ! aws s3 cp "$OUTPUT_JSON" "$S3_DEST"; then
+    echo "ERROR: 主结果上传 S3 失败 ($S3_DEST)" >&2
+    kill ${VLLM_PID:-0} 2>/dev/null || true
+    exit 1
+  fi
+  aws s3 cp "$LOG_DIR/eval_${CKPT_LABEL}.log" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_eval.log" || true
+  aws s3 cp "$VLLM_LOG" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_vllm.log" || true
+
+  kill $VLLM_PID 2>/dev/null || true
+  echo "[done] OFFICIAL arc_score eval complete for $CKPT_LABEL — artifacts at ${OUTPUT_S3_BASE}/"
