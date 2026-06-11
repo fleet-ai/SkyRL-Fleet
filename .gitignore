@@ -126,3 +126,9 @@ tx/tinker/alembic/__pycache__/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Editor swap files
+*.swp
+
+# primitivbench placebo training data (regenerated locally, not tracked)
+examples/train_integrations/primitivbench/data/*.parquet
