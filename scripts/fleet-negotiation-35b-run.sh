@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qwen3.5-9B GRPO training config for the negotiation RLVR environment.
+# Qwen3.5-35B-A3B GRPO training config for the negotiation RLVR environment.
 # Text-only (NOT vision) — no mm_processor, MODALITY=negotiation.
 #
 # Environment: 2-player item-division negotiation (Deal or No Deal / CaSiNo).
@@ -9,25 +9,18 @@
 #
 # Reward ablation arms:
 #   outcome       (default) — pure self-score reward
-#   outcome_pareto          — self-score + PARETO_COEF * joint_efficiency (continuous
-#                             joint-efficiency shaping, not the sparse binary Pareto flag)
+#   outcome_pareto          — self-score + weighted Pareto bonus (PARETO_COEF)
 # Switch arms by setting REWARD_MODE=outcome_pareto before launch.
 #
-# Orthogonal prompt ablation:
-#   PROACTIVE_ELICITATION=1  — instructs both sides to probe/share private values before
-#                              proposing (see the PROACTIVE_ELICITATION export below). Combine
-#                              freely with either reward arm.
+# THINKING IS OFF. Same reasoning as the 9B config: 6-turn budget is too short for
+# <think> blocks — they consume the entire turn without emitting a <propose> tag,
+# yielding ~80% no_deal. The 35B model is more capable but the hard turn cap is
+# architectural, not a capability gap. Enable if you have a longer turn budget.
 #
-# THINKING IS OFF. Qwen3.5-9B is hybrid-reasoning, and for this short,
-# turn-budgeted task thinking mode is the *worst* config — it burns the whole
-# message budget on a <think> block and rarely commits a tag in time
-# (~80% no_deal, see eval/REPORT.md "turn thinking OFF"). We disable it via
-# enable_thinking:false for the policy, and opponent_no_think on the env side.
-#
-# Model: Qwen/Qwen3.5-9B (GDN MoE, ~1B active params, text-only here)
-# Topology: 2 nodes x 8x H200 = 16 GPUs, TP=1 -> 16 inference engines.
-#   NOTE: the node count itself is set by the SkyPilot task YAML (num_nodes: 2),
-#   not this script. This script only sizes NUM_INFERENCE_ENGINES to match.
+# Model: Qwen/Qwen3.5-35B-A3B (MoE, 35B total / ~3B active, text-only)
+# Topology: 1 node x 8x H200 = 8 GPUs; TP=2 -> 4 inference engines.
+#   Training uses FSDP2 across all 8 GPUs (shard=full, no TP in trainer).
+#   NOTE: node count is set by the SkyPilot task YAML (num_nodes: 1), not here.
 #
 # Required env vars: WANDB_API_KEY, OPENROUTER_API_KEY
 #   OPENROUTER_API_KEY powers the opponent LLM (env "them" side via litellm)
@@ -39,53 +32,42 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo roo
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
 export MODALITY="${MODALITY:-negotiation}"
-export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-9B}"
+export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-35B-A3B}"
 export MODEL_TAG="${MODEL_TAG:-qwen35}"
-export NEGOTIATION_DATASET="${NEGOTIATION_DATASET:-dnd}"  # dnd carries training signal; casino saturates
+export NEGOTIATION_DATASET="${NEGOTIATION_DATASET:-dnd}"
 export NEGOTIATION_PROTOCOL="${NEGOTIATION_PROTOCOL:-single}"
 export REWARD_MODE="${REWARD_MODE:-outcome}"  # set to outcome_pareto for ablation arm
 export PARETO_COEF="${PARETO_COEF:-0.5}"
-# Penalty per policy message whose prose promises an item to the opponent while
-# the <propose> JSON keeps all of it (observed reward hack: gpt-4o-mini accepts
-# based on the prose; the verifiable reward reads only the JSON — rate grew
-# 10%->25% over steps 1-17 of the outcome baseline). Set 0 to disable.
+# Penalty per policy message whose prose promises an item while the <propose> JSON
+# keeps all of it. Set 0 to disable.
 export DECEPTION_PENALTY="${DECEPTION_PENALTY:--0.1}"
-# Sublinear length penalty on total response tokens (policy/response_length), applied to the
-# final reward in the generator. Counters the observed length runaway: in the outcome baseline
-# (wandb sjwub9f2) response_length climbed ~1.5k->7k tokens over steps 9-63, saturating the
-# 6*1024=6144 generation budget; no_deal then exploded 0.01->0.85 and you_norm collapsed
-# 0.80->0.12 as the policy wrote essays and never committed a <propose>/<accept> in time.
+# Sublinear length penalty on total response tokens. See fleet-negotiation-9b-run.sh
+# for the full rationale (counters length runaway observed in the outcome baseline).
 # penalty = COEF * (tokens / REF) ** ALPHA  (fn=power; sqrt at ALPHA=0.5)
 #   REF=0 -> auto = MAX_TURNS * MAX_GENERATE_LENGTH = 6144 (full budget).
-# With COEF=0.2, ALPHA=0.5: a concise ~1.5k-token episode loses ~0.10, a budget-saturating
-# ~6k-token one loses ~0.20 — a ~0.10 reward gap (on the scale of you_norm and DECEPTION_PENALTY)
-# that nudges toward brevity without punishing legitimate multi-turn bargaining. Set 0 to disable.
 export LENGTH_PENALTY_COEF="${LENGTH_PENALTY_COEF:-0.2}"
 export LENGTH_PENALTY_ALPHA="${LENGTH_PENALTY_ALPHA:-0.5}"
 export LENGTH_PENALTY_FN="${LENGTH_PENALTY_FN:-power}"  # power (sqrt at alpha=0.5) | log
 export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-0}"    # 0 -> MAX_TURNS * MAX_GENERATE_LENGTH
-# Proactive preference-elicitation ablation (prompt-level). When 1, both the policy and the
-# opponent system prompts get an instruction to probe/share private item values before proposing,
-# rather than defaulting to a value-blind "fair" even split. This targets the dominant Pareto-gap
-# driver diagnosed in research_logs/proactive.md: the proposer notes the partner's values are
-# unknown and splits evenly without ever opening the information channel an integrative trade needs.
-# Baked into the dataset prompts at prep time (passes --proactive to prepare_dataset.py). Set 0 to disable.
-export PROACTIVE_ELICITATION="${PROACTIVE_ELICITATION:-0}"
+export ENABLE_THINKING="${ENABLE_THINKING:-false}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
-export MAX_TURNS="${MAX_TURNS:-6}"  # per-agent message budget; must match dataset prep --max_turns
-export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"  # negotiation transcripts are short
+export MAX_TURNS="${MAX_TURNS:-6}"
+export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-1024}"
 export NUM_EPOCHS="${NUM_EPOCHS:-20}"
-# 2 nodes x 8 H200 = 16 GPUs; TP=1 (dense MoE fits on one GPU) -> 16 engines.
-export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-16}"
-# Skip the per-job IB-HCA intersection on the RunPod SLURM cluster: /etc/nccl.conf
-# already has the correct per-node NCCL_IB_HCA values; the intersection script was
-# overriding them with wrong device names on nodes 8/9 (see agent/launch-run.md).
+# Cap on validation scenarios (0 = use all 293 deduped dnd/val). Subsampled with a
+# fixed seed so eval cost (n_prompts * eval_n_samples_per_prompt full games vs the
+# OpenRouter opponent) stays bounded. ~128 is plenty for a stable eval signal.
+export MAX_VAL="${MAX_VAL:-64}"
+# 1 node x 8 H200; TP=2 -> 4 inference engines.
+export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-4}"
+# Read IB HCA from /etc/nccl.conf (correct IB-only list; intersection script was
+# picking up Ethernet adapters on nodes 8/9 — see env-fixes doc Fix 2).
 export SKIP_IB_INTERSECTION="${SKIP_IB_INTERSECTION:-1}"
 export RUN_ID="${RUN_ID:-}"
-# Where to persist full episode transcripts for inspection (one JSON line per episode,
-# per process). Thinking is OFF for 9B so "you" turns carry no <think>, but the log is
-# still useful to review the negotiation play. Set empty to disable.
+# Where to persist full episode transcripts (policy "you" turns keep their <think>
+# reasoning) for inspection. The env appends one JSON line per finished episode to a
+# per-process file under this dir. Set empty to disable.
 export TRANSCRIPT_DIR="${TRANSCRIPT_DIR:-$HOME/exports/negotiation_transcripts}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export S3_DATASET_BUCKET="${S3_DATASET_BUCKET:-fleet-internal-datasets}"
@@ -96,30 +78,20 @@ export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 : "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY before running (powers the opponent LLM via litellm/OpenRouter)}"
 
 # Qwen3.5 GDN models can hang silently in the FlashInfer GDN JIT on GCP/RunPod
-# (memory: commit 31098293); force the triton GDN prefill backend as a safe
-# fallback. Harmless on hosts where FlashInfer would have worked.
+# (see fleet-35b-run.sh); force the triton GDN prefill backend.
 export VLLM_GDN_PREFILL_BACKEND=triton
 
-# Prepare the negotiation dataset into $DATA_DIR before launching training.
-# fleet-common-run.sh will auto-point data.train_data / data.val_data at
-# ${DATA_ROOT}/data/fleet/negotiation/, but we also pass explicit hydra overrides
-# below (after --) so $HOME-rooted paths win regardless of DATA_ROOT resolution.
 source .venv/bin/activate
 
 DATA_DIR="${HOME}/data/fleet/negotiation"
-PREP_ARGS=()
-if [ "$PROACTIVE_ELICITATION" = "1" ]; then
-  PREP_ARGS+=(--proactive)
-fi
 python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --output_dir "$DATA_DIR" \
   --dataset "$NEGOTIATION_DATASET" \
   --protocol "$NEGOTIATION_PROTOCOL" \
   --max_turns "$MAX_TURNS" \
-  ${PREP_ARGS[@]+"${PREP_ARGS[@]}"}
+  --max_val "$MAX_VAL"
 
-# Pareto arm: stronger regularization to prevent mode collapse (KL was 0.001 — far
-# too weak to hold against the reward gradient; grad_norm spiked to 17 at collapse).
+# Pareto arm: stronger regularization to prevent mode collapse.
 PARETO_ARGS=()
 if [ "$REWARD_MODE" = "outcome_pareto" ]; then
   PARETO_ARGS=(
@@ -129,13 +101,34 @@ if [ "$REWARD_MODE" = "outcome_pareto" ]; then
   )
 fi
 
-# Tag the run name when the proactive-elicitation ablation arm is active.
-PROACTIVE_TAG=""
-if [ "$PROACTIVE_ELICITATION" = "1" ]; then
-  PROACTIVE_TAG="_proactive"
+# Thinking arm: when ENABLE_THINKING=true the policy emits <think>...</think> before
+# its action. Two things must change vs the no-think default:
+#   1. Use the qwen3_without_thinking custom chat template. This retokenizes the chat
+#      history each turn and strips <think> from every NON-last assistant turn, so the
+#      policy's own multi-turn training context never carries prior-turn reasoning
+#      (matches Qwen3 inference behaviour). The full reasoning is still saved for
+#      inspection via transcript_dir below.
+#   2. Drop "</think>" from the stop strings. With thinking on it must NOT stop at the
+#      end of the reasoning block — the model needs to continue and emit <propose>/
+#      <accept>/<deal> in the same turn.
+# The no-think default keeps token-in-token-out (the tuned recipe) and the original
+# stop set including "</think>".
+if [ "$ENABLE_THINKING" = "true" ]; then
+  THINK_ARGS=(
+    generator.chat_template.source=name
+    generator.chat_template.name_or_path=qwen3_without_thinking
+    'generator.sampling_params.stop=["</propose>","</deal>","<accept>"]'
+    'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>"]'
+  )
+else
+  THINK_ARGS=(
+    +generator.chat_template_kwargs.enable_thinking=false
+    'generator.sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]'
+    'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]'
+  )
 fi
 
-RUN_NAME="fleet_${MODEL_TAG}_9b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}${PROACTIVE_TAG}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}"
+RUN_NAME="fleet_${MODEL_TAG}_35b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}"
 
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
@@ -156,21 +149,20 @@ bash scripts/fleet-common-run.sh \
   trainer.flash_attn=false \
   trainer.loss_chunk_size=4096 \
   trainer.use_sample_packing=false \
-  +generator.chat_template_kwargs.enable_thinking=false \
-  generator.inference_engine_tensor_parallel_size=1 \
+  generator.inference_engine_tensor_parallel_size=2 \
   trainer.epochs=${NUM_EPOCHS} \
-  trainer.eval_batch_size=16 \
+  trainer.eval_batch_size=8 \
   trainer.eval_before_train=true \
   trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
-  trainer.train_batch_size=32 \
+  trainer.train_batch_size=16 \
   trainer.use_hybrid_env_sampling=true \
   trainer.min_samples_per_env=1 \
-  trainer.policy_mini_batch_size=32 \
+  trainer.policy_mini_batch_size=16 \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
-  trainer.max_ckpts_to_keep=3 \
+  trainer.max_ckpts_to_keep=2 \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
   generator.sampling_params.max_generate_length=$MAX_GENERATE_LENGTH \
@@ -180,8 +172,6 @@ bash scripts/fleet-common-run.sh \
   generator.length_penalty_alpha=$LENGTH_PENALTY_ALPHA \
   generator.length_penalty_fn=$LENGTH_PENALTY_FN \
   generator.length_penalty_ref=$LENGTH_PENALTY_REF \
-  'generator.sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]' \
-  'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]' \
   trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.zero_variance_filter=true \
@@ -195,15 +185,16 @@ bash scripts/fleet-common-run.sh \
   generator.n_samples_per_prompt=8 \
   generator.eval_n_samples_per_prompt=3 \
   generator.enforce_eager=false \
-  generator.gpu_memory_utilization=0.8 \
+  generator.gpu_memory_utilization=0.75 \
   generator.inject_context_status=true \
   generator.context_warning_threshold=0.90 \
   trainer.logger="$LOGGER" \
   trainer.project_name="fleet-negotiation-grpo" \
   trainer.run_name="$RUN_NAME" \
   trainer.resume_mode=latest \
-  trainer.ckpt_path="$HOME/ckpts/fleet_${MODEL_TAG}_9b_negotiation" \
+  trainer.ckpt_path="$HOME/ckpts/fleet_${MODEL_TAG}_35b_negotiation" \
   trainer.export_path="$HOME/exports" \
   trainer.dump_data_batch=true \
+  ${THINK_ARGS[@]+"${THINK_ARGS[@]}"} \
   ${PARETO_ARGS[@]+"${PARETO_ARGS[@]}"} \
   "$@"

@@ -37,9 +37,16 @@ per-agent message budget (``max_turns``) is exhausted.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import random
 import re
+import socket
+import threading
+import time
+import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from skyrl_gym.envs.base_text_env import (
@@ -50,6 +57,11 @@ from skyrl_gym.envs.base_text_env import (
 from skyrl_gym.envs.negotiation import game, prompts
 
 logger = logging.getLogger(__name__)
+
+# Guards the append to the per-process transcript JSONL. Episodes run concurrently
+# (env.step/close are dispatched to a thread pool by the generator), so two episodes
+# can finish at once; the lock keeps each episode's JSON line intact on disk.
+_TRANSCRIPT_LOCK = threading.Lock()
 
 _THINK_RE = re.compile(r"<think>.*?</think>|<think>.*", re.DOTALL)
 
@@ -126,6 +138,9 @@ class NegotiationEnv(BaseTextEnv):
         self.n_items = len(self.counts)
 
         extra_info: Dict[str, Any] = extras.get("extra_info", {}) or {}
+        # Keep an id for the scenario (if the dataset baked one in) so logged
+        # transcripts can be cross-referenced back to the prompt that produced them.
+        self.scenario_id: Optional[str] = extra_info.get("scenario_id") or extra_info.get("id")
 
         # --- Per-agent message budget ---
         # The generator sets extras["max_turns"] = generator.max_turns; that is
@@ -151,6 +166,18 @@ class NegotiationEnv(BaseTextEnv):
         # are still penalized despite the episode terminating on that same step.
         self.deception_penalty: float = float(_cfg_get(env_config, "deception_penalty", 0.0))
         self.deception_msgs: int = 0
+
+        # --- Thinking-trace inspection log ---
+        # When set, each finished episode's FULL transcript (the policy's raw "you"
+        # messages still carry their <think>...</think> reasoning) is appended as one
+        # JSON line to a per-process file under this dir. This is the only place the
+        # thinking traces are persisted: they are stripped from the opponent's view
+        # (see _strip_think) and from the policy's own multi-turn training context
+        # (the qwen3_without_thinking chat template strips non-last-turn thinking), so
+        # without this log the reasoning is unrecoverable after the rollout.
+        self.transcript_dir: Optional[str] = _cfg_get(env_config, "transcript_dir", None)
+        # Fraction of episodes to log (1.0 = all). Lower it if the log grows too large.
+        self.transcript_sample_rate: float = float(_cfg_get(env_config, "transcript_sample_rate", 1.0))
 
         # --- Opponent ("them") LLM config ---
         self.opponent_model: str = _cfg_get(
@@ -408,3 +435,53 @@ class NegotiationEnv(BaseTextEnv):
             "opponent_errors": float(self.opponent_errors),
             "deception_msgs": float(self.deception_msgs),
         }
+
+    # ----------------------------------------------------------------- close
+    def close(self) -> None:
+        """Persist the full episode transcript (with thinking) for inspection.
+
+        Called once by the generator at the end of every episode. Best-effort: any
+        failure here is logged and swallowed so it can never break a training step.
+        """
+        if not self.transcript_dir:
+            return
+        if self.transcript_sample_rate < 1.0 and random.random() >= self.transcript_sample_rate:
+            return
+
+        out = self.outcome
+        record = {
+            "ts": time.time(),
+            "episode_id": uuid.uuid4().hex,
+            "scenario_id": self.scenario_id,
+            "protocol": self.protocol,
+            "reward_mode": self.reward_mode,
+            "opponent_model": self.opponent_model,
+            "scenario": {
+                "item_names": self.item_names,
+                "counts": self.counts,
+                "you_values": self.you_values,
+                "them_values": self.them_values,
+            },
+            "outcome": out.reason if out is not None else "unknown",
+            "you_take": self.you_take,
+            "them_take": self.them_take,
+            "final_reward": self.final_reward,
+            "deception_msgs": self.deception_msgs,
+            "metrics": self.get_metrics(),
+            # "you" turns retain their raw <think>...</think> reasoning; this is the
+            # only persisted copy of the policy's thinking for this episode.
+            "transcript": self.transcript,
+        }
+
+        try:
+            dir_path = Path(self.transcript_dir)
+            dir_path.mkdir(parents=True, exist_ok=True)
+            # One file per host+process avoids cross-worker write contention; the lock
+            # serialises the concurrent episodes within this process.
+            file_path = dir_path / f"transcripts_{socket.gethostname()}_{os.getpid()}.jsonl"
+            line = json.dumps(record, ensure_ascii=False, default=str)
+            with _TRANSCRIPT_LOCK:
+                with open(file_path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to write negotiation transcript to {self.transcript_dir}: {e}")

@@ -93,6 +93,12 @@ if __name__ == "__main__":
         help="Cap on training scenarios (0 = use all).",
     )
     parser.add_argument(
+        "--max_val",
+        type=int,
+        default=0,
+        help="Cap on validation scenarios (0 = use all). Subsampled with the same seed.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=1,
@@ -110,6 +116,9 @@ if __name__ == "__main__":
         train_scenarios = train_scenarios[: args.max_train]
 
     val_scenarios = scenarios_mod.load_scenarios(args.dataset, args.val_split)
+    if args.max_val and args.max_val > 0:
+        rng.shuffle(val_scenarios)
+        val_scenarios = val_scenarios[: args.max_val]
 
     # --- Build rows ---
     train_rows = [

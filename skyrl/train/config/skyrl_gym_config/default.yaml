@@ -51,3 +51,5 @@ negotiation:
   opponent_max_retries: 2
   invalid_penalty: 0.0            # reward penalty for a malformed/failed final action (kept 0 by default)
   deception_penalty: 0.0          # per-message penalty when prose promises an item to the opponent but the <propose> JSON keeps all of it (0 disables)
+  transcript_dir: null            # if set, each finished episode's full transcript (policy "you" turns keep their <think> reasoning) is appended as a JSON line under this dir for inspection
+  transcript_sample_rate: 1.0     # fraction of episodes to log when transcript_dir is set (1.0 = all)
