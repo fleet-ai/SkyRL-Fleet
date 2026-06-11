@@ -1038,8 +1038,12 @@ async def main(
             except Exception as e:
                 logger.warning(f"save_state after step {step} failed: {e}")
 
-        # Periodic eval (every eval_every steps).
-        if eval_every > 0 and eval_dataset and step % eval_every == 0:
+        # Periodic eval (every eval_every steps). Skip step 0: the policy has
+        # had at most one optim_step here, so periodic eval at step=0 is
+        # indistinguishable from the untrained baseline. For an untrained
+        # baseline, use --eval-before-train (runs once at step_index=-1).
+        # Final-step eval runs unconditionally below.
+        if eval_every > 0 and eval_dataset and step > 0 and step % eval_every == 0:
             await _run_eval(sampling_client, step_index=step)
 
     # Post-train eval on the final policy. Always runs when an eval dataset is
