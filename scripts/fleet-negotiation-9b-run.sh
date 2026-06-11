@@ -39,6 +39,11 @@ export NEGOTIATION_DATASET="${NEGOTIATION_DATASET:-dnd}"  # dnd carries training
 export NEGOTIATION_PROTOCOL="${NEGOTIATION_PROTOCOL:-single}"
 export REWARD_MODE="${REWARD_MODE:-outcome}"  # set to outcome_pareto for ablation arm
 export PARETO_COEF="${PARETO_COEF:-0.5}"
+# Penalty per policy message whose prose promises an item to the opponent while
+# the <propose> JSON keeps all of it (observed reward hack: gpt-4o-mini accepts
+# based on the prose; the verifiable reward reads only the JSON — rate grew
+# 10%->25% over steps 1-17 of the outcome baseline). Set 0 to disable.
+export DECEPTION_PENALTY="${DECEPTION_PENALTY:--0.1}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
 export MAX_TURNS="${MAX_TURNS:-6}"  # per-agent message budget; must match dataset prep --max_turns
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"  # negotiation transcripts are short
@@ -46,6 +51,10 @@ export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-1024}"
 export NUM_EPOCHS="${NUM_EPOCHS:-20}"
 # 2 nodes x 8 H200 = 16 GPUs; TP=1 (dense MoE fits on one GPU) -> 16 engines.
 export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-16}"
+# Skip the per-job IB-HCA intersection on the RunPod SLURM cluster: /etc/nccl.conf
+# already has the correct per-node NCCL_IB_HCA values; the intersection script was
+# overriding them with wrong device names on nodes 8/9 (see agent/launch-run.md).
+export SKIP_IB_INTERSECTION="${SKIP_IB_INTERSECTION:-1}"
 export RUN_ID="${RUN_ID:-}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export S3_DATASET_BUCKET="${S3_DATASET_BUCKET:-fleet-internal-datasets}"
@@ -73,6 +82,17 @@ python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --protocol "$NEGOTIATION_PROTOCOL" \
   --max_turns "$MAX_TURNS"
 
+# Pareto arm: stronger regularization to prevent mode collapse (KL was 0.001 — far
+# too weak to hold against the reward gradient; grad_norm spiked to 17 at collapse).
+PARETO_ARGS=()
+if [ "$REWARD_MODE" = "outcome_pareto" ]; then
+  PARETO_ARGS=(
+    trainer.algorithm.kl_loss_coef=0.05
+    trainer.policy.optimizer_config.max_grad_norm=0.5
+    "environment.skyrl_gym.negotiation.invalid_penalty=-0.05"
+  )
+fi
+
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf \
@@ -83,6 +103,7 @@ bash scripts/fleet-common-run.sh \
   "data.val_data=['${DATA_DIR}/validation.parquet']" \
   environment.skyrl_gym.negotiation.reward_mode=$REWARD_MODE \
   environment.skyrl_gym.negotiation.pareto_coef=$PARETO_COEF \
+  environment.skyrl_gym.negotiation.deception_penalty=$DECEPTION_PENALTY \
   environment.skyrl_gym.negotiation.protocol=$NEGOTIATION_PROTOCOL \
   environment.skyrl_gym.negotiation.opponent_model=$OPPONENT_MODEL \
   trainer.algorithm.advantage_estimator=grpo \
@@ -90,7 +111,7 @@ bash scripts/fleet-common-run.sh \
   trainer.flash_attn=false \
   trainer.loss_chunk_size=4096 \
   trainer.use_sample_packing=false \
-  +generator.chat_template_kwargs='{enable_thinking:false}' \
+  +generator.chat_template_kwargs.enable_thinking=false \
   generator.inference_engine_tensor_parallel_size=1 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=16 \
@@ -104,14 +125,14 @@ bash scripts/fleet-common-run.sh \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
-  trainer.max_ckpts_to_keep=1 \
+  trainer.max_ckpts_to_keep=3 \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
   generator.sampling_params.max_generate_length=$MAX_GENERATE_LENGTH \
   generator.sampling_params.temperature=0.9 \
   generator.sampling_params.top_p=0.95 \
-  'generator.sampling_params.stop=["</propose>","</deal>","<accept>"]' \
-  'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>"]' \
+  'generator.sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]' \
+  'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>","</think>"]' \
   trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.zero_variance_filter=true \
@@ -135,4 +156,5 @@ bash scripts/fleet-common-run.sh \
   trainer.ckpt_path="$HOME/ckpts/fleet_${MODEL_TAG}_9b_negotiation" \
   trainer.export_path="$HOME/exports" \
   trainer.dump_data_batch=true \
+  ${PARETO_ARGS[@]+"${PARETO_ARGS[@]}"} \
   "$@"

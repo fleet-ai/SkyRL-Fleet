@@ -50,3 +50,4 @@ negotiation:
   opponent_no_think: true         # append /no_think to the opponent system prompt (hybrid-reasoning models)
   opponent_max_retries: 2
   invalid_penalty: 0.0            # reward penalty for a malformed/failed final action (kept 0 by default)
+  deception_penalty: 0.0          # per-message penalty when prose promises an item to the opponent but the <propose> JSON keeps all of it (0 disables)

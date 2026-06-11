@@ -287,7 +287,20 @@ export RAY_DISABLE_MEMORY_MONITOR=1
 # (`bash <helper>`), not inline -- an inline detection pipeline returns non-zero on its last
 # (non-IB) device and `pipefail`+`set -e` would abort the whole run. The `|| true` is a second
 # guard so a missing helper / no-IB host falls back to the inherited /etc/environment value.
-if [ -d /sys/class/infiniband ] && [ -n "$(ls -A /sys/class/infiniband 2>/dev/null)" ]; then
+if [ "${SKIP_IB_INTERSECTION:-0}" = "1" ]; then
+  # Read the IB-only HCA list from /etc/nccl.conf and set it explicitly.
+  # DO NOT leave NCCL_IB_HCA unset: NCCL auto-detection on nodes 8/9 includes mlx5_4 (Ethernet
+  # 10GbE) alongside the IB ports, causing mismatched communicator rails and BROADCAST hangs.
+  # /etc/nccl.conf lists only InfiniBand ports (mlx5_0,1,2,3,6,7,8,9), excluding mlx5_4/5.
+  _nccl_conf_hca=$(grep '^NCCL_IB_HCA=' /etc/nccl.conf 2>/dev/null | cut -d= -f2- | tr -d '"')
+  if [ -n "$_nccl_conf_hca" ]; then
+    export NCCL_IB_HCA="$_nccl_conf_hca"
+    echo "[NCCL] SKIP_IB_INTERSECTION=1: set NCCL_IB_HCA=$NCCL_IB_HCA (IB-only, from /etc/nccl.conf)"
+  else
+    unset NCCL_IB_HCA
+    echo "[NCCL] SKIP_IB_INTERSECTION=1: /etc/nccl.conf missing NCCL_IB_HCA, left unset (fallback)"
+  fi
+elif [ -d /sys/class/infiniband ] && [ -n "$(ls -A /sys/class/infiniband 2>/dev/null)" ]; then
   _ib_helper="$(dirname "${BASH_SOURCE[0]}")/ib-hca-intersection.sh"
   # Use .sky_ib_hca_new (root:root 1777) — the old .sky_ib_hca (zhichao:zhichao 775) is
   # unwritable for root jobs on this NFS (root_squash maps root→nobody, denied by 775).
