@@ -84,7 +84,7 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 
 # Per-await timeouts. Tinker's 120-min progress_timeout is shared across the
 # SamplingClient and starvation-prone under concurrent rollouts.
-TINKER_SAMPLE_TIMEOUT_S = 300
+TINKER_SAMPLE_TIMEOUT_S = 600
 ENV_INIT_TIMEOUT_S = 90
 ENV_STEP_TIMEOUT_S = 120
 ENV_CLOSE_TIMEOUT_S = 30
