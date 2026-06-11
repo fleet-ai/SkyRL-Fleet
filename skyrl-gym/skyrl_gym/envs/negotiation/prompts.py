@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import List
 
+PROACTIVE_BLOCK = (
+    "Before locking in, find out what the other player wants. Your hidden values almost certainly "
+    "differ, so there are usually trades that make BOTH of you better off. Early on, ask which items "
+    "matter most to them and tell them which matter most to you, then route each item to whoever values "
+    "it more. Do not blindly propose a 'fair' even split blind to their priorities -- probe first, then propose."
+)
+
 SYSTEM_TEMPLATE = """\
 You are playing a multi-issue negotiation game against another player.
 
@@ -41,7 +48,7 @@ Finalizing — READ CAREFULLY, this is where most deals fail:
 {worked_example}
 - Your goal is to maximize YOUR OWN points. A failed deal (0 points) is worse than a modest
   agreement, so settle the FULL split in words first, then each list only your own keep.
-
+{proactive_block}
 You have at most {max_turns} messages. Be efficient and decisive."""
 
 
@@ -69,7 +76,7 @@ How it works:
 - If no offer is accepted within the message limit, the deal FAILS and you BOTH score 0.
 - Your goal is to maximize YOUR OWN points, but a failed deal (0 points) is worse than a modest
   agreement, so always close: accept a reasonable offer, or make one the other player will accept.
-
+{proactive_block}
 You have at most {max_turns} messages. Be efficient and decisive."""
 
 
@@ -111,7 +118,7 @@ def _build_worked_example(item_names: List[str]) -> str:
 
 
 def build_system_prompt(
-    item_names: List[str], counts: List[int], values: List[int], max_turns: int, protocol: str = "single"
+    item_names: List[str], counts: List[int], values: List[int], max_turns: int, protocol: str = "single", proactive: bool = False
 ) -> str:
     pool_lines = "\n".join(f"  - {c} x {name}" for name, c in zip(item_names, counts))
     value_lines = "\n".join(f"  - {name}: {v} points each" for name, v in zip(item_names, values))
@@ -125,6 +132,7 @@ def build_system_prompt(
         deal_example=deal_example,
         max_turns=max_turns,
         worked_example=_build_worked_example(item_names),
+        proactive_block=("\n" + PROACTIVE_BLOCK) if proactive else "",
     )
 
 

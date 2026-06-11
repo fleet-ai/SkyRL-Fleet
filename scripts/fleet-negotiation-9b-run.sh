@@ -12,6 +12,11 @@
 #   outcome_pareto          — self-score + weighted Pareto bonus (PARETO_COEF)
 # Switch arms by setting REWARD_MODE=outcome_pareto before launch.
 #
+# Orthogonal prompt ablation:
+#   PROACTIVE_ELICITATION=1  — instructs both sides to probe/share private values before
+#                              proposing (see the PROACTIVE_ELICITATION export below). Combine
+#                              freely with either reward arm.
+#
 # THINKING IS OFF. Qwen3.5-9B is hybrid-reasoning, and for this short,
 # turn-budgeted task thinking mode is the *worst* config — it burns the whole
 # message budget on a <think> block and rarely commits a tag in time
@@ -58,6 +63,13 @@ export LENGTH_PENALTY_COEF="${LENGTH_PENALTY_COEF:-0.2}"
 export LENGTH_PENALTY_ALPHA="${LENGTH_PENALTY_ALPHA:-0.5}"
 export LENGTH_PENALTY_FN="${LENGTH_PENALTY_FN:-power}"  # power (sqrt at alpha=0.5) | log
 export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-0}"    # 0 -> MAX_TURNS * MAX_GENERATE_LENGTH
+# Proactive preference-elicitation ablation (prompt-level). When 1, both the policy and the
+# opponent system prompts get an instruction to probe/share private item values before proposing,
+# rather than defaulting to a value-blind "fair" even split. This targets the dominant Pareto-gap
+# driver diagnosed in research_logs/proactive.md: the proposer notes the partner's values are
+# unknown and splits evenly without ever opening the information channel an integrative trade needs.
+# Baked into the dataset prompts at prep time (passes --proactive to prepare_dataset.py). Set 0 to disable.
+export PROACTIVE_ELICITATION="${PROACTIVE_ELICITATION:-0}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
 export MAX_TURNS="${MAX_TURNS:-6}"  # per-agent message budget; must match dataset prep --max_turns
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"  # negotiation transcripts are short
@@ -90,11 +102,16 @@ export VLLM_GDN_PREFILL_BACKEND=triton
 source .venv/bin/activate
 
 DATA_DIR="${HOME}/data/fleet/negotiation"
+PREP_ARGS=()
+if [ "$PROACTIVE_ELICITATION" = "1" ]; then
+  PREP_ARGS+=(--proactive)
+fi
 python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --output_dir "$DATA_DIR" \
   --dataset "$NEGOTIATION_DATASET" \
   --protocol "$NEGOTIATION_PROTOCOL" \
-  --max_turns "$MAX_TURNS"
+  --max_turns "$MAX_TURNS" \
+  ${PREP_ARGS[@]+"${PREP_ARGS[@]}"}
 
 # Pareto arm: stronger regularization to prevent mode collapse (KL was 0.001 — far
 # too weak to hold against the reward gradient; grad_norm spiked to 17 at collapse).
@@ -105,6 +122,12 @@ if [ "$REWARD_MODE" = "outcome_pareto" ]; then
     trainer.policy.optimizer_config.max_grad_norm=0.5
     "environment.skyrl_gym.negotiation.invalid_penalty=-0.05"
   )
+fi
+
+# Tag the run name when the proactive-elicitation ablation arm is active.
+PROACTIVE_TAG=""
+if [ "$PROACTIVE_ELICITATION" = "1" ]; then
+  PROACTIVE_TAG="_proactive"
 fi
 
 bash scripts/fleet-common-run.sh \
@@ -169,7 +192,7 @@ bash scripts/fleet-common-run.sh \
   generator.context_warning_threshold=0.90 \
   trainer.logger="$LOGGER" \
   trainer.project_name="fleet-negotiation-grpo" \
-  trainer.run_name="fleet_${MODEL_TAG}_9b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \
+  trainer.run_name="fleet_${MODEL_TAG}_9b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}${PROACTIVE_TAG}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}" \
   trainer.resume_mode=latest \
   trainer.ckpt_path="$HOME/ckpts/fleet_${MODEL_TAG}_9b_negotiation" \
   trainer.export_path="$HOME/exports" \
