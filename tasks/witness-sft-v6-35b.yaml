@@ -53,18 +53,11 @@ resources:
   # shards ~210 GB + merged HF ~70 GB + slack → 2000 GB safe.
   disk_size: 2000
   ports: 6479
-  ordered:
-    # RunPod reserved H200s (priority — team's 35B convention)
-    - accelerators: H200:8
-      cloud: runpod
-    - accelerators: H200:8
-      cloud: gcp
-      use_spot: true
-      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
-    - accelerators: H200:8
-      cloud: lambda
-    - accelerators: H200:8
-      cloud: nebius
+  # RunPod only (team's 35B convention). gcp/lambda/nebius fallbacks removed:
+  # listing gcp makes the local sky import google SDK deps (ImportError on
+  # machines without skypilot[gcp]) even when runpod would win the ordering.
+  accelerators: H200:8
+  cloud: runpod
 
 num_nodes: 1
 
