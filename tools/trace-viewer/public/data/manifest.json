@@ -1,0 +1,49 @@
+{
+  "runs": [
+    {
+      "name": "sample-negotiation-run",
+      "steps": [
+        {
+          "step": 0,
+          "file": "sample-negotiation-run/global_step_0.jsonl",
+          "count": 16
+        },
+        {
+          "step": 5,
+          "file": "sample-negotiation-run/global_step_5.jsonl",
+          "count": 16
+        },
+        {
+          "step": 10,
+          "file": "sample-negotiation-run/global_step_10.jsonl",
+          "count": 16
+        },
+        {
+          "step": 15,
+          "file": "sample-negotiation-run/global_step_15.jsonl",
+          "count": 16
+        },
+        {
+          "step": 20,
+          "file": "sample-negotiation-run/global_step_20.jsonl",
+          "count": 16
+        },
+        {
+          "step": 25,
+          "file": "sample-negotiation-run/global_step_25.jsonl",
+          "count": 16
+        },
+        {
+          "step": 30,
+          "file": "sample-negotiation-run/global_step_30.jsonl",
+          "count": 16
+        },
+        {
+          "step": 35,
+          "file": "sample-negotiation-run/global_step_35.jsonl",
+          "count": 16
+        }
+      ]
+    }
+  ]
+}
