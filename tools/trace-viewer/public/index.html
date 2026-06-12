@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SkyRL Trace Viewer — training trajectories over steps</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>SkyRL&nbsp;Trace&nbsp;Viewer</h1>
+      <span class="subtitle">How training trajectories evolve over steps</span>
+    </div>
+    <div class="selectors">
+      <label class="run-picker">
+        <span>Run</span>
+        <select id="runSelect"></select>
+      </label>
+      <div class="load-controls">
+        <label class="btn file-btn">
+          Load JSONL files
+          <input type="file" id="fileInput" accept=".jsonl,.json" multiple hidden />
+        </label>
+        <label class="btn file-btn">
+          Load folder
+          <input type="file" id="dirInput" webkitdirectory directory multiple hidden />
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <!-- Empty state / drop zone shown when no run is loaded -->
+  <section id="dropZone" class="drop-zone">
+    <div class="drop-inner">
+      <h2>Drop a run's <code>global_step_*.jsonl</code> files here</h2>
+      <p>
+        These are produced by <code>dump_training_trajectories</code> under
+        <code>{export_path}/dumped_trajectories/</code> — one file per training step.
+        You can also use the <strong>Load JSONL files</strong> / <strong>Load folder</strong>
+        buttons above. Everything runs locally in your browser; nothing is uploaded.
+      </p>
+      <p class="muted" id="autoloadNote"></p>
+    </div>
+  </section>
+
+  <main id="viewer" hidden>
+    <!-- ===== Evolution-over-steps overview ===== -->
+    <section class="evolution">
+      <div class="evo-head">
+        <h2>Evolution over steps</h2>
+        <span class="muted" id="evoMeta"></span>
+      </div>
+      <div class="charts">
+        <div class="chart-card"><h3>Mean reward</h3><canvas id="rewardChart"></canvas></div>
+        <div class="chart-card"><h3>Mean turns &amp; tokens</h3><canvas id="lenChart"></canvas></div>
+        <div class="chart-card"><h3>Stop reason mix</h3><canvas id="stopChart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ===== Step scrubber ===== -->
+    <section class="scrubber">
+      <button class="btn nav" id="prevStep" title="Previous step">‹</button>
+      <input type="range" id="stepSlider" min="0" max="0" value="0" />
+      <button class="btn nav" id="nextStep" title="Next step">›</button>
+      <div class="step-label" id="stepLabel"></div>
+      <div class="view-tabs" id="viewTabs">
+        <button class="tab active" data-view="step">This step</button>
+        <button class="tab" data-view="track">Track one prompt</button>
+      </div>
+    </section>
+
+    <!-- per-step aggregate stats -->
+    <section class="stats-grid" id="statsGrid"></section>
+
+    <!-- ===== STEP VIEW: trajectories at the selected step ===== -->
+    <section id="stepView">
+      <div class="controls">
+        <input type="search" id="searchBox" placeholder="Search prompt / response text…" />
+        <select id="envFilter"><option value="all">All envs</option></select>
+        <select id="stopFilter"><option value="all">All stop reasons</option></select>
+        <select id="sortBy">
+          <option value="reward_desc">Sort: highest reward</option>
+          <option value="reward_asc">Lowest reward</option>
+          <option value="tokens_desc">Most tokens</option>
+          <option value="turns_desc">Most turns</option>
+          <option value="default">Dump order</option>
+        </select>
+        <label class="reward-range">
+          reward ≥ <input type="number" id="minReward" step="0.1" placeholder="–" style="width:5em" />
+        </label>
+        <span class="count" id="resultCount"></span>
+      </div>
+      <div class="traj-list" id="trajList"></div>
+      <div class="pager" id="pager"></div>
+    </section>
+
+    <!-- ===== TRACK VIEW: one prompt across all steps ===== -->
+    <section id="trackView" hidden>
+      <div class="controls">
+        <label class="track-picker">
+          Prompt group
+          <select id="promptSelect"></select>
+        </label>
+        <span class="muted" id="trackMeta"></span>
+      </div>
+      <div class="track-strip" id="trackStrip"></div>
+    </section>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
