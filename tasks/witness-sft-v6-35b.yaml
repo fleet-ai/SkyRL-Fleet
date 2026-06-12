@@ -1,4 +1,4 @@
-# ARC-AGI-3: SFT on Qwen3.5-35B-A3B using v5 judged pairs (B6 → B6-35B).
+# ARC-AGI-3: SFT on Qwen3.5-35B-A3B using mechanism-true pairs (cycle-2, v6mt).
 #
 # Adapts witness-sft-v5.yaml (9B) to 35B by:
 #   - MODEL: Qwen/Qwen3.5-9B → Qwen/Qwen3.5-35B-A3B
@@ -15,11 +15,11 @@
 #   - activations (micro_batch=1, max_len=8K, gradient ckpt): ~15-25 GB/GPU
 #   Total ~85-95 GB/GPU vs 141 GB H200 → fits with margin.
 #
-# Data: reuses v5 sft_pairs_judged.jsonl (786 pairs ≥ judge_score 2 of 938 total)
-#   - Pairs are model-agnostic (ChatML triples), so usable for 35B as-is
-#   - max_turns=30 era; will be sub-optimal for 35B's max_turns=50 RL regime
-#     but acceptable as an anchor SFT — regenerate v6 pairs at max_turns=50
-#     later if needed
+# Data: wp_mt_combined sft_pairs_judged.jsonl — 402 mechanism-true pairs
+#   (witness Set A 213 + public Set B 189; fable-5 teacher, fixed-ASCII harness,
+#   每条机制声明已对 31 张 per-game GT 真值卡裁决；judge_score all ≥2).
+#   Held-out games tw01/09/10/12 + tw04 + sp80 are excluded by construction.
+#   Pairs are model-agnostic (ChatML triples), usable for 35B as-is.
 #
 # Background:
 #   - 35B-instruct (no task SFT) + Sonnet eval@step0 = 5.54 > 9B-instruct +
@@ -72,9 +72,15 @@ workdir:
   url: https://github.com/fleet-ai/SkyRL-Fleet.git
   ref: guanghan/b7-phase2-judge-rewards
 
-# Mount v5 SFT pairs from local artifacts (model-agnostic ChatML triples).
+# Mount the mechanism-true (cold-start purity, 2026-06-12 doctrine) SFT pairs:
+# Set A (witness, 213) ∪ Set B (public, 189) = 402 pairs, all judge_score≥2
+# AND all mechanism claims verified against per-game GT truth cards.
+# Also mount the 35B-validated DTensor merge script (lives outside the repo,
+# p6 tools — the only merge path proven on 35B FSDP shards, see the
+# 2026-06-03 step-40 runbook; merge_fsdp_checkpoint.py is 9B-only).
 file_mounts:
-  /home/sky/data/sft_pairs_judged.jsonl: ~/Documents/obsidian/research-directions/artifacts/arc-witness-runs/sft_data/v5/sft_pairs_judged.jsonl
+  /home/sky/data/sft_pairs_judged.jsonl: ~/Documents/obsidian/research-artifacts/arc-witness-runs/sft_data/wp_mt_combined/sft_pairs_judged.jsonl
+  /home/sky/tools/merge_fsdp_dtensor.py: ~/Documents/obsidian/tasks/allrounder/arc-agi-3-feasibility/06-submission-scripts/p6-35b-rl-fp8/tools/merge_fsdp_dtensor.py
 
 envs:
   LOGGER: "wandb"
@@ -85,11 +91,11 @@ envs:
   MICRO_BATCH_SIZE: "1"
   LR: "5e-6"                  # halved from 9B's 1e-5 (conventional smaller lr for larger models)
   MAX_LENGTH: "8192"          # doubled from 9B's 4096 — preserves longer pair contexts
-  JUDGE_SCORE_MIN: "2"        # same as v5 (786 of 938 pairs)
+  JUDGE_SCORE_MIN: "2"        # all 402 mt pairs are already ≥2 (no-op filter)
   WANDB_PROJECT: "arc-agi-3"
-  WANDB_RUN_NAME: "witness_sft_v6_35b"
+  WANDB_RUN_NAME: "witness_sft_v6mt_35b"
   S3_BUCKET: "fleet-guanghan"
-  RUN_NAME: "witness_sft_v6_35b"
+  RUN_NAME: "witness_sft_v6mt_35b"
 
   # Credentials (REQUIRED at launch — never commit values here)
   WANDB_API_KEY: ""
@@ -116,7 +122,7 @@ setup: |
   # Quick mount sanity check
   test -f /home/sky/data/sft_pairs_judged.jsonl || { echo "ERROR: sft_pairs_judged.jsonl mount missing"; exit 1; }
   PAIR_COUNT=$(wc -l < /home/sky/data/sft_pairs_judged.jsonl)
-  echo "[ok] v5 SFT pairs mounted: $PAIR_COUNT total (≥${JUDGE_SCORE_MIN} filter applied at load time)"
+  echo "[ok] mechanism-true SFT pairs mounted: $PAIR_COUNT total (expect 402; ≥${JUDGE_SCORE_MIN} filter is a no-op)"
 
 run: |
   set -euo pipefail
@@ -234,8 +240,8 @@ run: |
   fi
 
   MERGED_DIR="$CKPT_DIR/merged"
-  echo "[merge] $POLICY_DIR -> $MERGED_DIR"
-  python examples/train_integrations/witness/merge_fsdp_checkpoint.py \
+  echo "[merge] $POLICY_DIR -> $MERGED_DIR (DTensor-aware, 35B-validated)"
+  python /home/sky/tools/merge_fsdp_dtensor.py \
     --checkpoint_dir "$POLICY_DIR" \
     --output_dir "$MERGED_DIR" \
     --model_name "$MODEL" 2>&1 | tee -a "$RUN_LOG"
@@ -258,7 +264,7 @@ run: |
     echo "[ERROR] merge failed (rc=$MERGE_RC). Raw FSDP shards already at ${S3_BASE}/fsdp/."
     echo "[recovery] run merge offline:"
     echo "  aws s3 sync ${S3_BASE}/fsdp/ ./fsdp_local/"
-    echo "  python merge_fsdp_checkpoint.py --checkpoint_dir ./fsdp_local/global_step_<N>_final/policy --output_dir ./merged --model_name $MODEL"
+    echo "  python merge_fsdp_dtensor.py --checkpoint_dir ./fsdp_local/global_step_<N>_final/policy --output_dir ./merged --model_name $MODEL"
     exit 1
   fi
 
