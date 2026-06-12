@@ -52,7 +52,22 @@ python3 build_manifest.py --import ~/exports/dumped_trajectories --name my-run
 Use `--link` to symlink instead of copy. Re-run `build_manifest.py` any time to
 re-index everything under `public/data/`.
 
-**3. Point at an existing `public/data/<run>/` dir.** Drop step files under
+**3. Pull from S3.** If the training run uploaded trajectory dumps to S3, fetch them
+directly by run id (requires `aws` CLI with credentials configured):
+
+```bash
+# list run ids available in the bucket
+python3 build_manifest.py --s3-list
+
+# download and index a run (re-running only fetches new steps — safe during a live run)
+python3 build_manifest.py --s3 fleet_qwen35_35b_negotiation_dnd_outcome_thinkon_fix
+./serve.sh
+```
+
+Use `--name <alias>` to store the run under a different local name, and `--s3-prefix`
+to point at a different bucket or key prefix (default: `s3://skyrl-trajectories/rollouts`).
+
+**4. Point at an existing `public/data/<run>/` dir.** Drop step files under
 `public/data/<run>/` yourself, then `python3 build_manifest.py`.
 
 ### Producing trajectories from a run
