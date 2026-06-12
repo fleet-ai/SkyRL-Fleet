@@ -11,13 +11,15 @@ and each agent's private value vector. No judge is involved.
 Two reward modes (the planned ablation, see ``eval/REPORT.md``):
   - ``outcome``        : normalized self-score (``score / max_possible``).
                          No-deal / conflict / incomplete = 0.
-  - ``outcome_pareto`` : ``outcome + pareto_coef * joint_efficiency`` on agreement,
-                         where ``joint_efficiency`` is the achieved joint score over
-                         the best achievable joint score (continuous in [0, 1]). This
-                         is a denser gradient than the binary Pareto flag, which is
+  - ``outcome_pareto`` / ``outcome_jointeff`` : ``outcome + pareto_coef * joint_efficiency``
+                         on agreement, where ``joint_efficiency`` is the achieved joint
+                         score over the best achievable joint score (continuous in [0, 1]).
+                         This is a denser gradient than the binary Pareto flag, which is
                          sparse, orthogonal to slice size, and would reward a
                          lopsided-but-technically-frontier split. No-deal / conflict /
                          incomplete still = 0, preserving the no-deal deterrent.
+                         (``outcome_jointeff`` is the name used by the 2×2 elicitation
+                         experiment — ``initial_experiments.md`` — and is an exact alias.)
 
 Two protocols (see ``prompts.py`` / ``game.py``):
   - ``single`` (default, recommended): one side proposes a full split via
@@ -110,6 +112,66 @@ def _deceptive_promises(text: str, keep: List[int], item_names: List[str], count
     return hits
 
 
+# --- Thinking-channel integrity (see research_logs/negotiation-35b-grad-explosion-
+# reward-regression-2026-06-12.md "Thinking-channel abandonment + private-value leak").
+# Two coupled degeneracies observed in the 35B thinking run: the policy learned to
+# emit an *empty* <think></think> and write its reasoning in the visible message
+# instead, which (a) abandons the private reasoning channel and (b) leaks its own
+# item valuations to the opponent (because _strip_think only removes text INSIDE the
+# tags). We detect both so the reward can push against them.
+_THINK_CONTENT_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+_TRAILING_THINK_RE = re.compile(r"<think>(.*)\Z", re.DOTALL)
+# Action tags are not "reasoning prose" — strip them before measuring open chatter.
+_ACTION_TAG_RE = re.compile(r"<propose>.*?</propose>|<deal>.*?</deal>|</?accept>", re.DOTALL | re.IGNORECASE)
+
+# Minimum chars of free-text (non-think, non-action) prose that counts as the policy
+# reasoning "in the open" rather than ordinary bargaining. Set high enough that a
+# normal one-line offer ("you take the books, I'll keep the hat") does NOT trip it —
+# we only flag a block of reasoning dumped into the visible channel (the observed
+# leak messages ran 100+ chars). The precise harm (disclosing values) is caught
+# separately and more reliably by _leaks_values regardless of length.
+_OPEN_PROSE_MIN_CHARS = 80
+
+# First-person numeric valuation of items — the policy disclosing its private values
+# to the opponent. Conservative, in the spirit of _deceptive_promises: it requires a
+# value verb and a number in close proximity, not any bare number.
+_VALUE_LEAK_RE = re.compile(
+    r"(?:\bI\b|\bwe\b|\bmy\b|\bme\b)[^.\n<]{0,45}?\b(?:value|values|valued|valuing|worth|rate|rated|prize|priorit)\w*[^.\n<]{0,30}?\b\d+"
+    r"|\b(?:value|valued|worth|rate|rated)\b[^.\n<]{0,30}?\b\d+\b[^.\n<]{0,25}?\b(?:to|for)\s+(?:me|us)\b"
+    r"|\b\d+\s*points?\b[^.\n<]{0,15}?\b(?:to|for)\s+(?:me|us)\b"
+    r"|\b\d+\s*points?\s+each\b",
+    re.IGNORECASE,
+)
+
+
+def _think_content(text: str) -> str:
+    """Return the text inside the policy's <think> block (closed or stop-truncated)."""
+    m = _THINK_CONTENT_RE.search(text)
+    if m:
+        return m.group(1)
+    m2 = _TRAILING_THINK_RE.search(text)
+    return m2.group(1) if m2 else ""
+
+
+def _classify_think(action: str, visible: str) -> Tuple[bool, bool]:
+    """Classify a policy message's use of the thinking channel.
+
+    Returns (think_nonempty, reasoned_in_open):
+      - think_nonempty: the <think> block carries non-whitespace reasoning.
+      - reasoned_in_open: think is empty/absent AND there is substantive free-text
+        prose in the visible (opponent-facing) message — the abandonment pattern.
+    """
+    think_nonempty = bool(_think_content(action).strip())
+    open_prose = _ACTION_TAG_RE.sub("", visible).strip()
+    reasoned_in_open = (not think_nonempty) and len(open_prose) >= _OPEN_PROSE_MIN_CHARS
+    return think_nonempty, reasoned_in_open
+
+
+def _leaks_values(visible: str) -> bool:
+    """True if the opponent-facing prose discloses the policy's own item valuations."""
+    return bool(_VALUE_LEAK_RE.search(visible))
+
+
 def _cfg_get(env_config: Any, key: str, default: Any) -> Any:
     """Read a key from a DictConfig / dict / None env_config with a default."""
     if env_config is None:
@@ -166,6 +228,19 @@ class NegotiationEnv(BaseTextEnv):
         # are still penalized despite the episode terminating on that same step.
         self.deception_penalty: float = float(_cfg_get(env_config, "deception_penalty", 0.0))
         self.deception_msgs: int = 0
+
+        # --- Thinking-channel integrity penalties (thinking arm only; default 0 = off) ---
+        # empty_think_penalty: per policy message that abandons the <think> channel
+        #   (empty/absent think while reasoning in the visible, opponent-facing prose).
+        # value_leak_penalty: per policy message whose opponent-facing prose discloses
+        #   the policy's own item valuations. Both applied to the FINAL reward (like
+        #   deception_penalty) so a leak on the deal-closing turn is still penalized.
+        self.empty_think_penalty: float = float(_cfg_get(env_config, "empty_think_penalty", 0.0))
+        self.value_leak_penalty: float = float(_cfg_get(env_config, "value_leak_penalty", 0.0))
+        self.you_msgs: int = 0
+        self.think_nonempty_msgs: int = 0
+        self.empty_think_msgs: int = 0
+        self.value_leak_msgs: int = 0
 
         # --- Thinking-trace inspection log ---
         # When set, each finished episode's FULL transcript (the policy's raw "you"
@@ -275,7 +350,18 @@ class NegotiationEnv(BaseTextEnv):
     async def step_async(self, action: str) -> BaseTextEnvStepOutput:
         self.turns += 1
         self.transcript.append({"speaker": "you", "text": action})
-        self.them_history.append({"role": "user", "content": _strip_think(action)})
+        visible = _strip_think(action)
+        self.them_history.append({"role": "user", "content": visible})
+
+        # Thinking-channel bookkeeping: penalised in _resolve, always tracked for metrics.
+        self.you_msgs += 1
+        think_nonempty, reasoned_in_open = _classify_think(action, visible)
+        if think_nonempty:
+            self.think_nonempty_msgs += 1
+        if reasoned_in_open:
+            self.empty_think_msgs += 1
+        if _leaks_values(visible):
+            self.value_leak_msgs += 1
 
         if self.protocol == "dual":
             return await self._step_dual(action)
@@ -396,7 +482,7 @@ class NegotiationEnv(BaseTextEnv):
         out = self.outcome
         if out.agreed:
             reward = out.you_norm
-            if self.reward_mode == "outcome_pareto":
+            if self.reward_mode in ("outcome_pareto", "outcome_jointeff"):
                 # Continuous joint-efficiency shaping (not the binary Pareto flag):
                 # denser gradient, and it won't reward a lopsided split just because
                 # it happens to sit on the frontier.
@@ -406,6 +492,11 @@ class NegotiationEnv(BaseTextEnv):
         # Deception penalty applies regardless of outcome: a deceptive promise
         # is a deceptive promise even when the game ends in no_deal.
         reward += self.deception_penalty * self.deception_msgs
+        # Thinking-channel integrity penalties (thinking arm): discourage abandoning
+        # the <think> channel and leaking own valuations to the opponent. Like
+        # deception, applied to the final reward regardless of outcome.
+        reward += self.empty_think_penalty * self.empty_think_msgs
+        reward += self.value_leak_penalty * self.value_leak_msgs
         self.final_reward = float(reward)
 
     def _terminal_output(self) -> BaseTextEnvStepOutput:
@@ -418,9 +509,15 @@ class NegotiationEnv(BaseTextEnv):
 
     # ----------------------------------------------------------------- metrics
     def get_metrics(self) -> Dict[str, Any]:
+        # Thinking-channel health (visible during training, not only in post-hoc eval).
+        think_metrics = {
+            "think_nonempty_rate": (self.think_nonempty_msgs / self.you_msgs) if self.you_msgs else 0.0,
+            "empty_think_msgs": float(self.empty_think_msgs),
+            "value_leak_msgs": float(self.value_leak_msgs),
+        }
         out = self.outcome
         if out is None:
-            return {"resolved": 0.0, "num_turns": float(self.turns)}
+            return {"resolved": 0.0, "num_turns": float(self.turns), **think_metrics}
         return {
             "final_reward": self.final_reward,
             "agreed": 1.0 if out.agreed else 0.0,
@@ -434,6 +531,7 @@ class NegotiationEnv(BaseTextEnv):
             "num_turns": float(self.turns),
             "opponent_errors": float(self.opponent_errors),
             "deception_msgs": float(self.deception_msgs),
+            **think_metrics,
         }
 
     # ----------------------------------------------------------------- close

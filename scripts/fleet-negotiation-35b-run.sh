@@ -92,14 +92,34 @@ python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --max_val "$MAX_VAL"
 
 # Pareto arm: stronger regularization to prevent mode collapse.
+# (outcome_jointeff is an exact alias of outcome_pareto — the continuous joint-eff
+#  reward used by the 2x2 elicitation experiment — so it gets the same regularization.)
 PARETO_ARGS=()
-if [ "$REWARD_MODE" = "outcome_pareto" ]; then
+if [ "$REWARD_MODE" = "outcome_pareto" ] || [ "$REWARD_MODE" = "outcome_jointeff" ]; then
   PARETO_ARGS=(
     trainer.algorithm.kl_loss_coef=0.05
     trainer.policy.optimizer_config.max_grad_norm=0.5
     "environment.skyrl_gym.negotiation.invalid_penalty=-0.05"
   )
 fi
+
+# Training-stability hardening (research_logs/negotiation-35b-grad-explosion-reward-
+# regression-2026-06-12.md): the outcome/thinking baseline peaked ~step 70 then
+# entropy-collapsed -> grad_norm 4->500 -> token-repetition output collapse -> reward
+# regressed 0.83->0.55. Counter the root cause (entropy collapse) with an entropy floor
+# + stronger KL anchor (default kl_loss_coef was a negligible 0.001), cap the destructive
+# update magnitude, drop runaway/malformed rollouts from the batch, and penalise
+# non-parsing actions. lr stays 5e-7: the post-mortem's "5e-6" misread the unused
+# optimizer block; the trained policy_lr logged 5e-7 every step, so we do NOT raise it.
+# Each knob is env-overridable for sweeps. Pareto arm overrides kl/grad/invalid below.
+STABILITY_ARGS=(
+  trainer.algorithm.use_entropy_loss=${USE_ENTROPY_LOSS:-true}
+  trainer.algorithm.entropy_loss_coef=${ENTROPY_LOSS_COEF:-0.005}
+  trainer.algorithm.kl_loss_coef=${KL_LOSS_COEF:-0.02}
+  trainer.policy.optimizer_config.max_grad_norm=${MAX_GRAD_NORM:-0.5}
+  generator.apply_overlong_filtering=${APPLY_OVERLONG_FILTERING:-true}
+  environment.skyrl_gym.negotiation.invalid_penalty=${INVALID_PENALTY:--0.05}
+)
 
 # Thinking arm: when ENABLE_THINKING=true the policy emits <think>...</think> before
 # its action. Two things must change vs the no-think default:
@@ -119,6 +139,23 @@ if [ "$ENABLE_THINKING" = "true" ]; then
     generator.chat_template.name_or_path=qwen3_without_thinking
     'generator.sampling_params.stop=["</propose>","</deal>","<accept>"]'
     'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>"]'
+    # The qwen3_without_thinking custom template retokenizes the chat history each
+    # turn (to strip <think> from non-last turns), which breaks the per-token
+    # alignment of rollout logprobs. The generator hard-raises "Response Logprobs
+    # bookkeeping is not supported with custom chat template" if the engine returns
+    # them, so we MUST disable rollout logprobs here (-> 100% trajectory_error
+    # otherwise). Safe: off_policy_correction.tis_ratio_type is null (no importance
+    # sampling), so the loss uses forward-pass logprobs, not rollout logprobs.
+    generator.sampling_params.logprobs=null
+    generator.eval_sampling_params.logprobs=null
+    # Thinking-channel integrity (research_logs/negotiation-35b-grad-explosion-reward-
+    # regression-2026-06-12.md "Thinking-channel abandonment + private-value leak"):
+    # by ~step 70 the policy emitted empty <think></think> and moved its reasoning into
+    # the visible message, leaking its own item valuations to the opponent. Penalise
+    # abandoning the think channel and disclosing values; the env logs think_nonempty_rate
+    # and value_leak_msgs so this is visible during training, not only in post-hoc eval.
+    environment.skyrl_gym.negotiation.empty_think_penalty=${EMPTY_THINK_PENALTY:--0.02}
+    environment.skyrl_gym.negotiation.value_leak_penalty=${VALUE_LEAK_PENALTY:--0.05}
   )
 else
   THINK_ARGS=(
@@ -128,7 +165,7 @@ else
   )
 fi
 
-RUN_NAME="fleet_${MODEL_TAG}_35b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}"
+RUN_NAME="fleet_${MODEL_TAG}_35b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}_${RUN_ID:-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')}"
 
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
@@ -195,6 +232,7 @@ bash scripts/fleet-common-run.sh \
   trainer.ckpt_path="$HOME/ckpts/fleet_${MODEL_TAG}_35b_negotiation" \
   trainer.export_path="$HOME/exports" \
   trainer.dump_data_batch=true \
+  ${STABILITY_ARGS[@]+"${STABILITY_ARGS[@]}"} \
   ${THINK_ARGS[@]+"${THINK_ARGS[@]}"} \
   ${PARETO_ARGS[@]+"${PARETO_ARGS[@]}"} \
   "$@"
