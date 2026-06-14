@@ -52,7 +52,15 @@ fi
 # prior job still hold its .so files open, NFS silly-renames deleted-but-open files to .nfsXXXX and
 # rmdir reports ENOTEMPTY. `mv` works regardless of open handles. The .venv.broken.* dirs are
 # harmless — delete them later once no process holds them.
-if [ -d .venv ]; then mv .venv ".venv.broken.${SLURM_JOB_ID:-nojob}" || rm -rf .venv; fi
+#
+# The aside target MUST be unique per LAUNCH, not per allocation: SLURM_JOB_ID is identical across
+# repeated `sky launch` on a REUSED allocation (each launch re-runs setup), so a bare-job-id target
+# collides — 2nd launch moves .venv INTO the existing .venv.broken.<id>/, 3rd launch hits
+# "cannot overwrite .venv.broken.<id>/.venv: File exists", falls to `rm -rf .venv`, hits the
+# orphan-held .nfsXXXX (Device or resource busy) → FAILED_SETUP (debugged 2026-06-14). Append $$
+# (pid, unique per launch) so the rename always succeeds.
+for _bd in .venv.broken.*; do [ -e "$_bd" ] && rm -rf "$_bd" 2>/dev/null || true; done  # declutter old asides (best-effort; skips busy .nfs)
+if [ -d .venv ]; then mv .venv ".venv.broken.${SLURM_JOB_ID:-nojob}.$$" || rm -rf .venv; fi
 uv venv --python 3.12 --seed
 source .venv/bin/activate
 uv sync --extra fsdp
