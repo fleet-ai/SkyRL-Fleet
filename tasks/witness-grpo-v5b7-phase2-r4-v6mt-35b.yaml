@@ -45,6 +45,7 @@
 #     --infra slurm/runpod-cluster-y8puzql3juawue \
 #     --env RUN_LABEL=r4_v6mt_smoke \
 #     --env GAME_IDS="tw07 tw03" --env VAL_GAME_IDS="tw01" \
+#     --env TRAIN_BATCH_SIZE=2 --env POLICY_MINI_BATCH_SIZE=2 --env EVAL_BATCH_SIZE=1 \
 #     --env NUM_EPOCHS=1 --env MAX_LEVELS=1 --env MAX_ORAI_STEPS=2 \
 #     --env MAX_TURNS=2 --env EVAL_BEFORE_TRAIN=false \
 #     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
