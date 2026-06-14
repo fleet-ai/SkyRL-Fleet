@@ -12,19 +12,33 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
 OUT = HERE.parent / "visualizer" / "public" / "data" / "eval"
+sys.path.insert(0, str(HERE.parent))  # game lives in the package dir
+import game  # noqa: E402
+
+
+def efficient_split(counts, you_values, them_values):
+    """Return (max_joint, you_alloc, them_alloc) for the joint-maximizing partition."""
+    best_j, best = -1, (None, None)
+    for ya in game.all_allocations(counts):
+        tb = [counts[i] - ya[i] for i in range(len(counts))]
+        j = game.score_of(ya, you_values) + game.score_of(tb, them_values)
+        if j > best_j:
+            best_j, best = j, (ya, tb)
+    return best_j, best[0], best[1]
 
 ACCEPT_WORDS = ["agree", "works for me", "sounds good", "deal", "that works",
                 "ok", "okay", "sure", "accept", "confirm", "perfect", "fine by me"]
 
 FNAME_RE = re.compile(
     r"^(?P<model>.+)_(?P<dataset>dnd|casino)_(?P<split>[a-z]+)"
-    r"(?:_(?P<protocol>single-nothink|dual-nothink|single|dual))?_n(?P<n>\d+)\.json$"
+    r"(?:_(?P<protocol>single-nothink|dual-nothink|single-think|dual-think|single|dual))?_n(?P<n>\d+)\.json$"
 )
 
 # Models to omit from the visualizer manifest. Matched against the filename's
@@ -36,8 +50,8 @@ EXCLUDE_MODEL_PREFIXES = ("qwen",)
 
 
 def is_excluded(model: str, protocol: str) -> bool:
-    if protocol.endswith("-nothink"):
-        return False  # non-thinking runs are always shown
+    if protocol.endswith("-nothink") or protocol.endswith("-think"):
+        return False  # explicit thinking / non-thinking variants are always shown
     return model.startswith(EXCLUDE_MODEL_PREFIXES)
 
 
@@ -76,7 +90,8 @@ def to_viz_game(g):
     verbal_no_tag = ("one_sided_tag" in flags or "no_tags" in flags) and transcript_accepts(g["transcript"])
     if verbal_no_tag:
         flags.append("verbal_agreement_no_tag")
-    return {
+
+    viz = {
         "dataset": "eval",
         "item_names": sc["item_names"],
         "counts": sc["counts"],
@@ -98,7 +113,18 @@ def to_viz_game(g):
         "you_norm": o.get("you_norm", 0.0),
         "them_norm": o.get("them_norm", 0.0),
         "pareto_optimal": o.get("pareto_optimal", False),
+        "joint_score": o.get("joint_score", (o.get("you_score") or 0) + (o.get("them_score") or 0)),
+        "max_joint": o.get("max_joint", 0),
+        "joint_efficiency": o.get("joint_efficiency", 0.0),
     }
+    # For agreed-but-inefficient deals, attach the joint-maximizing split so the
+    # visualizer can show exactly which trade was left on the table.
+    if o["agreed"] and not o.get("pareto_optimal", False):
+        mj, ey, et = efficient_split(sc["counts"], sc["you_values"], sc["them_values"])
+        viz["max_joint"] = mj
+        viz["efficient_you"] = ey
+        viz["efficient_them"] = et
+    return viz
 
 
 def summarize(games, score_max):
@@ -168,6 +194,8 @@ PROTO_LABEL = {
     "dual": "dual-tag",
     "single-nothink": "single-proposer · no-think",
     "dual-nothink": "dual-tag · no-think",
+    "single-think": "single-proposer · thinking",
+    "dual-think": "dual-tag · thinking",
 }
 
 
@@ -186,7 +214,7 @@ def main():
                                                        "model": model, "stats": stats, "games": games}))
         pretty_model = model.replace("_", "/").replace("qwen/qwen", "Qwen").replace("openai/", "")
         plabel = PROTO_LABEL.get(protocol, protocol)
-        name_proto = protocol.replace("-nothink", " (no-think)")
+        name_proto = protocol.replace("-nothink", " (no-think)").replace("-think", " (thinking)")
         runs.append({
             "id": runid,
             "name": f"{pretty_model} · {dataset} · {name_proto}",

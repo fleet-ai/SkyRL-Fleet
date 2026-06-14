@@ -79,6 +79,8 @@ uv sync --extra fsdp
 # wandb: logging. boto3/awscli: optional S3 checkpoint upload. litellm: opponent LLM.
 uv pip install wandb boto3 awscli
 uv pip install "litellm>=1.75.5"
+# datasets: required by skyrl-gym negotiation prepare_dataset.py (head-node dataset gen).
+uv pip install datasets
 
 # --- Extra setup hook (Qwen3.5-specific deps: transformers 5.3.0, causal-conv1d,
 # CUDA toolkit, and ~/.cuda_env which the run script sources via --cuda-env) ---
