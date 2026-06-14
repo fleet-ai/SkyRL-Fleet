@@ -40,12 +40,12 @@
 #   # Preflight smoke (no 35B load — verifies deps, file_mounts, imports, dataset prep)
 #   sky launch tasks/witness-grpo-v5b7-phase2-r4-v6mt-35b.yaml --infra slurm/runpod-cluster-y8puzql3juawue --env SMOKE_ONLY=1 -y
 #
-#   # Tiny smoke training (1 epoch, 2 games, 1 level — code-path sanity from the warm-start ckpt)
+#   # Tiny smoke training: keep the FULL 8/4 game set + train=4/mini=4 batch
+#   # (2-node dp=16 + n_samples=4 REQUIRES train_batch>=4 and mini>=4 — shrinking
+#   # games/batch trips the validator); make it fast via 1 epoch / 1 level / 2 turns.
 #   sky launch tasks/witness-grpo-v5b7-phase2-r4-v6mt-35b.yaml \
 #     --infra slurm/runpod-cluster-y8puzql3juawue \
 #     --env RUN_LABEL=r4_v6mt_smoke \
-#     --env GAME_IDS="tw07 tw03" --env VAL_GAME_IDS="tw01" \
-#     --env TRAIN_BATCH_SIZE=2 --env POLICY_MINI_BATCH_SIZE=2 --env EVAL_BATCH_SIZE=1 \
 #     --env NUM_EPOCHS=1 --env MAX_LEVELS=1 --env MAX_ORAI_STEPS=2 \
 #     --env MAX_TURNS=2 --env EVAL_BEFORE_TRAIN=false \
 #     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
