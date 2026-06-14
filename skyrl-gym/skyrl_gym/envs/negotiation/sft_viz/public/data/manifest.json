@@ -1,0 +1,16 @@
+{
+  "datasets": [
+    {
+      "id": "casino",
+      "label": "CaSiNo (campsite: food / water / firewood)",
+      "n_rows": 2060,
+      "displayed": 500
+    },
+    {
+      "id": "dnd",
+      "label": "Deal or No Deal (books / hats / balls)",
+      "n_rows": 8236,
+      "displayed": 500
+    }
+  ]
+}

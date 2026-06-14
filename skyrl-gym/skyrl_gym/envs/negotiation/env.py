@@ -384,9 +384,13 @@ class NegotiationEnv(BaseTextEnv):
         if prop is not None:
             keep = [min(self.counts[i], max(0, prop[i])) for i in range(self.n_items)]
             self.pending = {"by": "you", "keep": keep}
-            if self.deception_penalty != 0.0 and _deceptive_promises(
-                action, keep, self.item_names, self.counts
-            ):
+            # Detection is ALWAYS run and tracked (like value_leak_msgs /
+            # empty_think_msgs), independent of deception_penalty. The penalty
+            # coefficient only governs whether this is *shaped into the reward*
+            # (see _resolve); it must never gate the *measurement*, or setting
+            # deception_penalty=0 to isolate behavioral emergence would silently
+            # zero out the deception_rate metric the experiment depends on.
+            if _deceptive_promises(action, keep, self.item_names, self.counts):
                 self.deception_msgs += 1
 
         # Penalise turns where the policy emitted no parseable action — this

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SFT Warm-Start — Dataset Viewer</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>SFT Warm-Start <span class="dim">·</span> Dataset Viewer</h1>
+      <span class="subtitle" id="subtitle">Conversational SFT data — assistant turns are supervised (loss); user/system turns are context only.</span>
+    </div>
+    <div class="selectors">
+      <div class="tabs" id="datasetTabs"></div>
+      <div class="tabs persp" id="perspTabs">
+        <button class="tab active" data-persp="all">Both sides</button>
+        <button class="tab" data-persp="you">you</button>
+        <button class="tab" data-persp="them">them</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="stats-grid" id="statsGrid"></section>
+
+  <section class="hist-card">
+    <h3>Supervised (assistant) turns per conversation</h3>
+    <div class="hist" id="turnsHist"></div>
+  </section>
+
+  <section class="controls">
+    <input type="search" id="searchBox" placeholder="Search message text…" />
+    <label class="chk"><input type="checkbox" id="onlySupervised" /> dim context turns</label>
+    <span class="legend">
+      <span class="swatch sup"></span> supervised (assistant)
+      <span class="swatch ctx"></span> context (user)
+      <span class="swatch sys"></span> system
+    </span>
+    <span class="count" id="resultCount"></span>
+  </section>
+
+  <section class="conv-list" id="convList"></section>
+  <div class="pager"><button id="loadMore" class="load-more" style="display:none">Load more</button></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
