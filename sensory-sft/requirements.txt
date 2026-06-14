@@ -1,0 +1,13 @@
+# The data-engine core (registry / sense / rollout) is stdlib-only — no deps.
+# These are for the pluggable Policy/Driver you wire in next:
+
+# Policy (choose per route):
+#   openai>=1.0        # Qwen3.5-9B via OpenRouter (tool_use, text)
+#   vllm>=0.17         # local multimodal Qwen3.5-9B (VL / computer_use)
+
+# Driver (choose per route):
+#   playwright>=1.40   # local browser against `pnpm dev` (screenshots + clicks)
+#   fleet              # Fleet-hosted computer-use instance (screenshots provided)
+
+# Dev:
+#   pytest>=7
