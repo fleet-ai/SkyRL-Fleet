@@ -90,7 +90,9 @@ envs:
   POLICY_SIZE_HINT: ""          # "9b" or "35b"; auto-detect from path if empty
 
   # Eval design (locked-in defaults; see launcher for rationale)
-  GAMES: "tw01 tw09 tw10 tw12"  # 4 held-out games
+  GAMES: "tw01 tw09 tw10 tw12"  # 4 witness held-out games (evaluate.py / bench)
+  PUBLIC_GAMES: "sp80"          # public held-out, scored via evaluate_public.py (SDK loader,
+                                #   same vLLM policy + same official scorer). "" to skip.
   SEEDS: "0 1 2"                # best-of-3 (official max-aggregate)
   SCORE_CAP: "5"                # official score over first 5 levels per game
   MAX_LEVELS: "5"               # agent stops after 5 levels (don't burn budget on unscored levels)
@@ -167,6 +169,10 @@ setup: |
   # Sanity-check file_mounts + tooling
   test -f "$ARC_WITNESS_AGENT_DIR/agent/core.py" || { echo "ERROR: arc-witness-agent file_mount missing"; exit 1; }
   test -f "$ARC_WITNESS_AGENT_DIR/evaluate.py" || { echo "ERROR: evaluate.py missing — local repo out of date"; exit 1; }
+  if [ -n "${PUBLIC_GAMES:-}" ]; then
+    test -f "$ARC_WITNESS_AGENT_DIR/evaluate_public.py" || { echo "ERROR: evaluate_public.py missing (PUBLIC_GAMES set) — local repo out of date"; exit 1; }
+    test -d "$ARC_WITNESS_AGENT_DIR/environment_files" || { echo "ERROR: environment_files/ missing — public games not cached"; exit 1; }
+  fi
   test -f "$WITNESS_ENVS_DIR/bench/scoring.py" || { echo "ERROR: bench/scoring.py missing — envs repo out of date"; exit 1; }
   test -d "$WITNESS_ENVS_DIR/environment_files" || { echo "ERROR: environment_files missing"; exit 1; }
   test -f "$MERGE_SCRIPT" || { echo "ERROR: merge_fsdp_checkpoint.py missing at $MERGE_SCRIPT"; exit 1; }
@@ -446,6 +452,38 @@ run: |
   OUTPUT_JSON_ENV="$OUTPUT_JSON" python -c 'import json,os; d=json.load(open(os.environ["OUTPUT_JSON_ENV"])); off=d.get("summary_official",{}); print("overall_score (mean of per-game official scores, 0-115):", round(off.get("overall_score",0.0),3)); print("per-game scores:"); [print("  %s: score=%.3f  levels=%d/%d  actions=%d" % (g["game_id"], g["score"].get("score",0), g["score"].get("levels_completed",0), g["score"].get("levels_total",0), g["score"].get("actions",0))) for g in d.get("games",[])]; print("first_n_completed:", off.get("first_n_completed"))'
   echo "==============================================================================="
 
+  # === sp80 (public held-out) official score via evaluate_public.py ===
+  # The witness bench (evaluate.py) loads only tw01-13; public/SDK games go through
+  # a different loader. evaluate_public.py drives the SAME vLLM policy on the public
+  # held-out and scores it with the SAME bit-equivalent scorer (bench.score_one_game).
+  # Runs while vLLM is STILL up (before the kill below). Under the set +e above, so a
+  # public-eval crash never loses the witness result. cwd is $ARC_WITNESS_AGENT_DIR.
+  if [ -n "${PUBLIC_GAMES:-}" ]; then
+    PUB_JSON="$LOG_DIR/arc_score_public_${CKPT_LABEL}.json"
+    echo "[eval-public] running evaluate_public.py games=$PUBLIC_GAMES seeds=$SEEDS"
+    python evaluate_public.py \
+      --games $PUBLIC_GAMES \
+      --seeds $SEEDS \
+      --score-cap-levels "$SCORE_CAP" \
+      --max-levels "$MAX_LEVELS" \
+      --max-steps "$MAX_TOTAL_STEPS" \
+      --max-level-steps "$MAX_LEVEL_STEPS" \
+      --llm-provider vllm \
+      --llm-base-url "http://localhost:${SERVE_PORT}/v1" \
+      --llm-model witness-policy \
+      --llm-fallback-model witness-policy \
+      --llm-temperature "$TEMPERATURE" \
+      --llm-max-tokens "$MAX_GEN_TOKENS" \
+      --disable-mllm \
+      --enable-secondary-fallback "$ENABLE_SECONDARY_PROVIDER_FALLBACK" \
+      --secondary-model "$SECONDARY_MODEL" \
+      --output "$PUB_JSON" \
+      2>&1 | tee "$LOG_DIR/eval_public_${CKPT_LABEL}.log"
+    echo "[eval-public] exit=${PIPESTATUS[0]} (≠0 常见为存完结果后的无害 teardown)"
+    [ -f "$PUB_JSON" ] && echo "[eval-public] sp80 JSON written" \
+      || echo "[eval-public] WARN: no $PUB_JSON — public eval failed; witness result unaffected"
+  fi
+
   # Free the vLLM server's threads BEFORE uploading. On a 35B TP=2 node the
   # process tree sits near the thread ceiling (RLIMIT_NPROC / cgroup pids.max);
   # boto3/s3transfer then can't spawn its worker threads and the upload dies with
@@ -467,6 +505,13 @@ run: |
   fi
   aws s3 cp "$LOG_DIR/eval_${CKPT_LABEL}.log" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_eval.log" || true
   aws s3 cp "$VLLM_LOG" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_vllm.log" || true
+
+  # sp80 public held-out result (supplementary signal; best-effort, never fails the job)
+  if [ -n "${PUBLIC_GAMES:-}" ] && [ -f "${PUB_JSON:-/nonexistent}" ]; then
+    echo "[s3] uploading public result -> ${OUTPUT_S3_BASE}/${CKPT_LABEL}_public.json"
+    aws s3 cp "$PUB_JSON" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_public.json" || true
+    aws s3 cp "$LOG_DIR/eval_public_${CKPT_LABEL}.log" "${OUTPUT_S3_BASE}/${CKPT_LABEL}_public_eval.log" || true
+  fi
 
   kill $VLLM_PID 2>/dev/null || true
   echo "[done] OFFICIAL arc_score eval complete for $CKPT_LABEL — artifacts at ${OUTPUT_S3_BASE}/"
