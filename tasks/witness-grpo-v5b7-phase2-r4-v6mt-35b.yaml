@@ -1,0 +1,211 @@
+# ARC-AGI-3 B7 Phase 2 R4 — GRPO on Qwen3.5-35B-A3B, SFT WARM-START (cycle-2 主产出)
+#
+# Derived from witness-grpo-v5b7-phase2-r5-35b.yaml. Two deltas vs that R5 run:
+#   1. R4, not R5: ENABLE_SECONDARY_PROVIDER_FALLBACK=0 — no external (Opus/Sonnet)
+#      scaffold. PRECISE MECHANISM (don't over-read as "policy serves everything"):
+#      the SkyRL bridged rollout trains ONLY the ORAI stage on the policy
+#      (env_agent.py: the trainer's generation IS the ORAI response). The
+#      non-ORAI stages (crystallization, rule-synthesis, self-reflection,
+#      rule-planner, manager) have no live endpoint here — their localhost vLLM
+#      is a no-op in SkyRL (Finding M) — so with fallback=0 they degrade to
+#      HEURISTIC fallbacks (they do NOT crash; every call site swallows). R5 fed
+#      those stages to Opus; R4 drops that API dependency and isolates the reward
+#      to ORAI→policy. Haiku rubric reward stays ON (R4 = rubric-on, fallback-off).
+#      NOTE: this is NOT a perfect match to Kaggle deploy, where a live local vLLM
+#      would serve non-ORAI stages too — see the design-doc caveat. It removes the
+#      API-scaffold dependency, which is the part that matters for offline deploy.
+#   2. Warm-start from our cold-start mechanism-true SFT (v6mt, 402 pairs):
+#      POLICY_CHECKPOINT_S3=s3://fleet-guanghan/witness_sft_v6mt_35b/merged/.
+#      This is attribution arm (d) = SFT+RL-35B, the cycle-2 headline product.
+#
+# Model:
+#   Qwen/Qwen3.5-35B-A3B — MoE: 35B total, 3B active (256 experts, 9/token).
+#   GatedDeltaNet architecture. 262K native context. Requires:
+#     - 2 nodes × 8× H200 = 16 GPUs total
+#     - vLLM ≥ 0.17.0 + FlashAttention 4
+#     - transformers 5.3.0 (Qwen3.5-MoE registration)
+#     - causal-conv1d (GatedDeltaNet CUDA kernels — without it: cudaErrorIllegalAddress)
+#
+# Warm-start plumbing (proven, no script changes needed):
+#   POLICY_CHECKPOINT_S3 non-empty → fleet-witness-setup.sh aws-s3-syncs it to
+#   ~/policy_ckpt, re-patches the multimodal config (Finding K), writes
+#   ~/policy_path.txt, and the run feeds it to trainer.policy.model.path as INIT
+#   weights. The SFT merged/ dir is consolidated HF (not FSDP shards, not optim
+#   state); resume_mode=latest is keyed on RUN_LABEL and is a no-op for a fresh
+#   label, so model.path drives the warm-start. (The merged/ already carries the
+#   multimodal config, so the setup-side patch is a harmless idempotent overwrite.)
+#
+# Usage:
+#
+#   # Preflight smoke (no 35B load — verifies deps, file_mounts, imports, dataset prep)
+#   sky launch tasks/witness-grpo-v5b7-phase2-r4-v6mt-35b.yaml --infra slurm/runpod-cluster-y8puzql3juawue --env SMOKE_ONLY=1 -y
+#
+#   # Tiny smoke training (1 epoch, 2 games, 1 level — code-path sanity from the warm-start ckpt)
+#   sky launch tasks/witness-grpo-v5b7-phase2-r4-v6mt-35b.yaml \
+#     --infra slurm/runpod-cluster-y8puzql3juawue \
+#     --env RUN_LABEL=r4_v6mt_smoke \
+#     --env GAME_IDS="tw07 tw03" --env VAL_GAME_IDS="tw01" \
+#     --env NUM_EPOCHS=1 --env MAX_LEVELS=1 --env MAX_ORAI_STEPS=2 \
+#     --env MAX_TURNS=2 --env EVAL_BEFORE_TRAIN=false \
+#     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+#     -y --detach-run
+#
+#   # Full R4 warm-start run (OPENROUTER_API_KEY still required — Haiku rubric judge)
+#   sky launch tasks/witness-grpo-v5b7-phase2-r4-v6mt-35b.yaml \
+#     --infra slurm/runpod-cluster-y8puzql3juawue \
+#     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=... \
+#     -y --detach-run
+#
+# NOTE: R4 wall-clock is UNKNOWN. The 24-30h figure was R5's, where non-ORAI
+#   stages ran on the Opus API; under R4 they run on the vLLM policy (possibly
+#   slower or faster). Measure the first ~5 steps and cut NUM_EPOCHS if needed.
+#
+# Reference: artifacts/arc-witness-runs/reports/2026-06-09_cycle2_harness_internalize_35b_plan.md §5
+
+name: witness-grpo-v5b7-r4-v6mt-35b
+
+resources:
+  # 35B: HF cache ~150 GB + workdir + venv + 1-2 FSDP ckpts (~250 GB each) → 2000 GB headroom.
+  disk_size: 2000
+  accelerators: H200:8
+  cloud: slurm
+  region: runpod-cluster-y8puzql3juawue
+  # Flat slurm-only resource (mirrors tasks/task-gen-grpo-qwen3_5-35b-slurm.yaml). Avoids the
+  # multi-cloud `ordered:` + `--infra slurm` footgun where the GCP entry's image_id is dragged
+  # onto Slurm → Slurm.get_image_size NotImplementedError. Also = no surprise paid-cloud fallback.
+  # memory: intentionally OMITTED — this CR_CORE cluster doesn't track memory as a consumable.
+  # ports: not needed — fleet-common-run.sh gives Ray per-job ports on the internal node network
+  #   (no SkyPilot ingress; Slurm doesn't support open_ports anyway).
+
+num_nodes: 2
+
+# DEV-LOOP: local workdir → `sky launch` rsyncs THIS local checkout to the cluster, so edits to
+# scripts/fleet-witness-*.sh take effect on the next launch with NO git commit/push. (The git-url
+# form below is the reproducible record; switch back to it for the canonical run.)
+#   url: https://github.com/fleet-ai/SkyRL-Fleet.git
+#   ref: guanghan/b7-phase2-judge-rewards
+workdir: ~/Documents/obsidian/research-repos/SkyRL-Fleet
+
+file_mounts:
+  # Adjust source paths to match your local arc-witness-agent / arc-witness-envs worktree.
+  ~/arc-witness-agent: ~/Documents/obsidian/research-directions/repos/arc-witness-agent
+  ~/arc-witness-envs: ~/Documents/obsidian/research-directions/repos/arc-witness-envs
+
+envs:
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  # SMOKE_ONLY=1 → setup phase exits before launching trainer (cheap preflight)
+  SMOKE_ONLY: "0"
+
+  # === Run identity / model ===
+  # p2_r4_v6mt_35b: R4 (rubric ON, secondary fallback OFF) warm-started from the
+  # v6mt cold-start SFT. Fresh label → its S3/ckpt/wandb are isolated from every
+  # R5 run. S3 root: s3://fleet-guanghan/witness_grpo_v5b7_p2_r4_v6mt_35b
+  RUN_LABEL: "p2_r4_v6mt_35b"
+  MODEL: "Qwen/Qwen3.5-35B-A3B"
+  # Warm-start from the cycle-2 cold-start SFT (402 mechanism-true pairs). aws s3
+  # sync to ~/policy_ckpt + multimodal patch → trainer.policy.model.path.
+  POLICY_CHECKPOINT_S3: "s3://fleet-guanghan/witness_sft_v6mt_35b/merged/"
+
+  # === Anti-collapse hyperparameters (matches 9B R3/R4/R5; lr halved for 35B) ===
+  LR: "5.0e-7"                       # 35B uses smaller lr than 9B's 2e-6
+  NUM_EPOCHS: 25                     # R5 was ~24-30h; R4 wall-clock unknown — cut after measuring first steps
+  KL_LOSS_COEF: "0.005"              # anti-drift
+  ENTROPY_LOSS_COEF: "0.005"         # exploration bonus
+
+  # === Batching (matches 9B R5 for apples-to-apples comparison) ===
+  TRAIN_BATCH_SIZE: 4
+  POLICY_MINI_BATCH_SIZE: 4
+  EVAL_BATCH_SIZE: 4
+  EVAL_BEFORE_TRAIN: "true"
+  EVAL_INTERVAL: 10
+  N_SAMPLES_PER_PROMPT: 4
+  EVAL_N_SAMPLES_PER_PROMPT: 3
+
+  # === Checkpointing (35B-aware) ===
+  # ckpt_interval=20 keeps ckpts spaced ~80 min apart (one ckpt sync ~30 min at 35B's ~250 GB).
+  # max_ckpts_to_keep=3 (plan §5.1): 2 left only one fallback after the 8/16-shard
+  # corruption history; 3 gives two. disk_size=2000 has room.
+  CKPT_INTERVAL: 20
+  MAX_CKPTS_TO_KEEP: 3
+
+  # === Generator capacity ===
+  # Sized for 35B + longer trajectories. 9B R5 hit response_length=14400
+  # (vs 16K MAX_INPUT cap) and max_turns=30 was binding — 35B with fresh
+  # SFT should be allowed longer trajectories. Math:
+  #   50 turns × ~500 tok/turn (observed avg) ≈ 25K accumulated context
+  #   + 3-4K system/initial-obs prompt = ~28-30K → 32K with 7% headroom.
+  # If vLLM OOMs the KV cache (rare with 0.65 mem-util), drop to 24K.
+  MAX_INPUT_LENGTH: 32768
+  MAX_GENERATE_LENGTH: 2048          # give 35B reasoning room (vs 9B's 1024)
+  MAX_PROMPT_LENGTH: 8192            # trainer-side prompt cap; doubled from 9B's 4096
+  GPU_MEMORY_UTILIZATION: "0.65"     # 0.8 → 0.65 for 35B safety margin
+  INFERENCE_TENSOR_PARALLEL_SIZE: 2  # 8 engines × TP=2 = 16 GPUs total (known-good pre-maintenance)
+  NUM_INFERENCE_ENGINES: 8
+
+  # === R1/R3/R4/R5 reward + harness knobs ===
+  # Plan diversity (R1) — OFF to match R5_pre / mtezmmq0 baseline behavior
+  ENABLE_PLAN_DIVERSITY_PENALTY: "0"
+  PLAN_DIVERSITY_SCHEME: "consecutive"
+  PLAN_DIVERSITY_PENALTY: "-0.05"
+
+  # Rule judge (R3) — OFF by default
+  ENABLE_RULE_JUDGE_REWARD: "0"
+  RULE_JUDGE_MODEL: "anthropic/claude-haiku-4.5"
+  RULE_JUDGE_SAMPLE_RATE: "0.20"
+  RULE_JUDGE_MAX_REWARD: "0.30"
+
+  # Rubric (R4) — ON. This is the defining reward of R4 (Haiku judge, 15% sample).
+  # It hits OpenRouter, so OPENROUTER_API_KEY is REQUIRED even with fallback OFF.
+  ENABLE_RUBRIC_REWARD: "1"
+  RUBRIC_MODEL: "anthropic/claude-haiku-4.5"
+  RUBRIC_SAMPLE_RATE: "0.15"
+  RUBRIC_PER_ITEM_REWARD: "0.05"
+
+  # Secondary fallback — OFF (this is what makes it R4, not R5). With fallback=0
+  # only the bridged ORAI stage is policy-served; non-ORAI stages degrade to
+  # heuristics (their localhost vLLM endpoint is dead in SkyRL — Finding M)
+  # instead of going to Opus. SECONDARY_MODEL/SKIP_PRIMARY are inert when
+  # fallback=0 — left in place for readability, never consulted.
+  ENABLE_SECONDARY_PROVIDER_FALLBACK: "0"
+  SECONDARY_MODEL: "anthropic/claude-opus-4.8"
+  SECONDARY_SKIP_PRIMARY: "1"
+
+  # OpenRouter (REQUIRED — the Haiku rubric judge hits it even with fallback OFF)
+  OPENROUTER_API_KEY: ""
+  OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"
+
+  # Finding L env-ground-truth (ON for witness)
+  USE_ENV_GROUND_TRUTH: "1"
+  # Finding M MLLM hard-gate (OFF — SkyRL vLLM has no HTTP endpoint)
+  AGENT_MLLM_ENABLED: "0"
+
+  # === Witness game split (witness-only RL; public-game RL is gated on the
+  # env-scaling work-items — see 2026-06-13_32game_rl_blockers_design.md) ===
+  GAME_IDS: "tw03 tw06 tw02 tw05 tw08 tw11 tw13 tw07"
+  VAL_GAME_IDS: "tw01 tw09 tw10 tw12"
+  MAX_LEVELS: "5"
+  MAX_ORAI_STEPS: "30"               # per-level ORAI step cap (unchanged)
+  REWARD_MODE: "shaped"
+  OBS_MODE: "grid"
+  RULES_MODE: "rules_unknown"
+  # MAX_TURNS bumped 30→50: 9B R5 had max_turns=30 binding (response_length
+  # hitting 14400 vs 16K input cap, multiple games solving 2-3 of 5 levels
+  # then running out of turns). 35B with longer context can afford 10
+  # turns/level avg for the full 5-level path.
+  MAX_TURNS: "50"
+  S3_TRAJECTORY_BUCKET: "fleet-guanghan"
+
+  # Credentials (REQUIRED at launch — never commit values here)
+  WANDB_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+setup: |
+  bash scripts/fleet-witness-setup.sh
+
+run: |
+  bash scripts/fleet-witness-run.sh
