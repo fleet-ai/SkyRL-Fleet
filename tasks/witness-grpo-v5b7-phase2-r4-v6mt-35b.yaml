@@ -130,7 +130,10 @@ envs:
   # max_ckpts_to_keep=3 (plan §5.1): 2 left only one fallback after the 8/16-shard
   # corruption history; 3 gives two. disk_size=2000 has room.
   CKPT_INTERVAL: 20
-  MAX_CKPTS_TO_KEEP: 3
+  # 1 (not 3): /workspace shared NFS is chronically ~96-98% full; one 35B FSDP ckpt
+  # is ~210-250G and during a save new+old coexist. Keeping 3 would need ~1TB of
+  # shared scratch that does not exist. 1 trades corruption-resilience for fit.
+  MAX_CKPTS_TO_KEEP: 1
 
   # === Generator capacity ===
   # Sized for 35B + longer trajectories. 9B R5 hit response_length=14400
