@@ -11,12 +11,13 @@ resources:
   disk_size: 1000
   memory: 800+
   ordered:
-    # RunPod Slurm cluster (reserved H200s, no preemption) — pinned to node-3,node-4
+    # RunPod Slurm cluster (reserved H200s, no preemption).
+    # NOTE: node pinning (node-3,node-4) is set via ~/.sky/config.yaml
+    # slurm.cluster_configs.<cluster>.sbatch_options.nodelist — this SkyPilot
+    # version rejects per-task `sbatch_options` in the resources YAML.
     - accelerators: H200:8
       cloud: slurm
       region: runpod-cluster-y8puzql3juawue
-      sbatch_options:
-        nodelist: node-3,node-4
     # RunPod on-demand (API provisioned)
     - accelerators: H200-SXM:8
       cloud: runpod
@@ -54,6 +55,10 @@ envs:
   OPPONENT_MODEL: "openrouter/openai/gpt-4o-mini"
   ENABLE_THINKING: "false"          # set true to enable Qwen3.5 <think> blocks
   MAX_TURNS: 6
+  # Held-out CaSiNo eval set (transfer check vs dnd memorization): number of casino
+  # scenarios appended as a second eval set (36 = all unique; 0 disables).
+  # Logged separately as eval/negotiation_casino/* vs eval/negotiation_dnd/*.
+  CASINO_EVAL: "36"
   MAX_INPUT_LENGTH: 8192
   MAX_GENERATE_LENGTH: 8192
   NUM_EPOCHS: 20

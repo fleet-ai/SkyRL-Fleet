@@ -1,0 +1,594 @@
+{
+ "source": "stanfordnlp/craigslist_bargains",
+ "note": "Sampled, deduped real postings (listing price + item text are REAL; reservations are imposed synthetically downstream).",
+ "postings": [
+  {
+   "item_category": "bike",
+   "item_title": "Long board custom bilt from the board up",
+   "item_description": "Hey there cl I have a long board for sale pretty much brand knew rode all together 4 or 5 times . The brand on the deck is a gravity skateboard. The brand of trucks are sidewinder 2sGuwuing.mini monster hawgs 70mm 78a Wheels with Swiss bones bearings brand new. Please no low ballers thank you and have a great day .",
+   "listing_price": 200.0,
+   "posting_id": "553c342c40b2806d"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "Steel Frame Colnago",
+   "item_description": "Rare and classic 62cm Steel Frame Colnago!! It's made and designed for the tall/ large man. Campanella components. Saddle is on my Cannondale. It was turned up about 25 miles of riding ago.",
+   "listing_price": 600.0,
+   "posting_id": "6d92365390ce6a2f"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "SOMA Doublecross 60 Ultegra Ritchey Carbon",
+   "item_description": "This is a SOMA Doublecross with a great touring/hybrid setup.  It has a Ritchey Carbon fork and King headset.  Shimano Ultegra gear set and derailleurs.  The Mavic CXP wheelset is two months old and has fresh continental touring plus tires.  I just road it across Oregon and it performed beautifully.  The pedals are hybrid mountain SPD clip pedals. The bike does not include the Cateye system.",
+   "listing_price": 800.0,
+   "posting_id": "28cf41ac3d6fb268"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "2016 Raleigh Kodiak II 27.5 Upgraded Size L 2x10 spd.",
+   "item_description": "Got for sale a sweet 2016 Raleigh Kodiak II Full suspension w/120mm of travel front and back by Rock Shox with lockout on the front and 3 positions on the rear from Fox Factory w/Boost and Kashima Coating (pictured is the RT3 but that's not longer available) full SRAM's components i.e. SRAM XX rear der. (long cage) XO front der. XO grip shift, 175mm Race Face Turbine with CINCH technology 38/26, Praxis Works 11/40 cassette, KS Lev eTen remote (100mm travel) dropper post, and a sweet ass Roval Traverse Alloy boost+ wheelset w/DT's internals, SRAM Guide Hydro RS brakes (4 piston caliper) frame a",
+   "listing_price": 2000.0,
+   "posting_id": "a62135340c4f7cee"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "Nishiki Colorado 18\", vintage mountain bike",
+   "item_description": "At 18\" probably best fit for those 5'8\" to 5'11\",Double-butted Tange chromalloy throughout, front fork 4130 Cr-Mo,21 speeds: front derailleur Shimano LX, back Shimano Exage, analog levers,Cantilever brakes. Elliptical Biopace crank.",
+   "listing_price": 169.0,
+   "posting_id": "a151669d6569ff59"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "KONA woman's bicycle with panniers",
+   "item_description": "Includes two Jandd panniers, Kryptonite lock, Shimano Deore gear shifts with 9 settings, bell, mirror. Great for city shopping and short trips.",
+   "listing_price": 200.0,
+   "posting_id": "8a87236763578134"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "Fully custom cannondale capo track bike",
+   "item_description": "Great track and crit bike,Very light frame,Front wheel: 510 track wheel",
+   "listing_price": 600.0,
+   "posting_id": "971e1ac0a5201dda"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "2016 Ibis Mojo HD3 for sale - Large",
+   "item_description": "Get ready for summer riding!,Immaculate condition, less than 100 miles.,Frame:  Carbon fiber,Color:  Matte Black,Fork: Fox Factory series Float 36,Shock: Fox Factory series Float EVOL,Shifter: Shimano XT Deore",
+   "listing_price": 4200.0,
+   "posting_id": "d32b17320f363e8a"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "MASI 3V Volumetrica CCCP 1990 BRAND NEW (NOS)",
+   "item_description": "IRD Blackbird Modified / Thomson X2,Masi CroMoly / Record C,Record (36h) / DT Swiss / Velocity Deep V / Schwalbe Ultremo R,Rear Wheel / Hub / Rim / Tire:,Record (36h) / DT Swiss / Velocity Deep V / Schwalbe Ultremo R,Saddle / Seat Post:",
+   "listing_price": 3450.0,
+   "posting_id": "b178aed201866693"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "TREK JET 20 S for 5-10 Year Old Kid",
+   "item_description": "Fits 5-10 year old child depening on height,Single Speed",
+   "listing_price": 100.0,
+   "posting_id": "e193e67bcc2ff355"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "Schwinn World Sport 14-speed road bike.",
+   "item_description": "Schwinn World Sport 14-speed road bike. 27\" (69cm) frame. 36\" (91cm) standover. Best fit someone 6'+.,Specifications:,Color: Blue.,Shimano Exage dual brake levers.,Shimano Exage Motion center pivot pulled side pulled brakes.,Shimano stem friction shifters (2X7).,Shimano biopace crank set: 40T, 52T.",
+   "listing_price": 240.0,
+   "posting_id": "7b96080771e8c04c"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "Royce Union \"Vida\" Hybrid bicycle + Nexus 4-speed transmission",
+   "item_description": "Call Marco to ride away!",
+   "listing_price": 120.0,
+   "posting_id": "766dd3d1f11d76aa"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "Complete 5-Piece CycleOps Fluid Trainer Set - Trainer, Skewer, Riser,",
+   "item_description": "Excellent Condition Complete 5-Piece CycleOPs Trainer Set - Just like new!,Only used a few times.,In perfect working condition - no damage, no wear!,Free local pick-up in Fairfield / Vacaville, CA,Possible meet-up in Sacramento / San Francisco areas.,1 - CycleOps Fluid Trainer:,Progressive resistance offer the widest resistance range and road-like feel.,Best-selling trainer in the USA.,2 - CycleOps Trainer Skewer:,Specifically designed for use with CycleOps trainers.,3 - CycleOps Climbing Riser Block:",
+   "listing_price": 275.0,
+   "posting_id": "4e8e89835de53173"
+  },
+  {
+   "item_category": "bike",
+   "item_title": "Kids John Deere Pedal Tractor w/ Wagon (NEW)",
+   "item_description": "John Deere Pedal Tractor w/ Wagon, Die Cast in mint condition.  Your child will be over the moon riding this heavy durable tractor with heavy-duty chain system and oversized rubber tires.  Comes with cute detachable rear wagon that can tow another child.",
+   "listing_price": 350.0,
+   "posting_id": "fb42b83bf6ed78fd"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2006 Toyota 4Runner 4WD - Only 106k Miles - Clean Title",
+   "item_description": "Selling my 2006 Toyota 4 Runner with only 106k original miles. The truck is in great condition with no mechanical flaws whatsoever and a clean accident history. Got new tires about 3,000 miles ago. Always has the oil changed on time (due in about 1k). Just got a thorough cleaning inside and a wash and wax outside (still wet in the photos). This truck has never been offroad, but the 4WD is working perfectly from the few times we've been up to Tahoe in it. However, it's a 10+ year old truck that's been driven, not babied and garaged all the time. It's got some scratches, paint is not perfect, bu",
+   "listing_price": 14500.0,
+   "posting_id": "3191451db5daeecb"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2007 Mazda cx-9",
+   "item_description": "2007 Mazda cx-9 2wheel drive. Truck has 138k miles. Did all brakes and rotors all around also just did tune up and transmission flush a week ago. Clean title. Also come with 22 inch rims and stock tires.",
+   "listing_price": 8800.0,
+   "posting_id": "ac68ef4649156f49"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2016 mercedes benz c300",
+   "item_description": "Im selling 2016 Mercedes Benz C300 1OWNER  Automatic,Fully Loaded,",
+   "listing_price": 26800.0,
+   "posting_id": "0fa9c22ef707aa65"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2014 TOYOTA PRIUS Hybrid",
+   "item_description": "Hi, I'm selling my 2014 Toyota Prius. It has only 65k miles. Backup camera, Bluetooth, CD, AUX, Keyless Go, There was no, engine, or transmission damage. Very clean inside, never smoke. Well maintained. Oil change every 5k miles with synthetic Toyota Original Oil. Registered until February 2019. Title on hands. It lost its clean title status due to rear bumper hit. Small scratch on the right side. I'm the second owner and had no any problem with it. The car is great, 50+ MPG. Will run 100k miles more easily. Call me or better text at any time",
+   "listing_price": 8900.0,
+   "posting_id": "c59f6279046a68db"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2006 BMW x5",
+   "item_description": "If you want to buy a trouble free car keep reading, if you are looking for a bargain and don't have a problem with huge repair costs after buying your car please find another one.,Selling my 2006 BMW X5, 117K miles, Difficult to find it in these miles!!!,Mint condition, it has had all maintenance done, recently had all gaskets on engine replaced so no oil leaks whatsoever.,Has had the transmission and transfer case oils replaced in the last month.",
+   "listing_price": 9000.0,
+   "posting_id": "298bb6a69cf2128c"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2010 camaro ss   on zl1 rims runs good 2018 tags clean title",
+   "item_description": "selling my 2010 camaro ss  6.2L  auto and  maunal  runs good  120miles",
+   "listing_price": 14800.0,
+   "posting_id": "2f99eaf2ad7a3215"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2013 mercedes c250 *navigation* clean - $12,000",
+   "item_description": "Up for sale is a 2013 c250 with only  45k. Interior is loaded with technology and in new condition, the paint is immaculate on the exterior. The tires are new. Additional options include:,Navigation,Attention Assist (warns you if your drowsy),Automatic Windsheild Wipers,Bluetooth Audio Connectivity (for audio),Bluetooth Phone Connectivity (for phone calls),USB Connectivity",
+   "listing_price": 12000.0,
+   "posting_id": "e102f229692ff8b0"
+  },
+  {
+   "item_category": "car",
+   "item_title": "96 Civic Hatchback",
+   "item_description": "Testing the waters. Selling my 96 hatchback. Open for trade only if it's for a 03 - 04 Yamaha R6",
+   "listing_price": 4000.0,
+   "posting_id": "584a188bbeb0d6fc"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2003 350z",
+   "item_description": "2003 350z has 120k miles. JWT Clutch and flywheel installed 2 months ago. K&N long tube cold air intake with 5/16 motordyne spacer kit. Lowered on tein springs. New Michelin A/S sport plus tires installed at 109k. Maintenced every 3500 miles. Just selling because I'm looking for a work truck. 8900 OBO",
+   "listing_price": 8900.0,
+   "posting_id": "0ee1186ef26141c3"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2003 Honda Civic Lx Low Miles Clean Title Ready To Go!!!",
+   "item_description": "5 speed manual,Clean title in hand,Tags are paid and up to date,Low miles for the year 127,000.,Premium sound system pioneer,head unit with bluetooth",
+   "listing_price": 3500.0,
+   "posting_id": "2a4a6caa16715720"
+  },
+  {
+   "item_category": "car",
+   "item_title": "1999 CHEVY TAHOE 4X4",
+   "item_description": "SUPER CLEAN!! THIS TRUCK IS NICE..CLEAN TITLE..SMOGGED AND REGISTERED..RUNS GREAT!! HAS 188K ORIG MILES..4 BRAND NEW TIRES AND WHEEL ALIGNMENT...CLEAN LEATHER INTERIOR..NO RIPS..JUST FULLY DETAILED..CARPET JUST SHAMPOOED AND LEATHER SEATS JUST CLEANED AND CONDITIONED .. WHICH IS HARD TO FIND NICE INTERIOR...4 WHEEL DRIVE..WORKS GREAT...HAS ALARM..HAS 13 INCH FOLD DOWN TV/DVD PLAYER..GREAT FOR TRIPS...TOW PACKAGE AND MORE...READY FOR SUMMER ROAD TRIPS!!",
+   "listing_price": 3400.0,
+   "posting_id": "09717cdbbc780224"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2006 Saturn ION Low Miles 66K",
+   "item_description": "Runs and drives a great . Pass Smog . clean title  . power doors locks . CD player Ac works . Low miles 66k .Call",
+   "listing_price": 3800.0,
+   "posting_id": "ea9b502a7df72394"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2007 FORD FOCUS ZX4 SES SEDAN / 148K MILES / AUTOMATIC / CLEAN  TITLE",
+   "item_description": "Up for sale is my 2007 Ford Focus ZX4 SES sedan 4 doors / Automatic transmission and 4 cylinders engine 2.0L with timing chain.,Clean title in hand,runs and drives like new. car passed smog (certificate available for new owner). registration paid for 2018 JUNE,- 4 new Bridgestone tires with balance and alignment,- 4 new struts / front and  rear complete with new springs,- new front brakes.",
+   "listing_price": 3500.0,
+   "posting_id": "c8ef8b0a6bb4906c"
+  },
+  {
+   "item_category": "car",
+   "item_title": "2011 Dodge Charger SXT",
+   "item_description": "2011 Dodge Charger V6 3.6L automatic transmission with new 20\" rims and tires with only 87000 miles salvage title only the roof dent and 3 windows was the reason made salvage I have pictures to probe everything still like new conditions runs excellent any question feel free to call any time or text to my cell phone",
+   "listing_price": 10900.0,
+   "posting_id": "425bb2f9c4346214"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Macbook pros Macbook airs",
+   "item_description": "looking for a macbook pro or macbook air,I can arrange all kinds of MacBooks,All macbooks serviced by certified apple technican all will look and function like new.,Final Cut Pro.",
+   "listing_price": 300.0,
+   "posting_id": "5aebeb5f85d83465"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Brand NEW SanDisk ULTRA MicroSDXC 200GB",
+   "item_description": "I have a brand new unopened microSD card. Great for Android users, Nintendo Switch, 3DS and GoPro cameras, and beyond.",
+   "listing_price": 75.0,
+   "posting_id": "0dda8fb20d44f30b"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Bose Soundlink 3 brand new",
+   "item_description": "Brand new never use, i got it has a gift but i am using sonos system.",
+   "listing_price": 220.0,
+   "posting_id": "97e5b98a05aeffa7"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Federal Pacific,  ( FPE), stab-lok Circuit Breaker",
+   "item_description": "I have NEW original, hard to find, Federal Pacific Electric ( FPE), also known as STAB-LOK,  later also made by American Circuit Breaker and Challenger.  These are NEW, original manufacturer, (OEM), breakers, not after market or refurbished (used and cleaned).  I also have brand new original FPE sub panels and service panels of different types.  I have more breakers of other sizes as well.  I bought this equipment many years ago, before I retired and when Federal Pacific was Federal Pacific Electric and produced high grade equipment.  FPE breakers later got a bad rap when after market breakers",
+   "listing_price": 110.0,
+   "posting_id": "b3f3156f52c1c1ac"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Travel Electrical Adaptor Connection Pack Adapter",
+   "item_description": "Features:,*Each adapter clearly labeled for easy identification.,*Selection guide makes adapter identification quick and easy,*Deluxe organizer case holds all adapters,*Mini-zipper case lets you carry just the adapters you need",
+   "listing_price": 15.0,
+   "posting_id": "fcbbf1c7bb45b697"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Panasonic DVD Player",
+   "item_description": "Panasonic DVD Player: in excellent condition with no blemishes, scratches or dents. Looks and operates as if new.",
+   "listing_price": 55.0,
+   "posting_id": "301149a9ddbc472d"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Sol Republic Wireless Bluetooth Headphones",
+   "item_description": "A2 Sound Engines with clear highs and detailed deep bass,Super-Power Wireless - Control Tracks Air from up to 150 feet away",
+   "listing_price": 155.0,
+   "posting_id": "a3add7ad7bdedfd2"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "BRAND NEW SAMSUNG'S SMART THINGS HUB",
+   "item_description": "ASKING 60$... SERIOUS BUYERS ONLY PLEASE.. NO TRADES CASH ONLY.... I DON'T SHIP SO PLEASE DONT ASK... LOCAL PICKUP ONLY IN FREMONT CA... TEXT OR CALL ME ANYTIME",
+   "listing_price": 60.0,
+   "posting_id": "6add7913d98672c0"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "2 x DJI Mavic Pro Original Battery / Batteries",
+   "item_description": "- Selling 2 x Gently Used DJI Mavic Pro Batteries.",
+   "listing_price": 150.0,
+   "posting_id": "1748adebc274af6b"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "V-moda Crossfade LP2 Over Ear Headphones",
+   "item_description": "V-moda crossfade LP2 headphones in excellent condition. Perfect for producing, dj gigs and all music listening needs. Very flexible and lightweight with a very comfy fit. Comes with microphone chord, case and adapter. Case had some scratches on it, but still works great. I lost the other metal shield for the headphones so the right side is matte black while the left is metal. This doesn't affect sound quality.",
+   "listing_price": 90.0,
+   "posting_id": "fd8e23d6cc11c07d"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Denon AVR 1909 Receiver",
+   "item_description": "Recently upgraded and no longer need my Denon receiver. Is in excellent condition and still have the original box, manual and remote.",
+   "listing_price": 200.0,
+   "posting_id": "9890b5480990b1c9"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "42\" Plasma Commercial Monitor (NO HDMI) with Speakers",
+   "item_description": "Note: NO TV tuner, and NO HDMI input!,Main characteristics,Display format: 16:9;,Brightness: 650 CD/m2;,Contrast: 4000:1;,Progressive scan: yes;,Signal reception",
+   "listing_price": 50.0,
+   "posting_id": "29decb5b8b0c3cf1"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "Binox-HD 4-16x  binoculars",
+   "item_description": "Come see the latest in Smart HD Optics. The ATN Binox-HD binoculars are packed with so many features you will never want to use standard binoculars again. 24/7 use, Wi-Fi, E-zoom, record video, compass. Binox-HD binoculars are the worlds most advanced digital binoculars. Powered by a 1 GHz internal computer they carry a suite of sensors to enable the Senses as never before. Binox-HD - the binoculars for the 21st century.,Specs:,- Binoculars that record video and capture pictures,- Smooth zoom from 4X-16X,- Image stabilization for steady video,- Works in daylight or at night",
+   "listing_price": 380.0,
+   "posting_id": "ab9ef1903e5050df"
+  },
+  {
+   "item_category": "electronics",
+   "item_title": "LeakSmart 3/4 in. Smart Water Valve w/ Smart home HUB",
+   "item_description": "Brand new LeakSmart 3/4 in. Smart Water Valve kit. It comes with:,1. Smart Home HUB (http://www.homedepot.com/p/Wink-Smart-Home-HUB-PWHUB-WH",
+   "listing_price": 175.0,
+   "posting_id": "8f3e88c3e35f5ebd"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Sectional Couch",
+   "item_description": "I am remodeling my space and selling a beautiful custom modern terra cotta color sectional couch. It is in like-new condition and can be taken apart in two pieces while transporting. Absolutely no wear or tear in a non-smoking home. I am located in the Sunset district of SF. Please email if you are interested in seeing it. Thank you!",
+   "listing_price": 585.0,
+   "posting_id": "275b29fc08865f0b"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Beautiful Cherry Hutch",
+   "item_description": "MUST SEE!!!,Like new ! - making space in our Designer Showroom - Must go, must go!!!,Perfect for interiors, bonus room, office, special storage - make us a deal!",
+   "listing_price": 1000.0,
+   "posting_id": "d15ca63a40dc4703"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Office Client Waiting Room CHAIRS",
+   "item_description": "Still sturdy and good, average condition. Some small tear on some by being placed against wall, but doesnt show much",
+   "listing_price": 18.0,
+   "posting_id": "db425cb7c99a889e"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Wooden FULL SIZED Futon w/ 2 Slip Covers $125 obo",
+   "item_description": "Just bought on craigslist a few months ago. was exactly what I was looking for but ended up being a tight fit for the space. Classic design. comes with all white slip cover and dove grey slip cover.",
+   "listing_price": 125.0,
+   "posting_id": "6e64674a52f82c62"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Armoire clothes or other Storage Cabinet PRICED TO SELL!",
+   "item_description": "Thank you for viewing this nice MCM wood armoire.  Great for storing clothes, craft items, and more!  It measures 38\" wide x 19\" deep x 60\" high.  The handle on the right door is missing, but easily replaced.",
+   "listing_price": 40.0,
+   "posting_id": "ba5f1a646c2f925c"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Howard Elliott Collection Puff Scroll Ottoman Ltd Ed Design",
+   "item_description": "Howard Elliott Collection Puff Scroll Ottoman Ltd Ed Design,Scroll Puff Ottoman: 24w x 24d x 18h.",
+   "listing_price": 150.0,
+   "posting_id": "3d768e1d4ddbf2ea"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "FASHION OPTICAL KIDS' FRAME DISPLAY",
+   "item_description": "This Fashion Optical Kids' Frame Display is in excellent condition,  It measures 75\"H x 23.5\"W x 9\"D.  It has 3 fixed vertical bars each 36\", plus two wall-mountable bars each 20.5\".  Comes with 20 frame clips that can be moved from bar to bar and spaced in any configuration.  Additional frame clips available at Fashion Optical.  LED lighting is available for an additional fee.",
+   "listing_price": 49.0,
+   "posting_id": "dca006df5a4934f6"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "4 Cubicles for Sale",
+   "item_description": "Cubes for sale, 4 pack (2 deep, 2 wide). H:47, W:72, D:72.",
+   "listing_price": 400.0,
+   "posting_id": "fdc347afb25ba0d7"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "BEAUTIFUL VICTORIAN DRESSER W MIRROR",
+   "item_description": "Wow! Here is a beautiful Victorian country pine wood dresser with mirror from San Francisco Estate.  Circa 1890's.  It is truly exquisite! The mirror looks fabulous, the wood is a beautiful honey color, and it still has its original drawer pulls. Pictures don't do it justice.  Must see!",
+   "listing_price": 299.0,
+   "posting_id": "9ba44291195e774e"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Professional Office Furniture - Hutch",
+   "item_description": "We need to sell off some of our office furniture as we need to make some extra room. This is a very new piece fully assembled. We bought it from Coscto Furniture, 3 months back. Here's the link to the actual furniture.,https://www.costco.com/Logan-U-shape-Workstation-with-Adjustable-Bridge.product.100245742.html",
+   "listing_price": 300.0,
+   "posting_id": "c1ed318cc04f8ea4"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Entertainment center/ Media center",
+   "item_description": "Beautiful entertainment center/Media center.  Three pieces... Oak with CD/DVD doors.  Subfoofer compartment... speaker compartments... glass shelves to display your decorative pieces.",
+   "listing_price": 400.0,
+   "posting_id": "07e3e9217e9e2c31"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "Ikea Solsta Sleeper Sofa",
+   "item_description": "The sofa is used but in good condition.  It quickly converts into a sleeper by folding out the seat cushions.",
+   "listing_price": 40.0,
+   "posting_id": "018fff373dbfe29a"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "rustic and unique bookshelf",
+   "item_description": "very cool bookshelf for sale ! I am moving and this has got to be out by Sunday May 28.",
+   "listing_price": 35.0,
+   "posting_id": "294a08bdd85e9379"
+  },
+  {
+   "item_category": "furniture",
+   "item_title": "black iron etagere ~ 4 shelf",
+   "item_description": "Please include a PHONE # in reply!,I'm selling a black iron etagere, as shown in picture,that has four shelves to display whatever you like. The shelves have four resin \"stones\" with leaf patterns on a light sage colored background.,Sorry I didn't manage to get a close-up!,Works in a living room, dining room, even a bath to hold extras, or to style up a patio!",
+   "listing_price": 40.0,
+   "posting_id": "aff471755d391d26"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "A 4 bedroom single family house for rent in central Fremont",
+   "item_description": "This is a single family house in an excellent condition. It will be available for move-in on July 2017. It's in a very nice and quiet community with great school district. Email me for viewing or further information. Thanks.,Huge living room and family room, plus 4 spacious bedrooms,2 generous bathrooms with bathtubs,Great school district (Oliveira elementary, Thornton junior high, American high),Few mins drive to Bart and Lucky and 99 Supermarkets",
+   "listing_price": 3200.0,
+   "posting_id": "5ee8fd9f5c9c57c2"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Beautiful Renovated Studio with Balcony by Lake Merritt",
+   "item_description": "This beautiful remodeled studio offers:,Refinished hardwood floors,Great studio layout with sleeping area,Brand new kitchen with stainless steel appliances,Private balcony with Oakland views,Brand new bathroom with incredible lighting",
+   "listing_price": 1895.0,
+   "posting_id": "85a828a6a22ce4d4"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Live/work 3br apt. ner West Oak. Bart & S.F.",
+   "item_description": "2950.00 for a 3 bedrooms and 2 Bathrooms Live/work apartment near the West Oakland Bart Station and about 10 minutes to San Francisco via Bay Bridge this space is 10 ft. ceiling the floors are ceramic title and Laminated the ceiling have 2 skylights and 1 off street parking with laundry hookups the address is 333 Henry St. Oakland the deposit is 1500.00 no section 8 if you have any question you can call Rafa at",
+   "listing_price": 2950.0,
+   "posting_id": "f85dad5c8a4f3e54"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "GORGEOUS SINGLE HOUSE NEAR THE TEMPLES",
+   "item_description": "This charming family house has very bright natural light all year around and on a quiet residential area near the Mormon Temple. Close to highways 13 and 580 with easy commute to Berkeley, also SF by bus or casual car pool. Close to Montclair village, post office and banks, farmers' market, etc.,Decorative fireplace in living room. All hardwood floors. Central heating system.,Gourmet kitchen with granite counter top. Gas stove/oven, Refrigerator and Dishwasher included. Washer and Dryer hookups available.,Lovely breakfast nook with lots of light.,Detached one car garage and long driveway.,Fron",
+   "listing_price": 2599.0,
+   "posting_id": "06f4458729dca754"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Beautiful 1 Bedroom Home with Balcony Available Mid June!",
+   "item_description": "Essex Property Trust,EMME Apartment Homes,6350 Christie Ave, Emeryville, CA 94608,We will have a 1 bedroom 1 bath 643 sq ft apartment #130 available on June 10th! Your beautiful new kitchen will have Cesar stone countertops, dark cherry wood on the cabinets and stainless steel appliances!,All of emme apartments come with a full size front load washer & dryer! Emme offers amenities such as our 24 hour gym, courtyard, clubhouse and our beautiful roof top deck, a must see with a great view of San Francisco! Living at emme makes life a bit easier with having everything you need right around the co",
+   "listing_price": 2834.0,
+   "posting_id": "1faebab6cb734a53"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "~~~STUDIO CHARM~~~",
+   "item_description": "*Private bath,*Fresh new look,* very near to Emeryville Bay Street,* West MAcArthur Bart 8 - 10 blocks away",
+   "listing_price": 1400.0,
+   "posting_id": "d0a527f9aa97b950"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Bottom Floor, 2 Bd/2 Bth, Large Patio! Close to downtown, W.C. area!",
+   "item_description": "Unwind in Your New Home Call Now:,114 Sharene Lane, Walnut creek, CA, 94596,http://rent.braddockandloganhomes.com/i0k029,This is a 2 Bedroom, 1 Bath, approximately 950 Sq. Ft.,Why look any more we have the Perfect home for you!!!Hurry they are going fast!! You will restore your energy so you can be doing the activities you enjoy. Make The Pines your next apartment home! Pets are also welcome!,- Private Patio,- Dishwasher,- Cable Ready,- Range (Electric/ Gas),- Air Conditioner (Window),- Heat (gas),- Microwave,- Large Closets",
+   "listing_price": 2250.0,
+   "posting_id": "6fcec4fcd61a7711"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Adorable Furnished Cottage June 15-Aug 15",
+   "item_description": "Sweet N. Berkeley/Albany bungalow, fully furnished and cozy. Two bedrooms and one bath inside the main house, each with a full sized bed--and behind the main house is a guest cottage, the tiny cowboy cabin (\"primitive\"--no electricity) with an extra-long twin bed.,Ideally located in a quiet neighborhood near all the shops and dining on Solano Ave.and close to Westbrae and the Gilman district with the beer garden, Berkeley Natural Grocery, Whole Foods, Philz Coffee,Washer/dryer, dishwasher, large porch, outdoor patio with grill.",
+   "listing_price": 3500.0,
+   "posting_id": "daeb59086fa7e7a5"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Beautiful garden like feel with grassy areas,river rock, redwood trees",
+   "item_description": "Valley Plaza Villages also has a convenient location that puts you close to the things you need access to every day. We are just a few minutes from dozens of stores and shopping areas, delicious restaurants, and the area's public transportation system. Simplify your hectic lifestyle and apply for one of our apartments in Pleasanton, CA 94566 today!,Amenities:,-Car Wash Area,-Lush Landscaping,-Microwaves,-Handicap Accessible,-White Cabinetry with Nickel Hardware,-Washer & Dryer,-Clubhouse with Full Kitchen,-Walk to Historical Downtown,Nearby Landmarks:",
+   "listing_price": 2283.0,
+   "posting_id": "5d6fd317da0576c6"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "SPACIOUS 3 BDRM 2 BA Unit - 1435 SQFT",
+   "item_description": "Unique Spacious 3 bdrm / 2 bath Unit with a large terrace.  Located in the leafy Elmwood Neighborhood in Berkeley. Close to UC Campus, Tranportation and Shopping Facilities.",
+   "listing_price": 3600.0,
+   "posting_id": "547f854d77775c9e"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Sunny! Location!  Close to UCB",
+   "item_description": "Great Location!,Just several blocks to U.C. A Charming Spanish Mission Style Building. This Studio unit is about 630-650 sq.ft. Bright and sunny with a lot of windows and has larger closet space. Convenient to UC Berkeley, Shattuck Ave., Telegraph Ave., Shops, School, & BART.,Physical Address: 2320 Haste St., Berkeley, CA 94704,Nearest Street Intersection: Dana St. and Ellsworth St.,Apartment features include:,* Carpet floors nearly throughout,* Full size kitchen with eating area.,* Plus gas range and refrigerator.,* Lots of windows for great natural light,* Coin laundry on-site!",
+   "listing_price": 1850.0,
+   "posting_id": "97fcec712f016195"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "ABSW Apartments- Studio Available",
+   "item_description": "ABSW Studio Apartment Available,Located in Southside, Berkeley, historically and popularly known as the epicenter of college life at Cal. Take pleasure in outdoor activities at your convenience by being just blocks away from Underhill Field and the historic People's Park. Eat up at the nearby Berkeley dining commons -- Crossroads or Cafe 3 -- or visit the Durant Food Court located on Telegraph Ave for a wide variety of ethnic cuisines.,ABSW Apartments is the ideal place for students desiring that perfect mix of campus life and local social activities!,-Charming & classic architecture (original",
+   "listing_price": 1900.0,
+   "posting_id": "1e410dc8abb76444"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "2 bed 1 bath 1750-1800 PLUS $500 towards your deposit",
+   "item_description": "**Move in special **,2 bedroom 1 bathroom,Centralized AC,Basketball court",
+   "listing_price": 1785.0,
+   "posting_id": "2a12fc2f98f64f44"
+  },
+  {
+   "item_category": "housing",
+   "item_title": "Parker Apartments - Now Accepting Below Market Rate Applications",
+   "item_description": "****,Parker is that thrill you feel when inspiration strikes. Perched proudly on Shattuck Avenue in,Berkeley, this collection of 155 carefully crafted, sustainably designed apartments offer immediate,access to music venues, boutique shopping, nightlife, green space, the Gourmet Ghetto, and",
+   "listing_price": 946.0,
+   "posting_id": "6318f4d12442672b"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Verizon Car Charger with Dual Output Micro USB and LED Light",
+   "item_description": "Charge two devices simultaneously on the go. This vehicle charger with an additional USB port delivers enough power to charge two devices at once. The push-button activated LED connector light means no more fumbling in the dark trying to connect your device. Auto Detect IC Technology automatically detects the device type and its specific charging needs for improved compatibility. And the built-in indicator light illuminates red to let you know the charger is receiving power and the power socket is working properly.",
+   "listing_price": 10.0,
+   "posting_id": "cae49d252485319c"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "BLU R1 HD - 16 GB",
+   "item_description": "BLU R1 HD - 16 GB - Black - Amazon Prime Exclusive - with Lockscreen Offers & Ads. Comes with case.",
+   "listing_price": 50.0,
+   "posting_id": "10a0d17e3f38ea57"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Unlocked Brand New Apple iphone 7 Plus 128GB Jet Black",
+   "item_description": "We have rose gold, matte black and gold color too.,This phone is unlocked. You can use the phones in all GSM SIM CARD carriers such as AT&T/T-Mobile or international",
+   "listing_price": 780.0,
+   "posting_id": "7d7868859dd54c1f"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Apple iPhone 5S 16gb Space Gray",
+   "item_description": "Apple iPhone 5S 16gb Space Gray,Like New Condition (no scratches anywhere),Will be reset to factory specs before sale",
+   "listing_price": 160.0,
+   "posting_id": "feb365fcf8da63c8"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "iPad 2 32gb EXCELLENT CONDITION",
+   "item_description": "Gently used, pre-LOVED iPad 2 for sale. I purchased a new iPad & my prior device needs a new home.,-White/silver",
+   "listing_price": 175.0,
+   "posting_id": "a8560ab758f3a4fb"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "SMARTPHONE LEATHER BELT HOLSTER",
+   "item_description": "or email me at: rocksmith281@gmail for further information. I ONLY DO IN PERSON TRANSACTIONS, NO TRADES, CASH ONLY.,This stylish textured leather belt holster is big enough to accommodate the iPhone, Samsung, HTC, and many more. Features a felt lined interior for maximum protection, a solid metal clip and magnetic latch.,Specifications",
+   "listing_price": 30.0,
+   "posting_id": "e8d3ec8f8697fce5"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Iphone 6",
+   "item_description": "Black iPhone 6 looks brand new with screen cover and case with a kickstand. Verizon phone",
+   "listing_price": 300.0,
+   "posting_id": "9bd9592876f9bd95"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Original Blackberry Stereo Headset (New)",
+   "item_description": "Brand New OEM Original Blackberry Stereo Headset with On/off Button (Hdw-13019)",
+   "listing_price": 10.0,
+   "posting_id": "f32978f872dc3881"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "GSM unlocked flipphone, like new in box (Samsung)",
+   "item_description": "Push to Talk (hands free),Visor/belt clip",
+   "listing_price": 39.0,
+   "posting_id": "99789fd3a6924f89"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "iPhone 6  (ATT)  64GB",
+   "item_description": "Very good condition,Included wall charger,Wiped clean, ready for use",
+   "listing_price": 320.0,
+   "posting_id": "b8bf95fc3232130c"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Iphone 5 with 16MB unlocked",
+   "item_description": "purchased new Iphone 7 for kids so we need to sell our old iphone.,Ipone 5 is unlocked and can be used with any carrier using GSM or oversears in India. phone has a clean HMEI, factory unlocked.",
+   "listing_price": 90.0,
+   "posting_id": "cb7f7e651cf59e28"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Samsung gear S2 T-Mobile watch smart",
+   "item_description": "Samsung S2 gear with T-Mobile, no scratches and new leather straps small and large size. Works with iPhone and android",
+   "listing_price": 150.0,
+   "posting_id": "217899ea9830a72f"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Cell Phone Batteries",
+   "item_description": "Motorola model BK10, extended capacity batteries for Sprint/Nextel phones.,Each battery comes with an extended battery cover.",
+   "listing_price": 10.0,
+   "posting_id": "825606e861b86e6c"
+  },
+  {
+   "item_category": "phone",
+   "item_title": "Metro FLASH your tmobile verizon sprint or att phone",
+   "item_description": "Prices start as low as 50$ to flash your phone",
+   "listing_price": 50.0,
+   "posting_id": "1b1fcf4b377220dc"
+  }
+ ]
+}

@@ -54,6 +54,10 @@ envs:
   OPPONENT_MODEL: "openrouter/openai/gpt-4o-mini"
   ENABLE_THINKING: "false"          # set true to enable Qwen3.5 <think> blocks
   MAX_TURNS: 6
+  # Held-out CaSiNo eval set (transfer check vs dnd memorization): number of casino
+  # scenarios appended as a second eval set (36 = all unique; 0 disables).
+  # Logged separately as eval/negotiation_casino/* vs eval/negotiation_dnd/*.
+  CASINO_EVAL: "36"
   MAX_INPUT_LENGTH: 8192
   MAX_GENERATE_LENGTH: 8192
   NUM_EPOCHS: 20

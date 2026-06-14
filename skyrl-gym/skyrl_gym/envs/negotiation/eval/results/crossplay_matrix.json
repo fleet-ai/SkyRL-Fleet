@@ -2,7 +2,7 @@
   "config": {
     "dataset": "dnd",
     "split": "val",
-    "n": 6,
+    "n": 12,
     "max_turns": 6,
     "seed": 1,
     "protocol": "dual",
@@ -10,27 +10,38 @@
       {
         "slug": "openai/gpt-5.5",
         "label": "GPT-5.5",
-        "no_think": false
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
       },
       {
         "slug": "anthropic/claude-opus-4.8",
         "label": "Opus-4.8",
-        "no_think": false
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
       },
       {
         "slug": "google/gemini-3.1-pro-preview",
         "label": "Gemini-3.1-Pro",
-        "no_think": false
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
       },
       {
         "slug": "meta-llama/llama-3.3-70b-instruct",
         "label": "Llama-3.3-70B",
-        "no_think": false
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
       },
       {
         "slug": "qwen/qwen3.5-9b",
         "label": "Qwen3.5-9B",
-        "no_think": true
+        "no_think": true,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "qwen3.5-35b-a3b-base",
+        "label": "base",
+        "no_think": false,
+        "base_url": "http://10.66.0.11:8000/v1"
       }
     ]
   },
@@ -39,117 +50,157 @@
     "Opus-4.8",
     "Gemini-3.1-Pro",
     "Llama-3.3-70B",
-    "Qwen3.5-9B"
+    "Qwen3.5-9B",
+    "base"
   ],
   "seatA_outcome": [
     [
-      0.65,
-      0.6667,
-      0.6667,
-      0.7333,
-      0.6667
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.675
     ],
     [
-      0.6833,
-      0.6833,
-      0.6833,
-      0.7,
-      0.35
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.4083
     ],
     [
-      0.7,
-      0.6667,
-      0.6667,
-      0.65,
-      0.6167
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.625
     ],
     [
-      0.6833,
-      0.6,
-      0.6333,
-      0.3333,
-      0.4833
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.2667
     ],
     [
-      0.7,
-      0.35,
-      0.6167,
-      0.5333,
-      0.5333
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.1833
+    ],
+    [
+      0.4833,
+      0.1333,
+      0.5167,
+      0.125,
+      0.1417,
+      0.05
     ]
   ],
   "agreement": [
     [
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      1.0
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9167
     ],
     [
-      1.0,
-      1.0,
-      1.0,
-      1.0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.5833
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9167
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
       0.5
     ],
     [
-      1.0,
-      1.0,
-      1.0,
-      1.0,
-      0.8333
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.25
     ],
     [
-      1.0,
-      1.0,
-      1.0,
       0.6667,
-      1.0
-    ],
-    [
-      1.0,
-      0.5,
-      0.8333,
-      0.8333,
-      0.8333
+      0.3333,
+      0.75,
+      0.3333,
+      0.3333,
+      0.0833
     ]
   ],
   "joint_efficiency": [
     [
-      0.9696,
-      0.9696,
-      0.9696,
-      0.8981,
-      0.8393
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8614
     ],
     [
-      0.9881,
-      0.9881,
-      0.9643,
-      0.9458,
-      0.881
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8459
     ],
     [
-      0.9881,
-      0.9696,
-      0.9696,
-      0.9696,
-      0.8787
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9382
     ],
     [
-      0.9762,
-      0.9196,
-      0.9395,
-      0.751,
-      0.7302
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8705
     ],
     [
-      0.9524,
-      1.0,
-      0.9714,
-      0.7889,
-      0.7762
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8789
+    ],
+    [
+      0.9837,
+      0.7448,
+      0.9595,
+      0.7083,
+      0.5913,
+      1.0
     ]
   ]
 }

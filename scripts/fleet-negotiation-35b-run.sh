@@ -48,17 +48,30 @@ export DECEPTION_PENALTY="${DECEPTION_PENALTY:--0.1}"
 export LENGTH_PENALTY_COEF="${LENGTH_PENALTY_COEF:-0.2}"
 export LENGTH_PENALTY_ALPHA="${LENGTH_PENALTY_ALPHA:-0.5}"
 export LENGTH_PENALTY_FN="${LENGTH_PENALTY_FN:-power}"  # power (sqrt at alpha=0.5) | log
-export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-0}"    # 0 -> MAX_TURNS * MAX_GENERATE_LENGTH
+export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-1500}"  # calibrated to operating length (~healthy episode tokens)
 export ENABLE_THINKING="${ENABLE_THINKING:-false}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
 export MAX_TURNS="${MAX_TURNS:-6}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"
-export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-1024}"
+export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"  # thinking arm needs room (>=4096); see grad-explosion log
 export NUM_EPOCHS="${NUM_EPOCHS:-20}"
 # Cap on validation scenarios (0 = use all 293 deduped dnd/val). Subsampled with a
 # fixed seed so eval cost (n_prompts * eval_n_samples_per_prompt full games vs the
 # OpenRouter opponent) stays bounded. ~128 is plenty for a stable eval signal.
 export MAX_VAL="${MAX_VAL:-64}"
+# In-loop held-out eval set appended as a SECOND eval parquet (checks the policy
+# isn't just memorizing dnd / measures transfer). Logged separately in wandb as
+# eval/negotiation_<EXTRA_VAL_DATASET>/* vs eval/negotiation_dnd/*. Skipped when it
+# equals NEGOTIATION_DATASET (not held out then) or EXTRA_VAL_N=0.
+#   synthetic (default) — procedurally generated: 4-6 items, asymmetric totals,
+#     zero-value/conflict items, controllable integrative headroom. HIGH discrimination
+#     for joint_eff/pareto, which is what we're optimizing.
+#   casino — real CaSiNo corpus (food/water/firewood). NOTE: it saturates at ~92%
+#     joint-eff with ~no spread (see eval/REPORT.md), so it's a weak in-loop signal for
+#     the integrative hypothesis — prefer it in the OFFLINE harness. Set
+#     EXTRA_VAL_DATASET=casino EXTRA_VAL_N=36 to restore the old behavior.
+export EXTRA_VAL_DATASET="${EXTRA_VAL_DATASET:-synthetic}"
+export EXTRA_VAL_N="${EXTRA_VAL_N:-${CASINO_EVAL:-64}}"
 # 1 node x 8 H200; TP=2 -> 4 inference engines.
 export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-4}"
 # Read IB HCA from /etc/nccl.conf (correct IB-only list; intersection script was
@@ -84,21 +97,50 @@ export VLLM_GDN_PREFILL_BACKEND=triton
 source .venv/bin/activate
 
 DATA_DIR="${HOME}/data/fleet/negotiation"
+EXTRA_VAL_ARGS=()
+VAL_DATA="['${DATA_DIR}/validation.parquet']"
+if [ "${EXTRA_VAL_N}" != "0" ] && [ "$NEGOTIATION_DATASET" != "$EXTRA_VAL_DATASET" ]; then
+  # casino uses corpus split 'all'; synthetic is procedurally generated (split ignored).
+  _xv_split=all; [ "$EXTRA_VAL_DATASET" = "synthetic" ] && _xv_split=val
+  EXTRA_VAL_ARGS=(--extra_val_dataset "$EXTRA_VAL_DATASET" --extra_val_split "$_xv_split" --max_extra_val "$EXTRA_VAL_N")
+  VAL_DATA="['${DATA_DIR}/validation.parquet','${DATA_DIR}/validation_${EXTRA_VAL_DATASET}.parquet']"
+fi
+# Preference-elicitation arm (the 2x2 Elicitation factor). NEGOTIATION_ELICIT=two_sided
+# injects the prepared proactive mutual-disclosure instruction (ask their priorities +
+# state yours, route by value) into BOTH system prompts via prepare_dataset --proactive.
+# 'none' (default) = no elicitation. ('one_sided' is not yet wired — needs an ask-only
+# prompt variant.) Cells: C3=outcome+two_sided, C4=outcome_jointeff+two_sided.
+ELICIT_ARGS=()
+case "${NEGOTIATION_ELICIT:-none}" in
+  two_sided) ELICIT_ARGS=(--elicit two_sided) ;;
+  one_sided) ELICIT_ARGS=(--elicit one_sided) ;;
+  none) ;;
+  *) echo "WARN: NEGOTIATION_ELICIT='${NEGOTIATION_ELICIT}' unsupported (use none|two_sided|one_sided); treating as none" ;;
+esac
 python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --output_dir "$DATA_DIR" \
   --dataset "$NEGOTIATION_DATASET" \
   --protocol "$NEGOTIATION_PROTOCOL" \
   --max_turns "$MAX_TURNS" \
-  --max_val "$MAX_VAL"
+  --max_val "$MAX_VAL" \
+  ${ELICIT_ARGS[@]+"${ELICIT_ARGS[@]}"} \
+  ${EXTRA_VAL_ARGS[@]+"${EXTRA_VAL_ARGS[@]}"}
 
 # Pareto arm: stronger regularization to prevent mode collapse.
 # (outcome_jointeff is an exact alias of outcome_pareto — the continuous joint-eff
 #  reward used by the 2x2 elicitation experiment — so it gets the same regularization.)
 PARETO_ARGS=()
 if [ "$REWARD_MODE" = "outcome_pareto" ] || [ "$REWARD_MODE" = "outcome_jointeff" ]; then
+  # Stabilized jointeff defaults (the 2026-06-13 c2 run blew up: grad 4->54, KL ->1.8,
+  # entropy decay, reward regression at ~step 55 — the jointeff reward + strong leak
+  # penalty drove a KL/grad runaway that kl=0.05/grad=0.5/lr=5e-7 couldn't contain).
+  # Stronger KL + entropy anchor, tighter clip, lower lr. Still overridable via the
+  # TUNE_ARGS env vars (LR / KL_LOSS_COEF_FINAL / ENTROPY_COEF_FINAL / MAX_GRAD_NORM_FINAL).
   PARETO_ARGS=(
-    trainer.algorithm.kl_loss_coef=0.05
-    trainer.policy.optimizer_config.max_grad_norm=0.5
+    trainer.algorithm.kl_loss_coef=${KL_LOSS_COEF_FINAL:-0.1}
+    trainer.algorithm.entropy_loss_coef=${ENTROPY_COEF_FINAL:-0.01}
+    trainer.policy.optimizer_config.max_grad_norm=${MAX_GRAD_NORM_FINAL:-0.3}
+    trainer.policy.optimizer_config.lr=${LR:-3e-7}
     "environment.skyrl_gym.negotiation.invalid_penalty=-0.05"
   )
 fi
@@ -165,6 +207,16 @@ else
   )
 fi
 
+# Late stabilization overrides (applied LAST -> win over PARETO_ARGS and the main args).
+# Used to tame the KL/grad runaway seen on the jointeff arm (grad 4->54, KL ->1.8,
+# entropy decay, reward regression at ~step 55): lower lr, stronger KL/entropy anchor,
+# tighter clip. Each is opt-in via env; unset leaves the upstream value unchanged.
+TUNE_ARGS=()
+[ -n "${LR:-}" ]                  && TUNE_ARGS+=("trainer.policy.optimizer_config.lr=$LR")
+[ -n "${KL_LOSS_COEF_FINAL:-}" ]  && TUNE_ARGS+=("trainer.algorithm.kl_loss_coef=$KL_LOSS_COEF_FINAL")
+[ -n "${ENTROPY_COEF_FINAL:-}" ]  && TUNE_ARGS+=("trainer.algorithm.entropy_loss_coef=$ENTROPY_COEF_FINAL")
+[ -n "${MAX_GRAD_NORM_FINAL:-}" ] && TUNE_ARGS+=("trainer.policy.optimizer_config.max_grad_norm=$MAX_GRAD_NORM_FINAL")
+
 RUN_NAME="fleet_${MODEL_TAG}_35b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}_${RUN_ID:-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')}"
 
 bash scripts/fleet-common-run.sh \
@@ -174,7 +226,7 @@ bash scripts/fleet-common-run.sh \
   --env-class negotiation \
   --data-dir-name negotiation -- \
   "data.train_data=['${DATA_DIR}/train.parquet']" \
-  "data.val_data=['${DATA_DIR}/validation.parquet']" \
+  "data.val_data=${VAL_DATA}" \
   environment.skyrl_gym.negotiation.reward_mode=$REWARD_MODE \
   environment.skyrl_gym.negotiation.pareto_coef=$PARETO_COEF \
   environment.skyrl_gym.negotiation.deception_penalty=$DECEPTION_PENALTY \
@@ -199,6 +251,7 @@ bash scripts/fleet-common-run.sh \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
+  trainer.hf_save_interval=${HF_SAVE_INTERVAL:-30} \
   trainer.max_ckpts_to_keep=2 \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
@@ -235,4 +288,5 @@ bash scripts/fleet-common-run.sh \
   ${STABILITY_ARGS[@]+"${STABILITY_ARGS[@]}"} \
   ${THINK_ARGS[@]+"${THINK_ARGS[@]}"} \
   ${PARETO_ARGS[@]+"${PARETO_ARGS[@]}"} \
+  ${TUNE_ARGS[@]+"${TUNE_ARGS[@]}"} \
   "$@"

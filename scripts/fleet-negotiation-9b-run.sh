@@ -170,6 +170,7 @@ bash scripts/fleet-common-run.sh \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
+  trainer.hf_save_interval=${HF_SAVE_INTERVAL:-30} \
   trainer.max_ckpts_to_keep=3 \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \

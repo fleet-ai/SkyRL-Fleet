@@ -11,6 +11,19 @@ PROACTIVE_BLOCK = (
     "it more. Do not blindly propose a 'fair' even split blind to their priorities -- probe first, then propose."
 )
 
+# One-sided variant (C5): the proposer PROBES the partner's priorities but does NOT
+# volunteer its own values (vs PROACTIVE_BLOCK's mutual ask-and-tell). Injected into the
+# policy's prompt only; the opponent gets no elicitation instruction. Probes H4 — whether
+# a one-sided disclosure norm transfers in cross-play where a two-sided self-play handshake
+# may not (see initial_experiments.md).
+ASK_ONLY_BLOCK = (
+    "Before locking in, find out what the other player wants. Your hidden values almost certainly "
+    "differ, so there are usually trades that make BOTH of you better off. Early on, ask which items "
+    "matter most to them, and use their answer to route each item to whoever values it more. Keep your "
+    "own point values private. Do not blindly propose a 'fair' even split blind to their priorities -- "
+    "probe first, then propose."
+)
+
 SYSTEM_TEMPLATE = """\
 You are playing a multi-issue negotiation game against another player.
 
@@ -118,8 +131,12 @@ def _build_worked_example(item_names: List[str]) -> str:
 
 
 def build_system_prompt(
-    item_names: List[str], counts: List[int], values: List[int], max_turns: int, protocol: str = "single", proactive: bool = False
+    item_names: List[str], counts: List[int], values: List[int], max_turns: int, protocol: str = "single",
+    proactive: bool = False, elicit_block: "str | None" = None,
 ) -> str:
+    # elicit_block (if not None) overrides `proactive`: pass the exact block to inject
+    # ("" = none). Lets prepare_dataset give different blocks to the policy vs opponent
+    # (e.g. one_sided: ASK_ONLY for the policy, "" for the opponent).
     pool_lines = "\n".join(f"  - {c} x {name}" for name, c in zip(item_names, counts))
     value_lines = "\n".join(f"  - {name}: {v} points each" for name, v in zip(item_names, values))
     you_max = sum(c * v for c, v in zip(counts, values))
@@ -132,7 +149,11 @@ def build_system_prompt(
         deal_example=deal_example,
         max_turns=max_turns,
         worked_example=_build_worked_example(item_names),
-        proactive_block=("\n" + PROACTIVE_BLOCK) if proactive else "",
+        proactive_block=(
+            (("\n" + elicit_block) if elicit_block else "")
+            if elicit_block is not None
+            else (("\n" + PROACTIVE_BLOCK) if proactive else "")
+        ),
     )
 
 

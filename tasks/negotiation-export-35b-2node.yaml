@@ -1,0 +1,35 @@
+# FSDP -> HF export for negotiation 35B checkpoints (2-node, mirrors training topology).
+# Stays up after setup; run each export via:
+#   sky exec neg-export "RESUME_PATH=s3://... EXPORT_PATH=/workspace/allie/exports/<arm> bash scripts/fleet-export-run.sh"
+name: negotiation-export-35b-2node
+
+resources:
+  disk_size: 1000
+  memory: 800+
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 2
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  MODEL_PATH: "Qwen/Qwen3.5-35B-A3B"
+  MODEL_TAG: "qwen35"
+  MODALITY: "negotiation"
+  PROJECT_NAME: "fleet-negotiation-grpo"
+  HF_HOME: "/workspace/hf_cache"
+
+setup: |
+  bash scripts/fleet-negotiation-setup.sh \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  echo "export cluster ready on $(hostname); use 'sky exec' to run fleet-export-run.sh"
