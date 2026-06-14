@@ -446,6 +446,16 @@ run: |
   OUTPUT_JSON_ENV="$OUTPUT_JSON" python -c 'import json,os; d=json.load(open(os.environ["OUTPUT_JSON_ENV"])); off=d.get("summary_official",{}); print("overall_score (mean of per-game official scores, 0-115):", round(off.get("overall_score",0.0),3)); print("per-game scores:"); [print("  %s: score=%.3f  levels=%d/%d  actions=%d" % (g["game_id"], g["score"].get("score",0), g["score"].get("levels_completed",0), g["score"].get("levels_total",0), g["score"].get("actions",0))) for g in d.get("games",[])]; print("first_n_completed:", off.get("first_n_completed"))'
   echo "==============================================================================="
 
+  # Free the vLLM server's threads BEFORE uploading. On a 35B TP=2 node the
+  # process tree sits near the thread ceiling (RLIMIT_NPROC / cgroup pids.max);
+  # boto3/s3transfer then can't spawn its worker threads and the upload dies with
+  # "can't start new thread" — while the RESULT JSON already exists on disk (the
+  # 2026-06-13 G3 run hit exactly this). The JSON is written, so killing vLLM now
+  # is safe; we just need its ~thousands of threads released for s3transfer.
+  echo "[vllm] stopping server before upload (free threads for s3transfer)"
+  kill ${VLLM_PID:-0} 2>/dev/null || true
+  for _ in $(seq 1 15); do kill -0 ${VLLM_PID:-0} 2>/dev/null || break; sleep 1; done
+
   # Upload artifacts to S3
   S3_DEST="${OUTPUT_S3_BASE}/${CKPT_LABEL}.json"
   echo "[s3] uploading result to $S3_DEST"
