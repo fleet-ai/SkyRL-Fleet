@@ -1,5 +1,70 @@
 # Fleet Integration Changelog
 
+## 2026-06-15: Tinker harness — fleet-api runs, timeouts, eval parity, MCP content shape
+
+Scope: **Tinker harness only** (`integrations/fleet/entrypoints/main_fleet_tinker.py`). SkyRL harness (`skyrl/train/trainer.py` + `skyrl_train.generators.skyrl_gym_generator`) is a separate code path on local GPUs via SkyPilot; none of these fixes touch it.
+
+Several patches surfaced while driving Tinker training jobs through the new `fleet-api` HTTP service.
+
+### Datasets exercised this session
+
+| Dataset | Team | Modality | Model | Outcome |
+|---------|------|----------|-------|---------|
+| `multi-env-internal-v4` (`7d619260`) | fleet-research | tool_use | Kimi-K2.6 (128K) | First run hung at step 1 rollouts (sample_async deadlock on shared HTTP/2 stream, 4h silence, no APIConnectionError). Killed. Second run with per-await timeouts completed step 0 (85 trainable seqs after 43 timeouts), then step 1 training died on Tinker 402 billing. |
+| `bi-dashboard-passk-0.2-0.6` (`c43b744a`) | Macrohard | tool_use | Qwen3.5-9B, then Kimi-K2.6 | Both runs: 0 verifier passes across all rollouts because rollouts crashed before reaching `done=True`. Root cause #4 below (MCP content shape). |
+
+### Problems
+
+1. **`sample_async` deadlock under concurrent rollouts.** 32 concurrent rollouts share one `SamplingClient` and likely one HTTP/2 connection. When that connection went half-open (peer-dropped without RST), all 32 in-flight streams stalled together. Tinker's built-in 120-min `progress_timeout` is global across the client and never fired (kept alive by some hidden activity); even if it had, `_APIFuture.result_async`'s cancel chain reduces to `concurrent.futures.Future.cancel()` which is a no-op on RUNNING futures.
+2. **Periodic eval fired at step 0.** With `eval_every=20`, `step % eval_every == 0` was True at step 0, triggering a full 70-task eval (~2h on Kimi) on a model with only one optim_step — indistinguishable from baseline, total waste.
+3. **Two separate eval blocks** (periodic inside loop + always-on final after loop) drifted from upstream SkyRL's single-expression pattern, made the logic harder to reason about, and left `last_sampling_client` plumbing only used by the second block.
+4. **MCP `content` shape assumption.** `step_output["observations"][0]["content"]` was assumed to always be a string. MCP spec defines it as a list of typed content parts. Some Fleet envs (bi-dashboard `query_data_lake`, `execute_python`) pass the list through unwrapped; `tokenizer.encode(list, ...)` raises `Input must be a string, list of strings, or list of ints, got: <class 'list'>` and the rollout dies with `stop_reason=error` before the verifier ever runs.
+5. **Tinker 402 billing failures are silent and expensive.** First evidence is a 60-min SDK pause then `APIStatusError 402` propagating up. The fleet-api correctly catches the subprocess exit, but the user wastes time + tokens waiting through wandb init + spawn just to learn the credit card needs topping up.
+
+### Root causes and fixes
+
+#### 1. Per-await `asyncio.wait_for` in `collect_fleet_rollout` (commits `9f16eb16`, `82487161`)
+
+**Where:** every external await in the rollout — `_env_init`, `sampling_client.sample_async`, `_env_step`, `_env_close`.
+
+**Fix:** Wrap each with `asyncio.wait_for` and explicit timeouts (`TINKER_SAMPLE_TIMEOUT_S=600`, `ENV_INIT_TIMEOUT_S=90`, `ENV_STEP_TIMEOUT_S=120`, `ENV_CLOSE_TIMEOUT_S=30`). On Tinker timeout, set `stop_reason="tinker_timeout"`, break the turn loop, return partial trajectory. On env timeout, similar with `env_step_timeout` / `env_init_timeout`. The orphaned httpx pool slot leaks per timeout but is bounded (max_connections=100 vs max_concurrent=32 gives headroom).
+
+**TODO upstream:** Tinker SDK should expose a per-request timeout knob; the 120-min `progress_timeout` is global and starvation-prone under concurrent rollouts. Until then this wrap is mandatory for any multi-concurrent client.
+
+#### 2. Skip periodic eval at step 0 (commit `dec4c6c5`, superseded by `7e6ad97e`)
+
+**Where:** `main_fleet_tinker.py` training loop.
+
+**Fix:** Add `step > 0` to the periodic-eval condition. For an actual untrained baseline, use `--eval-before-train` (separate, explicit, runs at step_index=-1).
+
+#### 3. Merge periodic + final eval into one expression, upstream parity (commit `7e6ad97e`)
+
+**Where:** training loop, previously two separate blocks.
+
+**Fix:** Single expression matching `skyrl/train/trainer.py:374`:
+```python
+is_final_step = step == max_steps - 1
+is_periodic = eval_every > 0 and step > 0 and step % eval_every == 0
+if eval_dataset and (is_periodic or is_final_step):
+    if is_final_step:
+        final_sampling_path = training_client.save_weights_for_sampler(name="step_final").result().path
+        eval_client = service_client.create_sampling_client(model_path=final_sampling_path)
+        await _run_eval(eval_client, step_index=max_steps)
+    else:
+        await _run_eval(sampling_client, step_index=step)
+```
+Final-step eval still always runs and still uses the durable `step_final` checkpoint, so the auto-train launcher still gets `post_pass_rate`. Removed unused `last_sampling_client` tracking.
+
+#### 4. Flatten MCP list-shaped observation content (this commit)
+
+**Where:** `collect_fleet_rollout` observation tokenization, line ~591.
+
+**Fix:** Detect `isinstance(obs_content, list)` and join (handling string parts and `{"text": ...}` dict parts) before passing to `tokenizer.encode`. Strictly additive: envs where `content` is already a string are unaffected. SkyRL harness (`skyrl_gym_generator.SkyrlGymGenerator`) likely has the same latent bug if pointed at the same envs — needs a parallel fix there.
+
+#### 5. (Not yet shipped) Billing preflight in fleet-api
+
+**Suggested:** Before spawning the training subprocess, fleet-api should do a cheap `service_client.create_lora_training_client_async()` probe with a 30s timeout. On `APIStatusError 402`, mark the job `failed` / `stage=billing_blocked` immediately so the user learns about a missing credit card in seconds instead of after wandb init + subprocess spawn.
+
 ## 2026-03-29: Multi-node 35B training parity with old SkyRL fork
 
 Fixes for 2-node (16 GPU) Qwen3.5-35B GRPO training on GCP H200. Ported from fleet-ai/SkyRL PR #328 and PR #333, plus new fixes for SkyRL-v2-specific issues.
