@@ -245,6 +245,18 @@ def main() -> None:
         help="Source dataset to process.",
     )
     parser.add_argument(
+        "--split",
+        default=None,
+        help=(
+            "Source split file (without .json). Defaults to 'all' for casino "
+            "(only ships all.json) and 'test' for dnd. The dnd default is "
+            "'test' deliberately: it keeps the SFT corpus disjoint from the RL "
+            "train split (dnd/train.json) and the RL eval split (dnd/val.json), "
+            "so the in-domain warm-start arm measures task-mechanics familiarity "
+            "rather than memorisation of the exact RL training instances."
+        ),
+    )
+    parser.add_argument(
         "--both_sides",
         type=_parse_bool,
         default=True,
@@ -284,8 +296,13 @@ def main() -> None:
     os.makedirs(output_dir, exist_ok=True)
 
     # --- Load games ---
-    # CaSiNo ships one file (all.json); DnD ships train.json.
-    split = "all" if args.dataset == "casino" else "train"
+    # CaSiNo ships one file (all.json). DnD ships train/val/test; SFT defaults to
+    # 'test' so the warm-start corpus is disjoint from the RL train (dnd/train.json)
+    # and RL eval (dnd/val.json) splits — see --split help.
+    if args.split is not None:
+        split = args.split
+    else:
+        split = "all" if args.dataset == "casino" else "test"
     data_path = VIZ_DATA / args.dataset / f"{split}.json"
     if not data_path.exists():
         sys.exit(
@@ -344,6 +361,7 @@ def main() -> None:
     print(
         f"\n{'='*60}\n"
         f"dataset          : {args.dataset}\n"
+        f"split            : {split}\n"
         f"source file      : {data_path}\n"
         f"games loaded     : {len(all_games)}\n"
         f"both_sides       : {args.both_sides}\n"

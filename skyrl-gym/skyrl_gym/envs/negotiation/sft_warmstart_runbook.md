@@ -65,6 +65,23 @@ SFT_DATASET=dnd bash scripts/fleet-negotiation-sft-run.sh
 
 Expected output checkpoint: **`$HOME/exports/sft_dnd/`**
 
+**Split hygiene (why this is not memorisation).** DnD ships three disjoint splits
+(`train.json` 4172 games, `val.json` 447, `test.json` 443). The arms are wired so
+the three roles never share instances:
+
+| Role | DnD split | Used by |
+|---|---|---|
+| SFT warm-start corpus | `dnd/test.json` | `prepare_sft_dataset.py` (default `--split test` for dnd) |
+| RL training scenarios | `dnd/train.json` | `prepare_dataset.py --train_split train` |
+| RL eval / emergence metrics | `dnd/val.json` | `prepare_dataset.py --val_split val` → `eval/negotiation_dnd/*` |
+
+So the DnD warm arm is SFT'd on ~443 games it will **never** see again during RL
+training or eval. "In-domain" here means *same task distribution, different
+instances* — task-mechanics familiarity, not pre-training on the exact RL
+instances. This keeps the DnD-vs-CaSiNo contrast a clean decomposition of
+behavioral prior vs. task familiarity (§Analysis #4). To deliberately study the
+memorisation regime instead, override the split: `SFT_SPLIT=train SFT_DATASET=dnd ...`.
+
 ### Adjusting SFT hyperparameters (optional)
 
 ```bash
@@ -254,7 +271,10 @@ axes vs. RL step to see emergence timing.
 3. **Asymmetry test** — if deception diverges between arms but value-leak does not, this
    mechanistically decomposes the two failure modes (spec §Analysis #3).
 4. **DnD SFT comparison** — compare warm/dnd vs warm/casino to separate behavioral-prior
-   effect from task-mechanics familiarity effect.
+   effect from task-mechanics familiarity effect. This is only interpretable because the
+   DnD SFT corpus (`dnd/test.json`) is disjoint from the RL train (`dnd/train.json`) and
+   eval (`dnd/val.json`) splits — see §Stage 1 "Split hygiene". Otherwise the arm would
+   conflate task familiarity with memorising the exact RL training instances.
 
 ---
 
@@ -267,7 +287,7 @@ export OPENROUTER_API_KEY="..."
 
 # Stage 1: SFT (no API keys needed)
 SFT_DATASET=casino bash scripts/fleet-negotiation-sft-run.sh
-SFT_DATASET=dnd    bash scripts/fleet-negotiation-sft-run.sh   # optional comparison
+SFT_DATASET=dnd    bash scripts/fleet-negotiation-sft-run.sh   # optional; SFTs on dnd/test (disjoint from RL train/eval)
 
 # Stage 2: freeze RL hyperparameters
 export ENABLE_THINKING=true

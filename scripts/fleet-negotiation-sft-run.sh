@@ -34,6 +34,7 @@ ulimit -n 65536 2>/dev/null || true
 # Force triton GDN prefill backend; Qwen3.5 GDN models can hang silently with
 # FlashInfer GDN JIT on some cloud images (see fleet-negotiation-35b-run.sh).
 export VLLM_GDN_PREFILL_BACKEND=triton
+export HF_HOME="${HF_HOME:-/workspace/hf_cache}"
 
 source .venv/bin/activate
 
@@ -41,6 +42,15 @@ source .venv/bin/activate
 # Configurable env vars — override before launch or via SkyPilot envs block
 # ---------------------------------------------------------------------------
 export SFT_DATASET="${SFT_DATASET:-casino}"           # casino | dnd
+# Source split for the SFT corpus. Default: casino->all (only ships all.json),
+# dnd->test. The dnd default is 'test' deliberately so the warm-start corpus is
+# DISJOINT from the RL train split (dnd/train.json) and RL eval split
+# (dnd/val.json). This keeps the in-domain DnD arm a measure of task-mechanics
+# familiarity rather than memorisation of the exact RL training instances.
+export SFT_SPLIT="${SFT_SPLIT:-}"
+if [ -z "$SFT_SPLIT" ]; then
+  if [ "$SFT_DATASET" = "casino" ]; then SFT_SPLIT="all"; else SFT_SPLIT="test"; fi
+fi
 export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-35B-A3B}"
 export BOTH_SIDES="${BOTH_SIDES:-true}"               # train on both negotiator roles
 export EPOCHS="${EPOCHS:-2}"
@@ -72,7 +82,7 @@ fi
 echo "============================================================"
 echo "  SFT Warm-Start — Negotiation"
 echo "============================================================"
-echo "  Dataset    : ${SFT_DATASET}  (both_sides=${BOTH_SIDES})"
+echo "  Dataset    : ${SFT_DATASET}  (split=${SFT_SPLIT}, both_sides=${BOTH_SIDES})"
 echo "  Base model : ${MODEL_PATH}"
 echo "  Epochs     : ${EPOCHS}  lr=${LR}  wd=${WEIGHT_DECAY}  warmup=${WARMUP_RATIO}"
 echo "  Batch      : micro=${MICRO_BATCH_SIZE}  grad_accum=${GRAD_ACCUM}  max_len=${MAX_LENGTH}"
@@ -89,6 +99,7 @@ echo ">>> Step 1: Preparing SFT dataset (${SFT_DATASET}) -> ${DATA_DIR}"
 
 python skyrl-gym/skyrl_gym/envs/negotiation/prepare_sft_dataset.py \
   --dataset "${SFT_DATASET}" \
+  --split "${SFT_SPLIT}" \
   --output_dir "${DATA_DIR}" \
   --both_sides "${BOTH_SIDES}" \
   --val_frac "${VAL_FRAC}" \
