@@ -585,15 +585,21 @@ async def collect_fleet_rollout(
             total_step_time += step_time
             total_tokens += len(output_ids)
 
-            # Get observation content for tokenization (masked out for loss)
-            # Note: BaseTextEnvStepOutput is a TypedDict, use dict access.
-            # MCP `content` is spec'd as a list of typed parts (TextContent,
-            # ImageContent, ...). Most Fleet envs normalize to a string in
-            # task_env wrapper, but some (bi-dashboard query_data_lake,
-            # execute_python) pass the list through. Flatten defensively so
-            # `tokenizer.encode` doesn't blow up the rollout.
+            # Get observation content for tokenization (masked out for loss).
+            # Observations vary in shape across Fleet envs:
+            #   - dict {"content": str}                (most envs, normalized)
+            #   - dict {"content": list[TextContent]}  (MCP spec; bi-dashboard query_data_lake)
+            #   - list[dict|str]                       (data-eng env passes content parts directly)
+            #   - str                                  (some envs return text)
+            # Flatten defensively so tokenizer.encode never sees a non-string.
             if step_output["observations"]:
-                obs_content = step_output["observations"][0].get("content", "")
+                obs = step_output["observations"][0]
+                if isinstance(obs, dict):
+                    obs_content = obs.get("content", "")
+                elif isinstance(obs, (list, str)):
+                    obs_content = obs
+                else:
+                    obs_content = str(obs)
                 if isinstance(obs_content, list):
                     obs_content = "\n".join(
                         c if isinstance(c, str)
