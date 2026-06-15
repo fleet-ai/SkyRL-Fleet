@@ -29,6 +29,7 @@ from .splitter import split_90_10
 from .tinker_config import (
     DEFAULT_BASE_MODEL,
     DEFAULT_LORA_RANK,
+    DEFAULT_MAX_CONCURRENT,
     DEFAULT_NUM_STEPS,
     EVAL_RESULTS_DIR,
     REQUIRED_TINKER_ENV_VARS,
@@ -58,6 +59,7 @@ def build_launch_env(
     base_model: str = DEFAULT_BASE_MODEL,
     num_steps: int = DEFAULT_NUM_STEPS,
     lora_rank: int = DEFAULT_LORA_RANK,
+    max_concurrent: int = DEFAULT_MAX_CONCURRENT,
 ) -> dict[str, str]:
     """Env dict for fleet-tinker-tool-use-run.sh. Inherits caller env."""
     if modality not in TINKER_MODALITY_SUPPORT:
@@ -74,6 +76,7 @@ def build_launch_env(
         "MODEL_NAME": base_model,
         "MAX_STEPS": str(num_steps),
         "LORA_RANK": str(lora_rank),
+        "MAX_CONCURRENT": str(max_concurrent),
         "EVAL_BEFORE_TRAIN": "1",
         "WANDB_NAME": f"tinker_{dataset_key}_{modality}",
         "AUTO_TRAIN_BACKEND": "tinker",  # routes notify to the Tinker Slack channel
@@ -105,6 +108,7 @@ def launch_training(
     base_model: str = DEFAULT_BASE_MODEL,
     num_steps: int = DEFAULT_NUM_STEPS,
     lora_rank: int = DEFAULT_LORA_RANK,
+    max_concurrent: int = DEFAULT_MAX_CONCURRENT,
     eval_results_dir: str = EVAL_RESULTS_DIR,
 ) -> tuple[bool, dict | None]:
     """Returns (success, eval_results_dict).
@@ -159,6 +163,7 @@ def launch_training(
         base_model=base_model,
         num_steps=num_steps,
         lora_rank=lora_rank,
+        max_concurrent=max_concurrent,
     )
 
     script = root / "scripts" / "fleet-tinker-tool-use-run.sh"

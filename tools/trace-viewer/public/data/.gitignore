@@ -1,0 +1,6 @@
+# User-imported / generated runs are local-only. Keep the committed sample run + this file.
+*
+!.gitignore
+!manifest.json
+!sample-negotiation-run/
+!sample-negotiation-run/**

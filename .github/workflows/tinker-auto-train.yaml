@@ -49,6 +49,10 @@ on:
         description: "LoRA rank."
         required: false
         default: "16"
+      max_concurrent:
+        description: "Max concurrent rollouts (Fleet env instances + Tinker sampling)."
+        required: false
+        default: "32"
 
 permissions:
   contents: read
@@ -169,6 +173,10 @@ jobs:
           LORA_RANK="${{ github.event.inputs.lora_rank }}"
           if [ -n "$LORA_RANK" ]; then
             ARGS="$ARGS --tinker-lora-rank $LORA_RANK"
+          fi
+          MAX_CONCURRENT="${{ github.event.inputs.max_concurrent }}"
+          if [ -n "$MAX_CONCURRENT" ]; then
+            ARGS="$ARGS --tinker-max-concurrent $MAX_CONCURRENT"
           fi
           python -m integrations.fleet.auto_train --backend tinker trigger $ARGS
 

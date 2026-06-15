@@ -35,6 +35,7 @@ from .state import ProcessedState
 from .tinker_config import (
     DEFAULT_BASE_MODEL as TINKER_DEFAULT_BASE_MODEL,
     DEFAULT_LORA_RANK as TINKER_DEFAULT_LORA_RANK,
+    DEFAULT_MAX_CONCURRENT as TINKER_DEFAULT_MAX_CONCURRENT,
     DEFAULT_NUM_STEPS as TINKER_DEFAULT_NUM_STEPS,
     TINKER_MODALITY_SUPPORT,
     TINKER_STATE_KEY,
@@ -99,6 +100,7 @@ def _process_one(
     tinker_base_model: str = TINKER_DEFAULT_BASE_MODEL,
     tinker_num_steps: int = TINKER_DEFAULT_NUM_STEPS,
     tinker_lora_rank: int = TINKER_DEFAULT_LORA_RANK,
+    tinker_max_concurrent: int = TINKER_DEFAULT_MAX_CONCURRENT,
 ) -> int:
     """Returns 0 on success, non-zero on failure (still marks processed if appropriate)."""
     dataset_key = dataset.dataset_key
@@ -195,6 +197,7 @@ def _process_one(
             base_model=tinker_base_model,
             num_steps=tinker_num_steps,
             lora_rank=tinker_lora_rank,
+            max_concurrent=tinker_max_concurrent,
         )
         if not ok:
             notify_launch_failure(
@@ -307,6 +310,7 @@ def cmd_trigger(args: argparse.Namespace) -> int:
                     tinker_base_model=args.tinker_base_model,
                     tinker_num_steps=args.tinker_num_steps,
                     tinker_lora_rank=args.tinker_lora_rank,
+                    tinker_max_concurrent=args.tinker_max_concurrent,
                 )
                 if rc != 0:
                     dataset_ok = False
@@ -356,6 +360,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Training steps for --backend tinker.")
     p_trig.add_argument("--tinker-lora-rank", type=int, default=TINKER_DEFAULT_LORA_RANK,
                         help="LoRA rank for --backend tinker.")
+    p_trig.add_argument("--tinker-max-concurrent", type=int, default=TINKER_DEFAULT_MAX_CONCURRENT,
+                        help="Max concurrent rollouts for --backend tinker.")
     p_trig.set_defaults(func=cmd_trigger)
 
     p_status = sub.add_parser("status", help="Show processed pairs")

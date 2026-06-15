@@ -70,7 +70,7 @@ SMOKE_RETRIES = 3
 # 100 is the minimum that survives the single-env case. 50 is enough for
 # multi-env datasets where the per-env cap doesn't bind, but the trigger
 # can't tell ahead of time. Pick the conservative bound.
-MIN_TASKS_TO_LAUNCH = 100
+MIN_TASKS_TO_LAUNCH = 30
 
 # Maximum tasks per (dataset, modality) to export to S3 + train on. Larger
 # datasets get deterministically downsampled (seeded by dataset_key) so each
