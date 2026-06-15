@@ -1,10 +1,10 @@
 # Fleet Integration Changelog
 
-## 2026-06-15: Tinker harness — fleet-api runs, timeouts, eval parity, MCP content shape
+## 2026-06-15: Tinker harness — fleet-research-api runs, timeouts, eval parity, MCP content shape
 
 Scope: **Tinker harness only** (`integrations/fleet/entrypoints/main_fleet_tinker.py`). SkyRL harness (`skyrl/train/trainer.py` + `skyrl_train.generators.skyrl_gym_generator`) is a separate code path on local GPUs via SkyPilot; none of these fixes touch it.
 
-Several patches surfaced while driving Tinker training jobs through the new `fleet-api` HTTP service.
+Several patches surfaced while driving Tinker training jobs through the new `fleet-research-api` HTTP service.
 
 ### Datasets exercised this session
 
@@ -19,7 +19,7 @@ Several patches surfaced while driving Tinker training jobs through the new `fle
 2. **Periodic eval fired at step 0.** With `eval_every=20`, `step % eval_every == 0` was True at step 0, triggering a full 70-task eval (~2h on Kimi) on a model with only one optim_step — indistinguishable from baseline, total waste.
 3. **Two separate eval blocks** (periodic inside loop + always-on final after loop) drifted from upstream SkyRL's single-expression pattern, made the logic harder to reason about, and left `last_sampling_client` plumbing only used by the second block.
 4. **MCP `content` shape assumption.** `step_output["observations"][0]["content"]` was assumed to always be a string. MCP spec defines it as a list of typed content parts. Some Fleet envs (bi-dashboard `query_data_lake`, `execute_python`) pass the list through unwrapped; `tokenizer.encode(list, ...)` raises `Input must be a string, list of strings, or list of ints, got: <class 'list'>` and the rollout dies with `stop_reason=error` before the verifier ever runs.
-5. **Tinker 402 billing failures are silent and expensive.** First evidence is a 60-min SDK pause then `APIStatusError 402` propagating up. The fleet-api correctly catches the subprocess exit, but the user wastes time + tokens waiting through wandb init + spawn just to learn the credit card needs topping up.
+5. **Tinker 402 billing failures are silent and expensive.** First evidence is a 60-min SDK pause then `APIStatusError 402` propagating up. The fleet-research-api correctly catches the subprocess exit, but the user wastes time + tokens waiting through wandb init + spawn just to learn the credit card needs topping up.
 
 ### Root causes and fixes
 
@@ -61,9 +61,9 @@ Final-step eval still always runs and still uses the durable `step_final` checkp
 
 **Fix:** Detect `isinstance(obs_content, list)` and join (handling string parts and `{"text": ...}` dict parts) before passing to `tokenizer.encode`. Strictly additive: envs where `content` is already a string are unaffected. SkyRL harness (`skyrl_gym_generator.SkyrlGymGenerator`) likely has the same latent bug if pointed at the same envs — needs a parallel fix there.
 
-#### 5. (Not yet shipped) Billing preflight in fleet-api
+#### 5. (Not yet shipped) Billing preflight in fleet-research-api
 
-**Suggested:** Before spawning the training subprocess, fleet-api should do a cheap `service_client.create_lora_training_client_async()` probe with a 30s timeout. On `APIStatusError 402`, mark the job `failed` / `stage=billing_blocked` immediately so the user learns about a missing credit card in seconds instead of after wandb init + subprocess spawn.
+**Suggested:** Before spawning the training subprocess, fleet-research-api should do a cheap `service_client.create_lora_training_client_async()` probe with a 30s timeout. On `APIStatusError 402`, mark the job `failed` / `stage=billing_blocked` immediately so the user learns about a missing credit card in seconds instead of after wandb init + subprocess spawn.
 
 ## 2026-03-29: Multi-node 35B training parity with old SkyRL fork
 
