@@ -49,9 +49,15 @@ envs:
   # --- Negotiation task knobs ---
   NEGOTIATION_DATASET: "dnd"
   NEGOTIATION_PROTOCOL: "single"
-  REWARD_MODE: "outcome"            # outcome | outcome_pareto  (the ablation knob)
+  REWARD_MODE: "outcome"            # normalized self-score (you_norm = you_score/you_max)
   PARETO_COEF: "0.5"
-  OPPONENT_MODEL: "openrouter/openai/gpt-4o-mini"
+  # Adversary swapped gpt-4o-mini -> gpt-5.5 for this baseline.
+  OPPONENT_MODEL: "openrouter/openai/gpt-5.5"
+  # Clean baseline: NO behavior-shaping penalties. Deception penalty OFF (0);
+  # empty-think / value-leak are thinking-arm only (ENABLE_THINKING=false -> off).
+  # The length penalty and the invalid/format penalty (-0.05) stay ON via the
+  # run-script defaults (generator.length_penalty_* + invalid_penalty).
+  DECEPTION_PENALTY: "0"
   ENABLE_THINKING: "false"          # set true to enable Qwen3.5 <think> blocks
   MAX_TURNS: 6
   # Held-out CaSiNo eval set (transfer check vs dnd memorization): number of casino
