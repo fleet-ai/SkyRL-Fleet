@@ -37,14 +37,17 @@ Metrics (matching SkyRL):
 """
 
 import asyncio
+import base64
+import io
 import logging
 import os
 import random
+import re
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from pydantic import BaseModel
@@ -63,7 +66,12 @@ from omegaconf import OmegaConf
 from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
 
 # Import SkyRL's overlong filtering for parity
-from skyrl.train.generators.utils import apply_overlong_filtering
+from skyrl.train.generators.utils import (
+    apply_overlong_filtering,
+    decode_base64_image,
+    is_multimodal_conversation,
+    is_multimodal_message,
+)
 
 # Import shared metrics module for consistent metric calculation with SkyRL trainer
 from integrations.fleet.reward_metrics import (
@@ -448,6 +456,201 @@ def tokenize_chat(tokenizer: AutoTokenizer, chat_history: List[Dict], add_genera
         return list(result)
 
 
+# -------------------------------------------------------------------------- #
+# Vision-language support for Tinker rollouts
+# -------------------------------------------------------------------------- #
+# Tinker's `ModelInput` accepts a list of mixed `EncodedTextChunk` and
+# `ImageChunk` (and `ImageAssetPointerChunk`). For VL models like
+# Kimi-K2.6 we need to thread screenshot bytes through to the model instead
+# of letting them tokenize as base64 garbage. Pattern ported from SkyRL's
+# skyrl_gym_generator (`apply_chat_template_with_images`,
+# `extract_images_from_conversation`, `_sanitize_messages_for_template`),
+# adapted to Tinker's chunk API.
+#
+# Two streams:
+#   1. Sampling: build a chunks list with EncodedTextChunk + ImageChunk so
+#      the vision model actually sees the screenshots.
+#   2. Training: tokenize the conversation text-only with `[image]`
+#      placeholders. The training stream doesn't carry image bytes (would
+#      need Datum-level chunk support); observations are loss-masked anyway
+#      and the policy gradient flows through assistant text only.
+
+# Sentinel string we splice into the chat-template-rendered text wherever an
+# image appeared. Unicode control chars so it can't collide with anything a
+# legitimate tokenizer would produce.
+_IMAGE_PLACEHOLDER = "IMAGE"
+
+# Conservative estimate for image token cost when computing `max_input_length`.
+# The Tinker backend computes the real number on its side; this is only used to
+# decide when to end the rollout early. ~1024 tokens matches Kimi-K2.6 / Qwen-VL
+# default vision resolution.
+_DEFAULT_IMAGE_TOKENS = 1024
+
+def _decode_data_url(url: str) -> Optional[Tuple[bytes, str]]:
+    """Decode a `data:image/...;base64,...` URL into `(jpeg_bytes, "jpeg")`.
+
+    Delegates to SkyRL's `decode_base64_image` (returns a PIL Image), then
+    transcodes via PIL to JPEG bytes that Tinker `ImageChunk` accepts.
+    Returns None for HTTP URLs (no fetcher) or decoding errors.
+    """
+    if not url or not url.startswith("data:image"):
+        return None
+    try:
+        pil_img = decode_base64_image(url)
+    except Exception as e:
+        logger.warning(f"image decode failed: {e}")
+        return None
+    buf = io.BytesIO()
+    pil_img.convert("RGB").save(buf, format="JPEG", quality=85)
+    return buf.getvalue(), "jpeg"
+
+
+def _sanitize_content(
+    content: Any,
+) -> Tuple[str, List[Tuple[bytes, str]]]:
+    """Walk a single message's `content`. Return `(text_with_placeholders, images)`.
+
+    `images` is a list of `(image_bytes, format)` tuples in left-to-right
+    order. Text segments are joined with `\\n`. Each image becomes
+    `_IMAGE_PLACEHOLDER` in the returned string so the caller can splice
+    `ImageChunk`s into the chunk stream at the right positions.
+    """
+    if isinstance(content, str):
+        return content, []
+    if not isinstance(content, list):
+        return str(content), []
+    parts: List[str] = []
+    images: List[Tuple[bytes, str]] = []
+    for item in content:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            t = item.get("type")
+            if t == "text":
+                parts.append(item.get("text", ""))
+            elif t == "image_url":
+                url = (item.get("image_url") or {}).get("url", "")
+                decoded = _decode_data_url(url)
+                if decoded is not None:
+                    images.append(decoded)
+                    parts.append(_IMAGE_PLACEHOLDER)
+                else:
+                    # Couldn't decode (HTTP url, weird format, etc.). Emit a
+                    # textual marker so the model knows an image was here.
+                    parts.append("[image]")
+            elif t == "image" and "image" in item:
+                # Some envs pass {"type": "image", "image": <bytes-or-url>}.
+                v = item["image"]
+                if isinstance(v, bytes):
+                    images.append((v, "jpeg"))  # assume jpeg; server will validate
+                    parts.append(_IMAGE_PLACEHOLDER)
+                elif isinstance(v, str):
+                    decoded = _decode_data_url(v)
+                    if decoded is not None:
+                        images.append(decoded)
+                        parts.append(_IMAGE_PLACEHOLDER)
+                    else:
+                        parts.append("[image]")
+                else:
+                    parts.append("[image]")
+            else:
+                # Unknown dict shape; stringify whatever text is in there.
+                txt = item.get("text") or item.get("content") or ""
+                parts.append(str(txt) if txt else "[unknown_content]")
+        else:
+            parts.append(str(item))
+    return "\n".join(p for p in parts if p), images
+
+
+def build_model_input_chunks(
+    tokenizer: AutoTokenizer,
+    chat_history: List[Dict],
+    add_generation_prompt: bool = True,
+) -> Tuple[List[Any], int]:
+    """Build Tinker `ModelInput` chunks from a (possibly multimodal) chat history.
+
+    Returns `(chunks, estimated_total_tokens)`. The token count includes
+    text tokens plus `_DEFAULT_IMAGE_TOKENS` per image (advisory: the Tinker
+    server computes the real count).
+
+    Text-only conversations return a single `EncodedTextChunk`.
+    Multimodal conversations interleave `EncodedTextChunk` with `ImageChunk`
+    at the exact positions where images appeared in the original chat.
+
+    If the chat template mangles the placeholder (some templates URL-encode
+    or strip control chars), we fall back to text-only with `[image]`
+    markers so the rollout doesn't crash.
+    """
+    # Fast path: text-only conversation, no images to splice. Skip the
+    # per-message sanitization walk and just call the standard tokenize_chat.
+    if not is_multimodal_conversation(chat_history):
+        tokens = tokenize_chat(tokenizer, chat_history, add_generation_prompt)
+        return [types.EncodedTextChunk(tokens=tokens)], len(tokens)
+
+    # Multimodal path: sanitize each message; collect ordered images.
+    text_msgs: List[Dict] = []
+    all_images: List[Tuple[bytes, str]] = []
+    for msg in chat_history:
+        sanitized_text, imgs = _sanitize_content(msg.get("content"))
+        text_msgs.append({**msg, "content": sanitized_text})
+        all_images.extend(imgs)
+
+    # Apply chat template to the placeholder'd text.
+    flat = tokenizer.apply_chat_template(
+        text_msgs, add_generation_prompt=add_generation_prompt, tokenize=False
+    )
+    if not isinstance(flat, str):
+        flat = str(flat)
+
+    if not all_images:
+        # Defensive fallback (shouldn't reach here after the is_multimodal
+        # check above, but in case sanitize emitted only [image] markers).
+        tokens = tokenizer.encode(flat, add_special_tokens=False)
+        return [types.EncodedTextChunk(tokens=tokens)], len(tokens)
+
+    # Pass 3: split the rendered text on the placeholder and emit chunks.
+    segments = flat.split(_IMAGE_PLACEHOLDER)
+    if len(segments) - 1 != len(all_images):
+        # Template ate the placeholder. Fall back: image -> [image] text marker.
+        flat = flat.replace(_IMAGE_PLACEHOLDER, "[image]")
+        tokens = tokenizer.encode(flat, add_special_tokens=False)
+        logger.warning(
+            "build_model_input_chunks: placeholder mismatch "
+            f"(segments={len(segments)}, images={len(all_images)}); "
+            "falling back to text-only [image] markers."
+        )
+        return [types.EncodedTextChunk(tokens=tokens)], len(tokens)
+
+    chunks: List[Any] = []
+    total = 0
+    for i, seg in enumerate(segments):
+        if seg:
+            seg_tokens = tokenizer.encode(seg, add_special_tokens=False)
+            if seg_tokens:
+                chunks.append(types.EncodedTextChunk(tokens=seg_tokens))
+                total += len(seg_tokens)
+        if i < len(all_images):
+            img_bytes, fmt = all_images[i]
+            chunks.append(
+                types.ImageChunk(
+                    data=img_bytes,
+                    format=fmt,
+                    expected_tokens=_DEFAULT_IMAGE_TOKENS,
+                )
+            )
+            total += _DEFAULT_IMAGE_TOKENS
+    return chunks, total
+
+
+def sanitize_text_only(content: Any) -> str:
+    """Reduce a possibly-multimodal `content` to a single string with `[image]`
+    placeholders. Used for the training stream where we don't carry image
+    bytes through `forward_backward`.
+    """
+    text, _imgs = _sanitize_content(content)
+    return text.replace(_IMAGE_PLACEHOLDER, "[image]")
+
+
 async def collect_fleet_rollout(
     task_config: Dict[str, Any],
     tasks_file: str,
@@ -506,13 +709,20 @@ async def collect_fleet_rollout(
         while not done and env.turns < max_turns:
             turn_num = env.turns + 1  # 1-indexed for logging
 
-            # Prepare input for Tinker (use env's chat_history)
-            input_ids = tokenize_chat(tokenizer, env.chat_history, add_generation_prompt=True)
+            # Prepare input for Tinker (use env's chat_history). For multimodal
+            # conversations (e.g. computer_use envs returning screenshots),
+            # build_model_input_chunks emits interleaved EncodedTextChunk +
+            # ImageChunk so the vision model actually sees images instead of
+            # tokenizing base64 strings. Text-only path hits a fast return
+            # equivalent to the prior tokenize_chat call.
+            prompt_chunks, prompt_len = build_model_input_chunks(
+                tokenizer, env.chat_history, add_generation_prompt=True
+            )
 
             # Check context length limit (matching SkyRL's skyrl_gym_generator.py:274)
-            if len(input_ids) > max_input_length:
+            if prompt_len > max_input_length:
                 logger.info(
-                    f"[{task_key}] Turn {turn_num}: context length ({len(input_ids)}) exceeds max ({max_input_length}), ending"
+                    f"[{task_key}] Turn {turn_num}: context length ({prompt_len}) exceeds max ({max_input_length}), ending"
                 )
                 stop_reason = "length"
                 break
@@ -531,7 +741,7 @@ async def collect_fleet_rollout(
             try:
                 result = await asyncio.wait_for(
                     sampling_client.sample_async(
-                        prompt=types.ModelInput.from_ints(tokens=input_ids),
+                        prompt=types.ModelInput(chunks=prompt_chunks),
                         num_samples=1,
                         sampling_params=sampling_params,
                     ),
@@ -585,27 +795,21 @@ async def collect_fleet_rollout(
             total_step_time += step_time
             total_tokens += len(output_ids)
 
-            # Get observation content for tokenization (masked out for loss).
-            # Observations vary in shape across Fleet envs:
-            #   - dict {"content": str}                (most envs, normalized)
-            #   - dict {"content": list[TextContent]}  (MCP spec; bi-dashboard query_data_lake)
-            #   - list[dict|str]                       (data-eng env passes content parts directly)
-            #   - str                                  (some envs return text)
-            # Flatten defensively so tokenizer.encode never sees a non-string.
+            # Observation content for the training stream (loss-masked, no
+            # image bytes; the model already SAW images via ImageChunks in the
+            # sampling prompt). sanitize_text_only handles all observed
+            # shapes from Fleet envs: dict-with-string-content, dict-with-
+            # list-content (MCP multipart), raw list, raw string. Images are
+            # replaced with the literal "[image]" marker so the training
+            # token stream stays bounded and the model still sees that an
+            # image appeared at that turn.
             if step_output["observations"]:
                 obs = step_output["observations"][0]
                 if isinstance(obs, dict):
-                    obs_content = obs.get("content", "")
-                elif isinstance(obs, (list, str)):
-                    obs_content = obs
+                    raw = obs.get("content", "")
                 else:
-                    obs_content = str(obs)
-                if isinstance(obs_content, list):
-                    obs_content = "\n".join(
-                        c if isinstance(c, str)
-                        else (c.get("text") if isinstance(c, dict) else str(c))
-                        for c in obs_content
-                    )
+                    raw = obs
+                obs_content = sanitize_text_only(raw)
                 obs_ids = tokenizer.encode(obs_content, add_special_tokens=False)
                 all_response_ids.extend(obs_ids)
                 all_logprobs.extend([0.0] * len(obs_ids))
