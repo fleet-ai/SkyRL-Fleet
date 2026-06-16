@@ -40,6 +40,7 @@ import argparse
 import asyncio
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -64,6 +65,17 @@ except Exception:  # noqa: BLE001 - keep the probe usable even if crossplay chan
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 
+# Reasoning is ON during the probe (no_think=False when ENABLE_THINKING=true) but, as
+# in training, the <think> block must never re-enter the policy's own multi-turn
+# context. The env's qwen3_without_thinking template strips think from non-last
+# assistant turns; this mirrors that for the HTTP-served eval path. We parse the action
+# from the FULL text (tags live after </think>) but feed back only the stripped reply.
+_THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think(text: str) -> str:
+    return _THINK_RE.sub("", text or "")
+
 
 # --------------------------------------------------------------------------- #
 # One game: measured policy (seat A / opener) vs the scripted conceder (seat B) #
@@ -84,7 +96,7 @@ async def _play_dual(client, model, no_think, sc, max_turns, temperature, max_to
     nturns = 0
     for _ in range(max_turns):
         text = await run_eval.chat(client, model, hist, temperature, max_tokens, extra_body=body)
-        hist.append({"role": "assistant", "content": text})
+        hist.append({"role": "assistant", "content": _strip_think(text)})
         nturns += 1
         last_a = game.parse_deal(text, items)
         if last_a is not None:
@@ -114,7 +126,7 @@ async def _play_single(client, model, no_think, sc, max_turns, temperature, max_
     nturns = 0
     for _ in range(max_turns):
         text = await run_eval.chat(client, model, hist, temperature, max_tokens, extra_body=body)
-        hist.append({"role": "assistant", "content": text})
+        hist.append({"role": "assistant", "content": _strip_think(text)})
         nturns += 1
         prop = game.parse_proposal(text, items)
         if prop is not None:

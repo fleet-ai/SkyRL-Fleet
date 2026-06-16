@@ -87,8 +87,11 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
         port = getattr(ie_cfg, "http_endpoint_port", None) or 8000
         base_url = f"http://{host}:{port}/v1"
 
-        # Match the policy's training-time thinking mode.
-        enable_thinking = _truthy(os.environ.get("ENABLE_THINKING", "false"))
+        # Match the policy's training-time thinking mode. Thinking is ON by default
+        # (ENABLE_THINKING=true); the probe then leaves reasoning enabled (no_think=False)
+        # and run_probe strips <think> from the policy's own multi-turn context, mirroring
+        # training's qwen3_without_thinking template -> "thinking on but stripped".
+        enable_thinking = _truthy(os.environ.get("ENABLE_THINKING", "true"))
         participant = {
             "slug": served,
             "label": "Policy",
@@ -101,6 +104,9 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
         dataset = os.environ.get("PROBE_DATASET", "dnd")
         protocol = os.environ.get("NEGOTIATION_PROTOCOL", "single")
         max_turns = int(getattr(self.cfg.generator, "max_turns", 6) or 6)
+        # Give the think channel the same per-turn generation budget as training so a
+        # long <think> can't truncate before the action tag (which would read as no_deal).
+        max_tokens = int(os.environ.get("MAX_GENERATE_LENGTH", "4096"))
 
         payload = await run_probe.run_probe(
             [participant],
@@ -109,6 +115,7 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
             n=n,
             max_turns=max_turns,
             temperature=0.7,
+            max_tokens=max_tokens,
             protocol=protocol,
             seed=1,
             write=False,  # skip disk + matplotlib; we only want the metrics

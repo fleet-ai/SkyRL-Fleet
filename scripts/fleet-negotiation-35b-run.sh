@@ -12,10 +12,12 @@
 #   outcome_pareto          — self-score + weighted Pareto bonus (PARETO_COEF)
 # Switch arms by setting REWARD_MODE=outcome_pareto before launch.
 #
-# THINKING IS OFF. Same reasoning as the 9B config: 6-turn budget is too short for
-# <think> blocks — they consume the entire turn without emitting a <propose> tag,
-# yielding ~80% no_deal. The 35B model is more capable but the hard turn cap is
-# architectural, not a capability gap. Enable if you have a longer turn budget.
+# THINKING IS ON (default). The policy emits <think>...</think> before its action;
+# the reasoning is kept in the saved traces but STRIPPED from the multi-turn transcript
+# and the opponent's view via the qwen3_without_thinking template, so the policy's own
+# context never carries prior-turn reasoning. Train and eval match. MAX_GENERATE_LENGTH
+# is sized to give the think channel room. Set ENABLE_THINKING=false only for a
+# token-in-token-out ablation.
 #
 # Model: Qwen/Qwen3.5-35B-A3B (MoE, 35B total / ~3B active, text-only)
 # Topology: 1 node x 8x H200 = 8 GPUs; TP=2 -> 4 inference engines.
@@ -49,7 +51,7 @@ export LENGTH_PENALTY_COEF="${LENGTH_PENALTY_COEF:-0.2}"
 export LENGTH_PENALTY_ALPHA="${LENGTH_PENALTY_ALPHA:-0.5}"
 export LENGTH_PENALTY_FN="${LENGTH_PENALTY_FN:-power}"  # power (sqrt at alpha=0.5) | log
 export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-1500}"  # calibrated to operating length (~healthy episode tokens)
-export ENABLE_THINKING="${ENABLE_THINKING:-false}"
+export ENABLE_THINKING="${ENABLE_THINKING:-true}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
 # Adversary cost tracking (logged to wandb as environment/opponent_*tokens[_sum] and
 # environment/opponent_cost_usd[_sum]). USD per 1M tokens for the active opponent.
