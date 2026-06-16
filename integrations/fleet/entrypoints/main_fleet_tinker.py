@@ -1117,6 +1117,31 @@ async def main(
     if eval_dataset:
         logger.info(f"Loaded {len(eval_dataset)} eval samples")
 
+    # Fleet trace job: groups every rollout's full chat_history + reward under
+    # one job_id in the Fleet UI so the user can inspect step-0 baseline traces
+    # and post-train deltas side by side. Mirrors SkyRL's trainer.py pattern
+    # (FleetEnv.set_trace_config before eval, clear in finally). Setting the
+    # class-level config on FleetTaskEnv makes its existing step_async upload
+    # path fire on every episode_done — no per-rollout plumbing needed.
+    fleet_api_key = os.environ.get("FLEET_API_KEY")
+    if fleet_api_key:
+        try:
+            from envs.fleet_env.trace import create_trace_job
+
+            trace_job_name = f"tinker_{wandb_name}_{datetime.now().strftime('%m%d_%H%M')}"
+            trace_job_id = await create_trace_job(fleet_api_key, trace_job_name)
+            FleetTaskEnv.set_trace_config(job_id=trace_job_id, model=model_name)
+            logger.info(
+                f"Created Fleet trace job: {trace_job_id} (name={trace_job_name}). "
+                "Every rollout's chat_history + reward will be uploaded to Fleet UI on episode_done."
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to create Fleet trace job — traces will not be uploaded: {e}"
+            )
+    else:
+        logger.info("FLEET_API_KEY unset; skipping Fleet trace job creation.")
+
     # Setup Tinker
     tinker_url = os.environ.get("TINKER_API_URL")
     tinker_api_key = os.environ.get("TINKER_API_KEY")
