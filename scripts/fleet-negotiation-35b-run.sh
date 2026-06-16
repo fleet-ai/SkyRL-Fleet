@@ -86,6 +86,10 @@ export MAX_VAL="${MAX_VAL:-64}"
 #     EXTRA_VAL_DATASET=casino EXTRA_VAL_N=36 to restore the old behavior.
 export EXTRA_VAL_DATASET="${EXTRA_VAL_DATASET:-synthetic}"
 export EXTRA_VAL_N="${EXTRA_VAL_N:-${CASINO_EVAL:-64}}"
+# In-loop eval composition. EVAL_DND=false drops the in-distribution dnd validation
+# set (redundant with training reward) and runs ONLY the held-out transfer set
+# (EXTRA_VAL_DATASET). Default true keeps both for backward compatibility.
+export EVAL_DND="${EVAL_DND:-true}"
 # 1 node x 8 H200; TP=2 -> 4 inference engines.
 export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-4}"
 # Read IB HCA from /etc/nccl.conf (correct IB-only list; intersection script was
@@ -120,12 +124,24 @@ source .venv/bin/activate
 
 DATA_DIR="${HOME}/data/fleet/negotiation"
 EXTRA_VAL_ARGS=()
-VAL_DATA="['${DATA_DIR}/validation.parquet']"
+_dnd_val="'${DATA_DIR}/validation.parquet'"
+_extra_val=""
 if [ "${EXTRA_VAL_N}" != "0" ] && [ "$NEGOTIATION_DATASET" != "$EXTRA_VAL_DATASET" ]; then
   # casino uses corpus split 'all'; synthetic is procedurally generated (split ignored).
   _xv_split=all; [ "$EXTRA_VAL_DATASET" = "synthetic" ] && _xv_split=val
   EXTRA_VAL_ARGS=(--extra_val_dataset "$EXTRA_VAL_DATASET" --extra_val_split "$_xv_split" --max_extra_val "$EXTRA_VAL_N")
-  VAL_DATA="['${DATA_DIR}/validation.parquet','${DATA_DIR}/validation_${EXTRA_VAL_DATASET}.parquet']"
+  _extra_val="'${DATA_DIR}/validation_${EXTRA_VAL_DATASET}.parquet'"
+fi
+# Assemble the in-loop eval sets. EVAL_DND=false drops the in-distribution dnd
+# validation set (it largely tracks reward/avg_raw_reward) and keeps ONLY the
+# held-out transfer set (the unique signal). Falls back to dnd val if no extra
+# set is configured, so eval is never empty.
+if [ "${EVAL_DND:-true}" = "false" ] && [ -n "$_extra_val" ]; then
+  VAL_DATA="[${_extra_val}]"
+elif [ -n "$_extra_val" ]; then
+  VAL_DATA="[${_dnd_val},${_extra_val}]"
+else
+  VAL_DATA="[${_dnd_val}]"
 fi
 # Preference-elicitation arm (the 2x2 Elicitation factor). NEGOTIATION_ELICIT=two_sided
 # injects the prepared proactive mutual-disclosure instruction (ask their priorities +

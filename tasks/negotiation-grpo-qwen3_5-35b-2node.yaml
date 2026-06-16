@@ -60,10 +60,12 @@ envs:
   DECEPTION_PENALTY: "0"
   ENABLE_THINKING: "false"          # set true to enable Qwen3.5 <think> blocks
   MAX_TURNS: 6
-  # Held-out CaSiNo eval set (transfer check vs dnd memorization): number of casino
-  # scenarios appended as a second eval set (36 = all unique; 0 disables).
-  # Logged separately as eval/negotiation_casino/* vs eval/negotiation_dnd/*.
+  # Held-out transfer eval set size (EXTRA_VAL_DATASET defaults to 'synthetic', so
+  # this feeds the synthetic set, logged as eval/negotiation_synthetic/*; 0 disables).
   CASINO_EVAL: "36"
+  # Drop the in-distribution dnd validation set from in-loop eval (it tracks training
+  # reward); run ONLY the held-out transfer set. Halves eval cost vs the GPT-5.5 opponent.
+  EVAL_DND: "false"
   MAX_INPUT_LENGTH: 8192
   MAX_GENERATE_LENGTH: 8192
   NUM_EPOCHS: 20
