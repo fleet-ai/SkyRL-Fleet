@@ -804,14 +804,6 @@ async def collect_fleet_rollout(
             output_ids = sequence.tokens
             output_logprobs = sequence.logprobs if sequence.logprobs else []
 
-            # Per-turn progress marker. Without this, modalities with succeeding
-            # tool calls (computer_use, browser_use) emit only tokenizer warnings
-            # between Progress: N/8 events, making rollouts look frozen.
-            logger.info(
-                f"[{task_key}] Turn {turn_num}/{max_turns}: gen {gen_time:.1f}s, "
-                f"{len(output_ids)} tokens, prompt_len={prompt_len}"
-            )
-
             # Guard: logprobs must match token count (Tinker may return different lengths)
             if output_logprobs and len(output_logprobs) != len(output_ids):
                 logger.warning(
@@ -868,12 +860,15 @@ async def collect_fleet_rollout(
             total_reward = step_output["reward"]
             done = step_output["done"]
 
-            # Per-turn env-step marker (paired with the gen marker above). Lets
-            # the operator see when a turn finishes vs hangs even when no tool
-            # error is logged.
+            # Single per-turn progress line. Without this, modalities whose
+            # tool calls succeed silently (computer_use, browser_use) emit only
+            # tokenizer warnings between "Progress: N/8" events and live
+            # rollouts look indistinguishable from hung ones.
             logger.info(
-                f"[{task_key}] Turn {turn_num}/{max_turns}: env_step {step_time:.1f}s, "
-                f"reward={total_reward}, done={done}, tool_calls={env.tool_calls}, tool_errors={env.tool_errors}"
+                f"[{task_key}] Turn {turn_num}/{max_turns}: gen={gen_time:.1f}s "
+                f"step={step_time:.1f}s tokens={len(output_ids)} prompt_len={prompt_len} "
+                f"reward={total_reward} done={done} tool_calls={env.tool_calls} "
+                f"tool_errors={env.tool_errors}"
             )
 
         return RolloutOutput(
