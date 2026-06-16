@@ -472,7 +472,30 @@ class BasePPOExp:
     def run(self):
         trainer = self._setup_trainer()
         # Start the training loop
-        asyncio.run(trainer.train())
+        try:
+            asyncio.run(trainer.train())
+        finally:
+            # Best-effort: fan a clean torch.distributed teardown out to every GPU worker so a
+            # RECOVERABLE exit (clean finish or a Python-level exception) does not die in the
+            # CUDA/NCCL finalizer as "pure virtual method called", and the slurm allocation
+            # does not linger in R. Hard out-of-band kills (watchdog SIGABRT / SIGTERM) bypass
+            # this entirely; the relaunch loop in fleet-witness-run.sh is the net for those.
+            # Fully guarded + attribute-checked: must never turn a clean finish into a failure.
+            try:
+                import ray
+
+                refs = []
+                for _grp in (
+                    getattr(trainer, "policy_model", None),
+                    getattr(trainer, "critic_model", None),
+                    getattr(trainer, "ref_model", None),
+                ):
+                    if _grp is not None and hasattr(_grp, "async_run_ray_method"):
+                        refs += _grp.async_run_ray_method("pass_through", "shutdown_process_group")
+                if refs:
+                    ray.get(refs)
+            except Exception:
+                pass
 
 
 @ray.remote(num_cpus=1)

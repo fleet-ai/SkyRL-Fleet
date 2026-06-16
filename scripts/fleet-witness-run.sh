@@ -157,6 +157,27 @@ fi
 # num_inference_engines are injected by common-run from SKYPILOT_* — not repeated here).
 # NOTE: not `exec` — we must keep this shell alive for the rank-0 mirror + EXIT trap.
 set +e
+# Bounded relaunch loop: an out-of-band kill (NCCL-watchdog SIGABRT / SIGTERM) can drop the
+# trainer mid-step in a way the in-process teardown cannot catch. resume_mode=latest picks up
+# from the last COMPLETE ckpt; cap attempts so a hard-broken run does not loop forever.
+RELAUNCH_MAX="${RELAUNCH_MAX:-3}"
+RC=0
+for ATTEMPT in $(seq 1 "$RELAUNCH_MAX"); do
+  # 16-shard resume gate (rank-0 sees all ranks on shared /workspace): NEVER resume a PARTIAL
+  # ckpt -- it silently corrupts the model. If the resume target is short shards, stop for a human.
+  if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ] && [ -f "$CKPT_LOCAL_DIR/latest_ckpt_global_step.txt" ]; then
+    RG_STEP=$(tr -dc 0-9 < "$CKPT_LOCAL_DIR/latest_ckpt_global_step.txt" 2>/dev/null)
+    RG_DIR="$CKPT_LOCAL_DIR/global_step_${RG_STEP}"
+    if [ -n "$RG_STEP" ] && [ -d "$RG_DIR" ]; then
+      RG_SHARDS=$(ls -1 "$RG_DIR"/policy/model_world_size_*_rank_*.pt 2>/dev/null | wc -l | tr -d ' ')
+      if [ "$RG_SHARDS" -ne "$EXPECTED_SHARDS" ]; then
+        echo "[resume-gate] FATAL: resume target $RG_DIR has $RG_SHARDS/$EXPECTED_SHARDS model shards (PARTIAL) -- refusing to resume a corrupt ckpt. Fix latest_ckpt_global_step.txt / S3 by hand." >&2
+        RC=42; break
+      fi
+      echo "[resume-gate] OK: global_step_${RG_STEP} has $RG_SHARDS/$EXPECTED_SHARDS shards"
+    fi
+  fi
+  echo "[witness-run] launch attempt ${ATTEMPT}/${RELAUNCH_MAX}"
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf \
@@ -214,9 +235,17 @@ bash scripts/fleet-common-run.sh \
   trainer.ckpt_path="$CKPT_LOCAL_DIR" \
   trainer.hf_save_interval="${HF_SAVE_INTERVAL}" \
   trainer.export_path="$EXPORT_LOCAL_DIR" \
-  trainer.dump_data_batch=true \
+  trainer.dump_data_batch=false \
   "$@"
-RC=$?
+  RC=$?
+  echo "[witness-run] fleet-common-run.sh attempt ${ATTEMPT} exited code=$RC"
+  [ "$RC" = "0" ] && break
+  # Failed: reap THIS user's GPU orphans only (uid-scoped -- the SLURM node is multi-tenant;
+  # an unscoped pkill would kill co-tenants' jobs). A held VLLM::Worker would OOM the retry.
+  echo "[witness-run] attempt ${ATTEMPT} failed (rc=$RC); reaping own GPU orphans before retry"
+  pkill -9 -u "$(id -u)" -f "VLLM::Worker" 2>/dev/null || true
+  sleep 30
+done
 set -e
-echo "[witness-run] fleet-common-run.sh exited code=$RC"
+echo "[witness-run] final exit code=$RC after ${ATTEMPT} attempt(s)"
 exit "$RC"

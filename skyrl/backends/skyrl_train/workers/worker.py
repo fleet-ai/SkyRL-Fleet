@@ -115,6 +115,29 @@ class DistributedTorchRayActor:
     def get_node_local_rank(self):
         return self._local_rank
 
+    def shutdown_process_group(self):
+        """Best-effort clean teardown of this worker's torch.distributed process group.
+
+        Called by the driver in a finally after train() returns (clean finish OR a
+        Python-level exception). It is NOT a fix for hard out-of-band kills (NCCL-watchdog
+        SIGABRT / SIGTERM): on those paths the worker self-aborts before this can run, and
+        the bounded relaunch loop in fleet-witness-run.sh is the real safety net. Its purpose
+        is to avoid the "destroy_process_group() was not called before program exit" ->
+        "pure virtual method called" CUDA/NCCL finalizer crash on the RECOVERABLE exit paths,
+        and to stop the slurm allocation lingering in R after a clean finish. Fully guarded:
+        any failure here must never propagate to the caller.
+        """
+        try:
+            if torch.distributed.is_initialized():
+                torch.distributed.destroy_process_group()
+        except Exception:
+            pass
+        try:
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+        return True
+
     def init_worker_process_group(self):
         if not torch.distributed.is_initialized():
             # Default torch dist pg init timeout is 10 minutes (600 seconds)

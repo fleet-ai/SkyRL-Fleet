@@ -102,6 +102,20 @@ if [ -n "$NCCL_HEARTBEAT" ]; then
   export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC="$NCCL_HEARTBEAT"
 fi
 
+# --- Make NCCL collective failures DIAGNOSABLE + cleaner on exit ---
+# Symptom being addressed: both 35B RL runs vanished mid-step with NO Python traceback,
+# then crashed in the CUDA/NCCL static destructor ("pure virtual method called" +
+# "destroy_process_group() was not called before program exit"). Exported here, BEFORE
+# Ray starts on each node, so it propagates into the GPU worker actors (a driver-only
+# `--env` does NOT reach Ray actors).
+#  - ASYNC_ERROR_HANDLING=1 (TearDown): a failed/timed-out collective raises a LOGGED
+#    Python exception instead of a silent watchdog SIGABRT -> next crash tells us the trigger.
+#  - flight recorder: dump the last collectives to ${RAY_TMPDIR or /tmp} on timeout so we can
+#    see WHICH op hung (the missing evidence in this session's two crashes).
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_TRACE_BUFFER_SIZE="${TORCH_NCCL_TRACE_BUFFER_SIZE:-2000}"
+export TORCH_NCCL_DUMP_ON_TIMEOUT=1
+
 TMP_DIR="${CKPT_ROOT}/skyrl-tmp"
 mkdir -p "$TMP_DIR"
 # TMPDIR and HF_HOME must be LOCAL, not NFS. On SLURM (RunPod), /workspace is NFS
