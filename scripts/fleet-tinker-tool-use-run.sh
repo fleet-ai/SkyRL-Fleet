@@ -21,6 +21,12 @@
 #   WANDB_NAME           (default: auto from model + timestamp)
 #   SAVE_STATE_EVERY     (default: 10; 0 disables periodic save_state)
 #   MAX_CONCURRENT       (default: 32; max concurrent Fleet env rollouts)
+#   MAX_TURNS            (default: 50)
+#   MAX_GENERATE_LENGTH  (default: 3000; max tokens per assistant turn)
+#   MAX_INPUT_LENGTH     (default: 128000; rollout context cap)
+#   MAX_SEQUENCE_LENGTH  (default: 131072; trainer truncation cap. Must
+#                          be >= MAX_INPUT_LENGTH + MAX_GENERATE_LENGTH or
+#                          response tokens get dropped from the gradient.)
 #
 # Pass-through behavior: any extra positional args are appended verbatim to
 # the python invocation so a caller can still override anything ad-hoc.
@@ -44,6 +50,13 @@ LOSS_FN="${LOSS_FN:-ppo}"
 WANDB_PROJECT="${WANDB_PROJECT:-fleet-tinker-grpo}"
 SAVE_STATE_EVERY="${SAVE_STATE_EVERY:-10}"
 MAX_CONCURRENT="${MAX_CONCURRENT:-32}"
+MAX_TURNS="${MAX_TURNS:-50}"
+MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-3000}"
+MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-128000}"
+# Training-side sequence cap. Must be >= MAX_INPUT_LENGTH + MAX_GENERATE_LENGTH
+# or trainer truncates response tokens (and you pay to generate tokens that
+# get dropped from the gradient). Default 131072 = 128K context + headroom.
+MAX_SEQUENCE_LENGTH="${MAX_SEQUENCE_LENGTH:-131072}"
 
 EXTRA_ARGS=()
 if [ -n "${EVAL_DATASET_FILE:-}" ]; then
@@ -67,9 +80,10 @@ python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --learning-rate "$LEARNING_RATE" \
     --lora-rank "$LORA_RANK" \
     --max-steps "$MAX_STEPS" \
-    --max-turns 50 \
-    --max-generate-length 3000 \
-    --max-input-length 128000 \
+    --max-turns "$MAX_TURNS" \
+    --max-generate-length "$MAX_GENERATE_LENGTH" \
+    --max-input-length "$MAX_INPUT_LENGTH" \
+    --max-sequence-length "$MAX_SEQUENCE_LENGTH" \
     --n-samples-per-prompt "$N_SAMPLES_PER_PROMPT" \
     --eval-every "$EVAL_EVERY" \
     --temperature 0.9 \
