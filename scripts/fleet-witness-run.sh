@@ -110,12 +110,15 @@ CKPT_S3_DIR="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
 EXPORT_S3_DIR="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}/hf_export"
 HF_SAVE_INTERVAL="${HF_SAVE_INTERVAL:-100000}"   # > total steps ⇒ only end-of-run HF export
 
+# Hoisted unconditionally (defined for ALL ranks): used by the rank-0 ckpt mirror below AND
+# the rank-0 resume-gate in the relaunch loop. SKYPILOT_* are set on every node.
+EXPECTED_SHARDS=$(( ${SKYPILOT_NUM_GPUS_PER_NODE:-8} * ${SKYPILOT_NUM_NODES:-1} ))
+
 # === rank-0 only: S3 ckpt mirror + 16-shard corruption assert + final HF-export→S3 ===
 # common-run launches the trainer in the FOREGROUND on rank 0; this background loop runs
 # alongside it, watching the witness ckpt dir on shared /workspace. Workers (sleep infinity
 # inside common-run) and SMOKE never reach here.
 if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
-  EXPECTED_SHARDS=$(( ${SKYPILOT_NUM_GPUS_PER_NODE:-8} * ${SKYPILOT_NUM_NODES:-1} ))
   (
     set +e +o pipefail   # best-effort: a benign SIGPIPE/non-zero must never kill the mirror
     LAST_SYNCED_DIR=""

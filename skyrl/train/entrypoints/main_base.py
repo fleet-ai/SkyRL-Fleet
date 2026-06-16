@@ -493,7 +493,10 @@ class BasePPOExp:
                     if _grp is not None and hasattr(_grp, "async_run_ray_method"):
                         refs += _grp.async_run_ray_method("pass_through", "shutdown_process_group")
                 if refs:
-                    ray.get(refs)
+                    # Bounded: a worker that hangs AFTER destroy_process_group() returns must
+                    # never block the driver forever (that would turn a clean finish into a
+                    # hung process). Timeout is logged-and-swallowed by the outer except.
+                    ray.get(refs, timeout=10)
             except Exception:
                 pass
 
