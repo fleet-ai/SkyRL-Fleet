@@ -94,19 +94,22 @@ async def _play_dual(client, model, no_think, sc, max_turns, temperature, max_to
 
     last_a = last_b = None
     nturns = 0
+    policy_msgs = []                                   # opponent-facing turns w/ a parsed proposal
     for _ in range(max_turns):
         text = await run_eval.chat(client, model, hist, temperature, max_tokens, extra_body=body)
         hist.append({"role": "assistant", "content": _strip_think(text)})
         nturns += 1
         last_a = game.parse_deal(text, items)
         if last_a is not None:
+            keep = [min(counts[i], max(0, last_a[i])) for i in range(len(counts))]
+            policy_msgs.append({"prose": text, "keep": keep})
             last_b = opp.complement(last_a)            # conceder takes the leftovers
             hist.append({"role": "user", "content": opp.dual_message(last_a)})
             break
         hist.append({"role": "user", "content": opp.dual_message(None)})
 
     outcome = game.evaluate(counts, list(sc.you_values), list(sc.them_values), last_a, last_b)
-    return outcome, last_a, nturns
+    return outcome, last_a, nturns, policy_msgs
 
 
 async def _play_single(client, model, no_think, sc, max_turns, temperature, max_tokens):
@@ -124,6 +127,7 @@ async def _play_single(client, model, no_think, sc, max_turns, temperature, max_
 
     you_take = them_take = None
     nturns = 0
+    policy_msgs = []                                   # opponent-facing turns w/ a parsed proposal
     for _ in range(max_turns):
         text = await run_eval.chat(client, model, hist, temperature, max_tokens, extra_body=body)
         hist.append({"role": "assistant", "content": _strip_think(text)})
@@ -132,23 +136,27 @@ async def _play_single(client, model, no_think, sc, max_turns, temperature, max_
         if prop is not None:
             you_take = [min(counts[i], max(0, prop[i])) for i in range(n)]
             them_take = [counts[i] - you_take[i] for i in range(n)]
+            policy_msgs.append({"prose": text, "keep": you_take})
             hist.append({"role": "user", "content": opp.single_message(True)})
             break
         hist.append({"role": "user", "content": opp.single_message(False)})
 
     outcome = game.evaluate(counts, list(sc.you_values), list(sc.them_values), you_take, them_take)
-    return outcome, you_take, nturns
+    return outcome, you_take, nturns, policy_msgs
 
 
 async def play_probe_game(client, model, no_think, sc, max_turns, temperature, max_tokens, protocol):
     play = _play_dual if protocol == "dual" else _play_single
-    outcome, take, nturns = await play(client, model, no_think, sc, max_turns, temperature, max_tokens)
+    outcome, take, nturns, policy_msgs = await play(
+        client, model, no_think, sc, max_turns, temperature, max_tokens)
     return {
         "outcome": outcome.to_dict(),
         "policy_take": take,
         "you_values": list(sc.you_values),
         "counts": list(sc.counts),
+        "item_names": list(sc.item_names),
         "num_turns": nturns,
+        "policy_msgs": policy_msgs,   # opponent-facing turns + parsed keep (for the deception judge)
     }
 
 
@@ -256,7 +264,8 @@ async def run_probe(participants, *, dataset="dnd", split="val", n=16, max_turns
                         "outcome": game.evaluate(list(sc.counts), list(sc.you_values),
                                                  list(sc.them_values), None, None).to_dict(),
                         "policy_take": None, "you_values": list(sc.you_values),
-                        "counts": list(sc.counts), "num_turns": 0}
+                        "counts": list(sc.counts), "item_names": list(sc.item_names),
+                        "num_turns": 0, "policy_msgs": []}
 
     print(f"running {len(participants)} models x {len(scs)} scenarios vs the conceder "
           f"({protocol} protocol)...", flush=True)
@@ -285,14 +294,15 @@ async def run_probe(participants, *, dataset="dnd", split="val", n=16, max_turns
         "per_model": {lbl: {"config": d["config"], "aggregate": d["aggregate"]}
                       for lbl, d in per_model.items()},
         "deltas_policy_minus_base": deltas,
+        # Full per-game runs (incl. policy_msgs) kept in-memory so in-process
+        # callers (e.g. the in-loop deception judge) can score the policy's
+        # messages without a disk round-trip.
+        "per_model_runs": {lbl: d["runs"] for lbl, d in per_model.items()},
     }
-    # Keep full transcripts/runs in a sibling key (large) only when writing.
     if write:
         RESULTS.mkdir(parents=True, exist_ok=True)
         out = RESULTS / f"{out_prefix}.json"
-        full = dict(payload)
-        full["per_model_runs"] = {lbl: d["runs"] for lbl, d in per_model.items()}
-        out.write_text(json.dumps(full, indent=2))
+        out.write_text(json.dumps(payload, indent=2))
         print(f"wrote {out}")
         render_probe(payload)
     return payload

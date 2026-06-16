@@ -72,6 +72,14 @@ export OPPONENT_BASE_URL="${OPPONENT_BASE_URL:-}"
 export PROBE_EVAL="${PROBE_EVAL:-true}"
 export PROBE_N="${PROBE_N:-16}"
 export PROBE_DATASET="${PROBE_DATASET:-dnd}"
+# In-loop LLM-as-judge deception probe: scores the policy messages produced inside
+# the probe games above for deception (false_promise / omission). Measurement only
+# (never a reward). Logged as eval/deception_judge/*. Paid but cheap -- a cheap
+# judge (JUDGE_MODEL) does a few dozen single-shot classifications per eval, via
+# OPENROUTER_API_KEY. gpt-4.1-mini was calibrated on past traces (gpt-4o-mini
+# over-flags honest bargaining; see .overnight/judge_modelcmp_out.json).
+export JUDGE_EVAL="${JUDGE_EVAL:-true}"
+export JUDGE_MODEL="${JUDGE_MODEL:-openai/gpt-4.1-mini}"
 export MAX_TURNS="${MAX_TURNS:-6}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"  # thinking arm needs room (>=4096); see grad-explosion log

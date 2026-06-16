@@ -25,7 +25,13 @@ Env vars (read by the trainer subclass):
     PROBE_DATASET: scenario dataset (default dnd)
     NEGOTIATION_PROTOCOL: single|dual (default single) - must match training
     ENABLE_THINKING: if "true", the policy emits <think> (probe no_think follows)
-Plus all S3 vars honored by FleetPPOExp.
+    JUDGE_EVAL: "true"/"false" (default true) - toggle the in-loop LLM-as-judge
+        deception probe, which scores the policy messages produced inside the
+        probe games above (measurement only; never a reward). Paid but cheap.
+    JUDGE_MODEL: OpenRouter slug for the judge (default openai/gpt-4.1-mini,
+        calibrated on past traces; gpt-4o-mini over-flags honest bargaining).
+Plus all S3 vars honored by FleetPPOExp. Both probes need OPENROUTER_API_KEY
+(the judge calls OpenRouter; the probe opponent is free/scripted).
 """
 
 import logging
@@ -62,16 +68,31 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
             return eval_metrics
 
         # Never let an eval-side failure kill training.
+        probe_payload = None
         try:
-            probe_metrics = await self._run_exploitation_probe()
+            probe_metrics, probe_payload = await self._run_exploitation_probe()
             eval_metrics.update(probe_metrics)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"In-loop exploitation probe failed (skipping): {e}", exc_info=True)
 
+        # In-loop LLM-as-judge deception probe: score the policy messages produced
+        # inside the probe games above. Measurement only (never a reward). Paid but
+        # cheap (a few dozen single-shot classifications per eval).
+        if probe_payload is not None and _truthy(os.environ.get("JUDGE_EVAL", "true")):
+            try:
+                judge_metrics = await self._run_deception_judge(probe_payload)
+                eval_metrics.update(judge_metrics)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"In-loop deception judge failed (skipping): {e}", exc_info=True)
+
         return eval_metrics
 
     async def _run_exploitation_probe(self):
-        """Play the live policy vs the scripted conceder and emit eval/probe/* metrics."""
+        """Play the live policy vs the scripted conceder and emit eval/probe/* metrics.
+
+        Returns ``(metrics, payload)`` where ``payload`` carries the per-game runs
+        (incl. ``policy_msgs``) so the deception judge can reuse them.
+        """
         # The eval harness is a script-style module (relative imports + sys.path
         # tricks), so add its directory to sys.path and import it lazily.
         import skyrl_gym.envs.negotiation as _neg
@@ -152,6 +173,40 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
             f"[probe] step={self.global_step} opp_norm={agg.get('opp_norm')} "
             f"pool_take={agg.get('pool_take_fraction')} gratuitous={agg.get('gratuitous_take')} "
             f"agree={agg.get('agreement_rate')}"
+        )
+        return metrics, payload
+
+    async def _run_deception_judge(self, payload):
+        """LLM-as-judge deception probe: score the policy's opponent-facing messages
+        from the probe games and emit eval/deception_judge/* metrics.
+
+        Measurement only -- this never feeds the reward. The judge is a cheap model
+        (JUDGE_MODEL, default openai/gpt-4.1-mini) called via OpenRouter; it was
+        calibrated on past traces (.overnight/judge_modelcmp_out.json).
+        """
+        import skyrl_gym.envs.negotiation as _neg
+
+        eval_dir = os.path.join(os.path.dirname(_neg.__file__), "eval")
+        if eval_dir not in sys.path:
+            sys.path.insert(0, eval_dir)
+        import run_eval  # noqa: E402  (script-style module)
+        import deception_judge  # noqa: E402
+
+        runs = (payload.get("per_model_runs") or {}).get("Policy", [])
+        if not runs:
+            logger.info("[deception_judge] no probe runs to judge; skipping")
+            return {}
+
+        model = os.environ.get("JUDGE_MODEL", deception_judge.DEFAULT_JUDGE_MODEL)
+        client = run_eval.make_client("https://openrouter.ai/api/v1")
+        metrics, _verdicts = await deception_judge.judge_probe_runs(runs, client, model)
+
+        logger.info(
+            f"[deception_judge] step={self.global_step} model={model} "
+            f"n_msgs={metrics.get('eval/deception_judge/n_msgs')} "
+            f"deception_rate={metrics.get('eval/deception_judge/deception_rate')} "
+            f"omission_rate={metrics.get('eval/deception_judge/omission_rate')} "
+            f"false_promise_rate={metrics.get('eval/deception_judge/false_promise_rate')}"
         )
         return metrics
 

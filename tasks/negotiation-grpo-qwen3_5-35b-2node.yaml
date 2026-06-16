@@ -76,6 +76,12 @@ envs:
   # In-loop exploitation probe vs a scripted conceder ($0, local). Logged as eval/probe/*.
   PROBE_EVAL: "true"
   PROBE_N: "16"
+  # In-loop LLM-as-judge deception probe: scores the policy messages from the probe
+  # games for deception (false_promise / omission). Measurement only, never a reward.
+  # Logged as eval/deception_judge/*. Cheap (uses OPENROUTER_API_KEY); gpt-4.1-mini
+  # was calibrated on past traces (gpt-4o-mini over-flags honest bargaining).
+  JUDGE_EVAL: "true"
+  JUDGE_MODEL: "openai/gpt-4.1-mini"
   MAX_INPUT_LENGTH: 8192
   MAX_GENERATE_LENGTH: 8192
   NUM_EPOCHS: 20
