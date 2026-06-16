@@ -32,21 +32,20 @@ export NUM_INFERENCE_ENGINES="${NUM_INFERENCE_ENGINES:-8}"
 # (`Failed core proc(s): {}`). The REAL switch is the hydra override on the fleet-common-run line:
 #   +generator.engine_init_kwargs.gdn_prefill_backend=triton   (passed straight to AsyncEngineArgs)
 
-# --- Cross-node NCCL: force TCP (NCCL_IB_DISABLE=1) — REQUIRED on this node pair ---
-# EVIDENCE (2026-06-03, run yp2hjk1x): after clearing the Ray-port + GPU-orphan issues, training
-# reached trainer.build_models() and the FIRST cross-node collective hung:
-#   [Rank 5/6/7] Watchdog caught collective operation timeout:
-#   WorkNCCL(SeqNum=1, OpType=BROADCAST, ...) ran for 600090 ms before timing out  -> SIGABRT
-# The vLLM inference NCCL that "Init COMPLETE"d earlier was INTRA-node (via P2P/IPC) — it never
-# proved cross-node IB. The training FSDP process group spans BOTH nodes and its first cross-node
-# BROADCAST never completed => cross-node IB does NOT route on this node pair (node-9/10).
-# fleet-common-run.sh's ib-hca-intersection helper "produced nothing" this run (fell back to the
-# static /etc/environment NCCL_IB_HCA, which can name a NIC that's DOWN on one node -> the first
-# collective hangs). TCP is the config that TRAINED pre-maintenance. Forcing it is not a gratuitous
-# deviation — it's the correct response to broken cross-node IB here.
-# Proper IB fix (revisit separately): make ib-hca-intersection.sh actually emit a both-nodes-live
-# HCA list; once a clean cross-node IB run is verified, this line can be removed.
-export NCCL_IB_DISABLE=1
+# --- Cross-node NCCL: InfiniBand ENABLED (NCCL_IB_DISABLE=0) ---
+# HISTORY (2026-06-03, run yp2hjk1x): the FIRST cross-node training collective hung on node-9/10 —
+#   [Rank 5/6/7] Watchdog caught collective timeout: WorkNCCL(SeqNum=1, OpType=BROADCAST) -> SIGABRT
+# i.e. cross-node IB did NOT route on node-9/10 (ib-hca-intersection "produced nothing" -> fell back
+# to a static NCCL_IB_HCA naming a NIC that was DOWN on one node). We force-TCP'd (=1) as a stopgap.
+# 2026-06-16: re-enabling IB after excluding the bad node-9/10 pair + confirming the target nodes
+# have live IB (node-1/2: 11 Active HCA ports each). IB is much faster cross-node, and a healthy
+# RDMA fabric also avoids the TCP-fallback cross-node collective stalls suspected behind the
+# recurring "pure virtual" teardown crashes.
+# ⚠️ HARD REQUIREMENT: run ONLY on IB-healthy nodes. node-9 AND node-10 have broken cross-node IB
+#    routing and MUST be excluded from the allocation. (Excluding only node-8/9 is NOT enough —
+#    node-10 is still bad; node-8 is fine.) If a cross-node collective hangs (SeqNum=1 BROADCAST
+#    Watchdog timeout in the log), revert this line to =1 OR exclude the offending node, and relaunch.
+export NCCL_IB_DISABLE=0
 export NCCL_DEBUG=INFO
 
 # --- Startup GPU self-cleanup: reap OUR OWN orphan GPU procs from a prior crashed run ---
