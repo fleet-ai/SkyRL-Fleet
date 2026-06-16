@@ -746,6 +746,33 @@ async def collect_fleet_rollout(
         total_step_time = 0.0
         total_tokens = 0
 
+        async def _force_verifier(reason: str) -> None:
+            """Final-state escape hatch: trigger the verifier even when the
+            rollout has to exit before issuing a real tool call (length cap,
+            sample timeout, empty response). Without this, every length/timeout
+            exit silently bypasses the verifier and the rollout returns
+            reward=0 by default even when the env state would have scored.
+
+            We call env.step_async("<done>") which lands in the env's
+            agent-done-without-tool-call branch and sends {"done": True} to
+            OpenEnv → _compute_reward() runs → reward reflects current state.
+            Wrapped in best-effort; verifier failures fall back to 0.0.
+            """
+            nonlocal total_reward, done
+            try:
+                final_out = await asyncio.wait_for(
+                    _env_step(env, "<done>"), ENV_STEP_TIMEOUT_S
+                )
+                total_reward = final_out.get("reward", 0.0) or 0.0
+                done = True
+                logger.info(
+                    f"[{task_key}] Forced verifier on {reason} exit: reward={total_reward}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[{task_key}] Forced verifier on {reason} exit failed: {e}"
+                )
+
         while not done and env.turns < max_turns:
             turn_num = env.turns + 1  # 1-indexed for logging
 
@@ -767,6 +794,7 @@ async def collect_fleet_rollout(
                     f"[{task_key}] Turn {turn_num}: context length ({prompt_len}) exceeds max ({max_input_length}), ending"
                 )
                 stop_reason = "length"
+                await _force_verifier("length")
                 break
 
             # Generate with Tinker
@@ -792,12 +820,15 @@ async def collect_fleet_rollout(
             except asyncio.TimeoutError:
                 logger.warning(f"[{task_key}] Turn {turn_num}: tinker sample timeout ({TINKER_SAMPLE_TIMEOUT_S}s)")
                 stop_reason = "tinker_timeout"
+                await _force_verifier("tinker_timeout")
                 break
             gen_time = time.time() - gen_start
             total_gen_time += gen_time
 
             if not result.sequences or len(result.sequences) == 0:
                 logger.warning(f"[{task_key}] Turn {turn_num}: no sequences returned from Tinker")
+                stop_reason = "no_sequences"
+                await _force_verifier("no_sequences")
                 break
 
             sequence = result.sequences[0]
@@ -832,6 +863,7 @@ async def collect_fleet_rollout(
             except asyncio.TimeoutError:
                 logger.warning(f"[{task_key}] Turn {turn_num}: env step timeout ({ENV_STEP_TIMEOUT_S}s)")
                 stop_reason = "env_step_timeout"
+                await _force_verifier("env_step_timeout")
                 break
             step_time = time.time() - step_start
             total_step_time += step_time
