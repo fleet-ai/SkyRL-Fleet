@@ -109,6 +109,119 @@ def tool_result_to_message_content(tool_result: Any) -> Any:
     return f"Tool result:\n{body}"
 
 
+def build_system_content(
+    tools: List[Dict[str, Any]],
+    *,
+    modality: str = "tool_use",
+    env_variables: Optional[Dict[str, Any]] = None,
+    env_key: Optional[str] = None,
+    use_tools_channel: bool = False,
+    now: Optional[datetime] = None,
+) -> str:
+    """Build the system-message text for a Fleet rollout.
+
+    When `use_tools_channel=True`, the in-prompt `## Available Tools` JSON
+    dump and `## Tool Call Format` example are omitted: the caller is
+    expected to pass tools via `apply_chat_template(tools=...)` so the
+    model's native tool_declare block handles them. This is the canonical
+    path for Tinker rollouts with Kimi-K2 / Qwen3+.
+
+    When `use_tools_channel=False` (default), tools are embedded as text in
+    the system message for compatibility with vLLM/SkyRL paths where the
+    rendered prompt is the only channel the model sees.
+
+    Pure function (no env state); broken out for direct unit testing.
+    """
+    env_variables = env_variables or {}
+    now = now or datetime.now()
+    current_date = now.strftime("%Y-%m-%d")
+
+    # Environment context section from env_variables
+    env_context = ""
+    if env_variables:
+        env_lines = []
+        if "LOGGED_IN_USER" in env_variables:
+            env_lines.append(f"- Logged in user ID: {env_variables['LOGGED_IN_USER']}")
+        if "LOGGED_IN_NAME" in env_variables:
+            env_lines.append(f"- Logged in as: {env_variables['LOGGED_IN_NAME']}")
+        for key, value in env_variables.items():
+            if key not in ("LOGGED_IN_USER", "LOGGED_IN_NAME", "CURRENT_DATE"):
+                env_lines.append(f"- {key}: {value}")
+        if env_lines:
+            env_context = "\n## Environment Context\n" + "\n".join(env_lines) + "\n"
+
+    env_hints = ""
+    if env_key == "fostgres":
+        env_hints = (
+            "\n## Database Exploration\n"
+            "Before writing SQL queries, first explore the database schema:\n"
+            "- List tables: SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'public'\n"
+            "- List columns: SELECT column_name, data_type FROM "
+            "information_schema.columns WHERE table_name = 'your_table'\n"
+        )
+
+    computer_use_hints = ""
+    if modality in ("computer_use", "browser_use"):
+        computer_use_hints = (
+            "\n## Browser Interaction Strategy\n"
+            "You are controlling a web browser via screenshots. Follow this loop:\n\n"
+            "1. **Act**: Perform ONE action (click, type, scroll, etc.)\n"
+            "2. **Observe**: Take a screenshot to see the result\n"
+            "3. **Adapt**: If the screen hasn't changed, try a DIFFERENT action\n\n"
+            "Key rules:\n"
+            "- After clicking or typing, ALWAYS take a screenshot next to see what happened\n"
+            "- NEVER repeat the same action more than twice. If it didn't work, try something different:\n"
+            "  - Can't find an element by scrolling? Use the search bar or navigation menu instead\n"
+            "  - Page not loading after a click? Try refreshing with key(\"F5\") or clicking a different element\n"
+            "  - Form not submitting? Check if required fields are missing\n"
+            "- Use wait() only ONCE after a page navigation, then screenshot to check. Do not wait repeatedly\n"
+            "- When the task is fully complete, say <done>. Do not keep clicking after finishing\n"
+        )
+
+    if use_tools_channel:
+        tools_block = ""
+    else:
+        tools_json = json.dumps(tools, indent=2)
+        tool_names = [t["function"]["name"] for t in tools if "function" in t]
+        tool_names_str = ", ".join(tool_names)
+        tools_block = (
+            f"## Available Tools\n{tools_json}\n\n"
+            f"## Tool Call Format\n"
+            f"Use the tools listed above by name ({tool_names_str}). "
+            f"Format each call as:\n"
+            f'<tool_call>{{"name": "<tool_name_from_above>", "arguments": '
+            f"{{...}}}}</tool_call>\n\n"
+        )
+
+    return (
+        f"You are a helpful agent. Complete the task by calling tools.\n\n"
+        f"## Current Date\n"
+        f"Today's date is {current_date}. When dates are mentioned without "
+        f"a year, assume the current year ({now.year}) or a "
+        f"future date.\n"
+        f"{env_context}{env_hints}{computer_use_hints}\n"
+        f"{tools_block}"
+        f"## Error Handling\n"
+        f"If a tool call returns an error:\n"
+        f"- Read the error message carefully\n"
+        f"- Do NOT repeat the same call with identical arguments\n"
+        f"- Change your approach: use different parameters, try a different "
+        f"tool, or break the task into smaller steps\n\n"
+        f"## Response Format\n"
+        f"EVERY response MUST end with exactly ONE of:\n"
+        f"1. A tool call to perform an action\n"
+        f"2. Done signal: <done> - ONLY when the task is fully complete\n\n"
+        f"IMPORTANT: When the task is complete, first output your final "
+        f"answer with the requested information, THEN say <done>. Do not "
+        f"just say <done> without providing the answer.\n\n"
+        f"NEVER respond with just a message. NEVER say \"feel free to ask\" "
+        f"or offer further help.\n"
+        f"If the task is complete, provide your answer then say <done>. "
+        f"Otherwise, make a tool call."
+    )
+
+
 class FleetTaskEnv(BaseTextEnv):
     """SkyRL environment for Fleet-hosted tasks.
 
@@ -411,106 +524,21 @@ class FleetTaskEnv(BaseTextEnv):
                 f"to help you:\n{hint}"
             )
 
-        # Build system prompt with tool definitions
-        tools_json = json.dumps(self.tools, indent=2)
-        current_date = datetime.now().strftime("%Y-%m-%d")
-
-        # Build environment context section from env_variables
-        env_context = ""
-        env_vars = self.task_config.get("env_variables", {})
-        if env_vars:
-            env_lines = []
-            if "LOGGED_IN_USER" in env_vars:
-                env_lines.append(
-                    f"- Logged in user ID: {env_vars['LOGGED_IN_USER']}"
-                )
-            if "LOGGED_IN_NAME" in env_vars:
-                env_lines.append(
-                    f"- Logged in as: {env_vars['LOGGED_IN_NAME']}"
-                )
-            for key, value in env_vars.items():
-                if key not in (
-                    "LOGGED_IN_USER",
-                    "LOGGED_IN_NAME",
-                    "CURRENT_DATE",
-                ):
-                    env_lines.append(f"- {key}: {value}")
-            if env_lines:
-                env_context = (
-                    "\n## Environment Context\n"
-                    + "\n".join(env_lines)
-                    + "\n"
-                )
-
-        # Add environment-specific hints
-        env_key = self.task_config.get("env_key") or self.task_config.get(
-            "env_id"
-        )
-        env_hints = ""
-        if env_key == "fostgres":
-            env_hints = (
-                "\n## Database Exploration\n"
-                "Before writing SQL queries, first explore the database schema:\n"
-                "- List tables: SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'public'\n"
-                "- List columns: SELECT column_name, data_type FROM "
-                "information_schema.columns WHERE table_name = 'your_table'\n"
-            )
-
-        # Computer-use hints for VL models
-        computer_use_hints = ""
-        if modality in ("computer_use", "browser_use"):
-            computer_use_hints = (
-                "\n## Browser Interaction Strategy\n"
-                "You are controlling a web browser via screenshots. Follow this loop:\n\n"
-                "1. **Act**: Perform ONE action (click, type, scroll, etc.)\n"
-                "2. **Observe**: Take a screenshot to see the result\n"
-                "3. **Adapt**: If the screen hasn't changed, try a DIFFERENT action\n\n"
-                "Key rules:\n"
-                "- After clicking or typing, ALWAYS take a screenshot next to see what happened\n"
-                "- NEVER repeat the same action more than twice. If it didn't work, try something different:\n"
-                "  - Can't find an element by scrolling? Use the search bar or navigation menu instead\n"
-                "  - Page not loading after a click? Try refreshing with key(\"F5\") or clicking a different element\n"
-                "  - Form not submitting? Check if required fields are missing\n"
-                "- Use wait() only ONCE after a page navigation, then screenshot to check. Do not wait repeatedly\n"
-                "- When the task is fully complete, say <done>. Do not keep clicking after finishing\n"
-            )
-
-        tool_names = [
-            t["function"]["name"] for t in self.tools if "function" in t
-        ]
-        tool_names_str = ", ".join(tool_names)
-
-        system_content = (
-            f"You are a helpful agent. Complete the task by calling tools.\n\n"
-            f"## Current Date\n"
-            f"Today's date is {current_date}. When dates are mentioned without "
-            f"a year, assume the current year ({datetime.now().year}) or a "
-            f"future date.\n"
-            f"{env_context}{env_hints}{computer_use_hints}\n"
-            f"## Available Tools\n{tools_json}\n\n"
-            f"## Tool Call Format\n"
-            f"Use the tools listed above by name ({tool_names_str}). "
-            f"Format each call as:\n"
-            f'<tool_call>{{"name": "<tool_name_from_above>", "arguments": '
-            f"{{...}}}}</tool_call>\n\n"
-            f"## Error Handling\n"
-            f"If a tool call returns an error:\n"
-            f"- Read the error message carefully\n"
-            f"- Do NOT repeat the same call with identical arguments\n"
-            f"- Change your approach: use different parameters, try a different "
-            f"tool, or break the task into smaller steps\n\n"
-            f"## Response Format\n"
-            f"EVERY response MUST end with exactly ONE of:\n"
-            f"1. A tool call: <tool_call>...</tool_call> - to perform an action\n"
-            f"2. Done signal: <done> - ONLY when the task is fully complete\n\n"
-            f"IMPORTANT: When the task is complete, first output your final "
-            f"answer with the requested information, THEN say <done>. Do not "
-            f"just say <done> without providing the answer.\n\n"
-            f"NEVER respond with just a message. NEVER say \"feel free to ask\" "
-            f"or offer further help.\n"
-            f"If the task is complete, provide your answer then say <done>. "
-            f"Otherwise, make a tool call."
+        # Build system prompt. Tools are either embedded as text below (legacy
+        # path for vLLM/SkyRL where the rendered prompt is the only channel) or
+        # passed out-of-band via `apply_chat_template(tools=...)` (Tinker /
+        # HF-standard channel — Kimi-K2, Qwen3+ render them in the model's
+        # native tool_declare block at the top of the prompt). When the caller
+        # sets extras["use_tools_channel"]=True, we skip the in-system-message
+        # injection so they don't double up.
+        use_tools_channel = bool(self.extras.get("use_tools_channel", False))
+        env_key = self.task_config.get("env_key") or self.task_config.get("env_id")
+        system_content = build_system_content(
+            tools=self.tools,
+            modality=modality,
+            env_variables=self.task_config.get("env_variables", {}),
+            env_key=env_key,
+            use_tools_channel=use_tools_channel,
         )
 
         system_message = {"role": "system", "content": system_content}

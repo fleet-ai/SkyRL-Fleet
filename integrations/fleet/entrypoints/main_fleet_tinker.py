@@ -436,7 +436,12 @@ def prepare_training_data(
     return training_datums, truncated_count
 
 
-def tokenize_chat(tokenizer: AutoTokenizer, chat_history: List[Dict], add_generation_prompt: bool = True) -> List[int]:
+def tokenize_chat(
+    tokenizer: AutoTokenizer,
+    chat_history: List[Dict],
+    add_generation_prompt: bool = True,
+    tools: Optional[List[Dict[str, Any]]] = None,
+) -> List[int]:
     """
     Tokenize chat history and ensure we get a plain list of token IDs.
 
@@ -445,8 +450,19 @@ def tokenize_chat(tokenizer: AutoTokenizer, chat_history: List[Dict], add_genera
     - BatchEncoding dict with 'input_ids' key for others
 
     Tinker's ModelInput.from_ints() requires a plain list of integers.
+
+    `tools`, when provided, is rendered via the HF chat-template `tools=`
+    kwarg. For Kimi-K2 this becomes a single `<|im_system|>tool_declare<|im_middle|>...<|im_end|>`
+    block at the top of the prompt (outside the message loop, so it does not
+    repeat per turn). Tokenizers without tool support simply ignore the kwarg.
     """
-    result = tokenizer.apply_chat_template(chat_history, add_generation_prompt=add_generation_prompt, tokenize=True)
+    kwargs: Dict[str, Any] = {
+        "add_generation_prompt": add_generation_prompt,
+        "tokenize": True,
+    }
+    if tools:
+        kwargs["tools"] = tools
+    result = tokenizer.apply_chat_template(chat_history, **kwargs)
     # Handle BatchEncoding (dict-like) vs plain list
     if hasattr(result, "input_ids"):
         return list(result.input_ids)
@@ -480,11 +496,14 @@ def tokenize_chat(tokenizer: AutoTokenizer, chat_history: List[Dict], add_genera
 # legitimate tokenizer would produce.
 _IMAGE_PLACEHOLDER = "IMAGE"
 
-# Conservative estimate for image token cost when computing `max_input_length`.
-# The Tinker backend computes the real number on its side; this is only used to
-# decide when to end the rollout early. ~1024 tokens matches Kimi-K2.6 / Qwen-VL
-# default vision resolution.
-_DEFAULT_IMAGE_TOKENS = 1024
+# Local estimate for image token cost in the rollout's `max_input_length`
+# bookkeeping. The Tinker server computes the AUTHORITATIVE per-image count
+# from the raw bytes on its side, so we do NOT pass `expected_tokens=` on
+# ImageChunk — if our estimate disagrees with the server's tokenization
+# (e.g. Kimi-K2.6 returned 1372 tokens for a 1366x768 screenshot vs our 1024
+# guess), Tinker rejects the request with `BadRequestError: Expected N
+# tokens, got M from image`. This estimate is advisory only.
+_DEFAULT_IMAGE_TOKENS = 1500
 
 def _decode_data_url(url: str) -> Optional[Tuple[bytes, str]]:
     """Decode a `data:image/...;base64,...` URL into `(jpeg_bytes, "jpeg")`.
@@ -566,6 +585,7 @@ def build_model_input_chunks(
     tokenizer: AutoTokenizer,
     chat_history: List[Dict],
     add_generation_prompt: bool = True,
+    tools: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[Any], int]:
     """Build Tinker `ModelInput` chunks from a (possibly multimodal) chat history.
 
@@ -577,6 +597,11 @@ def build_model_input_chunks(
     Multimodal conversations interleave `EncodedTextChunk` with `ImageChunk`
     at the exact positions where images appeared in the original chat.
 
+    `tools`, when provided, is rendered via the HF chat-template `tools=`
+    kwarg (see `tokenize_chat` for the rationale). It appears once at the
+    top of the rendered prompt regardless of how many messages or turns the
+    chat has.
+
     If the chat template mangles the placeholder (some templates URL-encode
     or strip control chars), we fall back to text-only with `[image]`
     markers so the rollout doesn't crash.
@@ -584,7 +609,7 @@ def build_model_input_chunks(
     # Fast path: text-only conversation, no images to splice. Skip the
     # per-message sanitization walk and just call the standard tokenize_chat.
     if not is_multimodal_conversation(chat_history):
-        tokens = tokenize_chat(tokenizer, chat_history, add_generation_prompt)
+        tokens = tokenize_chat(tokenizer, chat_history, add_generation_prompt, tools=tools)
         return [types.EncodedTextChunk(tokens=tokens)], len(tokens)
 
     # Multimodal path: sanitize each message; collect ordered images.
@@ -595,10 +620,15 @@ def build_model_input_chunks(
         text_msgs.append({**msg, "content": sanitized_text})
         all_images.extend(imgs)
 
-    # Apply chat template to the placeholder'd text.
-    flat = tokenizer.apply_chat_template(
-        text_msgs, add_generation_prompt=add_generation_prompt, tokenize=False
-    )
+    # Apply chat template to the placeholder'd text. Pass tools= so VL models
+    # also get their native tool_declare block rendered once at the top.
+    template_kwargs: Dict[str, Any] = {
+        "add_generation_prompt": add_generation_prompt,
+        "tokenize": False,
+    }
+    if tools:
+        template_kwargs["tools"] = tools
+    flat = tokenizer.apply_chat_template(text_msgs, **template_kwargs)
     if not isinstance(flat, str):
         flat = str(flat)
 
@@ -631,11 +661,15 @@ def build_model_input_chunks(
                 total += len(seg_tokens)
         if i < len(all_images):
             img_bytes, fmt = all_images[i]
+            # NOTE: do NOT pass expected_tokens — Tinker validates the value
+            # against the server-side tokenization and rejects on mismatch
+            # (BadRequestError: "Expected N tokens, got M from image"). The
+            # local _DEFAULT_IMAGE_TOKENS estimate stays in the running total
+            # for `max_input_length` bookkeeping only.
             chunks.append(
                 types.ImageChunk(
                     data=img_bytes,
                     format=fmt,
-                    expected_tokens=_DEFAULT_IMAGE_TOKENS,
                 )
             )
             total += _DEFAULT_IMAGE_TOKENS
@@ -676,10 +710,13 @@ async def collect_fleet_rollout(
 
     task_key = task_config.get("task_key") or task_config.get("key")
 
-    # Create SkyRL FleetTaskEnv wrapper
-    # TTL of 2 hours - some rollouts with many turns can take 30+ minutes
+    # Create SkyRL FleetTaskEnv wrapper.
+    # TTL of 2 hours - some rollouts with many turns can take 30+ minutes.
+    # `use_tools_channel=True` asks the env to omit the in-system-message tool
+    # JSON dump; we pass tools via `apply_chat_template(tools=...)` so models
+    # like Kimi-K2 / Qwen3+ see them in their native tool_declare channel.
     env_config = OmegaConf.create({"tasks_file": tasks_file, "ttl_seconds": 7200})
-    extras = {"task_key": task_key, "max_turns": max_turns}
+    extras = {"task_key": task_key, "max_turns": max_turns, "use_tools_channel": True}
 
     env = FleetTaskEnv(env_config=env_config, extras=extras)
 
@@ -691,9 +728,12 @@ async def collect_fleet_rollout(
             _env_init(env, []), ENV_INIT_TIMEOUT_S
         )
         env_key = metadata.get("env_key", "unknown")
+        env_tools = metadata.get("tools") or env.tools
 
         # Tokenize initial prompt
-        prompt_ids = tokenize_chat(tokenizer, chat_history, add_generation_prompt=True)
+        prompt_ids = tokenize_chat(
+            tokenizer, chat_history, add_generation_prompt=True, tools=env_tools
+        )
 
         all_response_ids = []
         all_logprobs = []
@@ -714,9 +754,11 @@ async def collect_fleet_rollout(
             # build_model_input_chunks emits interleaved EncodedTextChunk +
             # ImageChunk so the vision model actually sees images instead of
             # tokenizing base64 strings. Text-only path hits a fast return
-            # equivalent to the prior tokenize_chat call.
+            # equivalent to the prior tokenize_chat call. `tools=` renders the
+            # native tool_declare block once at the top of the prompt — does
+            # not repeat per turn.
             prompt_chunks, prompt_len = build_model_input_chunks(
-                tokenizer, env.chat_history, add_generation_prompt=True
+                tokenizer, env.chat_history, add_generation_prompt=True, tools=env_tools
             )
 
             # Check context length limit (matching SkyRL's skyrl_gym_generator.py:274)

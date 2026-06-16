@@ -312,6 +312,155 @@ class TestBuildModelInputChunks:
         # Image budget counted twice
         assert total >= 2 * mft._DEFAULT_IMAGE_TOKENS
 
+
+# --------------------------------------------------------------------------- #
+# tools= threading — verifies the HF chat-template `tools=` kwarg reaches
+# apply_chat_template once, for both text-only and multimodal paths.
+# --------------------------------------------------------------------------- #
+
+class _RecordingTokenizer:
+    """Tokenizer stub that records every apply_chat_template call so tests can
+    assert how many times `tools=` was threaded through and with what value."""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def encode(self, text, add_special_tokens=False):
+        return [ord(c) for c in text]
+
+    def apply_chat_template(
+        self,
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        tools=None,
+        **kwargs,
+    ):
+        self.calls.append(
+            {
+                "messages": messages,
+                "add_generation_prompt": add_generation_prompt,
+                "tokenize": tokenize,
+                "tools": tools,
+            }
+        )
+        body = "\n".join(f"<{m['role']}>{m.get('content', '')}" for m in messages)
+        if tools:
+            # Mimic Kimi's tool_declare block (single, at top of prompt).
+            body = f"<tool_declare>{len(tools)}\n" + body
+        if add_generation_prompt:
+            body += "\n<assistant>"
+        if tokenize:
+            return self.encode(body)
+        return body
+
+
+class TestToolsThreading:
+    SAMPLE_TOOLS = [
+        {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "run a shell command",
+                "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}},
+            },
+        }
+    ]
+
+    def test_tokenize_chat_passes_tools_through(self):
+        tok = _RecordingTokenizer()
+        chat = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hi"},
+        ]
+        mft.tokenize_chat(tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS)
+        assert len(tok.calls) == 1
+        assert tok.calls[0]["tools"] is self.SAMPLE_TOOLS
+
+    def test_tokenize_chat_omits_tools_when_none(self):
+        tok = _RecordingTokenizer()
+        mft.tokenize_chat(
+            tok,
+            [{"role": "user", "content": "hi"}],
+            add_generation_prompt=True,
+        )
+        assert len(tok.calls) == 1
+        # No tools were passed in, so apply_chat_template should NOT receive
+        # a tools kwarg (defaults to None on the recorder).
+        assert tok.calls[0]["tools"] is None
+
+    def test_build_chunks_text_only_threads_tools(self):
+        tok = _RecordingTokenizer()
+        chat = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hi"},
+        ]
+        chunks, total = mft.build_model_input_chunks(
+            tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS
+        )
+        # Exactly one apply_chat_template call for the text-only fast path.
+        assert len(tok.calls) == 1
+        assert tok.calls[0]["tools"] is self.SAMPLE_TOOLS
+        # Output is a single EncodedTextChunk (fast path).
+        assert len(chunks) == 1
+        assert hasattr(chunks[0], "tokens")
+        assert total == len(chunks[0].tokens)
+
+    def test_build_chunks_multimodal_threads_tools(self):
+        tok = _RecordingTokenizer()
+        url = _make_data_url("png")
+        chat = [
+            {"role": "system", "content": "sys"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "look"},
+                    {"type": "image_url", "image_url": {"url": url}},
+                ],
+            },
+        ]
+        chunks, _total = mft.build_model_input_chunks(
+            tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS
+        )
+        # Multimodal slow path: still exactly one apply_chat_template call
+        # (the per-image splicing happens in plain Python after rendering).
+        assert len(tok.calls) == 1
+        assert tok.calls[0]["tools"] is self.SAMPLE_TOOLS
+        # tools= should NOT cause images to vanish: chunk stream still has one.
+        image_chunks = [c for c in chunks if hasattr(c, "data")]
+        assert len(image_chunks) == 1
+
+    def test_build_chunks_no_tools_does_not_pass_tools(self):
+        tok = _RecordingTokenizer()
+        mft.build_model_input_chunks(
+            tok,
+            [{"role": "user", "content": "hi"}],
+            add_generation_prompt=True,
+        )
+        assert len(tok.calls) == 1
+        assert tok.calls[0]["tools"] is None
+
+    def test_tools_rendered_exactly_once_across_many_messages(self):
+        """The whole point of `tools=`: tool block appears once in the prompt
+        regardless of message count. The recording tokenizer prepends a
+        `<tool_declare>` block once per template invocation; we assert it
+        doesn't repeat per assistant turn."""
+        tok = _RecordingTokenizer()
+        # Long multi-turn chat (5 assistant turns + obs).
+        chat = [{"role": "system", "content": "sys"}, {"role": "user", "content": "task"}]
+        for i in range(5):
+            chat.append({"role": "assistant", "content": f"<tool_call>step {i}</tool_call>"})
+            chat.append({"role": "user", "content": f"obs {i}"})
+        mft.tokenize_chat(tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS)
+        # One apply_chat_template call; tools rendered once at the top.
+        assert len(tok.calls) == 1
+        # Inspect what the recorder built as the body: <tool_declare> should
+        # appear exactly once even with 5 assistant turns.
+        body = tok.apply_chat_template(
+            chat, add_generation_prompt=False, tokenize=False, tools=self.SAMPLE_TOOLS
+        )
+        assert body.count("<tool_declare>") == 1
+
     def test_undecodable_image_falls_back_to_text(self, fake_tokenizer):
         chat = [
             {"role": "user", "content": [
