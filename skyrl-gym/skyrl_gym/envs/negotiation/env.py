@@ -265,6 +265,12 @@ class NegotiationEnv(BaseTextEnv):
         self.opponent_no_think: bool = bool(_cfg_get(env_config, "opponent_no_think", True))
         self.opponent_max_retries: int = int(_cfg_get(env_config, "opponent_max_retries", 2))
         self.openrouter_api_key: str = os.environ.get("OPENROUTER_API_KEY", "")
+        # Adversary cost tracking: USD per 1M tokens. Defaults to 0 (tokens still
+        # logged, cost reads 0) so an unpriced model never reports a bogus figure.
+        # Set these to the active opponent's pricing to get a $ estimate in wandb
+        # (e.g. gpt-5.5 = 5.0 in / 30.0 out; gpt-4o-mini = 0.15 in / 0.60 out).
+        self.opponent_price_in: float = float(_cfg_get(env_config, "opponent_price_per_mtok_in", 0.0))
+        self.opponent_price_out: float = float(_cfg_get(env_config, "opponent_price_per_mtok_out", 0.0))
 
         # --- Opponent system prompt: reuse the one baked into the dataset if
         # present (guarantees it matches what was shown to the policy), else
@@ -292,6 +298,11 @@ class NegotiationEnv(BaseTextEnv):
         self.outcome: Optional[game.Outcome] = None
         self.final_reward: float = 0.0
         self.opponent_errors: int = 0
+        # Cumulative adversary (opponent LLM) token usage across the episode, summed
+        # over every _opponent_reply() call. Logged per-episode in get_metrics() and
+        # summed per training step in aggregate_metrics() for cost tracking.
+        self.opponent_prompt_tokens: int = 0
+        self.opponent_completion_tokens: int = 0
         self.transcript: List[Dict[str, str]] = []
 
     # ------------------------------------------------------------------ init
@@ -334,6 +345,7 @@ class NegotiationEnv(BaseTextEnv):
         for attempt in range(self.opponent_max_retries + 1):
             try:
                 resp = await asyncio.wait_for(acompletion(**kwargs), timeout=self.opponent_timeout)
+                self._record_opponent_usage(resp)
                 choices = getattr(resp, "choices", None)
                 if not choices:
                     return ""
@@ -345,6 +357,29 @@ class NegotiationEnv(BaseTextEnv):
                     return ""
                 await asyncio.sleep(1.0 * (attempt + 1))
         return ""
+
+    def _record_opponent_usage(self, resp: Any) -> None:
+        """Accumulate adversary token usage from a litellm response.
+
+        litellm normalizes provider usage into ``resp.usage`` with
+        ``prompt_tokens`` / ``completion_tokens``. Best-effort: any missing or
+        malformed usage is silently skipped so it can never break a rollout.
+        """
+        try:
+            usage = getattr(resp, "usage", None)
+            if usage is None and isinstance(resp, dict):
+                usage = resp.get("usage")
+            if usage is None:
+                return
+            prompt = getattr(usage, "prompt_tokens", None)
+            completion = getattr(usage, "completion_tokens", None)
+            if prompt is None and isinstance(usage, dict):
+                prompt = usage.get("prompt_tokens")
+                completion = usage.get("completion_tokens")
+            self.opponent_prompt_tokens += int(prompt or 0)
+            self.opponent_completion_tokens += int(completion or 0)
+        except Exception:  # noqa: BLE001 — usage accounting must never break a rollout
+            pass
 
     # ------------------------------------------------------------------ step
     async def step_async(self, action: str) -> BaseTextEnvStepOutput:
@@ -519,10 +554,29 @@ class NegotiationEnv(BaseTextEnv):
             "empty_think_msgs": float(self.empty_think_msgs),
             "value_leak_msgs": float(self.value_leak_msgs),
         }
+        # Adversary (opponent LLM) token usage + cost for this episode. Aggregated
+        # to mean/episode by default, plus per-step totals in aggregate_metrics().
+        opp_total = self.opponent_prompt_tokens + self.opponent_completion_tokens
+        opp_cost = (
+            self.opponent_prompt_tokens / 1e6 * self.opponent_price_in
+            + self.opponent_completion_tokens / 1e6 * self.opponent_price_out
+        )
+        opponent_metrics = {
+            "opponent_prompt_tokens": float(self.opponent_prompt_tokens),
+            "opponent_completion_tokens": float(self.opponent_completion_tokens),
+            "opponent_total_tokens": float(opp_total),
+            "opponent_cost_usd": float(opp_cost),
+        }
         out = self.outcome
         if out is None:
-            return {"resolved": 0.0, "num_turns": float(self.turns), **think_metrics}
+            return {
+                "resolved": 0.0,
+                "num_turns": float(self.turns),
+                **opponent_metrics,
+                **think_metrics,
+            }
         return {
+            **opponent_metrics,
             "final_reward": self.final_reward,
             "agreed": 1.0 if out.agreed else 0.0,
             "no_deal": 1.0 if out.reason == "no_deal" else 0.0,
@@ -537,6 +591,28 @@ class NegotiationEnv(BaseTextEnv):
             "deception_msgs": float(self.deception_msgs),
             **think_metrics,
         }
+
+    @staticmethod
+    def aggregate_metrics(metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Mean-aggregate all numeric metrics (default), then add per-step SUM totals
+        for adversary token usage + cost.
+
+        The means give per-episode averages; the ``*_sum`` keys give the actual
+        per-training-step cost driver (summed over every episode in the batch), so a
+        wandb cumulative/running-sum over steps yields total run cost.
+        """
+        from skyrl_gym.metrics import default_aggregate_metrics
+
+        agg = default_aggregate_metrics(metrics)
+        for key in (
+            "opponent_prompt_tokens",
+            "opponent_completion_tokens",
+            "opponent_total_tokens",
+            "opponent_cost_usd",
+        ):
+            total = sum(float(m.get(key, 0.0)) for m in metrics)
+            agg[f"{key}_sum"] = total
+        return agg
 
     # ----------------------------------------------------------------- close
     def close(self) -> None:

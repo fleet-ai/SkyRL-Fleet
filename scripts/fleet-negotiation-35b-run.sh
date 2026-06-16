@@ -51,6 +51,20 @@ export LENGTH_PENALTY_FN="${LENGTH_PENALTY_FN:-power}"  # power (sqrt at alpha=0
 export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-1500}"  # calibrated to operating length (~healthy episode tokens)
 export ENABLE_THINKING="${ENABLE_THINKING:-false}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
+# Adversary cost tracking (logged to wandb as environment/opponent_*tokens[_sum] and
+# environment/opponent_cost_usd[_sum]). USD per 1M tokens for the active opponent.
+# Defaults to gpt-5.5 pricing; set to 0 to log tokens only, or to gpt-4o-mini
+# (0.15 / 0.60) when reverting the adversary.
+export OPPONENT_PRICE_IN="${OPPONENT_PRICE_IN:-5.0}"
+export OPPONENT_PRICE_OUT="${OPPONENT_PRICE_OUT:-30.0}"
+# Self-hosted opponent endpoint (cost lever vs OpenRouter GPT-4o-mini). When
+# OPPONENT_BASE_URL is set, the env drives the "them" side against an OpenAI-
+# compatible vLLM server (see scripts/fleet-negotiation-opponent-serve.sh +
+# tasks/negotiation-opponent-serve-35b-1node.yaml) instead of OpenRouter. Pair it
+# with a litellm "openai/<served-name>" model string, e.g.:
+#   OPPONENT_MODEL=openai/qwen35-opponent \
+#   OPPONENT_BASE_URL=http://<host-node-ip>:6479/v1
+export OPPONENT_BASE_URL="${OPPONENT_BASE_URL:-}"
 export MAX_TURNS="${MAX_TURNS:-6}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"  # thinking arm needs room (>=4096); see grad-explosion log
@@ -88,7 +102,15 @@ export S3_CHECKPOINT_BUCKET="${S3_CHECKPOINT_BUCKET:-skyrl-checkpoints}"
 export S3_TRAJECTORY_BUCKET="${S3_TRAJECTORY_BUCKET:-skyrl-trajectories}"
 
 : "${WANDB_API_KEY:?Set WANDB_API_KEY before running}"
-: "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY before running (powers the opponent LLM via litellm/OpenRouter)}"
+if [ -n "$OPPONENT_BASE_URL" ]; then
+  # Self-hosted opponent endpoint: no OpenRouter needed. litellm's openai provider
+  # still requires *some* api key in the request header; the vLLM server ignores it
+  # unless launched with --api-key (OPPONENT_API_KEY), so a placeholder is fine.
+  export OPENAI_API_KEY="${OPENAI_API_KEY:-EMPTY}"
+  echo "=== Opponent: self-hosted vLLM at $OPPONENT_BASE_URL (model=$OPPONENT_MODEL); OPENROUTER_API_KEY not required ==="
+else
+  : "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY before running (powers the opponent LLM via litellm/OpenRouter), or set OPPONENT_BASE_URL to use a self-hosted endpoint}"
+fi
 
 # Qwen3.5 GDN models can hang silently in the FlashInfer GDN JIT on GCP/RunPod
 # (see fleet-35b-run.sh); force the triton GDN prefill backend.
@@ -217,6 +239,14 @@ TUNE_ARGS=()
 [ -n "${ENTROPY_COEF_FINAL:-}" ]  && TUNE_ARGS+=("trainer.algorithm.entropy_loss_coef=$ENTROPY_COEF_FINAL")
 [ -n "${MAX_GRAD_NORM_FINAL:-}" ] && TUNE_ARGS+=("trainer.policy.optimizer_config.max_grad_norm=$MAX_GRAD_NORM_FINAL")
 
+# Opponent endpoint override: when OPPONENT_BASE_URL is set, route the env-played
+# opponent at a self-hosted OpenAI-compatible vLLM server (the hosted 35B endpoint)
+# instead of OpenRouter. Unset -> the env default (OpenRouter) is used unchanged.
+OPPONENT_ARGS=()
+if [ -n "$OPPONENT_BASE_URL" ]; then
+  OPPONENT_ARGS=("environment.skyrl_gym.negotiation.opponent_base_url=$OPPONENT_BASE_URL")
+fi
+
 RUN_NAME="fleet_${MODEL_TAG}_35b_negotiation_${NEGOTIATION_DATASET}_${REWARD_MODE}_${RUN_ID:-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')}"
 
 bash scripts/fleet-common-run.sh \
@@ -232,6 +262,8 @@ bash scripts/fleet-common-run.sh \
   environment.skyrl_gym.negotiation.deception_penalty=$DECEPTION_PENALTY \
   environment.skyrl_gym.negotiation.protocol=$NEGOTIATION_PROTOCOL \
   environment.skyrl_gym.negotiation.opponent_model=$OPPONENT_MODEL \
+  environment.skyrl_gym.negotiation.opponent_price_per_mtok_in=$OPPONENT_PRICE_IN \
+  environment.skyrl_gym.negotiation.opponent_price_per_mtok_out=$OPPONENT_PRICE_OUT \
   "environment.skyrl_gym.negotiation.transcript_dir=${TRANSCRIPT_DIR:+$TRANSCRIPT_DIR/$RUN_NAME}" \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.policy.model.path="$MODEL_PATH" \
@@ -289,4 +321,5 @@ bash scripts/fleet-common-run.sh \
   ${THINK_ARGS[@]+"${THINK_ARGS[@]}"} \
   ${PARETO_ARGS[@]+"${PARETO_ARGS[@]}"} \
   ${TUNE_ARGS[@]+"${TUNE_ARGS[@]}"} \
+  ${OPPONENT_ARGS[@]+"${OPPONENT_ARGS[@]}"} \
   "$@"
