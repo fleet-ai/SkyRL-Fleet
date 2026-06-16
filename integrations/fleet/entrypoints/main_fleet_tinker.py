@@ -936,6 +936,14 @@ async def collect_batch_rollouts(
                     top_p=top_p,
                     stop_sequences=stop_sequences,
                 )
+                # Per-rollout completion marker so operators can see in-flight
+                # success rate before the step-end pass@k flush.
+                logger.info(
+                    f"rollout done: task={rollout.task_key} env={rollout.env_key} "
+                    f"reward={rollout.reward} turns={rollout.turns}/{max_turns} "
+                    f"tool_calls={rollout.tool_calls} tool_errors={rollout.tool_errors} "
+                    f"stop={rollout.stop_reason} dur={rollout.duration:.1f}s"
+                )
                 return index, rollout
             except Exception as e:
                 logger.error(f"Failed to collect rollout for {task_config.get('task_key')}: {e}")
