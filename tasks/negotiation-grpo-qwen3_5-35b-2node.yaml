@@ -66,6 +66,9 @@ envs:
   # Drop the in-distribution dnd validation set from in-loop eval (it tracks training
   # reward); run ONLY the held-out transfer set. Halves eval cost vs the GPT-5.5 opponent.
   EVAL_DND: "false"
+  # In-loop exploitation probe vs a scripted conceder ($0, local). Logged as eval/probe/*.
+  PROBE_EVAL: "true"
+  PROBE_N: "16"
   MAX_INPUT_LENGTH: 8192
   MAX_GENERATE_LENGTH: 8192
   NUM_EPOCHS: 20

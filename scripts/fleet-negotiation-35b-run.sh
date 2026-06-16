@@ -65,6 +65,11 @@ export OPPONENT_PRICE_OUT="${OPPONENT_PRICE_OUT:-30.0}"
 #   OPPONENT_MODEL=openai/qwen35-opponent \
 #   OPPONENT_BASE_URL=http://<host-node-ip>:6479/v1
 export OPPONENT_BASE_URL="${OPPONENT_BASE_URL:-}"
+# In-loop exploitation probe (run_probe.py): plays the live policy vs a scripted
+# Python conceder ($0, no external API) every eval cycle. Logged as eval/probe/*.
+export PROBE_EVAL="${PROBE_EVAL:-true}"
+export PROBE_N="${PROBE_N:-16}"
+export PROBE_DATASET="${PROBE_DATASET:-dnd}"
 export MAX_TURNS="${MAX_TURNS:-6}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"  # thinking arm needs room (>=4096); see grad-explosion log
@@ -269,6 +274,7 @@ bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit --no-pytorch-alloc-conf \
   --nccl-heartbeat 1800 \
+  --entrypoint integrations.fleet.entrypoints.main_negotiation \
   --env-class negotiation \
   --data-dir-name negotiation -- \
   "data.train_data=['${DATA_DIR}/train.parquet']" \
@@ -315,6 +321,8 @@ bash scripts/fleet-common-run.sh \
   trainer.algorithm.zero_variance_filter=true \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \
+  generator.inference_engine.enable_http_endpoint=true \
+  generator.inference_engine.served_model_name=policy \
   generator.run_engines_locally=true \
   generator.weight_sync_backend=nccl \
   generator.async_engine=true \
