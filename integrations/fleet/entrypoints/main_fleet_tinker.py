@@ -496,13 +496,8 @@ def tokenize_chat(
 # legitimate tokenizer would produce.
 _IMAGE_PLACEHOLDER = "IMAGE"
 
-# Local estimate for image token cost in the rollout's `max_input_length`
-# bookkeeping. The Tinker server computes the AUTHORITATIVE per-image count
-# from the raw bytes on its side, so we do NOT pass `expected_tokens=` on
-# ImageChunk — if our estimate disagrees with the server's tokenization
-# (e.g. Kimi-K2.6 returned 1372 tokens for a 1366x768 screenshot vs our 1024
-# guess), Tinker rejects the request with `BadRequestError: Expected N
-# tokens, got M from image`. This estimate is advisory only.
+# Advisory only — used in our prompt_len bookkeeping; do NOT pass to ImageChunk
+# (Tinker validates against its own count and 422s on mismatch).
 _DEFAULT_IMAGE_TOKENS = 1500
 
 def _decode_data_url(url: str) -> Optional[Tuple[bytes, str]]:
@@ -661,11 +656,6 @@ def build_model_input_chunks(
                 total += len(seg_tokens)
         if i < len(all_images):
             img_bytes, fmt = all_images[i]
-            # NOTE: do NOT pass expected_tokens — Tinker validates the value
-            # against the server-side tokenization and rejects on mismatch
-            # (BadRequestError: "Expected N tokens, got M from image"). The
-            # local _DEFAULT_IMAGE_TOKENS estimate stays in the running total
-            # for `max_input_length` bookkeeping only.
             chunks.append(
                 types.ImageChunk(
                     data=img_bytes,
@@ -747,31 +737,16 @@ async def collect_fleet_rollout(
         total_tokens = 0
 
         async def _force_verifier(reason: str) -> None:
-            """Final-state escape hatch: trigger the verifier even when the
-            rollout has to exit before issuing a real tool call (length cap,
-            sample timeout, empty response). Without this, every length/timeout
-            exit silently bypasses the verifier and the rollout returns
-            reward=0 by default even when the env state would have scored.
-
-            We call env.step_async("<done>") which lands in the env's
-            agent-done-without-tool-call branch and sends {"done": True} to
-            OpenEnv → _compute_reward() runs → reward reflects current state.
-            Wrapped in best-effort; verifier failures fall back to 0.0.
-            """
+            # Route length/timeout exits through env.step_async("<done>") so
+            # OpenEnv runs _compute_reward; otherwise these paths bypass it.
             nonlocal total_reward, done
             try:
-                final_out = await asyncio.wait_for(
-                    _env_step(env, "<done>"), ENV_STEP_TIMEOUT_S
-                )
-                total_reward = final_out.get("reward", 0.0) or 0.0
+                out = await asyncio.wait_for(_env_step(env, "<done>"), ENV_STEP_TIMEOUT_S)
+                total_reward = out.get("reward", 0.0) or 0.0
                 done = True
-                logger.info(
-                    f"[{task_key}] Forced verifier on {reason} exit: reward={total_reward}"
-                )
+                logger.info(f"[{task_key}] verifier forced on {reason}: reward={total_reward}")
             except Exception as e:
-                logger.warning(
-                    f"[{task_key}] Forced verifier on {reason} exit failed: {e}"
-                )
+                logger.warning(f"[{task_key}] verifier force on {reason} failed: {e}")
 
         while not done and env.turns < max_turns:
             turn_num = env.turns + 1  # 1-indexed for logging
@@ -1149,30 +1124,17 @@ async def main(
     if eval_dataset:
         logger.info(f"Loaded {len(eval_dataset)} eval samples")
 
-    # Fleet trace job: groups every rollout's full chat_history + reward under
-    # one job_id in the Fleet UI so the user can inspect step-0 baseline traces
-    # and post-train deltas side by side. Mirrors SkyRL's trainer.py pattern
-    # (FleetEnv.set_trace_config before eval, clear in finally). Setting the
-    # class-level config on FleetTaskEnv makes its existing step_async upload
-    # path fire on every episode_done — no per-rollout plumbing needed.
+    # Fleet trace job — env.step_async uploads on episode_done once set_trace_config is set.
     fleet_api_key = os.environ.get("FLEET_API_KEY")
     if fleet_api_key:
         try:
             from envs.fleet_env.trace import create_trace_job
-
             trace_job_name = f"tinker_{wandb_name}_{datetime.now().strftime('%m%d_%H%M')}"
             trace_job_id = await create_trace_job(fleet_api_key, trace_job_name)
             FleetTaskEnv.set_trace_config(job_id=trace_job_id, model=model_name)
-            logger.info(
-                f"Created Fleet trace job: {trace_job_id} (name={trace_job_name}). "
-                "Every rollout's chat_history + reward will be uploaded to Fleet UI on episode_done."
-            )
+            logger.info(f"Fleet trace job: {trace_job_id} ({trace_job_name})")
         except Exception as e:
-            logger.warning(
-                f"Failed to create Fleet trace job — traces will not be uploaded: {e}"
-            )
-    else:
-        logger.info("FLEET_API_KEY unset; skipping Fleet trace job creation.")
+            logger.warning(f"Fleet trace job creation failed: {e}")
 
     # Setup Tinker
     tinker_url = os.environ.get("TINKER_API_URL")

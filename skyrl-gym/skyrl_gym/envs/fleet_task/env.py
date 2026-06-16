@@ -42,17 +42,10 @@ logger = logging.getLogger(__name__)
 # Global task cache to avoid reloading JSON for each env instance
 _TASK_CACHE: Dict[str, Dict[str, Any]] = {}
 
-# Always-on tool-output truncation cap (chars). The model's max_input_length is
-# usually 128K tokens (~512K chars). Capping any single tool output at 16K chars
-# (~4K tokens) leaves room for the growing context across 50 turns. A single
-# query_data_lake returning 5.8M chars (observed in TU bi-dashboard on
-# 2026-06-16) crashes the next turn's prompt past the cap. Caller can opt in
-# to the full-fidelity context_manager for search/view tools if needed.
+# Truncate any single tool output past this many chars (caught a 5.8M-char query_data_lake return).
 MAX_TOOL_OUTPUT_CHARS = 16_000
 
-# Wrap-up nudge: when remaining turns drop to or below this threshold, the
-# obs gets an appended reminder that the model should emit <done> with a
-# final answer or risk losing reward when the verifier runs on max_turns.
+# Append a <done> reminder to obs when remaining turns drop to this threshold.
 WRAP_UP_NUDGE_THRESHOLD = 5
 
 
@@ -632,15 +625,8 @@ class FleetTaskEnv(BaseTextEnv):
         if tool_call and getattr(self, "screen_width", None):
             self._convert_qwen_coordinates(tool_call)
 
-        # Safety net for the no-tool-call-on-last-turn case. The verifier ONLY
-        # runs when OpenEnv's done flag is set, which happens when (a) the
-        # model emits <done> [agent_done=True], (b) OpenEnv's internal
-        # max_steps_reached fires (only counted on actual step_async calls,
-        # i.e. when the model issued a tool call), or (c) we explicitly send
-        # done=True. Without this flag, a model that runs out of SkyRL turns
-        # while NOT making a tool call on its final turn leaves OpenEnv's
-        # step_count one short and the verifier never runs → reward stays 0
-        # regardless of in-env progress. force_done closes that gap.
+        # Send done=True at max_turns even without <done> — otherwise OpenEnv
+        # never trips _done and the verifier never runs.
         force_done = agent_done or max_turns_reached
 
         # Handle context management tools locally (no MCP call)
@@ -673,12 +659,7 @@ class FleetTaskEnv(BaseTextEnv):
                 if "tool_error" in info:
                     error = info["tool_error"]
 
-                # Always-on tool-output truncation. Without this, a single
-                # giant return (TU saw a 5.8M-token query_data_lake result on
-                # 2026-06-16) explodes the next turn's prompt past
-                # max_input_length and kills the rollout. Cap at
-                # MAX_TOOL_OUTPUT_CHARS (~16K chars ≈ 4K tokens) with a clear
-                # marker so the model sees that content was elided.
+                # Truncate huge string tool_results before they blow up the next prompt.
                 if tool_result and isinstance(tool_result, str):
                     if self.context_manager:
                         tool_result = self.context_manager.truncate_output(tool_result)
@@ -686,16 +667,13 @@ class FleetTaskEnv(BaseTextEnv):
                         elided = len(tool_result) - MAX_TOOL_OUTPUT_CHARS
                         tool_result = (
                             tool_result[:MAX_TOOL_OUTPUT_CHARS]
-                            + f"\n\n[TRUNCATED — {elided} chars elided. "
-                            "If you need more, query a narrower slice.]"
+                            + f"\n\n[TRUNCATED — {elided} chars elided.]"
                         )
             except Exception as e:
                 mcp_time = time.time() - mcp_start
                 error = str(e)
         elif force_done and self.openenv_task_env:
-            # Agent signaled <done> without a tool call, OR ran out of turns
-            # without making a final tool call. Either way we need the
-            # verifier to run, so send done=True with no tool.
+            # <done> without a tool call, or max_turns hit with no tool call — still need the verifier.
             openenv_action = {"done": True}
             try:
                 mcp_start = time.time()
@@ -766,23 +744,12 @@ class FleetTaskEnv(BaseTextEnv):
                 },
             )
 
-        # Helper for the wrap-up nudge text. Same string in the text-only and
-        # multimodal branches so behavior is uniform across modalities.
-        # The verifier only runs when the env reaches a done state. The
-        # reliable way to trigger it is for the model to emit <done> with its
-        # final answer. (Without <done> AND without a tool call on the last
-        # turn, OpenEnv never even sees the step, so the verifier never runs
-        # and reward stays at 0.)
         def _wrap_up_nudge() -> Optional[str]:
             remaining = self.max_turns - self.turns
             if 0 < remaining <= WRAP_UP_NUDGE_THRESHOLD:
                 return (
-                    f"\n\n[{remaining} turn(s) left. The verifier ONLY runs "
-                    "if you emit <done>. If the task is complete, output your "
-                    "final answer and then emit <done> on this turn. If you "
-                    "run out of turns without emitting <done> and without a "
-                    "tool call, the verifier never runs and you get reward 0 "
-                    "regardless of your progress.]"
+                    f"\n\n[{remaining} turn(s) left. Emit <done> with your "
+                    "final answer NOW or the verifier may not run and you get reward 0.]"
                 )
             return None
 
@@ -794,10 +761,7 @@ class FleetTaskEnv(BaseTextEnv):
         elif tool_result:
             content = tool_result_to_message_content(tool_result)
             if isinstance(content, list):
-                # Multimodal content blocks — pass through to the chat template
-                # unchanged so VL models render image_url / audio / etc. Append
-                # the wrap-up nudge as an extra text block at the END so the
-                # VL model sees the reminder after the visual content.
+                # Multimodal obs — pass blocks through; append nudge as trailing text block.
                 nudge = _wrap_up_nudge()
                 if nudge:
                     content = list(content) + [{"type": "text", "text": nudge.lstrip("\n")}]
@@ -831,9 +795,6 @@ class FleetTaskEnv(BaseTextEnv):
         else:
             obs_content = "Action executed."
 
-        # Wrap-up nudge (text-only branch). See _wrap_up_nudge() above for the
-        # rationale and gsm8k precedent. Same string is appended in the
-        # multimodal branch on the early-return path.
         nudge = _wrap_up_nudge()
         if nudge:
             if not isinstance(obs_content, str):
