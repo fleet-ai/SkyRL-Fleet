@@ -813,6 +813,26 @@ class RayPPOTrainer:
                     [0] * len(mask) if i not in kept_indices_set else mask
                     for i, mask in enumerate(generator_output["loss_masks"])
                 ]
+                # Log how many GROUPS (prompts/uids) had zero reward variance and were
+                # therefore loss-masked out (no learning signal — e.g. all samples failed
+                # or all hit the same reward). High values mean wasted rollout compute.
+                num_groups = len(set(uids))
+                num_kept_groups = len({uids[i] for i in kept_indices_set})
+                num_filtered_groups = num_groups - num_kept_groups
+                self.all_metrics.update(
+                    {
+                        "reward/zero_variance_filtered_frac": (
+                            num_filtered_groups / num_groups if num_groups else 0.0
+                        ),
+                        "reward/zero_variance_filtered_groups": float(num_filtered_groups),
+                        "reward/num_groups": float(num_groups),
+                    }
+                )
+                logger.info(
+                    f"reward/zero_variance_filtered_frac: "
+                    f"{num_filtered_groups / num_groups if num_groups else 0.0:.4f} "
+                    f"({num_filtered_groups}/{num_groups} groups)"
+                )
             # Response-level rewards: rewards is List[float], convert to per-token rewards
             for reward, response in zip(rewards, responses):
                 per_token_reward = [0.0] * len(response)
