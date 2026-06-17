@@ -13,6 +13,7 @@ workdir: .
 envs:
   NARC_OUT_DIR: "/workspace/narc"
   NARC_PROFILE: "correctness"
+  NARC_TASKS: "8"
 
 setup: |
   if ! command -v uv >/dev/null 2>&1; then
@@ -27,10 +28,11 @@ run: |
   export PATH="$HOME/.local/bin:$PATH"
   JOB_ID="${SLURM_JOB_ID:-manual-$(date +%s)}"
   OUT_DIR="${NARC_OUT_DIR}/${JOB_ID}"
+  EXPECTED_RESULTS="${NARC_EXPECTED_RESULTS:-${SLURM_NTASKS:-${NARC_TASKS}}}"
   mkdir -p "${OUT_DIR}"
 
   set +e
-  srun --ntasks-per-node=8 --gpus-per-task=1 --gpu-bind=single:1 \
+  srun --ntasks-per-node="${NARC_TASKS}" --gpus-per-task=1 --gpu-bind=single:1 \
     uv run --project tools/narc --no-sync narc run-local \
       --profile "${NARC_PROFILE}" \
       --device cuda \
@@ -38,7 +40,9 @@ run: |
       --out-dir "${OUT_DIR}"
   SRUN_EXIT=$?
 
-  uv run --project tools/narc --no-sync narc aggregate "${OUT_DIR}" --fail-on-fail
+  uv run --project tools/narc --no-sync narc aggregate "${OUT_DIR}" \
+    --expected-results "${EXPECTED_RESULTS}" \
+    --fail-on-fail
   AGGREGATE_EXIT=$?
   set -e
 

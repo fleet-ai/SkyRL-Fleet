@@ -224,10 +224,34 @@ def duplicate_accelerator_failures(results: list[dict[str, Any]]) -> list[dict[s
     return failures
 
 
+def result_count_failure(
+    loaded_count: int,
+    expected_results: int | None,
+) -> dict[str, Any] | None:
+    if expected_results is None or loaded_count == expected_results:
+        return None
+    return {
+        "expected_results": expected_results,
+        "loaded_results": loaded_count,
+        "message": (
+            f"expected {expected_results} result file(s), "
+            f"loaded {loaded_count}"
+        ),
+    }
+
+
+def non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be at least 0")
+    return parsed
+
+
 def aggregate_path(
     path: Path,
     *,
     exclude_paths: set[Path] | None = None,
+    expected_results: int | None = None,
 ) -> dict[str, Any]:
     json_paths = iter_json_paths(path, exclude_paths=exclude_paths)
     loaded: list[dict[str, Any]] = []
@@ -290,9 +314,11 @@ def aggregate_path(
     ]
     hash_failures = output_hash_failures(loaded)
     accelerator_failures = duplicate_accelerator_failures(loaded)
+    count_failure = result_count_failure(len(loaded), expected_results)
 
     return {
         "input": str(path),
+        "expected_results": expected_results,
         "total_files": len(json_paths),
         "loaded_results": len(loaded),
         "load_errors": load_errors,
@@ -305,6 +331,7 @@ def aggregate_path(
         "output_hash_failures": hash_failures,
         "accelerator_ids": accelerator_ids,
         "duplicate_accelerator_failures": accelerator_failures,
+        "result_count_failure": count_failure,
         "devices": [device_fingerprint(result) for result in loaded],
         "performance": {
             "tokens_per_second": summarize_performance(performance_values(loaded)),
@@ -318,6 +345,7 @@ def aggregate_path(
             and not schema_errors
             and not hash_failures
             and not accelerator_failures
+            and count_failure is None
             and len(loaded) > 0
         ),
     }
@@ -326,7 +354,11 @@ def aggregate_path(
 def handle_aggregate(args: argparse.Namespace) -> None:
     output_path = Path(args.outfile).resolve() if args.outfile else None
     exclude_paths = {output_path} if output_path else None
-    summary = aggregate_path(Path(args.path), exclude_paths=exclude_paths)
+    summary = aggregate_path(
+        Path(args.path),
+        exclude_paths=exclude_paths,
+        expected_results=args.expected_results,
+    )
     if output_path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("w", encoding="utf-8") as outfile:
@@ -349,6 +381,11 @@ def generate_aggregate_parser() -> argparse.ArgumentParser:
         "--fail-on-fail",
         action="store_true",
         help="Exit non-zero when aggregation finds failures or load errors.",
+    )
+    parser.add_argument(
+        "--expected-results",
+        type=non_negative_int,
+        help="Fail unless exactly this many probe result files are loaded.",
     )
     parser.add_argument(
         "-o",

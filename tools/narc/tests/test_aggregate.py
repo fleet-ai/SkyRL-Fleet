@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from narc.aggregate import aggregate_path, generate_aggregate_parser, handle_aggregate
 
 
@@ -311,6 +313,41 @@ def test_aggregate_fails_on_unsupported_schema_version(tmp_path):
             "message": "unsupported schema_version 999; expected 1",
         }
     ]
+
+
+def test_aggregate_fails_when_expected_result_count_is_missing(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "slurm": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "result.json").write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path, expected_results=2)
+
+    assert not summary["pass"]
+    assert summary["expected_results"] == 2
+    assert summary["result_count_failure"] == {
+        "expected_results": 2,
+        "loaded_results": 1,
+        "message": "expected 2 result file(s), loaded 1",
+    }
+
+
+def test_aggregate_parser_rejects_negative_expected_results():
+    parser = generate_aggregate_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args([".", "--expected-results", "-1"])
 
 
 def test_aggregate_ignores_valid_non_object_json(tmp_path):
