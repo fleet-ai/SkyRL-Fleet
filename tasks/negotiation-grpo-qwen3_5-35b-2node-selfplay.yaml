@@ -1,0 +1,106 @@
+# Negotiation RLVR GRPO — Qwen3.5-35B-A3B (2-node) — SELF-PLAY arm
+#
+# research_logs/negotiation-35b-thinking-leakage-06-16.md item 3:
+#   "Try a run where it plays against itself (same policy). Maybe it will be less
+#    exploitative, but other behavior issues may emerge."
+#
+# This is the raw-baseline config (penalties OFF, thinking ON, gpt-5.5-equivalent
+# opponent) with ONE change: the env-played opponent is the LIVE training policy
+# itself. SELF_PLAY=true makes the run script route the opponent at the policy's own
+# HTTP endpoint (generator.inference_engine.http_endpoint, default 127.0.0.1:8000,
+# served_model_name=policy) via litellm's openai provider. The opponent therefore
+# uses the up-to-date policy weights every step — true self-play, $0 external API.
+#
+# 2 nodes x 8 H200 = 16 GPUs; TP=2 -> 8 inference engines. FSDP2 across all 16 GPUs.
+
+name: negotiation-grpo-qwen3-5-35b-2node-selfplay
+
+resources:
+  disk_size: 1000
+  memory: 800+
+  ordered:
+    # RunPod Slurm cluster (reserved H200s, no preemption)
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    # RunPod on-demand (API provisioned)
+    - accelerators: H200-SXM:8
+      cloud: runpod
+      ports: 6479
+    # GKE fallback
+    - accelerators: H200:8
+      cloud: kubernetes
+      network_tier: best
+      use_spot: true
+      ports: 6479
+    # GCP fallback
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 2
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""      # still used by the in-loop deception JUDGE (not the opponent)
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-35B-A3B"
+  MODEL_TAG: "qwen35"
+  MODALITY: "negotiation"
+  # --- Negotiation task knobs ---
+  NEGOTIATION_DATASET: "dnd"
+  NEGOTIATION_PROTOCOL: "single"
+  REWARD_MODE: "outcome"            # normalized self-score (you_norm = you_score/you_max)
+  PARETO_COEF: "0.5"
+  # SELF-PLAY: opponent = the live training policy itself. The run script sets
+  # OPPONENT_MODEL=openai/policy, OPPONENT_BASE_URL=http://127.0.0.1:8000/v1 and zeros
+  # the opponent pricing. OPPONENT_MODEL below is left as the gpt-5.5 default for
+  # provenance; SELF_PLAY=true overrides it at launch.
+  SELF_PLAY: "true"
+  OPPONENT_MODEL: "openrouter/openai/gpt-5.5"
+  OPPONENT_AGGRESSIVE: "false"
+  # Self-play opponent THINKS like the policy. Its <think> is stripped before it
+  # enters the opponent's history or the policy's observation (env._step_single), so
+  # reasoning never leaks/carries forward — it only shapes that turn's reply. The cap
+  # is left UNSET so the run script defaults it to MAX_GENERATE_LENGTH (8192 below) —
+  # same per-turn budget as the policy, so the opponent is never truncated mid-<think>.
+  OPPONENT_NO_THINK: "false"
+  # Clean baseline: NO behavior-shaping penalties (matches the raw baseline so self-play
+  # is directly comparable). Length penalty + invalid/format (-0.05) stay ON via the
+  # run-script defaults.
+  DECEPTION_PENALTY: "0"
+  ENABLE_THINKING: "true"
+  EMPTY_THINK_PENALTY: "0"
+  VALUE_LEAK_PENALTY: "0"
+  MAX_TURNS: 6
+  CASINO_EVAL: "36"
+  EVAL_DND: "false"
+  PROBE_EVAL: "true"
+  PROBE_N: "16"
+  JUDGE_EVAL: "true"
+  JUDGE_MODEL: "openai/gpt-4.1-mini"
+  MAX_INPUT_LENGTH: 8192
+  MAX_GENERATE_LENGTH: 8192
+  NUM_EPOCHS: 20
+  RUN_ID: ""
+  RESUME_RUN_NAME: ""
+  # 2 nodes x 8 H200; TP=2 -> 8 inference engines (4 per node).
+  NUM_INFERENCE_ENGINES: 8
+  # Optional: only used for S3 checkpoint upload (safe to leave blank).
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-negotiation-setup.sh \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-negotiation-35b-run.sh

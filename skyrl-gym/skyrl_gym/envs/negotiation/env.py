@@ -264,6 +264,11 @@ class NegotiationEnv(BaseTextEnv):
         self.opponent_timeout: float = float(_cfg_get(env_config, "opponent_timeout", 60.0))
         self.opponent_no_think: bool = bool(_cfg_get(env_config, "opponent_no_think", True))
         self.opponent_max_retries: int = int(_cfg_get(env_config, "opponent_max_retries", 2))
+        # Aggressive-adversary arm: when true, append ADVERSARY_AGGRESSIVE_BLOCK to the
+        # opponent's system prompt so it negotiates harder and exploits any value the
+        # policy leaks (see prompts.ADVERSARY_AGGRESSIVE_BLOCK + the run script's
+        # OPPONENT_AGGRESSIVE toggle). Shapes the opponent only; never a reward signal.
+        self.opponent_aggressive: bool = bool(_cfg_get(env_config, "opponent_aggressive", False))
         self.openrouter_api_key: str = os.environ.get("OPENROUTER_API_KEY", "")
         # Adversary cost tracking: USD per 1M tokens. Defaults to 0 (tokens still
         # logged, cost reads 0) so an unpriced model never reports a bogus figure.
@@ -281,6 +286,8 @@ class NegotiationEnv(BaseTextEnv):
                 self.item_names, self.counts, self.them_values,
                 self.max_turns, protocol=self.protocol,
             )
+        if self.opponent_aggressive:
+            them_sys = them_sys + "\n\n" + prompts.ADVERSARY_AGGRESSIVE_BLOCK
         if self.opponent_no_think:
             them_sys = them_sys + "\n\n" + NO_THINK_TOKEN
         # The opponent never speaks first ("them" waits for the opener).
@@ -435,10 +442,17 @@ class NegotiationEnv(BaseTextEnv):
         budget_exhausted = self.turns >= self.max_turns
 
         # 3. Opponent responds. It may accept the policy's pending offer or
-        #    counter with its own proposal.
-        them_text = await self._opponent_reply()
+        #    counter with its own proposal. A self-play (Qwen) opponent may emit a
+        #    <think> block: strip it from everything the opponent's history and the
+        #    policy ever see (its private reasoning must not leak to the policy, nor
+        #    carry forward in the opponent's own context — matching how the policy's
+        #    multi-turn context drops prior-turn thinking). The raw reply (with
+        #    <think>) is kept only in the inspection transcript. No-op for opponents
+        #    that don't emit <think> (e.g. the OpenRouter gpt opponents).
+        them_raw = await self._opponent_reply()
+        them_text = _strip_think(them_raw)
         self.them_history.append({"role": "assistant", "content": them_text})
-        self.transcript.append({"speaker": "them", "text": them_text})
+        self.transcript.append({"speaker": "them", "text": them_raw})
 
         if game.has_accept(them_text) and self.pending and self.pending["by"] == "you":
             self._finalize_single(self.pending)
@@ -487,9 +501,12 @@ class NegotiationEnv(BaseTextEnv):
 
         budget_exhausted = self.turns >= self.max_turns
 
-        them_text = await self._opponent_reply()
+        # Strip any opponent <think> before it enters history / the policy's view
+        # (see _step_single); keep the raw reply only in the inspection transcript.
+        them_raw = await self._opponent_reply()
+        them_text = _strip_think(them_raw)
         self.them_history.append({"role": "assistant", "content": them_text})
-        self.transcript.append({"speaker": "them", "text": them_text})
+        self.transcript.append({"speaker": "them", "text": them_raw})
         them_deal = game.parse_deal(them_text, self.item_names)
         if them_deal is not None:
             self.them_deal = them_deal
@@ -586,6 +603,7 @@ class NegotiationEnv(BaseTextEnv):
             "them_norm": out.them_norm,
             "joint_efficiency": out.joint_efficiency,
             "pareto": out.pareto_bonus,
+            "nash_product": out.nash_product,
             "num_turns": float(self.turns),
             "opponent_errors": float(self.opponent_errors),
             "deception_msgs": float(self.deception_msgs),
@@ -647,7 +665,9 @@ class NegotiationEnv(BaseTextEnv):
             "deception_msgs": self.deception_msgs,
             "metrics": self.get_metrics(),
             # "you" turns retain their raw <think>...</think> reasoning; this is the
-            # only persisted copy of the policy's thinking for this episode.
+            # only persisted copy of the policy's thinking for this episode. "them"
+            # turns likewise keep any opponent <think> (self-play) — it is stripped
+            # everywhere else (history, the policy's observation), see _step_single.
             "transcript": self.transcript,
         }
 

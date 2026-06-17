@@ -51,6 +51,12 @@ export LENGTH_PENALTY_COEF="${LENGTH_PENALTY_COEF:-0.2}"
 export LENGTH_PENALTY_ALPHA="${LENGTH_PENALTY_ALPHA:-0.5}"
 export LENGTH_PENALTY_FN="${LENGTH_PENALTY_FN:-power}"  # power (sqrt at alpha=0.5) | log
 export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-1500}"  # calibrated to operating length (~healthy episode tokens)
+# Log a think vs visible (non-think) token breakdown of the response_ids the LP measures, plus how
+# much of the penalty is attributable to thinking tokens. Logged to wandb as generate/thinking_tokens_mean,
+# generate/visible_tokens_mean, generate/thinking_token_frac, and (LP on) generate/length_penalty_{visible,thinking}_mean.
+# NOTE: with the qwen3_without_thinking template only the LAST turn's <think> survives in response_ids,
+# so this reflects exactly the thinking the LP penalizes (not total thinking across all turns).
+export LOG_THINKING_TOKEN_METRICS="${LOG_THINKING_TOKEN_METRICS:-false}"
 export ENABLE_THINKING="${ENABLE_THINKING:-true}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
 # Adversary cost tracking (logged to wandb as environment/opponent_*tokens[_sum] and
@@ -67,6 +73,26 @@ export OPPONENT_PRICE_OUT="${OPPONENT_PRICE_OUT:-30.0}"
 #   OPPONENT_MODEL=openai/qwen35-opponent \
 #   OPPONENT_BASE_URL=http://<host-node-ip>:6479/v1
 export OPPONENT_BASE_URL="${OPPONENT_BASE_URL:-}"
+# Aggressive-adversary arm (research_logs/negotiation-35b-thinking-leakage-06-16.md
+# item 4): append ADVERSARY_AGGRESSIVE_BLOCK to the opponent's system prompt so it
+# negotiates harder and actively exploits any preference/value the policy leaks
+# (punishes the over-disclosure pathology). Pair with a capable opponent (gpt-5.5).
+export OPPONENT_AGGRESSIVE="${OPPONENT_AGGRESSIVE:-false}"
+# Self-play arm (item 3): point the env-played opponent at the LIVE training policy's
+# own HTTP endpoint, so the policy negotiates against an up-to-date copy of ITSELF
+# (true self-play — the opponent weights advance every step). No external API/cost.
+# The trainer serves the policy at generator.inference_engine.http_endpoint_{host,port}
+# (default 127.0.0.1:8000, served_model_name=policy); we route the opponent there via
+# litellm's openai provider. Overrides OPPONENT_MODEL/BASE_URL/pricing when true.
+export SELF_PLAY="${SELF_PLAY:-false}"
+export SELF_PLAY_BASE_URL="${SELF_PLAY_BASE_URL:-http://127.0.0.1:8000/v1}"
+if [ "$SELF_PLAY" = "true" ]; then
+  OPPONENT_MODEL="openai/policy"
+  OPPONENT_BASE_URL="$SELF_PLAY_BASE_URL"
+  OPPONENT_PRICE_IN=0.0
+  OPPONENT_PRICE_OUT=0.0
+  echo "=== SELF-PLAY: opponent = live policy endpoint ($OPPONENT_BASE_URL, model=policy); no external opponent API ==="
+fi
 # In-loop exploitation probe (run_probe.py): plays the live policy vs a scripted
 # Python conceder ($0, no external API) every eval cycle. Logged as eval/probe/*.
 export PROBE_EVAL="${PROBE_EVAL:-true}"
@@ -83,6 +109,22 @@ export JUDGE_MODEL="${JUDGE_MODEL:-openai/gpt-4.1-mini}"
 export MAX_TURNS="${MAX_TURNS:-6}"
 export MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-8192}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-4096}"  # thinking arm needs room (>=4096); see grad-explosion log
+# Opponent thinking. By default the opponent runs /no_think with a small (512-tok)
+# cap. For SELF-PLAY the opponent IS the policy, so let it THINK like the policy:
+# its <think> is stripped before it enters the opponent's history or the policy's
+# observation (see env._step_single), so reasoning never leaks/carries forward — it
+# only shapes that turn's reply. The cap then matches the policy's own per-turn
+# budget (MAX_GENERATE_LENGTH) so the opponent is never truncated mid-<think> — true
+# symmetry with "self". This costs nothing in the common case (vLLM stops at EOS;
+# healthy turns are ~0.3-1.5k tok per the 06-15/06-12 logs), it's only headroom.
+# Both still env-overridable (an explicit OPPONENT_NO_THINK/OPPONENT_MAX_TOKENS wins).
+if [ "$SELF_PLAY" = "true" ]; then
+  export OPPONENT_NO_THINK="${OPPONENT_NO_THINK:-false}"
+  export OPPONENT_MAX_TOKENS="${OPPONENT_MAX_TOKENS:-$MAX_GENERATE_LENGTH}"
+else
+  export OPPONENT_NO_THINK="${OPPONENT_NO_THINK:-true}"
+  export OPPONENT_MAX_TOKENS="${OPPONENT_MAX_TOKENS:-512}"
+fi
 export NUM_EPOCHS="${NUM_EPOCHS:-20}"
 # Cap on validation scenarios (0 = use all 293 deduped dnd/val). Subsampled with a
 # fixed seed so eval cost (n_prompts * eval_n_samples_per_prompt full games vs the
@@ -294,6 +336,9 @@ bash scripts/fleet-common-run.sh \
   environment.skyrl_gym.negotiation.deception_penalty=$DECEPTION_PENALTY \
   environment.skyrl_gym.negotiation.protocol=$NEGOTIATION_PROTOCOL \
   environment.skyrl_gym.negotiation.opponent_model=$OPPONENT_MODEL \
+  environment.skyrl_gym.negotiation.opponent_no_think=$OPPONENT_NO_THINK \
+  environment.skyrl_gym.negotiation.opponent_max_tokens=$OPPONENT_MAX_TOKENS \
+  environment.skyrl_gym.negotiation.opponent_aggressive=$OPPONENT_AGGRESSIVE \
   environment.skyrl_gym.negotiation.opponent_price_per_mtok_in=$OPPONENT_PRICE_IN \
   environment.skyrl_gym.negotiation.opponent_price_per_mtok_out=$OPPONENT_PRICE_OUT \
   "environment.skyrl_gym.negotiation.transcript_dir=${TRANSCRIPT_DIR:+$TRANSCRIPT_DIR/$RUN_NAME}" \
@@ -308,15 +353,15 @@ bash scripts/fleet-common-run.sh \
   trainer.eval_before_train=true \
   trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
-  trainer.train_batch_size=16 \
+  trainer.train_batch_size=${TRAIN_BATCH_SIZE:-16} \
   trainer.use_hybrid_env_sampling=true \
   trainer.min_samples_per_env=1 \
-  trainer.policy_mini_batch_size=16 \
+  trainer.policy_mini_batch_size=${POLICY_MINI_BATCH_SIZE:-16} \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
   trainer.hf_save_interval=${HF_SAVE_INTERVAL:-30} \
-  trainer.max_ckpts_to_keep=2 \
+  trainer.max_ckpts_to_keep=${MAX_CKPTS_TO_KEEP:-2} \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
   generator.sampling_params.max_generate_length=$MAX_GENERATE_LENGTH \
@@ -326,6 +371,7 @@ bash scripts/fleet-common-run.sh \
   generator.length_penalty_alpha=$LENGTH_PENALTY_ALPHA \
   generator.length_penalty_fn=$LENGTH_PENALTY_FN \
   generator.length_penalty_ref=$LENGTH_PENALTY_REF \
+  generator.log_thinking_token_metrics=$LOG_THINKING_TOKEN_METRICS \
   trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.zero_variance_filter=true \

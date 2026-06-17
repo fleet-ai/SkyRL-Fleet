@@ -97,6 +97,8 @@ class Outcome:
     max_joint: int = 0             # best achievable joint score for this scenario
     joint_efficiency: float = 0.0  # joint_score / max_joint
     pareto_bonus: float = 0.0      # 1.0 if pareto_optimal else 0.0 (on agreement)
+    nash_product: float = 0.0      # you_norm * them_norm — win-win signal (high only
+                                   # when BOTH sides do well; a lopsided split scores ~0)
 
     def to_dict(self) -> Dict:
         return {k: v for k, v in self.__dict__.items()}
@@ -177,4 +179,7 @@ def evaluate(
         max_joint=max_joint,
         joint_efficiency=(joint / max_joint) if max_joint else 0.0,
         pareto_bonus=1.0 if is_pareto else 0.0,
+        nash_product=(
+            ((you_score / you_max) if you_max else 0.0) * ((them_score / them_max) if them_max else 0.0)
+        ),
     )

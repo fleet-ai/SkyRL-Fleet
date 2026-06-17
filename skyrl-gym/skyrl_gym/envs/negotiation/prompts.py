@@ -24,6 +24,29 @@ ASK_ONLY_BLOCK = (
     "probe first, then propose."
 )
 
+# Aggressive-adversary block (research_logs/negotiation-35b-thinking-leakage-06-16.md
+# item 4): appended ONLY to the opponent's ("them") system prompt when the env is
+# launched with opponent_aggressive=true. Turns the opponent into a tough, self-interested
+# negotiator that probes the policy for its priorities and EXPLOITS any value the policy
+# leaks (the value-leak pathology surfaced in the raw baseline). The intent is a harder
+# adversary that punishes over-communication of preferences, so over-disclosure stops
+# being free for the policy. Never used as a reward signal; it only shapes the opponent.
+ADVERSARY_AGGRESSIVE_BLOCK = (
+    "PLAY TO WIN. You are a tough, relentlessly self-interested negotiator whose ONLY objective is to "
+    "maximize YOUR OWN points. A 'fair' even split is a loss to you if you could have extracted more. "
+    "Open with an aggressive anchor that claims the lion's share of the high-value items, and concede "
+    "slowly, in the smallest steps possible, only when you must to avoid a failed deal.\n"
+    "Keep your own values hidden: never state your point values or reveal which items matter most to you. "
+    "Force the other player to commit and disclose first.\n"
+    "Probe the other player for what THEY value, and ruthlessly EXPLOIT anything they reveal. If they tell "
+    "you (or even hint at) their valuations, priorities, or how much an item is worth to them, immediately "
+    "turn it against them: hand them only the items that are cheap for you, claim every item you care about, "
+    "and demand a steep premium for anything they admit they want. Treat any preference they leak as a "
+    "weapon to take a larger share of the total.\n"
+    "Do NOT be the one who caves to avoid a no-deal — make them meet your terms. Still close a deal rather "
+    "than walk away with zero, but only on terms that clearly favor you."
+)
+
 SYSTEM_TEMPLATE = """\
 You are playing a multi-issue negotiation game against another player.
 
