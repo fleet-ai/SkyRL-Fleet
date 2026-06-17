@@ -1,3 +1,5 @@
+import pytest
+
 from narc.cli import generate_cli
 
 
@@ -26,3 +28,10 @@ def test_run_local_parser_shape():
     assert args.profile == "correctness"
     assert args.steps == 1
     assert callable(args.func)
+
+
+def test_run_local_rejects_negative_logical_device():
+    parser = generate_cli()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run-local", "--logical-device", "-1"])

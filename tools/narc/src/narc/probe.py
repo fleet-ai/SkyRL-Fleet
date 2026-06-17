@@ -71,6 +71,13 @@ def resolve_dtype(torch: Any, dtype: str, device: Any) -> Any:
     raise ValueError(f"unsupported dtype: {dtype}")
 
 
+def non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be at least 0")
+    return parsed
+
+
 def configure_torch(
     torch: Any,
     *,
@@ -527,7 +534,7 @@ def generate_run_local_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--logical-device",
-        type=int,
+        type=non_negative_int,
         default=0,
         help="Logical CUDA device index when --device=cuda.",
     )
