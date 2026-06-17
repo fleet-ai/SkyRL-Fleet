@@ -12,7 +12,12 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "profile": "correctness",
         "hostname": "node-a",
         "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
         "slurm": {"slurm_procid": "0", "slurm_localid": "0"},
+        "command": {},
+        "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
         "fingerprint": {
             "device": {
@@ -35,7 +40,12 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "profile": "correctness",
         "hostname": "node-b",
         "run_id": "run-b",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 101,
         "slurm": {"slurm_procid": "1", "slurm_localid": "1"},
+        "command": {},
+        "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
         "fingerprint": {
             "device": {
@@ -92,7 +102,12 @@ def test_aggregate_fails_on_divergent_output_hashes_for_same_config(tmp_path):
             "profile": "correctness",
             "hostname": name,
             "run_id": name,
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "finished_at": "2026-01-01T00:00:01+00:00",
+            "pid": 100,
             "slurm": {},
+            "command": {},
+            "probe_config": {},
             "fingerprint_hash": "fingerprint-a",
             "fingerprint": {"device": {"accelerator_id": name}},
             "probe_config_hash": "config-a",
@@ -124,7 +139,12 @@ def test_aggregate_fails_on_duplicate_accelerator_for_same_config(tmp_path):
             "profile": "correctness",
             "hostname": "node-a",
             "run_id": name,
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "finished_at": "2026-01-01T00:00:01+00:00",
+            "pid": 100,
             "slurm": {"slurm_procid": procid, "slurm_localid": procid},
+            "command": {},
+            "probe_config": {},
             "fingerprint_hash": "fingerprint-a",
             "fingerprint": {
                 "device": {
@@ -182,7 +202,12 @@ def test_aggregate_allows_same_accelerator_for_different_configs(tmp_path):
             "profile": profile,
             "hostname": "node-a",
             "run_id": name,
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "finished_at": "2026-01-01T00:00:01+00:00",
+            "pid": 100,
             "slurm": {},
+            "command": {},
+            "probe_config": {},
             "fingerprint_hash": "fingerprint-a",
             "fingerprint": {"device": {"accelerator_id": "GPU-same"}},
             "probe_config_hash": config_hash,
@@ -205,7 +230,12 @@ def test_aggregate_outfile_inside_input_directory_is_not_ingested(tmp_path):
         "profile": "correctness",
         "hostname": "node-a",
         "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
         "slurm": {},
+        "command": {},
+        "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
         "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
@@ -233,7 +263,12 @@ def test_aggregate_ignores_previous_summary_json(tmp_path):
         "profile": "correctness",
         "hostname": "node-a",
         "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
         "slurm": {},
+        "command": {},
+        "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
         "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
@@ -273,16 +308,13 @@ def test_aggregate_fails_on_schema_versioned_non_result_json(tmp_path):
 
     assert not summary["pass"]
     assert summary["loaded_results"] == 0
-    assert summary["schema_errors"] == [
-        {
-            "path": str(tmp_path / "partial-result.json"),
-            "type": "SchemaError",
-            "message": (
-                "missing required result keys: checks, fingerprint, "
-                "fingerprint_hash, measurements, probe_config_hash, profile, run_id"
-            ),
-        }
-    ]
+    assert summary["schema_errors"][0]["path"] == str(tmp_path / "partial-result.json")
+    assert summary["schema_errors"][0]["type"] == "SchemaError"
+    assert summary["schema_errors"][0]["message"].startswith(
+        "missing required result keys: "
+    )
+    assert "command" in summary["schema_errors"][0]["message"]
+    assert "probe_config" in summary["schema_errors"][0]["message"]
     assert not summary["ignored_files"]
 
 
@@ -322,7 +354,12 @@ def test_aggregate_fails_when_expected_result_count_is_missing(tmp_path):
         "profile": "correctness",
         "hostname": "node-a",
         "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
         "slurm": {},
+        "command": {},
+        "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
         "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",

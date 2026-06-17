@@ -11,15 +11,23 @@ from narc.schema import SCHEMA_VERSION
 
 
 REQUIRED_RESULT_KEYS = {
-    "schema_version",
-    "status",
+    "checks",
+    "command",
+    "errors",
+    "fingerprint",
+    "fingerprint_hash",
+    "finished_at",
+    "hostname",
+    "measurements",
+    "pid",
+    "probe_config",
+    "probe_config_hash",
     "profile",
     "run_id",
-    "probe_config_hash",
-    "fingerprint_hash",
-    "fingerprint",
-    "checks",
-    "measurements",
+    "schema_version",
+    "slurm",
+    "started_at",
+    "status",
 }
 
 
