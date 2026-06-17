@@ -5,7 +5,9 @@ from narc.aggregate import aggregate_path, generate_aggregate_parser, handle_agg
 
 def test_aggregate_counts_results_and_failures(tmp_path):
     good = {
+        "schema_version": 1,
         "status": "pass",
+        "profile": "correctness",
         "hostname": "node-a",
         "run_id": "run-a",
         "slurm": {"slurm_procid": "0", "slurm_localid": "0"},
@@ -26,7 +28,9 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "errors": [],
     }
     bad = {
+        "schema_version": 1,
         "status": "fail",
+        "profile": "correctness",
         "hostname": "node-b",
         "run_id": "run-b",
         "slurm": {"slurm_procid": "1", "slurm_localid": "1"},
@@ -81,6 +85,7 @@ def test_aggregate_reports_corrupt_json(tmp_path):
 def test_aggregate_fails_on_divergent_output_hashes_for_same_config(tmp_path):
     for name, output_hash in (("a.json", "hash-a"), ("b.json", "hash-b")):
         result = {
+            "schema_version": 1,
             "status": "pass",
             "profile": "correctness",
             "hostname": name,
@@ -111,6 +116,7 @@ def test_aggregate_fails_on_divergent_output_hashes_for_same_config(tmp_path):
 
 def test_aggregate_outfile_inside_input_directory_is_not_ingested(tmp_path):
     result = {
+        "schema_version": 1,
         "status": "pass",
         "profile": "correctness",
         "hostname": "node-a",
@@ -134,3 +140,47 @@ def test_aggregate_outfile_inside_input_directory_is_not_ingested(tmp_path):
     assert summary["pass"]
     assert summary["total_files"] == 1
     assert not summary["load_errors"]
+
+
+def test_aggregate_ignores_previous_summary_json(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "slurm": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    previous_summary = {
+        "input": str(tmp_path),
+        "pass": False,
+        "status_counts": {"unknown": 1},
+    }
+    (tmp_path / "result.json").write_text(json.dumps(result), encoding="utf-8")
+    (tmp_path / "summary-old.json").write_text(
+        json.dumps(previous_summary),
+        encoding="utf-8",
+    )
+
+    summary = aggregate_path(tmp_path)
+
+    assert summary["pass"]
+    assert summary["loaded_results"] == 1
+    assert summary["ignored_files"] == [str(tmp_path / "summary-old.json")]
+
+
+def test_aggregate_ignores_valid_non_object_json(tmp_path):
+    (tmp_path / "array.json").write_text("[1, 2, 3]", encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert summary["loaded_results"] == 0
+    assert summary["ignored_files"] == [str(tmp_path / "array.json")]
+    assert not summary["load_errors"]
+    assert not summary["pass"]

@@ -7,6 +7,21 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from narc.schema import SCHEMA_VERSION
+
+
+REQUIRED_RESULT_KEYS = {
+    "schema_version",
+    "status",
+    "profile",
+    "run_id",
+    "probe_config_hash",
+    "fingerprint_hash",
+    "fingerprint",
+    "checks",
+    "measurements",
+}
+
 
 def iter_json_paths(path: Path, exclude_paths: set[Path] | None = None) -> list[Path]:
     excluded = exclude_paths or set()
@@ -25,13 +40,22 @@ def iter_json_paths(path: Path, exclude_paths: set[Path] | None = None) -> list[
 def load_result(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     try:
         with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle), None
+            document = json.load(handle)
     except Exception as error:
         return None, {
             "path": str(path),
             "type": type(error).__name__,
             "message": str(error),
         }
+    if not isinstance(document, dict):
+        return None, None
+    return document, None
+
+
+def is_probe_result(document: dict[str, Any]) -> bool:
+    if document.get("schema_version") != SCHEMA_VERSION:
+        return False
+    return REQUIRED_RESULT_KEYS.issubset(document.keys())
 
 
 def performance_values(results: list[dict[str, Any]]) -> list[float]:
@@ -132,11 +156,17 @@ def aggregate_path(
     json_paths = iter_json_paths(path, exclude_paths=exclude_paths)
     loaded: list[dict[str, Any]] = []
     load_errors: list[dict[str, Any]] = []
+    ignored_files: list[str] = []
     for json_path in json_paths:
         result, error = load_result(json_path)
         if result is None:
             if error is not None:
                 load_errors.append(error)
+            else:
+                ignored_files.append(str(json_path))
+            continue
+        if not is_probe_result(result):
+            ignored_files.append(str(json_path))
             continue
         result["source_path"] = str(json_path)
         loaded.append(result)
@@ -185,6 +215,7 @@ def aggregate_path(
         "total_files": len(json_paths),
         "loaded_results": len(loaded),
         "load_errors": load_errors,
+        "ignored_files": ignored_files,
         "status_counts": status_counts,
         "fingerprint_hashes": by_fingerprint,
         "probe_config_hashes": by_config,
