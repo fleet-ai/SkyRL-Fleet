@@ -114,6 +114,88 @@ def test_aggregate_fails_on_divergent_output_hashes_for_same_config(tmp_path):
     ]
 
 
+def test_aggregate_fails_on_duplicate_accelerator_for_same_config(tmp_path):
+    for name, procid in (("a.json", "0"), ("b.json", "1")):
+        result = {
+            "schema_version": 1,
+            "status": "pass",
+            "profile": "correctness",
+            "hostname": "node-a",
+            "run_id": name,
+            "slurm": {"slurm_procid": procid, "slurm_localid": procid},
+            "fingerprint_hash": "fingerprint-a",
+            "fingerprint": {
+                "device": {
+                    "accelerator_id": "GPU-same",
+                    "logical_index": 0,
+                }
+            },
+            "probe_config_hash": "config-a",
+            "checks": {"output_hash": "hash-a"},
+            "measurements": {},
+            "errors": [],
+        }
+        (tmp_path / name).write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["duplicate_accelerator_failures"] == [
+        {
+            "group": "correctness:config-a",
+            "profile": "correctness",
+            "probe_config_hash": "config-a",
+            "duplicates": {
+                "GPU-same": [
+                    {
+                        "path": str(tmp_path / "a.json"),
+                        "hostname": "node-a",
+                        "run_id": "a.json",
+                        "logical_index": 0,
+                        "slurm_procid": "0",
+                        "slurm_localid": "0",
+                    },
+                    {
+                        "path": str(tmp_path / "b.json"),
+                        "hostname": "node-a",
+                        "run_id": "b.json",
+                        "logical_index": 0,
+                        "slurm_procid": "1",
+                        "slurm_localid": "1",
+                    },
+                ]
+            },
+        }
+    ]
+
+
+def test_aggregate_allows_same_accelerator_for_different_configs(tmp_path):
+    for name, profile, config_hash in (
+        ("correctness.json", "correctness", "config-a"),
+        ("performance.json", "performance", "config-b"),
+    ):
+        result = {
+            "schema_version": 1,
+            "status": "pass",
+            "profile": profile,
+            "hostname": "node-a",
+            "run_id": name,
+            "slurm": {},
+            "fingerprint_hash": "fingerprint-a",
+            "fingerprint": {"device": {"accelerator_id": "GPU-same"}},
+            "probe_config_hash": config_hash,
+            "checks": {"output_hash": "hash-a"},
+            "measurements": {},
+            "errors": [],
+        }
+        (tmp_path / name).write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert summary["pass"]
+    assert not summary["duplicate_accelerator_failures"]
+
+
 def test_aggregate_outfile_inside_input_directory_is_not_ingested(tmp_path):
     result = {
         "schema_version": 1,

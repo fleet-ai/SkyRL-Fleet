@@ -148,6 +148,65 @@ def output_hash_failures(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return failures
 
 
+def accelerator_entry(result: dict[str, Any]) -> dict[str, Any]:
+    device = result.get("fingerprint", {}).get("device", {})
+    slurm = result.get("slurm", {})
+    return {
+        "path": result.get("source_path"),
+        "hostname": result.get("hostname"),
+        "run_id": result.get("run_id"),
+        "logical_index": device.get("logical_index"),
+        "slurm_procid": slurm.get("slurm_procid"),
+        "slurm_localid": slurm.get("slurm_localid"),
+    }
+
+
+def comparable_accelerator_groups(
+    results: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for result in results:
+        config_hash = result.get("probe_config_hash") or "missing"
+        profile = result.get("profile") or "missing"
+        key = f"{profile}:{config_hash}"
+        accelerator_id = (
+            result.get("fingerprint", {}).get("device", {}).get("accelerator_id")
+        )
+        group = groups.setdefault(
+            key,
+            {
+                "profile": profile,
+                "probe_config_hash": config_hash,
+                "accelerators": {},
+            },
+        )
+        if accelerator_id:
+            accelerators = group["accelerators"]
+            entries = accelerators.setdefault(accelerator_id, [])
+            entries.append(accelerator_entry(result))
+    return groups
+
+
+def duplicate_accelerator_failures(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for key, group in comparable_accelerator_groups(results).items():
+        duplicates = {
+            accelerator_id: entries
+            for accelerator_id, entries in group["accelerators"].items()
+            if len(entries) > 1
+        }
+        if duplicates:
+            failures.append(
+                {
+                    "group": key,
+                    "profile": group["profile"],
+                    "probe_config_hash": group["probe_config_hash"],
+                    "duplicates": duplicates,
+                }
+            )
+    return failures
+
+
 def aggregate_path(
     path: Path,
     *,
@@ -209,6 +268,7 @@ def aggregate_path(
         if result.get("status") != "pass"
     ]
     hash_failures = output_hash_failures(loaded)
+    accelerator_failures = duplicate_accelerator_failures(loaded)
 
     return {
         "input": str(path),
@@ -222,6 +282,7 @@ def aggregate_path(
         "output_hashes": output_hashes,
         "output_hash_failures": hash_failures,
         "accelerator_ids": accelerator_ids,
+        "duplicate_accelerator_failures": accelerator_failures,
         "devices": [device_fingerprint(result) for result in loaded],
         "performance": {
             "tokens_per_second": summarize_performance(performance_values(loaded)),
@@ -233,6 +294,7 @@ def aggregate_path(
             and status_counts["unknown"] == 0
             and not load_errors
             and not hash_failures
+            and not accelerator_failures
             and len(loaded) > 0
         ),
     }
