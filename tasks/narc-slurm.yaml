@@ -28,7 +28,7 @@ run: |
   export PATH="$HOME/.local/bin:$PATH"
   JOB_ID="${SLURM_JOB_ID:-manual-$(date +%s)}"
   OUT_DIR="${NARC_OUT_DIR}/${JOB_ID}"
-  EXPECTED_RESULTS="${NARC_EXPECTED_RESULTS:-${SLURM_NTASKS:-${NARC_TASKS}}}"
+  EXPECTED_RESULTS="${NARC_EXPECTED_RESULTS:-${NARC_TASKS}}"
   mkdir -p "${OUT_DIR}"
 
   set +e
