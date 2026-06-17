@@ -199,6 +199,8 @@ def run_training_steps(
 
         logits = model(input_ids)
         loss = manual_cross_entropy(torch, logits, labels)
+        if not bool(torch.isfinite(loss).detach().cpu().item()):
+            raise RuntimeError(f"loss is not finite: {loss.detach().cpu().item()}")
         loss.backward()
         final_grad_hash = gradient_hash(model)
         with torch.no_grad():
@@ -244,6 +246,33 @@ def run_training_steps(
             "tokens_per_second": token_count / elapsed if elapsed else None,
         }
     return output
+
+
+def argument_or_default(value: int | None, default: int) -> int:
+    return default if value is None else value
+
+
+def validate_config(config: ProbeConfig) -> None:
+    positive_fields = {
+        "batch_size": config.batch_size,
+        "d_model": config.d_model,
+        "mlp_ratio": config.mlp_ratio,
+        "num_heads": config.num_heads,
+        "num_layers": config.num_layers,
+        "repeat": config.repeat,
+        "steps": config.steps,
+    }
+    for name, value in positive_fields.items():
+        if value < 1:
+            raise ValueError(f"{name} must be at least 1")
+    if config.sequence_length < 2:
+        raise ValueError("sequence_length must be at least 2")
+    if config.vocab_size < 2:
+        raise ValueError("vocab_size must be at least 2")
+    if config.warmup_steps < 0:
+        raise ValueError("warmup_steps must be at least 0")
+    if config.d_model % config.num_heads != 0:
+        raise ValueError("d_model must be divisible by num_heads")
 
 
 def run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
@@ -339,14 +368,17 @@ def default_config(args: argparse.Namespace, dtype_name: str) -> ProbeConfig:
     return ProbeConfig(
         profile=profile,
         seed=args.seed,
-        batch_size=args.batch_size or defaults["batch_size"],
-        sequence_length=args.sequence_length or defaults["sequence_length"],
-        vocab_size=args.vocab_size or defaults["vocab_size"],
-        d_model=args.d_model or defaults["d_model"],
-        num_layers=args.num_layers or defaults["num_layers"],
-        num_heads=args.num_heads or defaults["num_heads"],
-        mlp_ratio=args.mlp_ratio or defaults["mlp_ratio"],
-        steps=args.steps or defaults["steps"],
+        batch_size=argument_or_default(args.batch_size, defaults["batch_size"]),
+        sequence_length=argument_or_default(
+            args.sequence_length,
+            defaults["sequence_length"],
+        ),
+        vocab_size=argument_or_default(args.vocab_size, defaults["vocab_size"]),
+        d_model=argument_or_default(args.d_model, defaults["d_model"]),
+        num_layers=argument_or_default(args.num_layers, defaults["num_layers"]),
+        num_heads=argument_or_default(args.num_heads, defaults["num_heads"]),
+        mlp_ratio=argument_or_default(args.mlp_ratio, defaults["mlp_ratio"]),
+        steps=argument_or_default(args.steps, defaults["steps"]),
         warmup_steps=args.warmup_steps
         if args.warmup_steps is not None
         else defaults["warmup_steps"],
@@ -368,6 +400,7 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
     dtype = resolve_dtype(torch, args.dtype, device)
     dtype_name = str(dtype).removeprefix("torch.")
     config = default_config(args, dtype_name)
+    validate_config(config)
     configure_torch(
         torch,
         seed=config.seed,
