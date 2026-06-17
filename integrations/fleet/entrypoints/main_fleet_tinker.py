@@ -742,6 +742,15 @@ async def collect_fleet_rollout(
             # Route length/timeout exits through env.step_async("<done>") so
             # OpenEnv runs _compute_reward; otherwise these paths bypass it.
             nonlocal total_reward, done
+            # If OpenEnv already ran the verifier on a prior turn (the wrapper's
+            # step ran to completion inside the wait_for before cancellation
+            # raced), recover the real reward we cached and skip the re-step.
+            oe = getattr(env, "openenv_task_env", None)
+            if oe is not None and getattr(oe, "_done", False):
+                total_reward = env.last_reward if env.last_reward is not None else total_reward
+                done = True
+                logger.info(f"[{task_key}] verifier already finalized; skipping force on {reason} (reward={total_reward})")
+                return
             try:
                 out = await asyncio.wait_for(_env_step(env, "<done>"), ENV_STEP_TIMEOUT_S)
                 total_reward = out.get("reward", 0.0) or 0.0

@@ -593,6 +593,16 @@ class FleetTaskEnv(BaseTextEnv):
         handles these via extract_images_from_conversation().
         """
         step_start = time.time()
+        # Episode already finished on a prior step (OpenEnv ran verifier).
+        # Re-entry would raise "Episode is done", get silently caught, and
+        # then re-upload with reward=0.0 and clobber a real 1.0 score.
+        if self.openenv_task_env is not None and getattr(self.openenv_task_env, "_done", False):
+            return BaseTextEnvStepOutput(
+                observations=[],
+                reward=self.last_reward or 0.0,
+                done=True,
+                metadata={"done_reason": "already_finalized", "task_key": self.task_key},
+            )
         self.turns += 1
         assistant_msg = {"role": "assistant", "content": action}
         self.chat_history.append(assistant_msg)
@@ -702,6 +712,11 @@ class FleetTaskEnv(BaseTextEnv):
                 tool_result = None
 
         episode_done = agent_done or max_turns_reached
+
+        # Cache before the upload await so a CancelledError during upload
+        # (the wait_for race in main_fleet_tinker) can't lose the real reward.
+        if episode_done:
+            self.last_reward = reward
 
         # Upload trace at episode end if trace config is set
         if episode_done and FleetTaskEnv._trace_config:
