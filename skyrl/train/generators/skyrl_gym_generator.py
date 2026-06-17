@@ -8,6 +8,7 @@ For details, see https://docs.skyrl.ai/docs/tutorials/skyrl_gym_generator
 import asyncio
 import copy
 import math
+import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
@@ -43,6 +44,13 @@ from skyrl.train.generators.utils import (
     try_load_processor,
 )
 from skyrl_gym.envs.base_text_env import BaseTextEnvStepOutput
+
+# Closed <think>...</think> reasoning spans, used to split response tokens into thinking vs visible
+# for the log_thinking_token_metrics breakdown. Non-greedy + DOTALL so each block is matched
+# independently. NOTE: with the qwen3_without_thinking template only the LAST assistant turn's
+# <think> survives in response_ids (earlier turns are stripped at retokenization), so this measures
+# exactly the thinking tokens the length penalty actually sees.
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 @dataclass
@@ -1064,6 +1072,9 @@ class SkyRLGymGenerator(GeneratorInterface):
             rewards, mean_length_penalty = self._apply_length_penalty(rewards, truncated_responses)
             rollout_metrics["generate/length_penalty_mean"] = mean_length_penalty
 
+        if self.generator_cfg.log_thinking_token_metrics:
+            self._add_thinking_token_metrics(rollout_metrics, truncated_responses)
+
         if self.generator_cfg.apply_overlong_filtering:
             # set loss mask to 0 if the stop reason is not "stop"
             loss_masks = apply_overlong_filtering(loss_masks, stop_reasons)
@@ -1301,6 +1312,9 @@ class SkyRLGymGenerator(GeneratorInterface):
             rewards, mean_length_penalty = self._apply_length_penalty(rewards, responses)
             rollout_metrics["generate/length_penalty_mean"] = mean_length_penalty
 
+        if self.generator_cfg.log_thinking_token_metrics:
+            self._add_thinking_token_metrics(rollout_metrics, responses)
+
         if self.generator_cfg.zero_reward_on_non_stop:
             # set reward to 0 if the stop reason is not "stop"
             rewards = self._zero_reward_if_not_stop(rewards, stop_reasons)
@@ -1352,20 +1366,13 @@ class SkyRLGymGenerator(GeneratorInterface):
         if not coef:
             return rewards, 0.0
 
-        ref = int(self.generator_cfg.length_penalty_ref or 0)
-        if ref <= 0:
-            ref = max(1, self.max_turns * self.generator_cfg.sampling_params.max_generate_length)
+        ref = self._length_penalty_ref()
         alpha = float(self.generator_cfg.length_penalty_alpha)
         fn = self.generator_cfg.length_penalty_fn
 
         total_penalty = 0.0
         for i, response in enumerate(responses):
-            frac = len(response) / ref
-            if fn == "log":
-                shaped = math.log1p(frac) / math.log(2.0)
-            else:  # "power" (sqrt when alpha == 0.5)
-                shaped = frac**alpha
-            penalty = coef * shaped
+            penalty = self._shaped_length_penalty(len(response), coef, ref, alpha, fn)
             total_penalty += penalty
             if isinstance(rewards[i], list):
                 if rewards[i]:
@@ -1374,6 +1381,82 @@ class SkyRLGymGenerator(GeneratorInterface):
                 rewards[i] -= penalty
         mean_penalty = total_penalty / len(responses) if responses else 0.0
         return rewards, mean_penalty
+
+    def _length_penalty_ref(self) -> int:
+        """Reference token length for the length penalty (config value, or the full multi-turn budget)."""
+        ref = int(self.generator_cfg.length_penalty_ref or 0)
+        if ref <= 0:
+            ref = max(1, self.max_turns * self.generator_cfg.sampling_params.max_generate_length)
+        return ref
+
+    def _shaped_length_penalty(self, n_tokens: int, coef: float, ref: int, alpha: float, fn: str) -> float:
+        """Sublinear length penalty for ``n_tokens`` (shared by the reward shaper and metric logging)."""
+        frac = n_tokens / ref
+        if fn == "log":
+            shaped = math.log1p(frac) / math.log(2.0)
+        else:  # "power" (sqrt when alpha == 0.5)
+            shaped = frac**alpha
+        return coef * shaped
+
+    def _visible_token_count(self, response: List[int]) -> int:
+        """Number of non-``<think>`` tokens in ``response`` (decode, strip closed think spans, re-encode).
+
+        Falls back to the full length if nothing was stripped or decoding/encoding fails.
+        """
+        try:
+            text = self.tokenizer.decode(response, skip_special_tokens=False)
+            stripped = _THINK_BLOCK_RE.sub("", text)
+            if stripped == text:
+                return len(response)
+            return min(len(response), len(self.tokenizer.encode(stripped, add_special_tokens=False)))
+        except Exception:
+            return len(response)
+
+    def _add_thinking_token_metrics(
+        self,
+        rollout_metrics: Dict[str, Any],
+        responses: List[List[int]],
+    ) -> None:
+        """Log a think vs visible (non-think) token breakdown of ``responses`` (the response_ids the
+        length penalty measures), plus — when the length penalty is on — how much of the penalty is
+        attributable to the thinking tokens. No-op if there are no responses.
+
+        With the qwen3_without_thinking template only the last assistant turn's ``<think>`` survives
+        in ``response_ids``, so these metrics reflect exactly the thinking tokens the penalty sees.
+        """
+        n = len(responses)
+        if not n:
+            return
+        coef = float(self.generator_cfg.length_penalty_coef or 0.0)
+        ref = self._length_penalty_ref()
+        alpha = float(self.generator_cfg.length_penalty_alpha)
+        fn = self.generator_cfg.length_penalty_fn
+
+        total_think = 0
+        total_visible = 0
+        frac_sum = 0.0
+        penalty_total_sum = 0.0
+        penalty_visible_sum = 0.0
+        for response in responses:
+            n_tot = len(response)
+            n_vis = self._visible_token_count(response)
+            n_think = max(0, n_tot - n_vis)
+            total_think += n_think
+            total_visible += n_vis
+            frac_sum += (n_think / n_tot) if n_tot else 0.0
+            if coef:
+                penalty_total_sum += self._shaped_length_penalty(n_tot, coef, ref, alpha, fn)
+                penalty_visible_sum += self._shaped_length_penalty(n_vis, coef, ref, alpha, fn)
+
+        rollout_metrics["generate/thinking_tokens_mean"] = total_think / n
+        rollout_metrics["generate/visible_tokens_mean"] = total_visible / n
+        rollout_metrics["generate/thinking_token_frac"] = frac_sum / n
+        if coef:
+            # length_penalty_visible_mean: the penalty if only visible tokens were counted.
+            # length_penalty_thinking_mean: marginal penalty from the thinking tokens (sublinear ->
+            # not additive, so report the difference penalty(total) - penalty(visible)).
+            rollout_metrics["generate/length_penalty_visible_mean"] = penalty_visible_sum / n
+            rollout_metrics["generate/length_penalty_thinking_mean"] = (penalty_total_sum - penalty_visible_sum) / n
 
     def _zero_reward_if_not_stop(
         self, rewards: List[Union[float, List[float]]], stop_reasons: List[str]

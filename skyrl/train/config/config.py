@@ -528,6 +528,14 @@ class GeneratorConfig(BaseConfig):
     length_penalty_ref: int = 0
     """Reference token length that normalizes the penalty. When ``<= 0`` it defaults to
     ``max_turns * sampling_params.max_generate_length`` (the full multi-turn generation budget)."""
+    log_thinking_token_metrics: bool = False
+    """If ``True``, log a per-rollout breakdown of response tokens into ``<think>...</think>``
+    reasoning tokens vs visible (non-thinking) tokens, measured on the same ``response_ids`` the
+    length penalty sees. Logs ``generate/thinking_tokens_mean``, ``generate/visible_tokens_mean``,
+    ``generate/thinking_token_frac``; and when ``length_penalty_coef`` is set, the penalty
+    decomposition ``generate/length_penalty_visible_mean`` and ``generate/length_penalty_thinking_mean``
+    (the marginal penalty attributable to the thinking tokens). Off by default (adds a decode/encode
+    pass per response). Intended for thinking models; a no-op for token-in-token-out runs."""
     rope_scaling: Optional[Dict[str, Any]] = None
     """Can differ from the trainer's ``rope_scaling``, useful for thinking models."""
     rope_theta: Optional[float] = None
