@@ -8,7 +8,18 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "status": "pass",
         "hostname": "node-a",
         "run_id": "run-a",
+        "slurm": {"slurm_procid": "0", "slurm_localid": "0"},
         "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {
+            "device": {
+                "accelerator_id": "GPU-a",
+                "logical_index": 0,
+                "cuda_driver": {
+                    "uuid": "GPU-a",
+                    "pci_bus_id": "00000000:3b:00.0",
+                },
+            }
+        },
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-a"},
         "measurements": {"timing": {"tokens_per_second": 10.0}},
@@ -18,7 +29,18 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "status": "fail",
         "hostname": "node-b",
         "run_id": "run-b",
+        "slurm": {"slurm_procid": "1", "slurm_localid": "1"},
         "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {
+            "device": {
+                "accelerator_id": "GPU-b",
+                "logical_index": 0,
+                "cuda_driver": {
+                    "uuid": "GPU-b",
+                    "pci_bus_id": "00000000:4c:00.0",
+                },
+            }
+        },
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-b"},
         "measurements": {"timing": {"tokens_per_second": 5.0}},
@@ -37,9 +59,12 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "unknown": 0,
     }
     assert summary["fingerprint_hashes"] == {"fingerprint-a": 2}
+    assert summary["accelerator_ids"] == {"GPU-a": 1, "GPU-b": 1}
+    assert summary["devices"][0]["accelerator_id"] == "GPU-b"
     assert summary["performance"]["tokens_per_second"]["median"] == 7.5
     assert not summary["pass"]
     assert summary["failures"][0]["run_id"] == "run-b"
+    assert summary["failures"][0]["accelerator_id"] == "GPU-b"
 
 
 def test_aggregate_reports_corrupt_json(tmp_path):

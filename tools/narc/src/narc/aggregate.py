@@ -59,6 +59,23 @@ def _summarize_performance(values: list[float]) -> dict[str, float | int | None]
     }
 
 
+def _device_fingerprint(result: dict[str, Any]) -> dict[str, Any]:
+    device = result.get("fingerprint", {}).get("device", {})
+    cuda_driver = device.get("cuda_driver", {})
+    slurm = result.get("slurm", {})
+    return {
+        "path": result.get("_source_path"),
+        "status": result.get("status"),
+        "hostname": result.get("hostname"),
+        "accelerator_id": device.get("accelerator_id"),
+        "logical_index": device.get("logical_index"),
+        "cuda_uuid": cuda_driver.get("uuid"),
+        "pci_bus_id": cuda_driver.get("pci_bus_id"),
+        "slurm_procid": slurm.get("slurm_procid"),
+        "slurm_localid": slurm.get("slurm_localid"),
+    }
+
+
 def aggregate_path(path: Path) -> dict[str, Any]:
     json_paths = _iter_json_paths(path)
     loaded: list[dict[str, Any]] = []
@@ -82,18 +99,25 @@ def aggregate_path(path: Path) -> dict[str, Any]:
     by_fingerprint: dict[str, int] = {}
     by_config: dict[str, int] = {}
     output_hashes: dict[str, int] = {}
+    accelerator_ids: dict[str, int] = {}
     for result in loaded:
         fingerprint_hash = result.get("fingerprint_hash") or "missing"
         config_hash = result.get("probe_config_hash") or "missing"
         output_hash = result.get("checks", {}).get("output_hash") or "missing"
+        accelerator_id = (
+            result.get("fingerprint", {}).get("device", {}).get("accelerator_id")
+            or "missing"
+        )
         by_fingerprint[fingerprint_hash] = by_fingerprint.get(fingerprint_hash, 0) + 1
         by_config[config_hash] = by_config.get(config_hash, 0) + 1
         output_hashes[output_hash] = output_hashes.get(output_hash, 0) + 1
+        accelerator_ids[accelerator_id] = accelerator_ids.get(accelerator_id, 0) + 1
 
     failures = [
         {
             "path": result.get("_source_path"),
             "hostname": result.get("hostname"),
+            "accelerator_id": _device_fingerprint(result).get("accelerator_id"),
             "run_id": result.get("run_id"),
             "status": result.get("status"),
             "errors": result.get("errors", []),
@@ -112,6 +136,8 @@ def aggregate_path(path: Path) -> dict[str, Any]:
         "fingerprint_hashes": by_fingerprint,
         "probe_config_hashes": by_config,
         "output_hashes": output_hashes,
+        "accelerator_ids": accelerator_ids,
+        "devices": [_device_fingerprint(result) for result in loaded],
         "performance": {
             "tokens_per_second": _summarize_performance(_performance_values(loaded)),
         },
