@@ -255,6 +255,20 @@ def non_negative_int(value: str) -> int:
     return parsed
 
 
+def validate_output_path(input_path: Path, output_path: Path) -> None:
+    resolved_input = input_path.resolve()
+    resolved_output = output_path.resolve()
+    if input_path.is_file() and resolved_input == resolved_output:
+        raise ValueError("outfile must not overwrite the input result file")
+    if not output_path.exists():
+        return
+    document, error = load_result(output_path)
+    if error is not None or document is None:
+        return
+    if "schema_version" in document:
+        raise ValueError("outfile must not overwrite a probe result file")
+
+
 def aggregate_path(
     path: Path,
     *,
@@ -361,9 +375,12 @@ def aggregate_path(
 
 def handle_aggregate(args: argparse.Namespace) -> None:
     output_path = Path(args.outfile).resolve() if args.outfile else None
+    input_path = Path(args.path)
+    if output_path:
+        validate_output_path(input_path, output_path)
     exclude_paths = {output_path} if output_path else None
     summary = aggregate_path(
-        Path(args.path),
+        input_path,
         exclude_paths=exclude_paths,
         expected_results=args.expected_results,
     )

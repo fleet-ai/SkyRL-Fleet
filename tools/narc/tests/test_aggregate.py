@@ -256,6 +256,68 @@ def test_aggregate_outfile_inside_input_directory_is_not_ingested(tmp_path):
     assert not summary["load_errors"]
 
 
+def test_aggregate_refuses_to_overwrite_input_result_file(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    parser = generate_aggregate_parser()
+    args = parser.parse_args([str(result_path), "-o", str(result_path)])
+
+    with pytest.raises(ValueError, match="must not overwrite the input result file"):
+        handle_aggregate(args)
+
+    assert json.loads(result_path.read_text(encoding="utf-8")) == result
+
+
+def test_aggregate_refuses_to_overwrite_probe_result_in_input_directory(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    parser = generate_aggregate_parser()
+    args = parser.parse_args([str(tmp_path), "-o", str(result_path)])
+
+    with pytest.raises(ValueError, match="must not overwrite a probe result file"):
+        handle_aggregate(args)
+
+    assert json.loads(result_path.read_text(encoding="utf-8")) == result
+
+
 def test_aggregate_ignores_previous_summary_json(tmp_path):
     result = {
         "schema_version": 1,
