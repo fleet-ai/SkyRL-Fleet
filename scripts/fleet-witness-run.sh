@@ -194,7 +194,8 @@ bash scripts/fleet-common-run.sh \
   generator.chat_template_kwargs='{enable_thinking:false}' \
   trainer.loss_chunk_size=4096 \
   trainer.use_sample_packing=false \
-  trainer.algorithm.loss_reduction="sequence_mean" \
+  trainer.algorithm.loss_reduction="seq_mean_token_sum_norm" \
+  trainer.algorithm.max_seq_len="$(( ${MAX_INPUT_LENGTH:-32768} + ${MAX_GENERATE_LENGTH:-2048} ))" \
   generator.inference_engine_tensor_parallel_size="${INFERENCE_TENSOR_PARALLEL_SIZE}" \
   trainer.epochs="${NUM_EPOCHS}" \
   trainer.eval_batch_size="${EVAL_BATCH_SIZE}" \

@@ -98,7 +98,7 @@ envs:
   # === Anti-collapse hyperparameters (matches 9B R3/R4/R5; lr halved for 35B) ===
   LR: "5.0e-7"                       # 35B uses smaller lr than 9B's 2e-6
   NUM_EPOCHS: 25                     # 35B is ~4× slower/step than 9B; 25 ≈ 24-30 hr
-  KL_LOSS_COEF: "0.005"              # anti-drift
+  KL_LOSS_COEF: "0.01"               # anti-drift (raised 0.005->0.01: anchor harder to SFT v6 long-solving basin; collapse RCA 2026-06-17)
   ENTROPY_LOSS_COEF: "0.005"         # exploration bonus
 
   # === Batching (matches 9B R5 for apples-to-apples comparison) ===
@@ -111,10 +111,12 @@ envs:
   EVAL_N_SAMPLES_PER_PROMPT: 3
 
   # === Checkpointing (35B-aware) ===
-  # ckpt_interval=20 keeps ckpts spaced ~80 min apart (one ckpt sync ~30 min at 35B's ~250 GB).
-  # max_ckpts_to_keep=2 retains one fallback in case the latest sync was interrupted.
-  CKPT_INTERVAL: 20
-  MAX_CKPTS_TO_KEEP: 2
+  # DIAGNOSTIC RESTART (collapse RCA 2026-06-17): tightened 20->5 / 2->4 so an EARLY healthy
+  # ckpt is captured (run 3278 collapsed by step ~25 but the only ckpt was step-20, already
+  # degraded — steps 1-5 were never saved) and any re-collapse can be bisected. /workspace is
+  # now 9314G (expanded), so 4×~290GB ckpts fit. Revert to 20/2 once stability is confirmed.
+  CKPT_INTERVAL: 5
+  MAX_CKPTS_TO_KEEP: 4
 
   # === Generator capacity ===
   # Sized for 35B + longer trajectories. 9B R5 hit response_length=14400
@@ -142,8 +144,12 @@ envs:
   RULE_JUDGE_SAMPLE_RATE: "0.20"
   RULE_JUDGE_MAX_REWARD: "0.30"
 
-  # Rubric (R4) — ON by default (R5 builds on R4)
-  ENABLE_RUBRIC_REWARD: "1"
+  # Rubric (R4) — DISABLED for training (was "1"). Reward-hacking audit 2026-06-17: R4 is
+  # unconditional + strictly non-negative + never-sees-ground-truth (mechanism-correct only
+  # ~54%/35%), so the moment env-solve hits 0 it becomes the SOLE GRPO optimization target
+  # (the top latent hack: reward "judge-pleasing" text over actually solving). Keep it as an
+  # EVAL-only signal; do not pay it during RL.
+  ENABLE_RUBRIC_REWARD: "0"
   RUBRIC_MODEL: "anthropic/claude-haiku-4.5"
   RUBRIC_SAMPLE_RATE: "0.15"
   RUBRIC_PER_ITEM_REWARD: "0.05"
