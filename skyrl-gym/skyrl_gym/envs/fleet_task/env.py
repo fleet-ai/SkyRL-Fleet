@@ -714,6 +714,9 @@ class FleetTaskEnv(BaseTextEnv):
                     fleet_env = getattr(orch, "_fleet_env", None)
                     if fleet_env:
                         inst_id = getattr(fleet_env, "instance_id", None)
+                exec_id = getattr(
+                    self.openenv_task_env, "_last_verifier_execution_id", None
+                )
                 await upload_trace(
                     api_key=self.api_key,
                     job_id=FleetTaskEnv._trace_config["job_id"],
@@ -726,6 +729,7 @@ class FleetTaskEnv(BaseTextEnv):
                         "env_key": self.task_config.get("env_key"),
                         "turns": self.turns,
                     },
+                    verifier_execution_id=exec_id,
                 )
             except Exception as e:
                 logger.warning(
