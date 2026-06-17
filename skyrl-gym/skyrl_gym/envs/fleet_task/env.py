@@ -717,6 +717,9 @@ class FleetTaskEnv(BaseTextEnv):
                 exec_id = getattr(
                     self.openenv_task_env, "_last_verifier_execution_id", None
                 )
+                logger.info(
+                    f"[{self.task_key}] upload_trace exec_id={exec_id} reward={reward} agent_done={agent_done} max_turns_reached={max_turns_reached}"
+                )
                 await upload_trace(
                     api_key=self.api_key,
                     job_id=FleetTaskEnv._trace_config["job_id"],
