@@ -859,6 +859,16 @@ class FleetTaskEnv(BaseTextEnv):
             self._tool_error_messages = getattr(
                 self.openenv_task_env, "tool_errors_list", []
             )
+            # Surface verifier output so failure modes (LLM-judge details,
+            # tracebacks, GRADING_DETAILS blocks) are grep'able from logs.
+            if self._verifier_stdout:
+                logger.info(
+                    f"[{self.task_key}] verifier stdout: {self._verifier_stdout[:1500]}"
+                )
+            if self._verifier_error:
+                logger.warning(
+                    f"[{self.task_key}] verifier error: {self._verifier_error[:1500]}"
+                )
 
     def close(self):
         """Close the Fleet environment and cleanup resources."""

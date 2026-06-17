@@ -158,6 +158,8 @@ class RolloutOutput(BaseModel):
     total_gen_time: float = 0.0  # Total Tinker generation time
     total_step_time: float = 0.0  # Total MCP/Fleet step time
     total_tokens: int = 0  # Total tokens generated
+    verifier_stdout: Optional[str] = None  # Truncated; full output is in env log
+    verifier_error: Optional[str] = None
     error: Optional[str] = None
 
     class Config:
@@ -878,6 +880,12 @@ async def collect_fleet_rollout(
                 f"tool_errors={env.tool_errors}"
             )
 
+        # Pull verifier feedback before the env is closed.
+        try:
+            env._capture_verifier_feedback()
+        except Exception:
+            pass
+
         return RolloutOutput(
             prompt_ids=prompt_ids,
             response_ids=all_response_ids,
@@ -894,6 +902,8 @@ async def collect_fleet_rollout(
             total_gen_time=total_gen_time,
             total_step_time=total_step_time,
             total_tokens=total_tokens,
+            verifier_stdout=(env._verifier_stdout or None),
+            verifier_error=(env._verifier_error or None),
         )
 
     finally:
@@ -945,11 +955,16 @@ async def collect_batch_rollouts(
                 )
                 # Per-rollout completion marker so operators can see in-flight
                 # success rate before the step-end pass@k flush.
+                verifier_tail = ""
+                if rollout.verifier_stdout:
+                    verifier_tail = f" verifier_stdout={rollout.verifier_stdout[:400]!r}"
+                if rollout.verifier_error:
+                    verifier_tail += f" verifier_error={rollout.verifier_error[:400]!r}"
                 logger.info(
                     f"rollout done: task={rollout.task_key} env={rollout.env_key} "
                     f"reward={rollout.reward} turns={rollout.turns}/{max_turns} "
                     f"tool_calls={rollout.tool_calls} tool_errors={rollout.tool_errors} "
-                    f"stop={rollout.stop_reason} dur={rollout.duration:.1f}s"
+                    f"stop={rollout.stop_reason} dur={rollout.duration:.1f}s{verifier_tail}"
                 )
                 return index, rollout
             except Exception as e:
