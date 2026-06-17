@@ -1,0 +1,39 @@
+name: narc-slurm
+
+resources:
+  disk_size: 100
+  accelerators: H200:8
+  cloud: slurm
+  region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 1
+
+workdir: .
+
+envs:
+  NARC_OUT_DIR: "/workspace/narc"
+  NARC_PROFILE: "correctness"
+
+setup: |
+  if ! command -v uv >/dev/null 2>&1; then
+    python -m pip install --user uv
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  uv --version
+  uv sync --project tools/narc --locked
+
+run: |
+  set -euo pipefail
+  export PATH="$HOME/.local/bin:$PATH"
+  JOB_ID="${SLURM_JOB_ID:-manual-$(date +%s)}"
+  OUT_DIR="${NARC_OUT_DIR}/${JOB_ID}"
+  mkdir -p "${OUT_DIR}"
+
+  srun --ntasks-per-node=8 --gpus-per-task=1 --gpu-bind=single:1 \
+    uv run --project tools/narc --no-sync narc run-local \
+      --profile "${NARC_PROFILE}" \
+      --device cuda \
+      --dtype fp32 \
+      --out-dir "${OUT_DIR}"
+
+  uv run --project tools/narc --no-sync narc aggregate "${OUT_DIR}" --fail-on-fail

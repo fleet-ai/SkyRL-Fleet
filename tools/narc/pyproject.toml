@@ -1,0 +1,38 @@
+[project]
+name = "narc"
+version = "0.1.0"
+description = "deterministic accelerator correctness and performance checks for compute clusters"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.7",
+]
+
+[project.scripts]
+narc = "narc:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "W",
+    "F",
+    "I",
+    "TID252",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["narc"]
