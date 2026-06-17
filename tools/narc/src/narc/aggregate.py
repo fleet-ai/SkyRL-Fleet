@@ -58,6 +58,23 @@ def is_probe_result(document: dict[str, Any]) -> bool:
     return REQUIRED_RESULT_KEYS.issubset(document.keys())
 
 
+def probe_schema_error(path: Path, document: dict[str, Any]) -> dict[str, Any]:
+    schema_version = document.get("schema_version")
+    if schema_version != SCHEMA_VERSION:
+        message = (
+            f"unsupported schema_version {schema_version!r}; "
+            f"expected {SCHEMA_VERSION}"
+        )
+    else:
+        missing = sorted(REQUIRED_RESULT_KEYS.difference(document.keys()))
+        message = f"missing required result keys: {', '.join(missing)}"
+    return {
+        "path": str(path),
+        "type": "SchemaError",
+        "message": message,
+    }
+
+
 def performance_values(results: list[dict[str, Any]]) -> list[float]:
     values: list[float] = []
     for result in results:
@@ -215,6 +232,7 @@ def aggregate_path(
     json_paths = iter_json_paths(path, exclude_paths=exclude_paths)
     loaded: list[dict[str, Any]] = []
     load_errors: list[dict[str, Any]] = []
+    schema_errors: list[dict[str, Any]] = []
     ignored_files: list[str] = []
     for json_path in json_paths:
         result, error = load_result(json_path)
@@ -225,7 +243,10 @@ def aggregate_path(
                 ignored_files.append(str(json_path))
             continue
         if not is_probe_result(result):
-            ignored_files.append(str(json_path))
+            if "schema_version" in result:
+                schema_errors.append(probe_schema_error(json_path, result))
+            else:
+                ignored_files.append(str(json_path))
             continue
         result["source_path"] = str(json_path)
         loaded.append(result)
@@ -275,6 +296,7 @@ def aggregate_path(
         "total_files": len(json_paths),
         "loaded_results": len(loaded),
         "load_errors": load_errors,
+        "schema_errors": schema_errors,
         "ignored_files": ignored_files,
         "status_counts": status_counts,
         "fingerprint_hashes": by_fingerprint,
@@ -293,6 +315,7 @@ def aggregate_path(
             and status_counts["warn"] == 0
             and status_counts["unknown"] == 0
             and not load_errors
+            and not schema_errors
             and not hash_failures
             and not accelerator_failures
             and len(loaded) > 0

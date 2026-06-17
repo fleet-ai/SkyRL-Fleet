@@ -257,6 +257,62 @@ def test_aggregate_ignores_previous_summary_json(tmp_path):
     assert summary["ignored_files"] == [str(tmp_path / "summary-old.json")]
 
 
+def test_aggregate_fails_on_schema_versioned_non_result_json(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+    }
+    (tmp_path / "partial-result.json").write_text(
+        json.dumps(result),
+        encoding="utf-8",
+    )
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "partial-result.json"),
+            "type": "SchemaError",
+            "message": (
+                "missing required result keys: checks, fingerprint, "
+                "fingerprint_hash, measurements, probe_config_hash, profile, run_id"
+            ),
+        }
+    ]
+    assert not summary["ignored_files"]
+
+
+def test_aggregate_fails_on_unsupported_schema_version(tmp_path):
+    result = {
+        "schema_version": 999,
+        "status": "pass",
+        "profile": "correctness",
+        "run_id": "run-a",
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+    }
+    (tmp_path / "future-result.json").write_text(
+        json.dumps(result),
+        encoding="utf-8",
+    )
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "future-result.json"),
+            "type": "SchemaError",
+            "message": "unsupported schema_version 999; expected 1",
+        }
+    ]
+
+
 def test_aggregate_ignores_valid_non_object_json(tmp_path):
     (tmp_path / "array.json").write_text("[1, 2, 3]", encoding="utf-8")
 
