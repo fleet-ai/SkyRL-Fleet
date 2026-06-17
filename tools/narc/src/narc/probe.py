@@ -39,6 +39,15 @@ def dump_json(outfile: Any, payload: dict[str, Any]) -> None:
     outfile.write("\n")
 
 
+def safe_filename_component(value: Any) -> str:
+    text = str(value)
+    safe = "".join(
+        character if character.isalnum() or character == "-" else "-"
+        for character in text
+    )
+    return safe.strip("-") or "unknown"
+
+
 def resolve_device(torch: Any, device: str, logical_device: int) -> Any:
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -490,11 +499,13 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
 
 
 def default_output_path(result: ProbeResult, out_dir: Path) -> Path:
-    rank = result.slurm.get("slurm_procid") or "local"
-    local_rank = result.slurm.get("slurm_localid") or "0"
+    hostname = safe_filename_component(result.hostname)
+    rank = safe_filename_component(result.slurm.get("slurm_procid") or "local")
+    local_rank = safe_filename_component(result.slurm.get("slurm_localid") or "0")
+    run_id = safe_filename_component(result.run_id)
     filename = (
-        f"{result.hostname}-rank{rank}-local{local_rank}-pid{result.pid}-"
-        f"{result.run_id}.json"
+        f"{hostname}-rank{rank}-local{local_rank}-pid{result.pid}-"
+        f"{run_id}.json"
     )
     return out_dir / filename
 

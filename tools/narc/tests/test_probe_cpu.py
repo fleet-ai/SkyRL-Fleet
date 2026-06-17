@@ -1,7 +1,8 @@
 import pytest
 
 from narc.cli import generate_cli
-from narc.probe import run_probe
+from narc.probe import default_output_path, run_probe
+from narc.schema import ProbeResult
 
 
 def test_cpu_correctness_probe_is_repeatable():
@@ -75,3 +76,32 @@ def test_cpu_probe_rejects_zero_overrides_instead_of_defaulting():
 
     with pytest.raises(ValueError, match="batch_size must be at least 1"):
         run_probe(args)
+
+
+def test_default_output_path_sanitizes_user_controlled_components(tmp_path):
+    result = ProbeResult(
+        schema_version=1,
+        status="pass",
+        profile="correctness",
+        run_id="../../escape",
+        started_at="2026-01-01T00:00:00+00:00",
+        finished_at="2026-01-01T00:00:01+00:00",
+        hostname="node/../../x",
+        pid=123,
+        slurm={"slurm_procid": "../rank", "slurm_localid": "0/1"},
+        command={},
+        probe_config={},
+        probe_config_hash="config-a",
+        fingerprint={"device": {"accelerator_id": "GPU-a"}},
+        fingerprint_hash="fingerprint-a",
+        checks={"output_hash": "hash-a"},
+        measurements={},
+        errors=[],
+    )
+
+    output_path = default_output_path(result, tmp_path)
+
+    assert output_path.parent == tmp_path
+    assert ".." not in output_path.name
+    assert "/" not in output_path.name
+    assert output_path.name.endswith(".json")
