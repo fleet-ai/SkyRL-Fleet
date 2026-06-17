@@ -174,6 +174,9 @@ include-package-data = true
 version = {attr = "skyrl.__version__"}
 
 [project.scripts]
+# OpenAI-compatible HTTP shim in front of a Tinker LoRA checkpoint.
+# See integrations/fleet/serving/tinker_shim.py for boot env vars.
+fleet-tinker-shim = "integrations.fleet.serving.tinker_shim:main"
 # The following is for supporting the skyrl-train dependency
 
 [tool.uv]
