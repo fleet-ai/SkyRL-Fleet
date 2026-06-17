@@ -1,6 +1,6 @@
 import json
 
-from narc.aggregate import aggregate_path
+from narc.aggregate import aggregate_path, generate_aggregate_parser, handle_aggregate
 
 
 def test_aggregate_counts_results_and_failures(tmp_path):
@@ -61,6 +61,7 @@ def test_aggregate_counts_results_and_failures(tmp_path):
     assert summary["fingerprint_hashes"] == {"fingerprint-a": 2}
     assert summary["accelerator_ids"] == {"GPU-a": 1, "GPU-b": 1}
     assert summary["devices"][0]["accelerator_id"] == "GPU-b"
+    assert summary["output_hash_failures"]
     assert summary["performance"]["tokens_per_second"]["median"] == 7.5
     assert not summary["pass"]
     assert summary["failures"][0]["run_id"] == "run-b"
@@ -75,3 +76,61 @@ def test_aggregate_reports_corrupt_json(tmp_path):
     assert summary["loaded_results"] == 0
     assert summary["load_errors"][0]["type"] == "JSONDecodeError"
     assert not summary["pass"]
+
+
+def test_aggregate_fails_on_divergent_output_hashes_for_same_config(tmp_path):
+    for name, output_hash in (("a.json", "hash-a"), ("b.json", "hash-b")):
+        result = {
+            "status": "pass",
+            "profile": "correctness",
+            "hostname": name,
+            "run_id": name,
+            "slurm": {},
+            "fingerprint_hash": "fingerprint-a",
+            "fingerprint": {"device": {"accelerator_id": name}},
+            "probe_config_hash": "config-a",
+            "checks": {"output_hash": output_hash},
+            "measurements": {},
+            "errors": [],
+        }
+        (tmp_path / name).write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["output_hash_failures"] == [
+        {
+            "group": "correctness:config-a",
+            "profile": "correctness",
+            "probe_config_hash": "config-a",
+            "output_hashes": {"hash-a": 1, "hash-b": 1},
+            "missing_output_hash": [],
+        }
+    ]
+
+
+def test_aggregate_outfile_inside_input_directory_is_not_ingested(tmp_path):
+    result = {
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "slurm": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "result.json").write_text(json.dumps(result), encoding="utf-8")
+    outfile = tmp_path / "summary.json"
+    parser = generate_aggregate_parser()
+    args = parser.parse_args([str(tmp_path), "--fail-on-fail", "-o", str(outfile)])
+
+    handle_aggregate(args)
+
+    summary = json.loads(outfile.read_text(encoding="utf-8"))
+    assert summary["pass"]
+    assert summary["total_files"] == 1
+    assert not summary["load_errors"]

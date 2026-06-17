@@ -29,11 +29,20 @@ run: |
   OUT_DIR="${NARC_OUT_DIR}/${JOB_ID}"
   mkdir -p "${OUT_DIR}"
 
+  set +e
   srun --ntasks-per-node=8 --gpus-per-task=1 --gpu-bind=single:1 \
     uv run --project tools/narc --no-sync narc run-local \
       --profile "${NARC_PROFILE}" \
       --device cuda \
       --dtype fp32 \
       --out-dir "${OUT_DIR}"
+  SRUN_EXIT=$?
 
   uv run --project tools/narc --no-sync narc aggregate "${OUT_DIR}" --fail-on-fail
+  AGGREGATE_EXIT=$?
+  set -e
+
+  if [ "${SRUN_EXIT}" -ne 0 ] || [ "${AGGREGATE_EXIT}" -ne 0 ]; then
+    echo "narc failed: srun_exit=${SRUN_EXIT} aggregate_exit=${AGGREGATE_EXIT}" >&2
+    exit 1
+  fi

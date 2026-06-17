@@ -4,22 +4,25 @@ import argparse
 import json
 import statistics
 import sys
-from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 
-def _iter_json_paths(path: Path) -> list[Path]:
+def iter_json_paths(path: Path, exclude_paths: set[Path] | None = None) -> list[Path]:
+    excluded = exclude_paths or set()
     if path.is_file():
+        if path.resolve() in excluded:
+            return []
         return [path]
     return sorted(
         candidate
         for candidate in path.rglob("*.json")
         if not candidate.name.endswith(".tmp")
+        and candidate.resolve() not in excluded
     )
 
 
-def _load_result(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def load_result(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     try:
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle), None
@@ -31,7 +34,7 @@ def _load_result(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | No
         }
 
 
-def _performance_values(results: list[dict[str, Any]]) -> list[float]:
+def performance_values(results: list[dict[str, Any]]) -> list[float]:
     values: list[float] = []
     for result in results:
         timing = result.get("measurements", {}).get("timing", {})
@@ -41,7 +44,7 @@ def _performance_values(results: list[dict[str, Any]]) -> list[float]:
     return values
 
 
-def _summarize_performance(values: list[float]) -> dict[str, float | int | None]:
+def summarize_performance(values: list[float]) -> dict[str, float | int | None]:
     if not values:
         return {
             "count": 0,
@@ -59,12 +62,12 @@ def _summarize_performance(values: list[float]) -> dict[str, float | int | None]
     }
 
 
-def _device_fingerprint(result: dict[str, Any]) -> dict[str, Any]:
+def device_fingerprint(result: dict[str, Any]) -> dict[str, Any]:
     device = result.get("fingerprint", {}).get("device", {})
     cuda_driver = device.get("cuda_driver", {})
     slurm = result.get("slurm", {})
     return {
-        "path": result.get("_source_path"),
+        "path": result.get("source_path"),
         "status": result.get("status"),
         "hostname": result.get("hostname"),
         "accelerator_id": device.get("accelerator_id"),
@@ -76,17 +79,66 @@ def _device_fingerprint(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def aggregate_path(path: Path) -> dict[str, Any]:
-    json_paths = _iter_json_paths(path)
+def comparable_output_groups(
+    results: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for result in results:
+        config_hash = result.get("probe_config_hash") or "missing"
+        profile = result.get("profile") or "missing"
+        key = f"{profile}:{config_hash}"
+        output_hash = result.get("checks", {}).get("output_hash")
+        source_path = result.get("source_path")
+        group = groups.setdefault(
+            key,
+            {
+                "profile": profile,
+                "probe_config_hash": config_hash,
+                "output_hashes": {},
+                "missing_output_hash": [],
+            },
+        )
+        if output_hash:
+            hashes = group["output_hashes"]
+            hashes[output_hash] = hashes.get(output_hash, 0) + 1
+        else:
+            group["missing_output_hash"].append(source_path)
+    return groups
+
+
+def output_hash_failures(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for key, group in comparable_output_groups(results).items():
+        output_hashes = group["output_hashes"]
+        missing = group["missing_output_hash"]
+        if len(output_hashes) > 1 or missing:
+            failures.append(
+                {
+                    "group": key,
+                    "profile": group["profile"],
+                    "probe_config_hash": group["probe_config_hash"],
+                    "output_hashes": output_hashes,
+                    "missing_output_hash": missing,
+                }
+            )
+    return failures
+
+
+def aggregate_path(
+    path: Path,
+    *,
+    exclude_paths: set[Path] | None = None,
+) -> dict[str, Any]:
+    json_paths = iter_json_paths(path, exclude_paths=exclude_paths)
     loaded: list[dict[str, Any]] = []
     load_errors: list[dict[str, Any]] = []
     for json_path in json_paths:
-        result, error = _load_result(json_path)
+        result, error = load_result(json_path)
         if result is None:
             if error is not None:
                 load_errors.append(error)
             continue
-        result["_source_path"] = str(json_path)
+        result["source_path"] = str(json_path)
         loaded.append(result)
 
     status_counts = {"pass": 0, "warn": 0, "fail": 0, "unknown": 0}
@@ -115,9 +167,9 @@ def aggregate_path(path: Path) -> dict[str, Any]:
 
     failures = [
         {
-            "path": result.get("_source_path"),
+            "path": result.get("source_path"),
             "hostname": result.get("hostname"),
-            "accelerator_id": _device_fingerprint(result).get("accelerator_id"),
+            "accelerator_id": device_fingerprint(result).get("accelerator_id"),
             "run_id": result.get("run_id"),
             "status": result.get("status"),
             "errors": result.get("errors", []),
@@ -126,6 +178,7 @@ def aggregate_path(path: Path) -> dict[str, Any]:
         for result in loaded
         if result.get("status") != "pass"
     ]
+    hash_failures = output_hash_failures(loaded)
 
     return {
         "input": str(path),
@@ -136,27 +189,36 @@ def aggregate_path(path: Path) -> dict[str, Any]:
         "fingerprint_hashes": by_fingerprint,
         "probe_config_hashes": by_config,
         "output_hashes": output_hashes,
+        "output_hash_failures": hash_failures,
         "accelerator_ids": accelerator_ids,
-        "devices": [_device_fingerprint(result) for result in loaded],
+        "devices": [device_fingerprint(result) for result in loaded],
         "performance": {
-            "tokens_per_second": _summarize_performance(_performance_values(loaded)),
+            "tokens_per_second": summarize_performance(performance_values(loaded)),
         },
         "failures": failures,
         "pass": (
             status_counts["fail"] == 0
+            and status_counts["warn"] == 0
             and status_counts["unknown"] == 0
             and not load_errors
+            and not hash_failures
             and len(loaded) > 0
         ),
     }
 
 
 def handle_aggregate(args: argparse.Namespace) -> None:
-    summary = aggregate_path(Path(args.path))
-    context = nullcontext(args.outfile) if args.outfile is sys.stdout else args.outfile
-    with context as outfile:
-        json.dump(summary, outfile, indent=2, sort_keys=True)
-        outfile.write("\n")
+    output_path = Path(args.outfile).resolve() if args.outfile else None
+    exclude_paths = {output_path} if output_path else None
+    summary = aggregate_path(Path(args.path), exclude_paths=exclude_paths)
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8") as outfile:
+            json.dump(summary, outfile, indent=2, sort_keys=True)
+            outfile.write("\n")
+    else:
+        json.dump(summary, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
     if args.fail_on_fail and not summary["pass"]:
         raise SystemExit(1)
 
@@ -175,8 +237,7 @@ def generate_aggregate_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-o",
         "--outfile",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
+        type=str,
         help="Output file for aggregate JSON.",
     )
     parser.set_defaults(func=handle_aggregate)

@@ -42,7 +42,7 @@ def slurm_context() -> dict[str, str | None]:
     return {key.lower(): os.environ.get(key) for key in keys}
 
 
-def _run_command(args: list[str]) -> str | None:
+def run_command(args: list[str]) -> str | None:
     try:
         output = subprocess.check_output(
             args,
@@ -55,7 +55,7 @@ def _run_command(args: list[str]) -> str | None:
     return output.strip()
 
 
-def _nvidia_smi_query(device_identifier: str | None = None) -> dict[str, str] | None:
+def nvidia_smi_query(device_identifier: str | None = None) -> dict[str, str] | None:
     args = ["nvidia-smi"]
     if device_identifier:
         args.append(f"--id={device_identifier}")
@@ -65,7 +65,7 @@ def _nvidia_smi_query(device_identifier: str | None = None) -> dict[str, str] | 
             "--format=csv,noheader,nounits",
         ]
     )
-    output = _run_command(args)
+    output = run_command(args)
     if not output:
         return None
     first_line = output.splitlines()[0]
@@ -81,7 +81,25 @@ def _nvidia_smi_query(device_identifier: str | None = None) -> dict[str, str] | 
     }
 
 
-def _load_cuda_driver() -> Any:
+def visible_device_identifier(logical_device: int) -> str | None:
+    for env_key in ("CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES", "SLURM_JOB_GPUS"):
+        visible = os.environ.get(env_key)
+        if not visible:
+            continue
+        entries = [entry.strip() for entry in visible.split(",") if entry.strip()]
+        if logical_device < len(entries):
+            return entries[logical_device]
+    return str(logical_device)
+
+
+def torch_device_identity(props: Any) -> dict[str, Any]:
+    return {
+        "uuid": getattr(props, "uuid", None),
+        "pci_bus_id": getattr(props, "pci_bus_id", None),
+    }
+
+
+def load_cuda_driver() -> Any:
     library_path = ctypes.util.find_library("cuda")
     candidates = [library_path, "libcuda.so.1", "libcuda.so", "nvcuda.dll"]
     errors: list[str] = []
@@ -95,18 +113,18 @@ def _load_cuda_driver() -> Any:
     raise RuntimeError("; ".join(errors) or "CUDA driver library not found")
 
 
-def _check_cuda(result: int, operation: str) -> None:
+def check_cuda(result: int, operation: str) -> None:
     if result != 0:
         raise RuntimeError(f"{operation} failed with CUDA driver error {result}")
 
 
-def _format_cuda_uuid(raw: bytes) -> str:
+def format_cuda_uuid(raw: bytes) -> str:
     return f"GPU-{uuid.UUID(bytes=raw)}"
 
 
-def _cuda_driver_identity(logical_device: int) -> dict[str, Any]:
+def cuda_driver_identity(logical_device: int) -> dict[str, Any]:
     try:
-        driver = _load_cuda_driver()
+        driver = load_cuda_driver()
 
         driver.cuInit.argtypes = [ctypes.c_uint]
         driver.cuInit.restype = ctypes.c_int
@@ -132,32 +150,32 @@ def _cuda_driver_identity(logical_device: int) -> dict[str, Any]:
         uuid_function.argtypes = [ctypes.c_void_p, ctypes.c_int]
         uuid_function.restype = ctypes.c_int
 
-        _check_cuda(driver.cuInit(0), "cuInit")
+        check_cuda(driver.cuInit(0), "cuInit")
         device = ctypes.c_int()
-        _check_cuda(
+        check_cuda(
             driver.cuDeviceGet(ctypes.byref(device), logical_device),
             "cuDeviceGet",
         )
 
         uuid_buffer = (ctypes.c_ubyte * 16)()
-        _check_cuda(
+        check_cuda(
             uuid_function(ctypes.byref(uuid_buffer), device.value),
             "cuDeviceGetUuid",
         )
 
         pci_buffer = ctypes.create_string_buffer(64)
-        _check_cuda(
+        check_cuda(
             driver.cuDeviceGetPCIBusId(pci_buffer, len(pci_buffer), device.value),
             "cuDeviceGetPCIBusId",
         )
 
         name_buffer = ctypes.create_string_buffer(256)
-        _check_cuda(
+        check_cuda(
             driver.cuDeviceGetName(name_buffer, len(name_buffer), device.value),
             "cuDeviceGetName",
         )
 
-        gpu_uuid = _format_cuda_uuid(bytes(uuid_buffer))
+        gpu_uuid = format_cuda_uuid(bytes(uuid_buffer))
         pci_bus_id = pci_buffer.value.decode("ascii", errors="replace")
         return {
             "source": "cuda_driver_api",
@@ -181,25 +199,30 @@ def _cuda_driver_identity(logical_device: int) -> dict[str, Any]:
         }
 
 
-def _fallback_accelerator_id(
+def fallback_accelerator_id(
     *,
     logical_device: int,
     driver_identity: dict[str, Any],
+    torch_identity: dict[str, Any],
     nvidia_smi: dict[str, str] | None,
 ) -> str:
     hostname = socket.gethostname()
     if driver_identity.get("uuid"):
         return str(driver_identity["uuid"])
+    if torch_identity.get("uuid"):
+        return str(torch_identity["uuid"])
     if nvidia_smi and nvidia_smi.get("uuid"):
         return nvidia_smi["uuid"]
     if driver_identity.get("pci_bus_id"):
         return f"{hostname}/{driver_identity['pci_bus_id']}"
+    if torch_identity.get("pci_bus_id"):
+        return f"{hostname}/{torch_identity['pci_bus_id']}"
     if nvidia_smi and nvidia_smi.get("pci_bus_id"):
         return f"{hostname}/{nvidia_smi['pci_bus_id']}"
     return f"{hostname}/cuda:{logical_device}"
 
 
-def _torch_config_hash(torch: Any) -> tuple[str | None, str | None]:
+def torch_config_hash(torch: Any) -> tuple[str | None, str | None]:
     stream = io.StringIO()
     with contextlib.redirect_stdout(stream):
         returned = torch.__config__.show()
@@ -215,7 +238,7 @@ def collect_fingerprint(
     device_type: str,
     logical_device: int,
 ) -> dict[str, Any]:
-    config_hash, config_text = _torch_config_hash(torch)
+    config_hash, config_text = torch_config_hash(torch)
     fingerprint: dict[str, Any] = {
         "python": {
             "version": sys.version,
@@ -255,19 +278,27 @@ def collect_fingerprint(
     if device_type == "cuda":
         cuda = torch.cuda
         props = cuda.get_device_properties(logical_device)
-        driver_identity = _cuda_driver_identity(logical_device)
-        driver_uuid = driver_identity.get("uuid")
-        nvidia_smi = _nvidia_smi_query(driver_uuid) if driver_uuid else None
+        driver_identity = cuda_driver_identity(logical_device)
+        torch_identity = torch_device_identity(props)
+        stable_identifier = (
+            driver_identity.get("uuid")
+            or torch_identity.get("uuid")
+            or visible_device_identifier(logical_device)
+        )
+        nvidia_smi = nvidia_smi_query(stable_identifier)
         sm_count = getattr(props, "multi_processor_count", None)
-        accelerator_id = _fallback_accelerator_id(
+        accelerator_id = fallback_accelerator_id(
             logical_device=logical_device,
             driver_identity=driver_identity,
+            torch_identity=torch_identity,
             nvidia_smi=nvidia_smi,
         )
         fingerprint["device"].update(
             {
                 "accelerator_id": accelerator_id,
                 "cuda_driver": driver_identity,
+                "torch_device": torch_identity,
+                "visible_identifier": stable_identifier,
                 "name": cuda.get_device_name(logical_device),
                 "capability": list(cuda.get_device_capability(logical_device)),
                 "total_memory": props.total_memory,

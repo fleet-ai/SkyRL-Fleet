@@ -21,11 +21,11 @@ from narc.env import (
 from narc.schema import SCHEMA_VERSION, ProbeConfig, ProbeResult
 
 
-def _utc_now() -> str:
+def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
+def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
     with tmp_path.open("w", encoding="utf-8") as handle:
@@ -34,12 +34,12 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
-def _dump_json(outfile: Any, payload: dict[str, Any]) -> None:
+def dump_json(outfile: Any, payload: dict[str, Any]) -> None:
     json.dump(payload, outfile, indent=2, sort_keys=True)
     outfile.write("\n")
 
 
-def _resolve_device(torch: Any, device: str, logical_device: int) -> Any:
+def resolve_device(torch: Any, device: str, logical_device: int) -> Any:
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     if device == "cuda":
@@ -57,7 +57,7 @@ def _resolve_device(torch: Any, device: str, logical_device: int) -> Any:
     raise ValueError(f"unsupported device: {device}")
 
 
-def _resolve_dtype(torch: Any, dtype: str, device: Any) -> Any:
+def resolve_dtype(torch: Any, dtype: str, device: Any) -> Any:
     if dtype == "auto":
         if device.type == "cuda":
             return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
@@ -71,7 +71,7 @@ def _resolve_dtype(torch: Any, dtype: str, device: Any) -> Any:
     raise ValueError(f"unsupported dtype: {dtype}")
 
 
-def _configure_torch(
+def configure_torch(
     torch: Any,
     *,
     seed: int,
@@ -92,7 +92,7 @@ def _configure_torch(
         torch.set_float32_matmul_precision("highest")
 
 
-def _fixed_inputs(torch: Any, config: ProbeConfig, device: Any) -> tuple[Any, Any]:
+def fixed_inputs(torch: Any, config: ProbeConfig, device: Any) -> tuple[Any, Any]:
     token_count = config.batch_size * config.sequence_length
     base = torch.arange(token_count, dtype=torch.long, device=device).view(
         config.batch_size,
@@ -103,7 +103,7 @@ def _fixed_inputs(torch: Any, config: ProbeConfig, device: Any) -> tuple[Any, An
     return input_ids, labels
 
 
-def _manual_cross_entropy(torch: Any, logits: Any, labels: Any) -> Any:
+def manual_cross_entropy(torch: Any, logits: Any, labels: Any) -> Any:
     shifted_logits = logits[:, :-1, :].contiguous()
     shifted_labels = labels[:, 1:].contiguous()
     flat_logits = shifted_logits.view(-1, shifted_logits.shape[-1])
@@ -113,13 +113,13 @@ def _manual_cross_entropy(torch: Any, logits: Any, labels: Any) -> Any:
     return (log_denominator - selected).mean()
 
 
-def _manual_sgd_step(model: Any, *, learning_rate: float) -> None:
+def manual_sgd_step(model: Any, *, learning_rate: float) -> None:
     for parameter in model.parameters():
         if parameter.grad is not None:
             parameter.add_(parameter.grad, alpha=-learning_rate)
 
 
-def _hash_named_tensors(tensors: list[tuple[str, Any]]) -> str:
+def hash_named_tensors(tensors: list[tuple[str, Any]]) -> str:
     return stable_hash(
         [
             {
@@ -133,20 +133,20 @@ def _hash_named_tensors(tensors: list[tuple[str, Any]]) -> str:
     )
 
 
-def _parameter_hash(model: Any) -> str:
-    return _hash_named_tensors(list(model.named_parameters()))
+def parameter_hash(model: Any) -> str:
+    return hash_named_tensors(list(model.named_parameters()))
 
 
-def _gradient_hash(model: Any) -> str:
+def gradient_hash(model: Any) -> str:
     named_gradients = [
         (name, parameter.grad)
         for name, parameter in model.named_parameters()
         if parameter.grad is not None
     ]
-    return _hash_named_tensors(named_gradients)
+    return hash_named_tensors(named_gradients)
 
 
-def _cuda_memory(torch: Any, device: Any) -> dict[str, int | None]:
+def cuda_memory(torch: Any, device: Any) -> dict[str, int | None]:
     if device.type != "cuda":
         return {
             "allocated_bytes": None,
@@ -162,12 +162,12 @@ def _cuda_memory(torch: Any, device: Any) -> dict[str, int | None]:
     }
 
 
-def _synchronize(torch: Any, device: Any) -> None:
+def synchronize(torch: Any, device: Any) -> None:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
 
 
-def _run_training_steps(
+def run_training_steps(
     torch: Any,
     config: ProbeConfig,
     *,
@@ -180,7 +180,7 @@ def _run_training_steps(
     from narc.tiny_lm import build_model
 
     model = build_model(config, seed=seed).to(device=device, dtype=dtype)
-    input_ids, labels = _fixed_inputs(torch, config, device)
+    input_ids, labels = fixed_inputs(torch, config, device)
     learning_rate = 1e-3
     losses: list[str] = []
     step_seconds: list[float] = []
@@ -198,11 +198,11 @@ def _run_training_steps(
             start_time = time.perf_counter() if timed else None
 
         logits = model(input_ids)
-        loss = _manual_cross_entropy(torch, logits, labels)
+        loss = manual_cross_entropy(torch, logits, labels)
         loss.backward()
-        final_grad_hash = _gradient_hash(model)
+        final_grad_hash = gradient_hash(model)
         with torch.no_grad():
-            _manual_sgd_step(model, learning_rate=learning_rate)
+            manual_sgd_step(model, learning_rate=learning_rate)
 
         if device.type == "cuda":
             if end_event is not None and start_event is not None:
@@ -230,7 +230,7 @@ def _run_training_steps(
         "final_loss": losses[-1],
         "logits_hash": tensor_hash(final_logits.float()),
         "grad_hash": final_grad_hash,
-        "parameter_hash": _parameter_hash(model),
+        "parameter_hash": parameter_hash(model),
         "selected_logits": [f"{value:.9g}" for value in selected],
     }
     output["output_hash"] = stable_hash(output)
@@ -246,9 +246,9 @@ def _run_training_steps(
     return output
 
 
-def _run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
+def run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
     runs = [
-        _run_training_steps(
+        run_training_steps(
             torch,
             config,
             device=device,
@@ -267,11 +267,11 @@ def _run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any
     }
 
 
-def _run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
+def run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
     if config.warmup_steps:
-        _run_training_steps(
+        run_training_steps(
             torch,
             config,
             device=device,
@@ -280,8 +280,8 @@ def _run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any
             steps=config.warmup_steps,
             timed=False,
         )
-    _synchronize(torch, device)
-    measured = _run_training_steps(
+    synchronize(torch, device)
+    measured = run_training_steps(
         torch,
         config,
         device=device,
@@ -290,7 +290,7 @@ def _run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any
         steps=config.steps,
         timed=True,
     )
-    memory = _cuda_memory(torch, device)
+    memory = cuda_memory(torch, device)
     timings = measured.get("timing", {})
     step_seconds = timings.get("step_seconds", [])
     variance = None
@@ -308,7 +308,7 @@ def _run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any
     }
 
 
-def _default_config(args: argparse.Namespace, dtype_name: str) -> ProbeConfig:
+def default_config(args: argparse.Namespace, dtype_name: str) -> ProbeConfig:
     profile = args.profile
     if profile == "correctness":
         defaults = {
@@ -362,13 +362,13 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
 
     import torch
 
-    started_at = _utc_now()
+    started_at = utc_now()
     run_id = args.run_id or uuid.uuid4().hex
-    device = _resolve_device(torch, args.device, args.logical_device)
-    dtype = _resolve_dtype(torch, args.dtype, device)
+    device = resolve_device(torch, args.device, args.logical_device)
+    dtype = resolve_dtype(torch, args.dtype, device)
     dtype_name = str(dtype).removeprefix("torch.")
-    config = _default_config(args, dtype_name)
-    _configure_torch(
+    config = default_config(args, dtype_name)
+    configure_torch(
         torch,
         seed=config.seed,
         deterministic=config.deterministic,
@@ -393,7 +393,7 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
 
     try:
         if config.profile == "correctness":
-            measurements = _run_correctness(torch, config, device=device, dtype=dtype)
+            measurements = run_correctness(torch, config, device=device, dtype=dtype)
             checks["repeat_match"] = measurements["repeat_match"]
             checks["output_hash"] = measurements["output_hash"]
             if not measurements["repeat_match"]:
@@ -404,7 +404,7 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
                 if not expected_match:
                     status = "fail"
         else:
-            measurements = _run_performance(torch, config, device=device, dtype=dtype)
+            measurements = run_performance(torch, config, device=device, dtype=dtype)
             checks["output_hash"] = measurements["output_hash"]
             if args.expected_hash:
                 expected_match = measurements["output_hash"] == args.expected_hash
@@ -421,7 +421,7 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
         )
         measurements = {}
 
-    finished_at = _utc_now()
+    finished_at = utc_now()
     result = ProbeResult(
         schema_version=SCHEMA_VERSION,
         status=status,  # type: ignore[arg-type]
@@ -449,7 +449,7 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
     return result
 
 
-def _default_output_path(result: ProbeResult, out_dir: Path) -> Path:
+def default_output_path(result: ProbeResult, out_dir: Path) -> Path:
     rank = result.slurm.get("slurm_procid") or "local"
     local_rank = result.slurm.get("slurm_localid") or "0"
     filename = (
@@ -463,13 +463,13 @@ def handle_run_local(args: argparse.Namespace) -> None:
     result = run_probe(args)
     payload = result.to_dict()
     if args.out_dir:
-        output_path = _default_output_path(result, Path(args.out_dir))
+        output_path = default_output_path(result, Path(args.out_dir))
         payload["output_path"] = str(output_path)
-        _write_json(output_path, payload)
+        write_json(output_path, payload)
 
     context = nullcontext(args.outfile) if args.outfile is sys.stdout else args.outfile
     with context as outfile:
-        _dump_json(outfile, payload)
+        dump_json(outfile, payload)
 
     if result.status == "fail":
         raise SystemExit(1)

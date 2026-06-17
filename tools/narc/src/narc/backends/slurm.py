@@ -19,12 +19,12 @@ class SlurmNode:
         return asdict(self)
 
 
-def _run(args: list[str]) -> str:
+def run_command(args: list[str]) -> str:
     return subprocess.check_output(args, stderr=subprocess.DEVNULL, text=True).strip()
 
 
 def list_nodes() -> list[SlurmNode]:
-    output = _run(
+    output = run_command(
         [
             "sinfo",
             "--Node",

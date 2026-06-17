@@ -5,7 +5,7 @@ from narc.aggregate import generate_aggregate_parser
 from narc.probe import generate_run_local_parser
 
 
-def _version() -> str:
+def package_version() -> str:
     try:
         return version("narc")
     except PackageNotFoundError:
@@ -22,7 +22,7 @@ def generate_cli() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version",
         action="version",
-        version=_version(),
+        version=package_version(),
     )
     parser.add_argument(
         "--debug",
