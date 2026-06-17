@@ -1,0 +1,54 @@
+name: tinker-shim
+
+# The shim is a thin HTTP wrapper around the Tinker SDK. No GPU needed —
+# inference happens on Tinker's cloud. Just give us a cheap CPU VM with
+# port 8000 exposed and enough memory to hold the HF tokenizer
+# (Kimi-K2.6 fits in <2 GB resident).
+
+resources:
+  disk_size: 80
+  ports:
+    - 8000
+  ordered:
+    - cpus: 4
+      memory: 16
+      cloud: gcp
+    - cpus: 4
+      memory: 16
+      cloud: runpod
+
+workdir: /Users/deniz/repos/skyrl-fleet
+
+envs:
+  FLEET_TINKER_CHECKPOINT: ""
+  FLEET_TINKER_BASE_MODEL: ""
+  TINKER_API_KEY: ""
+  TINKER_SHIM_HOST: "0.0.0.0"
+  TINKER_SHIM_PORT: "8000"
+
+setup: |
+  set -ex
+  # Reuse the project's tinker extra. uv is already on the SkyPilot image.
+  if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  cd ~/sky_workdir
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv pip install -e ".[tinker]"
+  # Kimi-K2.6 tokenizer requires tiktoken via trust_remote_code. Not pulled by
+  # the [tinker] extra (training tokenization goes through HF datasets path).
+  uv pip install tiktoken blobfile
+
+run: |
+  set -ex
+  cd ~/sky_workdir
+  source .venv/bin/activate
+
+  # Fail fast if the operator forgot the env vars before launch.
+  : "${FLEET_TINKER_CHECKPOINT:?FLEET_TINKER_CHECKPOINT not set}"
+  : "${FLEET_TINKER_BASE_MODEL:?FLEET_TINKER_BASE_MODEL not set}"
+  : "${TINKER_API_KEY:?TINKER_API_KEY not set}"
+
+  exec python -m integrations.fleet.serving.tinker_shim
