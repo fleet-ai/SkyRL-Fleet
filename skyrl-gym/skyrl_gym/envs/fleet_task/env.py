@@ -89,6 +89,35 @@ def clear_caches():
     _TASK_CACHE = {}
 
 
+def truncate_tool_result(tool_result: Any, max_chars: int = MAX_TOOL_OUTPUT_CHARS) -> Any:
+    """Cap the on-wire size of a single tool result before it lands in chat_history.
+
+    Long query results, screenshots-as-strings, or large dicts can fill the
+    next prompt and trigger `stop=length` long before max_turns.
+
+    Contract:
+      - None passes through unchanged.
+      - Anything whose serialized length is within `max_chars` passes through
+        unchanged (preserves the original shape — str stays str, dict stays
+        dict, list-of-content-blocks stays multimodal).
+      - Anything that exceeds `max_chars` is coerced to a truncated string
+        with a "[TRUNCATED — N chars elided.]" suffix.
+    """
+    if tool_result is None:
+        return None
+    if isinstance(tool_result, str):
+        text = tool_result
+    else:
+        try:
+            text = json.dumps(tool_result, default=str)
+        except Exception:
+            text = str(tool_result)
+    if len(text) <= max_chars:
+        return tool_result
+    elided = len(text) - max_chars
+    return text[:max_chars] + f"\n\n[TRUNCATED — {elided} chars elided.]"
+
+
 def tool_result_to_message_content(tool_result: Any) -> Any:
     """Normalize a Fleet tool_result into a user-message `content` value.
 
@@ -669,16 +698,13 @@ class FleetTaskEnv(BaseTextEnv):
                 if "tool_error" in info:
                     error = info["tool_error"]
 
-                # Truncate huge string tool_results before they blow up the next prompt.
-                if tool_result and isinstance(tool_result, str):
+                # Cap tool_result size before it lands in chat_history.
+                if tool_result is not None:
                     if self.context_manager:
-                        tool_result = self.context_manager.truncate_output(tool_result)
-                    elif len(tool_result) > MAX_TOOL_OUTPUT_CHARS:
-                        elided = len(tool_result) - MAX_TOOL_OUTPUT_CHARS
-                        tool_result = (
-                            tool_result[:MAX_TOOL_OUTPUT_CHARS]
-                            + f"\n\n[TRUNCATED — {elided} chars elided.]"
-                        )
+                        text = tool_result if isinstance(tool_result, str) else json.dumps(tool_result, default=str)
+                        tool_result = self.context_manager.truncate_output(text)
+                    else:
+                        tool_result = truncate_tool_result(tool_result)
             except Exception as e:
                 mcp_time = time.time() - mcp_start
                 error = str(e)
