@@ -302,6 +302,11 @@ class NegotiationEnv(BaseTextEnv):
         # Final allocation (each side's keep), filled when the game resolves.
         self.you_take: Optional[List[int]] = None
         self.them_take: Optional[List[int]] = None
+        # Which side emitted the <accept> that closed the deal (single protocol only):
+        # "you" = the policy accepted the opponent's pending offer; "them" = the
+        # opponent accepted the policy's pending offer. None until/unless a deal closes
+        # via accept (no-deal episodes and the dual protocol leave this None).
+        self.accepted_by: Optional[str] = None
         self.outcome: Optional[game.Outcome] = None
         self.final_reward: float = 0.0
         self.opponent_errors: int = 0
@@ -311,6 +316,15 @@ class NegotiationEnv(BaseTextEnv):
         self.opponent_prompt_tokens: int = 0
         self.opponent_completion_tokens: int = 0
         self.transcript: List[Dict[str, str]] = []
+        # The opponent turn that CLOSED the episode — an <accept>, or the opponent's
+        # last reply before the per-agent budget ran out. Because that turn ends the
+        # episode, the generator is handed observations=[] and the turn never enters
+        # the policy's training trajectory (response_ids), so it is absent from the
+        # dumped `text`. Without surfacing it, opponent-closed episodes (incl. every
+        # single-turn "opening offer accepted") look like the opponent never spoke.
+        # Surfaced via get_metrics() for the trajectory dump + trace viewer; the
+        # policy is never trained on it (it stays out of response_ids).
+        self.closing_observation: Optional[str] = None
 
     # ------------------------------------------------------------------ init
     def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
@@ -418,6 +432,7 @@ class NegotiationEnv(BaseTextEnv):
         # 1. If the policy accepts a pending opponent offer, the deal closes now
         #    (accept wins over a co-occurring propose).
         if game.has_accept(action) and self.pending and self.pending["by"] == "them":
+            self.accepted_by = "you"
             self._finalize_single(self.pending)
             return self._terminal_output()
 
@@ -455,6 +470,11 @@ class NegotiationEnv(BaseTextEnv):
         self.transcript.append({"speaker": "them", "text": them_raw})
 
         if game.has_accept(them_text) and self.pending and self.pending["by"] == "you":
+            self.accepted_by = "them"
+            # This accept closes the episode and is never returned to the policy as an
+            # observation, so it won't appear in the dumped trajectory `text`. Record it
+            # (the stripped view the policy would have seen) for the trace.
+            self.closing_observation = them_text
             self._finalize_single(self.pending)
             return self._terminal_output()
 
@@ -465,6 +485,10 @@ class NegotiationEnv(BaseTextEnv):
 
         # 4. Budget check: after the opponent has had a chance to respond.
         if budget_exhausted:
+            # The opponent's just-generated reply is the episode's last turn but is
+            # never handed back to the policy (terminal -> observations=[]), so it is
+            # missing from the dumped `text`. Keep it for the trace.
+            self.closing_observation = them_text
             # No agreement reached within the budget -> no_deal (reward 0).
             self._resolve(None, None)
             return self._terminal_output()
@@ -512,11 +536,15 @@ class NegotiationEnv(BaseTextEnv):
             self.them_deal = them_deal
 
         if self.you_deal is not None and self.them_deal is not None:
+            # Opponent's reply completes the pair and terminates here, so it never
+            # reaches the policy as an observation -> absent from dumped `text`.
+            self.closing_observation = them_text
             self._resolve(self.you_deal, self.them_deal)
             return self._terminal_output()
 
         if budget_exhausted:
             # One or both tags missing -> evaluate yields no_deal/incomplete/conflict (0).
+            self.closing_observation = them_text
             self._resolve(self.you_deal, self.them_deal)
             return self._terminal_output()
 
@@ -585,12 +613,38 @@ class NegotiationEnv(BaseTextEnv):
             "opponent_cost_usd": float(opp_cost),
         }
         out = self.outcome
+        # Trace-tail: the closing opponent turn + resolved split, neither of which is
+        # in the policy's training tokens. These are strings/lists, so the numeric
+        # metric aggregators (default_aggregate_metrics / get_rollout_metrics) skip
+        # them and they never touch wandb; they ride env_metrics only so the trajectory
+        # dump can persist them for the trace viewer. See dump_training_trajectories.
+        trace_tail = {
+            "closing_observation": self.closing_observation,
+            "you_take": self.you_take,
+            "them_take": self.them_take,
+            "accepted_by": self.accepted_by,
+            "item_names": self.item_names,
+            "outcome": out.reason if out is not None else None,
+        }
         if out is None:
             return {
                 "resolved": 0.0,
                 "num_turns": float(self.turns),
                 **opponent_metrics,
                 **think_metrics,
+                **trace_tail,
+            }
+        # Who closed the deal by accepting (single protocol). Emitted only on
+        # agreement and only when an accept actually closed it, so the wandb means
+        # read as fractions OF AGREEMENTS: accept_by_policy = share of deals the
+        # policy closed by accepting the opponent's offer (the opponent was the
+        # proposer); accept_by_opponent = share the opponent closed by accepting the
+        # policy's offer (the policy was the proposer). They sum to 1 over agreements.
+        accept_metrics: Dict[str, float] = {}
+        if out.agreed and self.accepted_by is not None:
+            accept_metrics = {
+                "accept_by_policy": 1.0 if self.accepted_by == "you" else 0.0,
+                "accept_by_opponent": 1.0 if self.accepted_by == "them" else 0.0,
             }
         return {
             **opponent_metrics,
@@ -602,12 +656,17 @@ class NegotiationEnv(BaseTextEnv):
             "you_norm": out.you_norm,
             "them_norm": out.them_norm,
             "joint_efficiency": out.joint_efficiency,
-            "pareto": out.pareto_bonus,
+            # `pareto_bonus` intentionally not logged here: the binary Pareto flag is
+            # gameable (full extraction vs a pushover is on the frontier) and never
+            # enters the reward. Still computed on the Outcome and surfaced by the
+            # eval scripts as pareto_rate; just not a wandb training headline.
             "nash_product": out.nash_product,
             "num_turns": float(self.turns),
             "opponent_errors": float(self.opponent_errors),
             "deception_msgs": float(self.deception_msgs),
+            **accept_metrics,
             **think_metrics,
+            **trace_tail,
         }
 
     @staticmethod

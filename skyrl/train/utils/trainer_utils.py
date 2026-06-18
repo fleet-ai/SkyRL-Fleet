@@ -447,6 +447,22 @@ def dump_training_trajectories(
                 "text": tokenizer.decode(generator_output["response_ids"][i]),
                 "timestamp": ts,
             }
+            # Some multi-turn envs (e.g. negotiation) end the episode on an opponent
+            # turn that is never returned to the policy as an observation, so it is
+            # absent from `text` (the decoded response_ids). When the env surfaces that
+            # closing turn + resolved outcome in its metrics, attach them here so the
+            # trace viewer can show how the episode actually ended. These are kept OUT
+            # of `text` on purpose — the policy was not trained on them.
+            closing = env_m.get("closing_observation")
+            if closing:
+                entry["closing_turn"] = closing
+            outcome_info = {
+                k: env_m[k]
+                for k in ("you_take", "them_take", "accepted_by", "item_names", "outcome")
+                if env_m.get(k) is not None
+            }
+            if outcome_info:
+                entry["outcome_info"] = outcome_info
             if image_paths:
                 entry["image_paths"] = image_paths
                 entry["num_screenshots"] = len(image_paths)
