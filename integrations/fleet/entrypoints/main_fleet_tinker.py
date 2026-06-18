@@ -707,7 +707,16 @@ async def collect_fleet_rollout(
     # `use_tools_channel=True` asks the env to omit the in-system-message tool
     # JSON dump; we pass tools via `apply_chat_template(tools=...)` so models
     # like Kimi-K2 / Qwen3+ see them in their native tool_declare channel.
-    env_config = OmegaConf.create({"tasks_file": tasks_file, "ttl_seconds": 7200})
+    env_config = OmegaConf.create({
+        "tasks_file": tasks_file,
+        "ttl_seconds": 7200,
+        # Multi-app verifier stdout → fractional reward; required for any
+        # gradient signal on BU/CU where binary aggregation gives reward=0
+        # on rollouts with visible per-app progress. Single-flag opt-in;
+        # tasks whose stdout has no accumulator emit None and fall back to
+        # the binary score.
+        "partial_reward": True,
+    })
     extras = {"task_key": task_key, "max_turns": max_turns, "use_tools_channel": True}
 
     env = FleetTaskEnv(env_config=env_config, extras=extras)
