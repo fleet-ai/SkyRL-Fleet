@@ -21,6 +21,7 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "fingerprint_hash": "fingerprint-a",
         "fingerprint": {
             "device": {
+                "type": "cuda",
                 "accelerator_id": "GPU-a",
                 "logical_index": 0,
                 "cuda_driver": {
@@ -49,6 +50,7 @@ def test_aggregate_counts_results_and_failures(tmp_path):
         "fingerprint_hash": "fingerprint-a",
         "fingerprint": {
             "device": {
+                "type": "cuda",
                 "accelerator_id": "GPU-b",
                 "logical_index": 0,
                 "cuda_driver": {
@@ -109,7 +111,7 @@ def test_aggregate_fails_on_divergent_output_hashes_for_same_config(tmp_path):
             "command": {},
             "probe_config": {},
             "fingerprint_hash": "fingerprint-a",
-            "fingerprint": {"device": {"accelerator_id": name}},
+            "fingerprint": {"device": {"type": "cuda", "accelerator_id": name}},
             "probe_config_hash": "config-a",
             "checks": {"output_hash": output_hash},
             "measurements": {},
@@ -148,6 +150,7 @@ def test_aggregate_fails_on_duplicate_accelerator_for_same_config(tmp_path):
             "fingerprint_hash": "fingerprint-a",
             "fingerprint": {
                 "device": {
+                    "type": "cuda",
                     "accelerator_id": "GPU-same",
                     "logical_index": 0,
                 }
@@ -209,7 +212,9 @@ def test_aggregate_allows_same_accelerator_for_different_configs(tmp_path):
             "command": {},
             "probe_config": {},
             "fingerprint_hash": "fingerprint-a",
-            "fingerprint": {"device": {"accelerator_id": "GPU-same"}},
+            "fingerprint": {
+                "device": {"type": "cuda", "accelerator_id": "GPU-same"}
+            },
             "probe_config_hash": config_hash,
             "checks": {"output_hash": "hash-a"},
             "measurements": {},
@@ -237,7 +242,7 @@ def test_aggregate_outfile_inside_input_directory_is_not_ingested(tmp_path):
         "command": {},
         "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
-        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "fingerprint": {"device": {"type": "cuda", "accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-a"},
         "measurements": {},
@@ -270,7 +275,7 @@ def test_aggregate_refuses_to_overwrite_input_result_file(tmp_path):
         "command": {},
         "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
-        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "fingerprint": {"device": {"type": "cuda", "accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-a"},
         "measurements": {},
@@ -301,7 +306,7 @@ def test_aggregate_refuses_to_overwrite_probe_result_in_input_directory(tmp_path
         "command": {},
         "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
-        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "fingerprint": {"device": {"type": "cuda", "accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-a"},
         "measurements": {},
@@ -332,7 +337,7 @@ def test_aggregate_ignores_previous_summary_json(tmp_path):
         "command": {},
         "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
-        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "fingerprint": {"device": {"type": "cuda", "accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-a"},
         "measurements": {},
@@ -387,7 +392,7 @@ def test_aggregate_fails_on_unsupported_schema_version(tmp_path):
         "profile": "correctness",
         "run_id": "run-a",
         "fingerprint_hash": "fingerprint-a",
-        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "fingerprint": {"device": {"type": "cuda", "accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-a"},
         "measurements": {},
@@ -409,6 +414,153 @@ def test_aggregate_fails_on_unsupported_schema_version(tmp_path):
     ]
 
 
+def test_aggregate_rejects_result_without_device_fingerprint(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "missing-device.json").write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "missing-device.json"),
+            "type": "SchemaError",
+            "message": "fingerprint.device must be an object",
+        }
+    ]
+
+
+def test_aggregate_rejects_cuda_result_without_accelerator_id(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"type": "cuda", "logical_index": 0}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "missing-accelerator.json").write_text(
+        json.dumps(result),
+        encoding="utf-8",
+    )
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "missing-accelerator.json"),
+            "type": "SchemaError",
+            "message": (
+                "fingerprint.device.accelerator_id must be a non-empty string "
+                "for cuda results"
+            ),
+        }
+    ]
+
+
+def test_aggregate_rejects_bad_nested_result_types_without_crashing(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {
+            "device": {
+                "type": "cuda",
+                "accelerator_id": "GPU-a",
+                "logical_index": 0,
+            }
+        },
+        "probe_config_hash": "config-a",
+        "checks": [],
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "bad-checks.json").write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "bad-checks.json"),
+            "type": "SchemaError",
+            "message": "checks must be an object",
+        }
+    ]
+
+
+def test_aggregate_allows_cpu_result_without_accelerator_id(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"type": "cpu", "logical_index": 0}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "cpu-result.json").write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert summary["pass"]
+    assert summary["loaded_results"] == 1
+    assert not summary["schema_errors"]
+    assert summary["accelerator_ids"] == {"missing": 1}
+
+
 def test_aggregate_fails_when_expected_result_count_is_missing(tmp_path):
     result = {
         "schema_version": 1,
@@ -423,7 +575,7 @@ def test_aggregate_fails_when_expected_result_count_is_missing(tmp_path):
         "command": {},
         "probe_config": {},
         "fingerprint_hash": "fingerprint-a",
-        "fingerprint": {"device": {"accelerator_id": "GPU-a"}},
+        "fingerprint": {"device": {"type": "cuda", "accelerator_id": "GPU-a"}},
         "probe_config_hash": "config-a",
         "checks": {"output_hash": "hash-a"},
         "measurements": {},

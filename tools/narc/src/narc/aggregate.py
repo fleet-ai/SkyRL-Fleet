@@ -30,6 +30,29 @@ REQUIRED_RESULT_KEYS = {
     "status",
 }
 
+RESULT_FIELD_TYPES = {
+    "schema_version": int,
+    "status": str,
+    "profile": str,
+    "run_id": str,
+    "started_at": str,
+    "finished_at": str,
+    "hostname": str,
+    "pid": int,
+    "slurm": dict,
+    "command": dict,
+    "probe_config": dict,
+    "probe_config_hash": str,
+    "fingerprint": dict,
+    "fingerprint_hash": str,
+    "checks": dict,
+    "measurements": dict,
+    "errors": list,
+}
+
+VALID_PROFILES = {"correctness", "performance"}
+VALID_STATUSES = {"pass", "warn", "fail"}
+
 
 def iter_json_paths(path: Path, exclude_paths: set[Path] | None = None) -> list[Path]:
     excluded = exclude_paths or set()
@@ -60,22 +83,90 @@ def load_result(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | Non
     return document, None
 
 
-def is_probe_result(document: dict[str, Any]) -> bool:
+def type_description(expected_type: type[Any]) -> str:
+    if expected_type is dict:
+        return "an object"
+    if expected_type is list:
+        return "an array"
+    if expected_type is str:
+        return "a string"
+    if expected_type is int:
+        return "an integer"
+    return expected_type.__name__
+
+
+def is_integer(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def matches_expected_type(value: Any, expected_type: type[Any]) -> bool:
+    if expected_type is int:
+        return is_integer(value)
+    return isinstance(value, expected_type)
+
+
+def probe_schema_messages(document: dict[str, Any]) -> list[str]:
     if document.get("schema_version") != SCHEMA_VERSION:
-        return False
-    return REQUIRED_RESULT_KEYS.issubset(document.keys())
+        return [
+            (
+                f"unsupported schema_version {document.get('schema_version')!r}; "
+                f"expected {SCHEMA_VERSION}"
+            )
+        ]
+
+    messages: list[str] = []
+    missing = sorted(REQUIRED_RESULT_KEYS.difference(document.keys()))
+    if missing:
+        messages.append(f"missing required result keys: {', '.join(missing)}")
+
+    for field, expected_type in RESULT_FIELD_TYPES.items():
+        if field not in document:
+            continue
+        value = document[field]
+        if not matches_expected_type(value, expected_type):
+            messages.append(f"{field} must be {type_description(expected_type)}")
+
+    status = document.get("status")
+    if isinstance(status, str) and status not in VALID_STATUSES:
+        messages.append(f"status must be one of {', '.join(sorted(VALID_STATUSES))}")
+
+    profile = document.get("profile")
+    if isinstance(profile, str) and profile not in VALID_PROFILES:
+        messages.append(f"profile must be one of {', '.join(sorted(VALID_PROFILES))}")
+
+    errors = document.get("errors")
+    if isinstance(errors, list):
+        for index, entry in enumerate(errors):
+            if not isinstance(entry, dict):
+                messages.append(f"errors[{index}] must be an object")
+
+    fingerprint = document.get("fingerprint")
+    if isinstance(fingerprint, dict):
+        device = fingerprint.get("device")
+        if not isinstance(device, dict):
+            messages.append("fingerprint.device must be an object")
+        else:
+            device_type = device.get("type")
+            if not isinstance(device_type, str) or not device_type:
+                messages.append("fingerprint.device.type must be a non-empty string")
+            elif device_type not in {"cpu", "cuda"}:
+                messages.append("fingerprint.device.type must be cpu or cuda")
+            if device_type == "cuda":
+                accelerator_id = device.get("accelerator_id")
+                if not isinstance(accelerator_id, str) or not accelerator_id:
+                    messages.append(
+                        "fingerprint.device.accelerator_id must be a non-empty string "
+                        "for cuda results"
+                    )
+    return messages
+
+
+def is_probe_result(document: dict[str, Any]) -> bool:
+    return not probe_schema_messages(document)
 
 
 def probe_schema_error(path: Path, document: dict[str, Any]) -> dict[str, Any]:
-    schema_version = document.get("schema_version")
-    if schema_version != SCHEMA_VERSION:
-        message = (
-            f"unsupported schema_version {schema_version!r}; "
-            f"expected {SCHEMA_VERSION}"
-        )
-    else:
-        missing = sorted(REQUIRED_RESULT_KEYS.difference(document.keys()))
-        message = f"missing required result keys: {', '.join(missing)}"
+    message = "; ".join(probe_schema_messages(document))
     return {
         "path": str(path),
         "type": "SchemaError",
