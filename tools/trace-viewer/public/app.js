@@ -7,12 +7,18 @@
 
 const PAGE_SIZE = 25;
 const KNOWN_TAGS = ["think", "propose", "accept", "deal", "reject", "offer", "answer"];
+// "them"/user turns that are env scaffolding (the kickoff prompt), not the opponent speaking.
+const KICKOFF_RE = /^(you speak first|the other player|you may now|it is your turn)/i;
+// A data_source that names an actual model (e.g. "openrouter/openai/gpt-4o-mini") vs. an
+// env/dataset label like "negotiation_dnd". Used to attribute opponent turns to a model.
+const MODEL_RE = /\/|gpt|claude|qwen|llama|mistral|gemini|opus|sonnet|haiku|deepseek|gemma|phi/i;
 
 const state = {
   runs: [],          // [{name, source:'manifest'|'memory', steps:[{step, file?, count, trajectories?}], loaded}]
   run: null,         // active run object (with trajectories filled in)
   stepIdx: 0,        // index into run.steps
   view: "step",      // 'step' | 'track'
+  opponentOnly: false, // conversation view: show only opponent (partner-model) turns
   page: 0,
   charts: {},
   promptGroups: null, // Map(key -> {prompt, steps: Map(step -> trajs[])}) for track view
@@ -81,7 +87,18 @@ function highlightInline(textRaw) {
   return s;
 }
 
-function renderConversation(prompt, text) {
+// Name of the model that produced a trajectory's opponent ("them") turns. Prefer the
+// run's configured opponent model (from the manifest), then a model-like data_source on
+// the trajectory itself, else a generic fallback.
+function opponentLabel(t) {
+  const fromRun = state.run && state.run.opponentModel;
+  if (fromRun) return fromRun;
+  const ds = t && t.data_source;
+  if (ds && MODEL_RE.test(String(ds))) return String(ds);
+  return "opponent";
+}
+
+function renderConversation(prompt, text, t) {
   // Prefer parsing the response `text`; prepend the prompt as context if it carries
   // its own role markers, else show it as a single system/context message.
   let msgs = splitChat(text);
@@ -96,11 +113,57 @@ function renderConversation(prompt, text) {
   } else if (prompt) {
     msgs = [{ role: "system", text: prompt }, ...msgs];
   }
-  return msgs.filter((mm) => (mm.text || "").trim().length).map((mm) => {
+  // The episode's closing opponent turn (e.g. an <accept>) terminates the rollout, so
+  // it never entered the policy's `text`; the trajectory dump carries it separately as
+  // `closing_turn`. Append it as the final opponent turn so opponent-closed episodes —
+  // including every single-turn "opening offer accepted" — don't look like the opponent
+  // never replied. (See dump_training_trajectories / NegotiationEnv.closing_observation.)
+  if (t && t.closing_turn) {
+    msgs.push({ role: "user", text: t.closing_turn, _closing: true });
+  }
+  if (state.opponentOnly) {
+    // Opponent = partner-model turns, which arrive as "them"/user turns. Drop the
+    // system/context, the policy's own ("you") turns, and the kickoff scaffolding.
+    const opp = msgs.filter((mm) =>
+      roleClass(mm.role) === "them" && !KICKOFF_RE.test((mm.text || "").trim()));
+    if (!opp.length) {
+      return `<div class="msg system"><div class="text muted">` +
+        `(no opponent turns in this trajectory)</div></div>`;
+    }
+    msgs = opp;
+  }
+  const oppName = opponentLabel(t);
+  const body = msgs.filter((mm) => (mm.text || "").trim().length).map((mm) => {
     const cls = roleClass(mm.role);
-    return `<div class="msg ${cls}"><div class="role">${esc(mm.role)}</div>` +
+    // Attribute opponent turns to the model that generated them; leave you/system as-is.
+    // Tag the closing turn so it reads as the move that ended the episode, not a turn
+    // the policy got to respond to.
+    const label = (cls === "them" ? oppName : mm.role) + (mm._closing ? " · closing" : "");
+    return `<div class="msg ${cls}${mm._closing ? " closing" : ""}"><div class="role">${esc(label)}</div>` +
       `<div class="text">${highlightInline(mm.text)}</div></div>`;
   }).join("");
+  // Footer summarising the resolved split (omitted in opponent-only mode, which is
+  // deliberately turns-only).
+  return body + (state.opponentOnly ? "" : outcomeFooter(t));
+}
+
+// Render the episode's resolved outcome (reason, who accepted, final allocation) from
+// the trajectory's `outcome_info`, which the dump carries alongside `closing_turn`.
+function outcomeFooter(t) {
+  const oi = t && t.outcome_info;
+  if (!oi) return "";
+  const names = oi.item_names || [];
+  const fmtKeep = (keep) => Array.isArray(keep)
+    ? (keep.map((c, i) => (c > 0 ? `${c}×${names[i] ?? "item" + i}` : null)).filter(Boolean).join(", ") || "nothing")
+    : "—";
+  const parts = [];
+  if (oi.outcome) parts.push(`outcome: <b>${esc(oi.outcome)}</b>`);
+  if (oi.accepted_by) parts.push(`accepted by ${esc(oi.accepted_by === "you" ? "policy" : "opponent")}`);
+  if (Array.isArray(oi.you_take)) parts.push(`policy keeps: ${esc(fmtKeep(oi.you_take))}`);
+  if (Array.isArray(oi.them_take)) parts.push(`opponent keeps: ${esc(fmtKeep(oi.them_take))}`);
+  if (!parts.length) return "";
+  return `<div class="msg system outcome"><div class="role">episode end</div>` +
+    `<div class="text">${parts.join(" · ")}</div></div>`;
 }
 
 function renderRaw(prompt, text) {
@@ -127,6 +190,7 @@ async function loadManifest() {
       name: r.name,
       source: "manifest",
       loaded: false,
+      opponentModel: r.opponent_model || null,
       steps: (r.steps || []).map((s) => ({ step: s.step, file: s.file, count: s.count })),
     }));
     if (!runs.length) throw new Error("empty manifest");
@@ -402,7 +466,7 @@ function trajCard(t, idx) {
         <span class="seg active" data-seg="convo">Conversation</span>
         <span class="seg" data-seg="raw">Raw</span>
       </div>
-      <div class="convo" data-pane="convo">${renderConversation(t.prompt || "", t.text || "")}</div>
+      <div class="convo" data-pane="convo">${renderConversation(t.prompt || "", t.text || "", t)}</div>
       <div data-pane="raw" hidden>${renderRaw(t.prompt || "", t.text || "")}</div>
     </div>
   </div>`;
@@ -541,6 +605,12 @@ function wireEvents() {
   // filters
   ["searchBox", "envFilter", "stopFilter", "sortBy", "minReward"].forEach((id) =>
     $("#" + id).addEventListener("input", () => { state.page = 0; renderList(); }));
+
+  // opponent-turns-only toggle (applies to the conversation view of every run)
+  $("#opponentOnly").addEventListener("change", (e) => {
+    state.opponentOnly = e.target.checked;
+    renderList();
+  });
 
   // list interactions (delegated)
   $("#trajList").addEventListener("click", (e) => {
