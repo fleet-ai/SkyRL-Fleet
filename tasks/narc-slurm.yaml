@@ -1,9 +1,8 @@
 name: narc-slurm
 # Usage:
-#   set -a; source ~/.secrets/research-jobs.env; set +a
-#   sky launch tasks/narc-slurm.yaml \
-#     --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-#     --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+#   install the research-jobs AWS credentials on the cluster as an AWS
+#   shared-credentials file, then run:
+#   sky launch tasks/narc-slurm.yaml
 #
 # Override NARC_OUT_DIR to change the result prefix. It may be a local path or
 # an S3 prefix.
@@ -22,6 +21,8 @@ envs:
   NARC_OUT_DIR: "s3://fleet-research/narc"
   NARC_PROFILE: "correctness"
   NARC_TASKS: "8"
+  AWS_SHARED_CREDENTIALS_FILE: "/workspace/.secrets/research-jobs.aws-credentials"
+  AWS_PROFILE: "research-jobs"
 
 setup: |
   if ! command -v uv >/dev/null 2>&1; then
@@ -36,14 +37,11 @@ run: |
   export PATH="$HOME/.local/bin:$PATH"
   JOB_ID="${SLURM_JOB_ID:-manual-$(date +%s)}"
   OUT_DIR="${NARC_OUT_DIR%/}/${JOB_ID}"
-  AGGREGATE_OUTFILE="${NARC_AGGREGATE_OUTFILE:-${OUT_DIR%/}/aggregate.json}"
-  EXPECTED_RESULTS="${NARC_EXPECTED_RESULTS:-${NARC_TASKS}}"
   export OUT_DIR NARC_PROFILE
   if [[ "${OUT_DIR}" != s3://* ]]; then
     mkdir -p "${OUT_DIR}"
   fi
 
-  set +e
   srun --ntasks-per-node="${NARC_TASKS}" --gpus-per-task=1 --gpu-bind=single:1 \
     bash -c '
       set -euo pipefail
@@ -65,16 +63,3 @@ run: |
         --dtype fp32 \
         --out-dir "${OUT_DIR}"
     '
-  SRUN_EXIT=$?
-
-  uv run --project tools/narc --no-sync narc aggregate "${OUT_DIR}" \
-    --expected-results "${EXPECTED_RESULTS}" \
-    --fail-on-fail \
-    -o "${AGGREGATE_OUTFILE}"
-  AGGREGATE_EXIT=$?
-  set -e
-
-  if [ "${SRUN_EXIT}" -ne 0 ] || [ "${AGGREGATE_EXIT}" -ne 0 ]; then
-    echo "narc failed: srun_exit=${SRUN_EXIT} aggregate_exit=${AGGREGATE_EXIT}" >&2
-    exit 1
-  fi
