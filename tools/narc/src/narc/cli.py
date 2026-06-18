@@ -2,6 +2,7 @@ import argparse
 from importlib.metadata import PackageNotFoundError, version
 
 from narc.aggregate import generate_aggregate_parser
+from narc.compare import generate_compare_parser
 from narc.probe import generate_run_local_parser
 
 
@@ -46,6 +47,14 @@ def generate_cli() -> argparse.ArgumentParser:
         parents=[aggregate_parser],
         add_help=False,
         help=aggregate_parser.description,
+    )
+
+    compare_parser = generate_compare_parser()
+    subparsers.add_parser(
+        "compare",
+        parents=[compare_parser],
+        add_help=False,
+        help=compare_parser.description,
     )
 
     return parser
