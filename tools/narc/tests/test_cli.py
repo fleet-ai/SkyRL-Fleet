@@ -10,11 +10,11 @@ def test_root_parser_defaults_to_help_function():
     assert callable(args.func)
 
 
-def test_run_local_parser_shape():
+def test_run_parser_shape():
     parser = generate_cli()
     args = parser.parse_args(
         [
-            "run-local",
+            "run",
             "--device",
             "cpu",
             "--profile",
@@ -30,8 +30,8 @@ def test_run_local_parser_shape():
     assert callable(args.func)
 
 
-def test_run_local_rejects_negative_logical_device():
+def test_run_rejects_negative_logical_device():
     parser = generate_cli()
 
     with pytest.raises(SystemExit):
-        parser.parse_args(["run-local", "--logical-device", "-1"])
+        parser.parse_args(["run", "--logical-device", "-1"])

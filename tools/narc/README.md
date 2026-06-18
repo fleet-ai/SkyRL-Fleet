@@ -5,14 +5,15 @@ compute clusters.
 
 The first implementation is deliberately small:
 
-- `narc run-local` runs a deterministic PyTorch probe on one assigned device.
+- `narc run` runs a deterministic PyTorch probe on one assigned device.
 - `narc aggregate` summarizes per-device JSON results.
 - `narc compare` partitions result JSON files into equivalence classes.
 
 Run from this directory with uv:
 
 ```bash
-uv run narc run-local --device cpu --out-dir /tmp/narc
+uv run narc run --device cpu --out-dir /tmp/narc
+uv run narc run --device cuda --out-dir s3://fleet-research/path/to/narc-results/
 uv run narc aggregate /tmp/narc
 uv run narc compare /tmp/narc/*.json
 uv run narc aggregate s3://fleet-research/path/to/narc-results/
@@ -31,5 +32,19 @@ On a Slurm node with one process per GPU:
 
 ```bash
 srun --ntasks-per-node=8 --gpus-per-task=1 --gpu-bind=single:1 \
-  uv run --project tools/narc narc run-local --out-dir /workspace/narc/$SLURM_JOB_ID
+  uv run --project tools/narc narc run \
+    --device cuda \
+    --out-dir s3://fleet-research/narc/$SLURM_JOB_ID
+```
+
+Launch the included SkyPilot Slurm task with the research-jobs AWS credentials:
+
+```bash
+set -a
+source ~/.secrets/research-jobs.env
+set +a
+
+sky launch tasks/narc-slurm.yaml \
+  --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+  --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 ```
