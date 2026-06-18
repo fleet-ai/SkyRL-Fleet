@@ -172,19 +172,35 @@ class TestToolsChannel:
 # --------------------------------------------------------------------------- #
 
 class TestModalitySections:
-    @pytest.mark.parametrize("modality", ["computer_use", "browser_use"])
     @pytest.mark.parametrize("channel", [True, False])
-    def test_vl_modalities_get_browser_strategy_hints(self, modality, channel):
+    def test_browser_use_gets_browser_strategy_hints(self, channel):
         out = build_system_content(
             SAMPLE_TOOLS,
-            modality=modality,
+            modality="browser_use",
             use_tools_channel=channel,
             now=FIXED_NOW,
         )
         assert "## Browser Interaction Strategy" in out
 
     @pytest.mark.parametrize("channel", [True, False])
-    def test_tool_use_omits_browser_hints(self, channel):
+    def test_computer_use_gets_desktop_strategy_hints_not_browser(self, channel):
+        # CU is a Linux desktop with SaaS apps in tabs, not a single browser.
+        # The previous shared "browser strategy" framing caused 13/44 CU
+        # rollouts in the canonical run to type invented URLs.
+        out = build_system_content(
+            SAMPLE_TOOLS,
+            modality="computer_use",
+            use_tools_channel=channel,
+            now=FIXED_NOW,
+        )
+        assert "## Desktop Interaction Strategy" in out
+        assert "Linux desktop" in out
+        # The browser framing string must NOT be present for CU.
+        assert "You are controlling a web browser" not in out
+        assert "## Browser Interaction Strategy" not in out
+
+    @pytest.mark.parametrize("channel", [True, False])
+    def test_tool_use_omits_browser_and_desktop_hints(self, channel):
         out = build_system_content(
             SAMPLE_TOOLS,
             modality="tool_use",
@@ -192,6 +208,109 @@ class TestModalitySections:
             now=FIXED_NOW,
         )
         assert "## Browser Interaction Strategy" not in out
+        assert "## Desktop Interaction Strategy" not in out
+
+    # ---- BU: portal URL injection ----
+
+    def test_browser_use_with_portal_url_injects_it(self):
+        # 47/48 BU rollouts in the canonical run wasted turn 1 on a guessed
+        # hostname because the prompt never said where the browser actually
+        # was. Inject the live portal URL when available.
+        out = build_system_content(
+            SAMPLE_TOOLS,
+            modality="browser_use",
+            portal_url="https://vfpi1menejjz-n.env.fleet-prod-wi2-us-east-1.fleetai.com",
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+        assert "vfpi1menejjz-n.env.fleet-prod-wi2-us-east-1.fleetai.com" in out
+
+    def test_browser_use_without_portal_url_falls_back_generically(self):
+        out = build_system_content(
+            SAMPLE_TOOLS,
+            modality="browser_use",
+            portal_url=None,
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+        # Generic instruction: "Stay on the current domain"
+        assert "current domain" in out
+        # And no invented hostname appears.
+        assert "fleetai.com" not in out
+
+    def test_browser_use_bans_localhost(self):
+        out = build_system_content(
+            SAMPLE_TOOLS,
+            modality="browser_use",
+            portal_url="https://x.example.fleetai.com",
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+        # The prompt explicitly forbids made-up localhost URLs.
+        assert "localhost" in out  # appears in the DO NOT example
+        assert "403" in out  # the consequence is documented
+
+    # ---- CU: app alias map ----
+
+    def test_computer_use_includes_app_alias_map(self):
+        # CU rollouts confused Signal (Sentry), Kernel (Jira), Ledger
+        # (QuickBooks), Latch (Outlook), Cadence (HR), Float/Ramp (expenses).
+        out = build_system_content(
+            SAMPLE_TOOLS,
+            modality="computer_use",
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+        for in_env, saas in [
+            ("Signal", "Sentry"),
+            ("Kernel", "Jira"),
+            ("Ledger", "QuickBooks"),
+            ("Latch", "Outlook"),
+            ("Cadence", "HR"),
+        ]:
+            assert in_env in out, f"alias map missing {in_env}"
+            assert saas in out, f"alias map missing {saas}"
+
+    def test_computer_use_warns_against_terminal_escape(self):
+        # 21/44 CU rollouts escaped to sqlite terminal — verifier checks UI
+        # state, so terminal-derived knowledge doesn't score.
+        out = build_system_content(
+            SAMPLE_TOOLS,
+            modality="computer_use",
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+        assert "terminal" in out.lower()
+        assert "sqlite" in out.lower() or "SQLite" in out
+
+    # ---- Both modalities: action vocabulary ----
+
+    @pytest.mark.parametrize("modality", ["browser_use", "computer_use"])
+    def test_action_vocabulary_enumerated(self, modality):
+        # 20/92 BU+CU rollouts wasted turn 2 emitting action="click" and
+        # hitting a Pydantic validation error. Enumerate the enum upfront.
+        out = build_system_content(
+            SAMPLE_TOOLS,
+            modality=modality,
+            portal_url="https://x.example.fleetai.com" if modality == "browser_use" else None,
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+        for value in (
+            "left_click",
+            "right_click",
+            "double_click",
+            "type",
+            "key",
+            "scroll",
+            "wait",
+            "screenshot",
+            "left_click_drag",
+            "hold_key",
+        ):
+            assert value in out, f"missing action enum value: {value}"
+        # And calls out the most common mistake.
+        assert "Use `left_click`, NOT `click`" in out
 
     @pytest.mark.parametrize("channel", [True, False])
     def test_fostgres_env_key_adds_database_exploration(self, channel):

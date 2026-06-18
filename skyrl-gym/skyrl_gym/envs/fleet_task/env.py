@@ -46,7 +46,13 @@ _TASK_CACHE: Dict[str, Dict[str, Any]] = {}
 MAX_TOOL_OUTPUT_CHARS = 16_000
 
 # Append a <done> reminder to obs when remaining turns drop to this threshold.
-WRAP_UP_NUDGE_THRESHOLD = 5
+# Fires when `remaining == WRAP_UP_NUDGE_AT` exactly, and only once per episode.
+# Earlier shipping was `0 < remaining <= 5` (every turn for the last 5), and the
+# text said "Emit <done> NOW or you get reward 0" — 98 of 271 such events in the
+# canonical run were immediately followed by bare <done> with no answer. Workflow
+# diagnosis wf_1c2d5247 attributed it to learned surrender. One nudge at 3 turns
+# left, rephrased to demand a final attempt, replaces it.
+WRAP_UP_NUDGE_AT = 3
 
 
 def load_tasks_from_json(tasks_file: str) -> Dict[str, Any]:
@@ -144,6 +150,77 @@ def tool_result_to_message_content(tool_result: Any) -> Any:
     return f"Tool result:\n{body}"
 
 
+_ACTION_VOCAB = (
+    "screenshot, left_click, right_click, double_click, triple_click, "
+    "middle_click, mouse_move, left_click_drag, type, key, scroll, wait, "
+    "cursor_position, left_mouse_down, left_mouse_up, hold_key"
+)
+
+
+def _bu_interaction_hints(portal_url: Optional[str]) -> str:
+    """browser_use system-prompt addendum.
+
+    Includes the live portal URL (when available) and a hard ban on the two
+    failure modes the workflow analysis caught in 47/48 BU rollouts: opening
+    with `navigate("/lifeline/")` (relative URL — gets resolved to localhost
+    which Django ALLOWED_HOSTS-rejects), and typing made-up localhost domains.
+    """
+    if portal_url:
+        url_line = f"You are on a Fleet env at {portal_url} . Stay on this domain.\n"
+    else:
+        url_line = (
+            "You are on a Fleet env page that was already loaded for you. "
+            "Stay on the current domain — do NOT type a new hostname.\n"
+        )
+    return (
+        "\n## Browser Interaction Strategy\n"
+        + url_line
+        + "\n- To open an app (Lifeline, Latch, Medora, etc.), CLICK the visible card.\n"
+        "  DO NOT use `navigate` with relative URLs like `/lifeline/` — that escapes the env.\n"
+        "- DO NOT type `http://localhost...` or any made-up domain. The page renders\n"
+        "  Django ALLOWED_HOSTS 403 if you guess wrong and you lose the working session URL.\n"
+        "- After any action: take a screenshot to verify the screen changed.\n"
+        "- If `navigate` returns a 403 page, you guessed a wrong host. Use the back\n"
+        "  button (`key(\"Alt\",\"Left\")`) to recover.\n"
+        "- When the task is fully complete, output your final answer and emit <done>.\n"
+        f"\n## Action Vocabulary\n"
+        f"Valid `action` values: {_ACTION_VOCAB}, navigate.\n"
+        f"Use `left_click`, NOT `click`. Coordinates are integer pixels.\n"
+    )
+
+
+def _cu_interaction_hints() -> str:
+    """computer_use system-prompt addendum.
+
+    fos-* envs are Linux desktops with SaaS apps in Chrome tabs, NOT a single
+    web browser. The default 'browser strategy' framing causes 13/44 CU rollouts
+    to type invented localhost URLs and 21/44 to escape to a sqlite terminal.
+    """
+    return (
+        "\n## Desktop Interaction Strategy\n"
+        "You are on a Linux desktop. Apps run as Chrome tabs (Sentry, Jira,\n"
+        "QuickBooks, Outlook, HR, expenses). Navigate WITHIN each app by\n"
+        "clicking sidebar / menu items.\n\n"
+        "- DO NOT type URLs in the address bar.\n"
+        "- DO NOT open a terminal to inspect SQLite — the verifier checks UI state,\n"
+        "  so data you read from a terminal does not count toward task completion.\n"
+        "- DO NOT use `navigate` — that's for the browser_use modality, not here.\n"
+        "- After any action: take a screenshot to verify the screen changed.\n"
+        "- When the task is fully complete, output your final answer and emit <done>.\n\n"
+        "## App Alias Map (in-env name → SaaS app)\n"
+        "  Signal  = Sentry\n"
+        "  Kernel  = Jira\n"
+        "  Ledger  = QuickBooks\n"
+        "  Latch   = Outlook\n"
+        "  Cadence = HR (BambooHR-style)\n"
+        "  Float   = expenses\n"
+        "  Ramp    = expenses\n"
+        f"\n## Action Vocabulary\n"
+        f"Valid `action` values: {_ACTION_VOCAB}.\n"
+        f"Use `left_click`, NOT `click`. Coordinates are integer pixels in the viewport.\n"
+    )
+
+
 def build_system_content(
     tools: List[Dict[str, Any]],
     *,
@@ -152,6 +229,7 @@ def build_system_content(
     env_key: Optional[str] = None,
     use_tools_channel: bool = False,
     now: Optional[datetime] = None,
+    portal_url: Optional[str] = None,
 ) -> str:
     """Build the system-message text for a Fleet rollout.
 
@@ -196,23 +274,16 @@ def build_system_content(
             "information_schema.columns WHERE table_name = 'your_table'\n"
         )
 
+    # Modality-specific interaction hints. The previous single-string version
+    # for both modalities mis-framed CU as a web browser (CU is a Linux desktop
+    # with SaaS apps in Chrome tabs) and omitted the live portal URL on BU
+    # (47/48 BU rollouts wasted turn 1 guessing the hostname). See workflow
+    # synthesis wf_1c2d5247 for evidence.
     computer_use_hints = ""
-    if modality in ("computer_use", "browser_use"):
-        computer_use_hints = (
-            "\n## Browser Interaction Strategy\n"
-            "You are controlling a web browser via screenshots. Follow this loop:\n\n"
-            "1. **Act**: Perform ONE action (click, type, scroll, etc.)\n"
-            "2. **Observe**: Take a screenshot to see the result\n"
-            "3. **Adapt**: If the screen hasn't changed, try a DIFFERENT action\n\n"
-            "Key rules:\n"
-            "- After clicking or typing, ALWAYS take a screenshot next to see what happened\n"
-            "- NEVER repeat the same action more than twice. If it didn't work, try something different:\n"
-            "  - Can't find an element by scrolling? Use the search bar or navigation menu instead\n"
-            "  - Page not loading after a click? Try refreshing with key(\"F5\") or clicking a different element\n"
-            "  - Form not submitting? Check if required fields are missing\n"
-            "- Use wait() only ONCE after a page navigation, then screenshot to check. Do not wait repeatedly\n"
-            "- When the task is fully complete, say <done>. Do not keep clicking after finishing\n"
-        )
+    if modality == "browser_use":
+        computer_use_hints = _bu_interaction_hints(portal_url)
+    elif modality == "computer_use":
+        computer_use_hints = _cu_interaction_hints()
 
     if use_tools_channel:
         tools_block = ""
@@ -368,6 +439,8 @@ class FleetTaskEnv(BaseTextEnv):
         self.tool_calls = 0
         self.tool_errors = 0
         self.last_reward: Optional[float] = None
+        # Idempotency flag for the wrap-up nudge.
+        self._wrap_up_nudge_fired: bool = False
         self.tools: List[Dict[str, Any]] = []
 
         # Verifier feedback (captured at close time for hint generation)
@@ -527,6 +600,7 @@ class FleetTaskEnv(BaseTextEnv):
         self.tool_calls = 0
         self.tool_errors = 0
         self.last_reward = None
+        self._wrap_up_nudge_fired = False
 
         # Reset context manager if enabled
         if self.context_manager:
@@ -568,12 +642,23 @@ class FleetTaskEnv(BaseTextEnv):
         # injection so they don't double up.
         use_tools_channel = bool(self.extras.get("use_tools_channel", False))
         env_key = self.task_config.get("env_key") or self.task_config.get("env_id")
+        # Pull the live portal URL so BU rollouts don't waste turn 1 guessing
+        # hostnames (47/48 of them did in the prior canonical run).
+        portal_url: Optional[str] = None
+        if modality == "browser_use":
+            orch = getattr(self.openenv_task_env, "_orch", None)
+            fleet_env = getattr(orch, "_fleet_env", None) if orch else None
+            urls = getattr(fleet_env, "urls", None) if fleet_env else None
+            root = getattr(urls, "root", None) if urls else None
+            if root:
+                portal_url = str(root).rstrip("/")
         system_content = build_system_content(
             tools=self.tools,
             modality=modality,
             env_variables=self.task_config.get("env_variables", {}),
             env_key=env_key,
             use_tools_channel=use_tools_channel,
+            portal_url=portal_url,
         )
 
         system_message = {"role": "system", "content": system_content}
@@ -794,12 +879,14 @@ class FleetTaskEnv(BaseTextEnv):
 
         def _wrap_up_nudge() -> Optional[str]:
             remaining = self.max_turns - self.turns
-            if 0 < remaining <= WRAP_UP_NUDGE_THRESHOLD:
-                return (
-                    f"\n\n[{remaining} turn(s) left. Emit <done> with your "
-                    "final answer NOW or the verifier may not run and you get reward 0.]"
-                )
-            return None
+            if remaining != WRAP_UP_NUDGE_AT or self._wrap_up_nudge_fired:
+                return None
+            self._wrap_up_nudge_fired = True
+            return (
+                f"\n\n[{remaining} turns left. After your next action, output "
+                "your final answer and emit <done>. Do NOT surrender without "
+                "an answer.]"
+            )
 
         # Build response observation
         if error:
