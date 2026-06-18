@@ -1,10 +1,43 @@
-from narc.env import fallback_accelerator_id, format_cuda_uuid, visible_device_identifier
+from narc.env import (
+    fallback_accelerator_id,
+    format_cuda_uuid,
+    normalize_gpu_uuid,
+    torch_device_identity,
+    visible_device_identifier,
+)
+
+
+class TorchUuid:
+    bytes = [0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255]
+
+
+class DeviceProperties:
+    uuid = TorchUuid()
+    pci_bus_id = "00000000:3b:00.0"
 
 
 def test_format_cuda_uuid_uses_nvidia_gpu_prefix():
     raw = bytes.fromhex("00112233445566778899aabbccddeeff")
 
     assert format_cuda_uuid(raw) == "GPU-00112233-4455-6677-8899-aabbccddeeff"
+
+
+def test_normalize_gpu_uuid_accepts_torch_uuid_bytes():
+    assert normalize_gpu_uuid(TorchUuid()) == "GPU-00112233-4455-6677-8899-aabbccddeeff"
+
+
+def test_normalize_gpu_uuid_adds_prefix_to_bare_uuid_string():
+    assert (
+        normalize_gpu_uuid("00112233-4455-6677-8899-aabbccddeeff")
+        == "GPU-00112233-4455-6677-8899-aabbccddeeff"
+    )
+
+
+def test_torch_device_identity_is_json_serializable():
+    assert torch_device_identity(DeviceProperties()) == {
+        "uuid": "GPU-00112233-4455-6677-8899-aabbccddeeff",
+        "pci_bus_id": "00000000:3b:00.0",
+    }
 
 
 def test_accelerator_id_prefers_driver_uuid_without_hostname():

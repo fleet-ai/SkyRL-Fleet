@@ -92,10 +92,31 @@ def visible_device_identifier(logical_device: int) -> str | None:
     return str(logical_device)
 
 
+def normalize_gpu_uuid(value: Any) -> str | None:
+    if value is None:
+        return None
+    raw = getattr(value, "bytes", None)
+    if raw is not None:
+        try:
+            return format_cuda_uuid(bytes(raw))
+        except (TypeError, ValueError):
+            pass
+
+    text = str(value).strip()
+    if not text:
+        return None
+    candidate = text.removeprefix("GPU-")
+    try:
+        return f"GPU-{uuid.UUID(candidate)}"
+    except ValueError:
+        return text
+
+
 def torch_device_identity(props: Any) -> dict[str, Any]:
+    pci_bus_id = getattr(props, "pci_bus_id", None)
     return {
-        "uuid": getattr(props, "uuid", None),
-        "pci_bus_id": getattr(props, "pci_bus_id", None),
+        "uuid": normalize_gpu_uuid(getattr(props, "uuid", None)),
+        "pci_bus_id": str(pci_bus_id) if pci_bus_id is not None else None,
     }
 
 
