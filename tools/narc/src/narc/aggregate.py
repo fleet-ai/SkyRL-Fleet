@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import argparse
-import json
 import statistics
 import sys
-from pathlib import Path
 from typing import Any
 
+from narc.files import (
+    ResultLocation,
+    explicit_input_identities,
+    iter_json_paths,
+    json_report_text,
+    load_result,
+    location_identity,
+    location_text,
+    validate_outfile,
+    validate_output_path,
+    write_json_report,
+)
 from narc.schema import SCHEMA_VERSION
 
 
@@ -52,35 +62,6 @@ RESULT_FIELD_TYPES = {
 
 VALID_PROFILES = {"correctness", "performance"}
 VALID_STATUSES = {"pass", "warn", "fail"}
-
-
-def iter_json_paths(path: Path, exclude_paths: set[Path] | None = None) -> list[Path]:
-    excluded = exclude_paths or set()
-    if path.is_file():
-        if path.resolve() in excluded:
-            return []
-        return [path]
-    return sorted(
-        candidate
-        for candidate in path.rglob("*.json")
-        if not candidate.name.endswith(".tmp")
-        and candidate.resolve() not in excluded
-    )
-
-
-def load_result(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            document = json.load(handle)
-    except Exception as error:
-        return None, {
-            "path": str(path),
-            "type": type(error).__name__,
-            "message": str(error),
-        }
-    if not isinstance(document, dict):
-        return None, None
-    return document, None
 
 
 def type_description(expected_type: type[Any]) -> str:
@@ -191,10 +172,18 @@ def is_probe_result(document: dict[str, Any]) -> bool:
     return not probe_schema_messages(document)
 
 
-def probe_schema_error(path: Path, document: dict[str, Any]) -> dict[str, Any]:
+def probe_schema_error(path: ResultLocation, document: dict[str, Any]) -> dict[str, Any]:
     message = "; ".join(probe_schema_messages(document))
     return {
-        "path": str(path),
+        "path": location_text(path),
+        "type": "SchemaError",
+        "message": message,
+    }
+
+
+def invalid_result_error(path: ResultLocation, message: str) -> dict[str, Any]:
+    return {
+        "path": location_text(path),
         "type": "SchemaError",
         "message": message,
     }
@@ -372,27 +361,14 @@ def non_negative_int(value: str) -> int:
     return parsed
 
 
-def validate_output_path(input_path: Path, output_path: Path) -> None:
-    resolved_input = input_path.resolve()
-    resolved_output = output_path.resolve()
-    if input_path.is_file() and resolved_input == resolved_output:
-        raise ValueError("outfile must not overwrite the input result file")
-    if not output_path.exists():
-        return
-    document, error = load_result(output_path)
-    if error is not None or document is None:
-        return
-    if "schema_version" in document:
-        raise ValueError("outfile must not overwrite a probe result file")
-
-
 def aggregate_path(
-    path: Path,
+    path: ResultLocation,
     *,
-    exclude_paths: set[Path] | None = None,
+    exclude_paths: set[ResultLocation] | None = None,
     expected_results: int | None = None,
 ) -> dict[str, Any]:
     json_paths = iter_json_paths(path, exclude_paths=exclude_paths)
+    explicit_inputs = explicit_input_identities([path])
     loaded: list[dict[str, Any]] = []
     load_errors: list[dict[str, Any]] = []
     schema_errors: list[dict[str, Any]] = []
@@ -402,16 +378,23 @@ def aggregate_path(
         if result is None:
             if error is not None:
                 load_errors.append(error)
+            elif location_identity(json_path) in explicit_inputs:
+                schema_errors.append(
+                    invalid_result_error(json_path, "result JSON must be an object")
+                )
             else:
-                ignored_files.append(str(json_path))
+                ignored_files.append(location_text(json_path))
             continue
         if not is_probe_result(result):
-            if "schema_version" in result:
+            if (
+                "schema_version" in result
+                or location_identity(json_path) in explicit_inputs
+            ):
                 schema_errors.append(probe_schema_error(json_path, result))
             else:
-                ignored_files.append(str(json_path))
+                ignored_files.append(location_text(json_path))
             continue
-        result["source_path"] = str(json_path)
+        result["source_path"] = location_text(json_path)
         loaded.append(result)
 
     status_counts = {"pass": 0, "warn": 0, "fail": 0, "unknown": 0}
@@ -456,7 +439,7 @@ def aggregate_path(
     count_failure = result_count_failure(len(loaded), expected_results)
 
     return {
-        "input": str(path),
+        "input": location_text(path),
         "expected_results": expected_results,
         "total_files": len(json_paths),
         "loaded_results": len(loaded),
@@ -491,8 +474,8 @@ def aggregate_path(
 
 
 def handle_aggregate(args: argparse.Namespace) -> None:
-    output_path = Path(args.outfile).resolve() if args.outfile else None
-    input_path = Path(args.path)
+    output_path = validate_outfile(args.outfile) if args.outfile else None
+    input_path = args.path
     if output_path:
         validate_output_path(input_path, output_path)
     exclude_paths = {output_path} if output_path else None
@@ -502,13 +485,9 @@ def handle_aggregate(args: argparse.Namespace) -> None:
         expected_results=args.expected_results,
     )
     if output_path:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as outfile:
-            json.dump(summary, outfile, indent=2, sort_keys=True)
-            outfile.write("\n")
+        write_json_report(output_path, summary)
     else:
-        json.dump(summary, sys.stdout, indent=2, sort_keys=True)
-        sys.stdout.write("\n")
+        sys.stdout.write(json_report_text(summary))
     if args.fail_on_fail and not summary["pass"]:
         raise SystemExit(1)
 
@@ -518,7 +497,7 @@ def generate_aggregate_parser() -> argparse.ArgumentParser:
         description="Aggregate narc per-device JSON results",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("path", type=str, help="Result JSON file or directory.")
+    parser.add_argument("path", type=str, help="Result JSON file, directory, or S3 URI.")
     parser.add_argument(
         "--fail-on-fail",
         action="store_true",
@@ -533,7 +512,7 @@ def generate_aggregate_parser() -> argparse.ArgumentParser:
         "-o",
         "--outfile",
         type=str,
-        help="Output file for aggregate JSON.",
+        help="Output file or S3 URI for aggregate JSON.",
     )
     parser.set_defaults(func=handle_aggregate)
     return parser
