@@ -1,19 +1,19 @@
-"""Tests for the wrap-up nudge, force-verifier, and tool-output truncation
+"""Tests for the per-turn footer, force-verifier, and tool-output truncation
 behavior in FleetTaskEnv.step_async.
 
 Written blind from the spec:
 
-  - The wrap-up nudge fires EXACTLY ONCE per episode, when
-    `remaining = max_turns - turns` equals `WRAP_UP_NUDGE_AT` (3).
-    Earlier shipping fired every turn for the last 5 with surrender-flavored
-    text ("emit <done> NOW or you get reward 0"), which the canonical-run
-    workflow analysis tied to 98/271 immediate bare-<done> surrenders.
+  - Every observation message MUST end with `[Turn N/MAX]` (where N is the
+    current turn count post-step). This gives the model continuous pacing
+    context the way the skyrl harness does, replacing the earlier threshold
+    nudge ("emit <done> NOW or reward 0") that the canonical-run workflow
+    analysis tied to 98/271 bare-<done> surrenders.
 
-  - When remaining != WRAP_UP_NUDGE_AT, the nudge MUST NOT appear, even if
-    the episode is still within the old "5 turns left" window.
+  - The text-only branch appends the footer to the trailing observation string.
+    The multimodal branch (computer_use / browser_use) appends it as a final
+    `{"type": "text"}` block — never overwriting image_url blocks.
 
-  - The text MUST tell the model to output a final answer and NOT surrender
-    without one. It MUST NOT include "or you get reward 0".
+  - The footer MUST appear at every turn, not just near the cap.
 
   - When `max_turns_reached`: the call to `openenv_task_env.step_async` MUST
     receive `done=True` even if the model never emitted `<done>`. This
@@ -41,7 +41,6 @@ if str(ROOT) not in sys.path:
 from skyrl_gym.envs.fleet_task.env import (
     FleetTaskEnv,
     MAX_TOOL_OUTPUT_CHARS,
-    WRAP_UP_NUDGE_AT,
 )
 
 
@@ -86,7 +85,6 @@ def _make_env(max_turns: int = 50, modality: str = "tool_use") -> FleetTaskEnv:
     env._verifier_stdout = None
     env._verifier_error = None
     env._tool_error_messages = []
-    env._wrap_up_nudge_fired = False
     env.context_manager = None
     env.enable_context_tools = False
     env.task_config = {"env_key": "data-eng", "task_modality": modality}
@@ -105,84 +103,58 @@ async def _step_and_get_obs(env: FleetTaskEnv, mock_step_return, action: str = N
 
 
 # --------------------------------------------------------------------------- #
-# 1. Wrap-up nudge — text-only branch
+# 1. Per-turn footer — text-only branch
 # --------------------------------------------------------------------------- #
 
-class TestWrapUpNudgeTextOnly:
+class TestTurnFooterTextOnly:
     @pytest.mark.asyncio
-    async def test_no_nudge_far_from_cap(self):
+    async def test_footer_present_far_from_cap(self):
         env = _make_env(max_turns=50)
-        env.turns = 10  # remaining = 40, well above the trigger point
+        env.turns = 10  # step takes it to 11
         step_ret = ({"observation": "ls\nfile.txt"}, 0.0, False, {})
         out, _ = await _step_and_get_obs(env, step_ret)
         body = out["observations"][0]["content"]
-        assert "turns left" not in body
-        assert "Do NOT surrender" not in body
+        assert body.rstrip().endswith("[Turn 11/50]")
 
     @pytest.mark.asyncio
-    async def test_nudge_fires_exactly_at_remaining_equals_WRAP_UP_NUDGE_AT(self):
+    async def test_footer_present_near_cap(self):
         env = _make_env(max_turns=50)
-        # After step increments env.turns from turns_in to turns_in+1, we want
-        # max_turns - (turns_in+1) == WRAP_UP_NUDGE_AT.
-        env.turns = 50 - WRAP_UP_NUDGE_AT - 1
+        env.turns = 46  # step takes it to 47
         step_ret = ({"observation": "ok"}, 0.0, False, {})
         out, _ = await _step_and_get_obs(env, step_ret)
         body = out["observations"][0]["content"]
-        assert f"{WRAP_UP_NUDGE_AT} turns left" in body
-        assert "Do NOT surrender" in body
-        # The discarded "or you get reward 0" framing must not return.
-        assert "reward 0" not in body
+        assert body.rstrip().endswith("[Turn 47/50]")
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("remaining_after_step", [10, 5, 4, 2, 1])
-    async def test_no_nudge_when_remaining_not_equal_to_threshold(self, remaining_after_step):
-        # The old behavior fired the nudge whenever 0 < remaining <= 5. This
-        # test pins that it now fires ONLY at remaining == WRAP_UP_NUDGE_AT.
-        if remaining_after_step == WRAP_UP_NUDGE_AT:
-            pytest.skip("covered by the on-threshold test")
-        env = _make_env(max_turns=50)
-        env.turns = 50 - remaining_after_step - 1
+    async def test_footer_present_first_turn(self):
+        env = _make_env(max_turns=64)
+        env.turns = 0  # step takes it to 1
         step_ret = ({"observation": "ok"}, 0.0, False, {})
         out, _ = await _step_and_get_obs(env, step_ret)
         body = out["observations"][0]["content"]
-        assert "turns left" not in body, f"unexpected nudge at remaining={remaining_after_step}"
+        assert body.rstrip().endswith("[Turn 1/64]")
 
     @pytest.mark.asyncio
-    async def test_nudge_is_idempotent_per_episode(self):
-        # Once fired, the nudge must not re-fire on a later step in the same
-        # episode (e.g. the next turn after a model "ok let me try" reply).
-        env = _make_env(max_turns=50)
-        env.turns = 50 - WRAP_UP_NUDGE_AT - 1
-        step_ret = ({"observation": "ok"}, 0.0, False, {})
-        out_first, _ = await _step_and_get_obs(env, step_ret)
-        assert f"{WRAP_UP_NUDGE_AT} turns left" in out_first["observations"][0]["content"]
-        # Take another step; remaining drops to WRAP_UP_NUDGE_AT - 1.
-        env.openenv_task_env.step_async = AsyncMock(return_value=step_ret)
-        out_second = await env.step_async(_bash_call_action())
-        assert "turns left" not in out_second["observations"][0]["content"]
-
-    @pytest.mark.asyncio
-    async def test_no_nudge_after_max_turns_reached(self):
+    async def test_no_footer_after_max_turns_reached(self):
         """When max_turns is reached the env returns the empty-obs branch
-        before any user-facing obs is built — no nudge slot exists."""
+        before any user-facing obs is built — footer doesn't apply."""
         env = _make_env(max_turns=50)
         env.turns = 49  # next step takes it to 50 → max_turns_reached
         step_ret = ({"observation": "ok"}, 0.0, False, {})
         out, _ = await _step_and_get_obs(env, step_ret)
-        # max_turns return path has observations=[]
         assert out["observations"] == []
         assert out["done"] is True
 
 
 # --------------------------------------------------------------------------- #
-# 2. Wrap-up nudge — multimodal branch (computer_use / browser_use)
+# 2. Per-turn footer — multimodal branch (computer_use / browser_use)
 # --------------------------------------------------------------------------- #
 
-class TestWrapUpNudgeMultimodal:
+class TestTurnFooterMultimodal:
     @pytest.mark.asyncio
-    async def test_nudge_appended_as_text_block_at_threshold(self):
-        env = _make_env(max_turns=50)
-        env.turns = 50 - WRAP_UP_NUDGE_AT - 1
+    async def test_footer_appended_as_trailing_text_block(self):
+        env = _make_env(max_turns=64)
+        env.turns = 20  # step takes it to 21
         mm_content = [
             {"type": "text", "text": "Saw screen"},
             {"type": "image_url", "image_url": {"url": "data:image/png;base64,xyz"}},
@@ -195,16 +167,17 @@ class TestWrapUpNudgeMultimodal:
             out, _ = await _step_and_get_obs(env, step_ret)
         body = out["observations"][0]["content"]
         assert isinstance(body, list)
+        # image_url block preserved
         assert any(b.get("type") == "image_url" for b in body)
+        # trailing text block contains the footer
         text_blocks = [b for b in body if b.get("type") == "text"]
         last_text = text_blocks[-1]["text"]
-        assert f"{WRAP_UP_NUDGE_AT} turns left" in last_text
-        assert "Do NOT surrender" in last_text
+        assert last_text == "[Turn 21/64]"
 
     @pytest.mark.asyncio
-    async def test_no_nudge_in_multimodal_when_not_at_threshold(self):
-        env = _make_env(max_turns=50)
-        env.turns = 10
+    async def test_footer_present_in_multimodal_every_turn(self):
+        env = _make_env(max_turns=64)
+        env.turns = 0  # step takes it to 1
         mm_content = [{"type": "image_url", "image_url": {"url": "..."}}]
         step_ret = ({"observation": mm_content}, 0.0, False, {})
         with patch(
@@ -214,12 +187,34 @@ class TestWrapUpNudgeMultimodal:
             out, _ = await _step_and_get_obs(env, step_ret)
         body = out["observations"][0]["content"]
         text_blocks = [b for b in body if b.get("type") == "text"]
-        for b in text_blocks:
-            assert "turns left" not in b.get("text", "")
+        # at least one text block, and the last one is the footer
+        assert text_blocks
+        assert text_blocks[-1]["text"] == "[Turn 1/64]"
 
 
 # --------------------------------------------------------------------------- #
-# 3. Force-verifier on max_turns
+# 3. No-tool-call hint is format-agnostic, covers truncation in one line
+# --------------------------------------------------------------------------- #
+
+class TestNoToolCallHint:
+    @pytest.mark.asyncio
+    async def test_no_tool_call_hint_is_format_agnostic(self):
+        # The earlier version prescribed `<tool_call>{"name":...}</tool_call>`
+        # which is wrong for Kimi-K2.6 / Qwen3+ native tool-call channels.
+        env = _make_env(max_turns=50)
+        env.turns = 5
+        env.openenv_task_env.step_async = AsyncMock(return_value=({"observation": "ok"}, 0.0, False, {}))
+        out = await env.step_async("plain reasoning with no tool call")
+        body = out["observations"][0]["content"]
+        assert "No tool call landed" in body
+        # Covers truncation in the same line, no separate code path.
+        assert "cut off" in body
+        # Must not return.
+        assert "<tool_call>" not in body
+
+
+# --------------------------------------------------------------------------- #
+# 4. Force-verifier on max_turns
 # --------------------------------------------------------------------------- #
 
 class TestForceDoneAtMaxTurns:

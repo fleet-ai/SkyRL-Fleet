@@ -45,14 +45,14 @@ _TASK_CACHE: Dict[str, Dict[str, Any]] = {}
 # Truncate any single tool output past this many chars (caught a 5.8M-char query_data_lake return).
 MAX_TOOL_OUTPUT_CHARS = 16_000
 
-# Append a <done> reminder to obs when remaining turns drop to this threshold.
-# Fires when `remaining == WRAP_UP_NUDGE_AT` exactly, and only once per episode.
-# Earlier shipping was `0 < remaining <= 5` (every turn for the last 5), and the
-# text said "Emit <done> NOW or you get reward 0" — 98 of 271 such events in the
-# canonical run were immediately followed by bare <done> with no answer. Workflow
-# diagnosis wf_1c2d5247 attributed it to learned surrender. One nudge at 3 turns
-# left, rephrased to demand a final attempt, replaces it.
-WRAP_UP_NUDGE_AT = 3
+# Per-turn budget footer appended to every observation. Canonical-v3 had a
+# threshold-based nudge ("Emit <done> NOW or reward 0") that fired every turn
+# for the last 5; 98 of 271 such events were immediately followed by bare
+# <done> with no answer (learned surrender). Continuous low-key budget framing
+# avoids the threshold cliff: the agent sees pacing context every turn and can
+# self-regulate without the harness ever issuing a stop ultimatum.
+def _turn_footer(turn: int, max_turns: int) -> str:
+    return f"\n\n[Turn {turn}/{max_turns}]"
 
 
 def load_tasks_from_json(tasks_file: str) -> Dict[str, Any]:
@@ -439,8 +439,6 @@ class FleetTaskEnv(BaseTextEnv):
         self.tool_calls = 0
         self.tool_errors = 0
         self.last_reward: Optional[float] = None
-        # Idempotency flag for the wrap-up nudge.
-        self._wrap_up_nudge_fired: bool = False
         self.tools: List[Dict[str, Any]] = []
 
         # Verifier feedback (captured at close time for hint generation)
@@ -600,7 +598,6 @@ class FleetTaskEnv(BaseTextEnv):
         self.tool_calls = 0
         self.tool_errors = 0
         self.last_reward = None
-        self._wrap_up_nudge_fired = False
 
         # Reset context manager if enabled
         if self.context_manager:
@@ -877,16 +874,7 @@ class FleetTaskEnv(BaseTextEnv):
                 },
             )
 
-        def _wrap_up_nudge() -> Optional[str]:
-            remaining = self.max_turns - self.turns
-            if remaining != WRAP_UP_NUDGE_AT or self._wrap_up_nudge_fired:
-                return None
-            self._wrap_up_nudge_fired = True
-            return (
-                f"\n\n[{remaining} turns left. After your next action, output "
-                "your final answer and emit <done>. Do NOT surrender without "
-                "an answer.]"
-            )
+        footer = _turn_footer(self.turns, self.max_turns)
 
         # Build response observation
         if error:
@@ -896,10 +884,8 @@ class FleetTaskEnv(BaseTextEnv):
         elif tool_result:
             content = tool_result_to_message_content(tool_result)
             if isinstance(content, list):
-                # Multimodal obs — pass blocks through; append nudge as trailing text block.
-                nudge = _wrap_up_nudge()
-                if nudge:
-                    content = list(content) + [{"type": "text", "text": nudge.lstrip("\n")}]
+                # Multimodal obs — pass blocks through; always append turn footer.
+                content = list(content) + [{"type": "text", "text": footer.lstrip("\n")}]
                 new_obs = {"role": "user", "content": content}
                 self.chat_history.append(new_obs)
                 if self.context_manager:
@@ -922,19 +908,22 @@ class FleetTaskEnv(BaseTextEnv):
         elif agent_done:
             obs_content = "Task marked as complete."
         elif not tool_call:
+            # No tool call landed. Truncation and "model emitted prose without
+            # calling a tool" are the same observable from here: world state
+            # didn't change. The earlier version prescribed
+            # `<tool_call>{...}</tool_call>` which is wrong for Kimi-K2.6 and
+            # Qwen3+ native tool-call channels; the rephrased version covers
+            # truncation in one line without a separate code path.
             obs_content = (
-                "No tool call found. Use "
-                '<tool_call>{"name": "...", "arguments": {...}}</tool_call> '
-                "format."
+                "No tool call landed. If your response was cut off at the "
+                "per-turn token limit, be more concise next turn."
             )
         else:
             obs_content = "Action executed."
 
-        nudge = _wrap_up_nudge()
-        if nudge:
-            if not isinstance(obs_content, str):
-                obs_content = str(obs_content)
-            obs_content += nudge
+        if not isinstance(obs_content, str):
+            obs_content = str(obs_content)
+        obs_content += footer
 
         new_obs = {"role": "user", "content": obs_content}
         self.chat_history.append(new_obs)
