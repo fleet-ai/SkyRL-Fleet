@@ -139,6 +139,20 @@ def probe_schema_messages(document: dict[str, Any]) -> list[str]:
         for index, entry in enumerate(errors):
             if not isinstance(entry, dict):
                 messages.append(f"errors[{index}] must be an object")
+    if document.get("status") == "pass" and errors:
+        messages.append("errors must be empty when status is pass")
+
+    checks = document.get("checks")
+    if isinstance(checks, dict):
+        output_hash = checks.get("output_hash")
+        if output_hash is not None and not isinstance(output_hash, str):
+            messages.append("checks.output_hash must be a string when present")
+
+    measurements = document.get("measurements")
+    if isinstance(measurements, dict):
+        timing = measurements.get("timing")
+        if timing is not None and not isinstance(timing, dict):
+            messages.append("measurements.timing must be an object when present")
 
     fingerprint = document.get("fingerprint")
     if isinstance(fingerprint, dict):
@@ -151,13 +165,25 @@ def probe_schema_messages(document: dict[str, Any]) -> list[str]:
                 messages.append("fingerprint.device.type must be a non-empty string")
             elif device_type not in {"cpu", "cuda"}:
                 messages.append("fingerprint.device.type must be cpu or cuda")
-            if device_type == "cuda":
-                accelerator_id = device.get("accelerator_id")
-                if not isinstance(accelerator_id, str) or not accelerator_id:
-                    messages.append(
-                        "fingerprint.device.accelerator_id must be a non-empty string "
-                        "for cuda results"
-                    )
+            accelerator_id = device.get("accelerator_id")
+            valid_accelerator_id = (
+                isinstance(accelerator_id, str) and bool(accelerator_id)
+            )
+            if accelerator_id is not None and not valid_accelerator_id:
+                messages.append(
+                    "fingerprint.device.accelerator_id must be a non-empty string "
+                    "when present"
+                )
+            if device_type == "cuda" and accelerator_id is None:
+                messages.append(
+                    "fingerprint.device.accelerator_id must be a non-empty string "
+                    "for cuda results"
+                )
+            cuda_driver = device.get("cuda_driver")
+            if cuda_driver is not None and not isinstance(cuda_driver, dict):
+                messages.append(
+                    "fingerprint.device.cuda_driver must be an object when present"
+                )
     return messages
 
 

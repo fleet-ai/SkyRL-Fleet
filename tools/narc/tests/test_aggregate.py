@@ -531,6 +531,173 @@ def test_aggregate_rejects_bad_nested_result_types_without_crashing(tmp_path):
     ]
 
 
+def test_aggregate_rejects_bad_output_hash_type_without_crashing(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {
+            "device": {
+                "type": "cuda",
+                "accelerator_id": "GPU-a",
+                "logical_index": 0,
+            }
+        },
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": []},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "bad-output-hash.json").write_text(
+        json.dumps(result),
+        encoding="utf-8",
+    )
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "bad-output-hash.json"),
+            "type": "SchemaError",
+            "message": "checks.output_hash must be a string when present",
+        }
+    ]
+
+
+def test_aggregate_rejects_bad_cuda_driver_type_without_crashing(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {
+            "device": {
+                "type": "cuda",
+                "accelerator_id": "GPU-a",
+                "logical_index": 0,
+                "cuda_driver": [],
+            }
+        },
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "bad-cuda-driver.json").write_text(
+        json.dumps(result),
+        encoding="utf-8",
+    )
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "bad-cuda-driver.json"),
+            "type": "SchemaError",
+            "message": "fingerprint.device.cuda_driver must be an object when present",
+        }
+    ]
+
+
+def test_aggregate_rejects_bad_cpu_accelerator_id_type_without_crashing(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {
+            "device": {"type": "cpu", "logical_index": 0, "accelerator_id": []}
+        },
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [],
+    }
+    (tmp_path / "bad-cpu-accelerator.json").write_text(
+        json.dumps(result),
+        encoding="utf-8",
+    )
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "bad-cpu-accelerator.json"),
+            "type": "SchemaError",
+            "message": (
+                "fingerprint.device.accelerator_id must be a non-empty string "
+                "when present"
+            ),
+        }
+    ]
+
+
+def test_aggregate_rejects_pass_result_with_errors(tmp_path):
+    result = {
+        "schema_version": 1,
+        "status": "pass",
+        "profile": "correctness",
+        "hostname": "node-a",
+        "run_id": "run-a",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": "2026-01-01T00:00:01+00:00",
+        "pid": 100,
+        "slurm": {},
+        "command": {},
+        "probe_config": {},
+        "fingerprint_hash": "fingerprint-a",
+        "fingerprint": {"device": {"type": "cpu", "logical_index": 0}},
+        "probe_config_hash": "config-a",
+        "checks": {"output_hash": "hash-a"},
+        "measurements": {},
+        "errors": [{"type": "RuntimeError", "message": "boom"}],
+    }
+    (tmp_path / "pass-with-errors.json").write_text(json.dumps(result), encoding="utf-8")
+
+    summary = aggregate_path(tmp_path)
+
+    assert not summary["pass"]
+    assert summary["loaded_results"] == 0
+    assert summary["schema_errors"] == [
+        {
+            "path": str(tmp_path / "pass-with-errors.json"),
+            "type": "SchemaError",
+            "message": "errors must be empty when status is pass",
+        }
+    ]
+
+
 def test_aggregate_allows_cpu_result_without_accelerator_id(tmp_path):
     result = {
         "schema_version": 1,
