@@ -14,6 +14,7 @@ ProbeProfile = Literal["correctness", "performance"]
 class ProbeConfig:
     profile: ProbeProfile
     seed: int
+    input_seed: int
     batch_size: int
     sequence_length: int
     vocab_size: int

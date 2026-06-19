@@ -8,7 +8,7 @@ from narc.probe import (
     output_device_id,
     run_probe,
 )
-from narc.schema import ProbeResult
+from narc.schema import ProbeConfig, ProbeResult
 
 
 def test_cpu_correctness_probe_is_repeatable():
@@ -50,6 +50,86 @@ def test_cpu_correctness_probe_is_repeatable():
     assert payload["checks"]["repeat_match"] is True
     assert payload["checks"]["output_hash"]
     assert payload["fingerprint_hash"]
+    assert payload["probe_config"]["seed"] == 0
+    assert payload["probe_config"]["input_seed"] == 0
+
+
+def test_cpu_correctness_probe_uses_input_seed():
+    parser = generate_cli()
+    base_args = [
+        "run",
+        "--device",
+        "cpu",
+        "--profile",
+        "correctness",
+        "--dtype",
+        "fp32",
+        "--repeat",
+        "2",
+        "--steps",
+        "1",
+        "--batch-size",
+        "1",
+        "--sequence-length",
+        "8",
+        "--vocab-size",
+        "64",
+        "--d-model",
+        "16",
+        "--num-layers",
+        "1",
+        "--num-heads",
+        "4",
+        "--mlp-ratio",
+        "2",
+    ]
+    first = run_probe(parser.parse_args([*base_args, "--input-seed", "1234"]))
+    second = run_probe(parser.parse_args([*base_args, "--input-seed", "1234"]))
+    different_inputs = run_probe(
+        parser.parse_args([*base_args, "--input-seed", "5678"])
+    )
+
+    assert first.probe_config["input_seed"] == 1234
+    assert different_inputs.probe_config["input_seed"] == 5678
+    assert first.probe_config_hash == second.probe_config_hash
+    assert first.checks["output_hash"] == second.checks["output_hash"]
+    assert first.probe_config_hash != different_inputs.probe_config_hash
+    assert first.checks["output_hash"] != different_inputs.checks["output_hash"]
+
+
+def test_fixed_inputs_ignore_global_default_device():
+    torch = pytest.importorskip("torch")
+    if not hasattr(torch, "set_default_device"):
+        pytest.skip("torch.set_default_device is unavailable")
+    config = ProbeConfig(
+        profile="correctness",
+        seed=0,
+        input_seed=0,
+        batch_size=1,
+        sequence_length=8,
+        vocab_size=64,
+        d_model=16,
+        num_layers=1,
+        num_heads=4,
+        mlp_ratio=2,
+        steps=1,
+        warmup_steps=0,
+        dtype="float32",
+        repeat=1,
+        deterministic=True,
+        allow_tf32=False,
+    )
+
+    torch.set_default_device("meta")
+    try:
+        input_ids, labels = probe_module.fixed_inputs(torch, config, torch.device("cpu"))
+    finally:
+        torch.set_default_device("cpu")
+
+    assert input_ids.device.type == "cpu"
+    assert labels.device.type == "cpu"
+    assert not input_ids.is_meta
+    assert not labels.is_meta
 
 
 def test_cpu_probe_rejects_sequence_length_without_targets():

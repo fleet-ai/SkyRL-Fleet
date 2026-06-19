@@ -22,6 +22,10 @@ uv run narc compare s3://fleet-research/path/to/narc-results/ \
   -o s3://fleet-research/path/to/compare.json
 ```
 
+`narc run` uses deterministic randomized token IDs and labels. `--seed`
+controls model initialization and torch setup; `--input-seed` controls the input
+token IDs and labels. Both are serialized in `probe_config`.
+
 `narc compare` exits non-zero when valid inputs split into more than one
 equivalence class, contain non-pass probe results, or have pass results without
 an output hash. Use `--nofail` to still emit that valid non-passing comparison as
@@ -37,14 +41,9 @@ srun --ntasks-per-node=8 --gpus-per-task=1 --gpu-bind=single:1 \
     --out-dir s3://fleet-research/narc/$SLURM_JOB_ID
 ```
 
-Launch the included SkyPilot Slurm task with the research-jobs AWS credentials:
+Launch the included SkyPilot Slurm task only after installing the research-jobs
+AWS credentials on the cluster as an AWS shared-credentials file:
 
 ```bash
-set -a
-source ~/.secrets/research-jobs.env
-set +a
-
-sky launch tasks/narc-slurm.yaml \
-  --env AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-  --env AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+sky launch tasks/narc-slurm.yaml
 ```

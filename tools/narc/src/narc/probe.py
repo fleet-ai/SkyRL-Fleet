@@ -133,13 +133,25 @@ def configure_torch(
 
 
 def fixed_inputs(torch: Any, config: ProbeConfig, device: Any) -> tuple[Any, Any]:
-    token_count = config.batch_size * config.sequence_length
-    base = torch.arange(token_count, dtype=torch.long, device=device).view(
-        config.batch_size,
-        config.sequence_length,
-    )
-    input_ids = (base * 17 + 23) % config.vocab_size
-    labels = (base * 31 + 7) % config.vocab_size
+    generator = torch.Generator()
+    generator.manual_seed(config.input_seed)
+    shape = (config.batch_size, config.sequence_length)
+    input_ids = torch.randint(
+        low=0,
+        high=config.vocab_size,
+        size=shape,
+        dtype=torch.long,
+        device="cpu",
+        generator=generator,
+    ).to(device=device)
+    labels = torch.randint(
+        low=0,
+        high=config.vocab_size,
+        size=shape,
+        dtype=torch.long,
+        device="cpu",
+        generator=generator,
+    ).to(device=device)
     return input_ids, labels
 
 
@@ -408,6 +420,7 @@ def default_config(args: argparse.Namespace, dtype_name: str) -> ProbeConfig:
     return ProbeConfig(
         profile=profile,
         seed=args.seed,
+        input_seed=args.input_seed,
         batch_size=argument_or_default(args.batch_size, defaults["batch_size"]),
         sequence_length=argument_or_default(
             args.sequence_length,
@@ -616,7 +629,13 @@ def generate_run_parser() -> argparse.ArgumentParser:
         default=0,
         help="Logical CUDA device index when --device=cuda.",
     )
-    parser.add_argument("--seed", type=int, default=1234, help="Probe seed.")
+    parser.add_argument("--seed", type=int, default=0, help="Probe seed.")
+    parser.add_argument(
+        "--input-seed",
+        type=int,
+        default=0,
+        help="Seed for deterministic randomized input token IDs and labels.",
+    )
     parser.add_argument(
         "--repeat",
         type=int,

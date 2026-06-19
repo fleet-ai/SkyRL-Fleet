@@ -21,12 +21,15 @@ def test_run_parser_shape():
             "correctness",
             "--steps",
             "1",
+            "--input-seed",
+            "5678",
         ]
     )
 
     assert args.device == "cpu"
     assert args.profile == "correctness"
     assert args.steps == 1
+    assert args.input_seed == 5678
     assert callable(args.func)
 
 
