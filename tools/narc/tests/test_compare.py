@@ -312,6 +312,34 @@ def test_compare_paths_fails_when_pass_result_has_empty_output_hash(tmp_path):
     assert report["missing_output_hash"] == [str(tmp_path / "a.json")]
 
 
+def test_compare_paths_fails_when_pass_result_has_no_input_hash(tmp_path):
+    write_result(tmp_path / "a.json", result_payload(input_hash=None))
+
+    report = compare_paths([tmp_path])
+
+    assert not report["pass"]
+    assert not report["split"]
+    assert report["missing_input_hash"] == [str(tmp_path / "a.json")]
+
+
+def test_compare_paths_rejects_bad_input_hash_type(tmp_path):
+    result = result_payload()
+    result["checks"]["input_hash"] = []
+    write_result(tmp_path / "bad-input-hash.json", result)
+
+    report = compare_paths([tmp_path])
+
+    assert not report["pass"]
+    assert report["loaded_results"] == 0
+    assert report["schema_errors"] == [
+        {
+            "path": str(tmp_path / "bad-input-hash.json"),
+            "type": "SchemaError",
+            "message": "checks.input_hash must be a string when present",
+        }
+    ]
+
+
 def test_compare_cli_fails_on_split_by_default(tmp_path):
     write_result(tmp_path / "a.json", result_payload(output_hash="hash-a"))
     write_result(tmp_path / "b.json", result_payload(output_hash="hash-b"))

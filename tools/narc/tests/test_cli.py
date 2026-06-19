@@ -38,3 +38,10 @@ def test_run_rejects_negative_logical_device():
 
     with pytest.raises(SystemExit):
         parser.parse_args(["run", "--logical-device", "-1"])
+
+
+def test_aggregate_subcommand_is_not_registered():
+    parser = generate_cli()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["aggregate"])

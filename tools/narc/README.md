@@ -6,7 +6,6 @@ compute clusters.
 The first implementation is deliberately small:
 
 - `narc run` runs a deterministic PyTorch probe on one assigned device.
-- `narc aggregate` summarizes per-device JSON results.
 - `narc compare` partitions result JSON files into equivalence classes.
 
 Run from this directory with uv:
@@ -14,9 +13,7 @@ Run from this directory with uv:
 ```bash
 uv run narc run --device cpu --out-dir /tmp/narc
 uv run narc run --device cuda --out-dir s3://fleet-research/path/to/narc-results/
-uv run narc aggregate /tmp/narc
 uv run narc compare /tmp/narc/*.json
-uv run narc aggregate s3://fleet-research/path/to/narc-results/
 uv run narc compare s3://fleet-research/path/to/narc-results/
 uv run narc compare s3://fleet-research/path/to/narc-results/ \
   -o s3://fleet-research/path/to/compare.json
