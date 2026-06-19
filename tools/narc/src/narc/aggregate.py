@@ -42,6 +42,7 @@ REQUIRED_RESULT_KEYS = {
 
 RESULT_FIELD_TYPES = {
     "schema_version": int,
+    "narc_data_version": int,
     "status": str,
     "profile": str,
     "run_id": str,
@@ -115,6 +116,11 @@ def probe_schema_messages(document: dict[str, Any]) -> list[str]:
     if isinstance(profile, str) and profile not in VALID_PROFILES:
         messages.append(f"profile must be one of {', '.join(sorted(VALID_PROFILES))}")
 
+    data_version = document.get("narc_data_version")
+    if isinstance(data_version, int) and not isinstance(data_version, bool):
+        if data_version < 0:
+            messages.append("narc_data_version must be at least 0")
+
     errors = document.get("errors")
     if isinstance(errors, list):
         for index, entry in enumerate(errors):
@@ -128,6 +134,9 @@ def probe_schema_messages(document: dict[str, Any]) -> list[str]:
         output_hash = checks.get("output_hash")
         if output_hash is not None and not isinstance(output_hash, str):
             messages.append("checks.output_hash must be a string when present")
+        input_hash = checks.get("input_hash")
+        if input_hash is not None and not isinstance(input_hash, str):
+            messages.append("checks.input_hash must be a string when present")
 
     measurements = document.get("measurements")
     if isinstance(measurements, dict):

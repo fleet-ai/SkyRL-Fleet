@@ -24,7 +24,9 @@ uv run narc compare s3://fleet-research/path/to/narc-results/ \
 
 `narc run` uses deterministic randomized token IDs and labels. `--seed`
 controls model initialization and torch setup; `--input-seed` controls the input
-token IDs and labels. Both are serialized in `probe_config`.
+token IDs and labels. Both are serialized in `probe_config`. Each result also
+stores `narc_data_version` and `checks.input_hash`, so result files record both
+the input-generation version and the generated input tensor hash.
 
 `narc compare` exits non-zero when valid inputs split into more than one
 equivalence class, contain non-pass probe results, or have pass results without

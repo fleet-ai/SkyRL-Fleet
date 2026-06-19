@@ -53,9 +53,11 @@ def equivalence(result: dict[str, Any]) -> dict[str, Any]:
     status = result["status"]
     value: dict[str, Any] = {
         "schema_version": result["schema_version"],
+        "narc_data_version": result.get("narc_data_version"),
         "status": status,
         "profile": result["profile"],
         "probe_config_hash": result["probe_config_hash"],
+        "input_hash": checks.get("input_hash"),
         "output_hash": checks.get("output_hash"),
     }
     if status != "pass":
@@ -86,7 +88,9 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "hostname": result.get("hostname"),
         "accelerator_id": device.get("accelerator_id"),
         "run_id": result.get("run_id"),
+        "narc_data_version": result.get("narc_data_version"),
         "probe_config_hash": result.get("probe_config_hash"),
+        "input_hash": result.get("checks", {}).get("input_hash"),
         "output_hash": result.get("checks", {}).get("output_hash"),
         "fingerprint_hash": result.get("fingerprint_hash"),
     }

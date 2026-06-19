@@ -185,6 +185,15 @@ def hash_named_tensors(tensors: list[tuple[str, Any]]) -> str:
     )
 
 
+def input_hash(input_ids: Any, labels: Any) -> str:
+    return hash_named_tensors(
+        [
+            ("input_ids", input_ids),
+            ("labels", labels),
+        ]
+    )
+
+
 def parameter_hash(model: Any) -> str:
     return hash_named_tensors(list(model.named_parameters()))
 
@@ -233,6 +242,7 @@ def run_training_steps(
 
     model = build_model(config, seed=seed).to(device=device, dtype=dtype)
     input_ids, labels = fixed_inputs(torch, config, device)
+    generated_input_hash = input_hash(input_ids, labels)
     learning_rate = 1e-3
     losses: list[str] = []
     step_seconds: list[float] = []
@@ -288,6 +298,7 @@ def run_training_steps(
         "selected_logits": [f"{value:.9g}" for value in selected],
     }
     output["output_hash"] = stable_hash(output)
+    output["input_hash"] = generated_input_hash
     if step_seconds:
         token_count = config.batch_size * config.sequence_length * len(step_seconds)
         elapsed = sum(step_seconds)
@@ -321,6 +332,8 @@ def validate_config(config: ProbeConfig) -> None:
         raise ValueError("sequence_length must be at least 2")
     if config.vocab_size < 2:
         raise ValueError("vocab_size must be at least 2")
+    if config.narc_data_version < 0:
+        raise ValueError("narc_data_version must be at least 0")
     if config.warmup_steps < 0:
         raise ValueError("warmup_steps must be at least 0")
     if config.d_model % config.num_heads != 0:
@@ -341,9 +354,12 @@ def run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any)
         for _ in range(config.repeat)
     ]
     output_hashes = [run["output_hash"] for run in runs]
+    input_hashes = [run["input_hash"] for run in runs]
     return {
         "repeat_match": len(set(output_hashes)) == 1,
         "output_hash": output_hashes[0],
+        "input_repeat_match": len(set(input_hashes)) == 1,
+        "input_hash": input_hashes[0],
         "runs": runs,
     }
 
@@ -382,6 +398,7 @@ def run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any)
         )
     return {
         "output_hash": measured["output_hash"],
+        "input_hash": measured["input_hash"],
         "losses": measured["losses"],
         "timing": timings,
         "step_seconds_variance": variance,
@@ -482,7 +499,11 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
             measurements = run_correctness(torch, config, device=device, dtype=dtype)
             checks["repeat_match"] = measurements["repeat_match"]
             checks["output_hash"] = measurements["output_hash"]
+            checks["input_repeat_match"] = measurements["input_repeat_match"]
+            checks["input_hash"] = measurements["input_hash"]
             if not measurements["repeat_match"]:
+                status = "fail"
+            if not measurements["input_repeat_match"]:
                 status = "fail"
             if args.expected_hash:
                 expected_match = measurements["output_hash"] == args.expected_hash
@@ -492,6 +513,7 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
         else:
             measurements = run_performance(torch, config, device=device, dtype=dtype)
             checks["output_hash"] = measurements["output_hash"]
+            checks["input_hash"] = measurements["input_hash"]
             if args.expected_hash:
                 expected_match = measurements["output_hash"] == args.expected_hash
                 checks["expected_hash_match"] = expected_match
@@ -510,6 +532,7 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
     finished_at = utc_now()
     result = ProbeResult(
         schema_version=SCHEMA_VERSION,
+        narc_data_version=config.narc_data_version,
         status=status,  # type: ignore[arg-type]
         profile=config.profile,
         run_id=run_id,

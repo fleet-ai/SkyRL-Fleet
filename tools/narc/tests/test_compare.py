@@ -72,17 +72,22 @@ def result_payload(
     *,
     status: str = "pass",
     output_hash: str | None = "hash-a",
+    input_hash: str | None = "input-a",
     errors: list[dict[str, str]] | None = None,
     checks: dict[str, object] | None = None,
     accelerator_id: str = "GPU-a",
+    narc_data_version: int = 1,
 ) -> dict[str, object]:
-    result_checks = {"output_hash": output_hash}
+    result_checks = {"input_hash": input_hash, "output_hash": output_hash}
     if checks:
         result_checks.update(checks)
     if output_hash is None:
         result_checks.pop("output_hash")
+    if input_hash is None:
+        result_checks.pop("input_hash")
     return {
         "schema_version": 1,
+        "narc_data_version": narc_data_version,
         "status": status,
         "profile": "correctness",
         "hostname": "node-a",
@@ -124,6 +129,15 @@ def test_compare_groups_matching_pass_results():
 def test_compare_splits_pass_results_by_output_hash():
     first = result_payload(output_hash="hash-a", accelerator_id="GPU-a")
     second = result_payload(output_hash="hash-b", accelerator_id="GPU-b")
+
+    partitions = compare([first, second])
+
+    assert partitions == [[first], [second]]
+
+
+def test_compare_splits_pass_results_by_input_hash():
+    first = result_payload(input_hash="input-a", accelerator_id="GPU-a")
+    second = result_payload(input_hash="input-b", accelerator_id="GPU-b")
 
     partitions = compare([first, second])
 
@@ -188,9 +202,11 @@ def test_compare_paths_reports_partitions(tmp_path):
     assert report["partitions"][0]["size"] == 2
     assert report["partitions"][0]["equivalence"] == {
         "schema_version": 1,
+        "narc_data_version": 1,
         "status": "pass",
         "profile": "correctness",
         "probe_config_hash": "config-a",
+        "input_hash": "input-a",
         "output_hash": "hash-a",
     }
 

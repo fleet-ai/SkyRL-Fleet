@@ -8,7 +8,7 @@ from narc.probe import (
     output_device_id,
     run_probe,
 )
-from narc.schema import ProbeConfig, ProbeResult
+from narc.schema import NARC_DATA_VERSION, ProbeConfig, ProbeResult
 
 
 def test_cpu_correctness_probe_is_repeatable():
@@ -49,7 +49,16 @@ def test_cpu_correctness_probe_is_repeatable():
     assert payload["status"] == "pass"
     assert payload["checks"]["repeat_match"] is True
     assert payload["checks"]["output_hash"]
+    assert payload["checks"]["input_repeat_match"] is True
+    assert payload["checks"]["input_hash"]
+    assert payload["measurements"]["input_hash"] == payload["checks"]["input_hash"]
+    assert (
+        payload["measurements"]["runs"][0]["input_hash"]
+        == payload["checks"]["input_hash"]
+    )
     assert payload["fingerprint_hash"]
+    assert payload["narc_data_version"] == NARC_DATA_VERSION
+    assert payload["probe_config"]["narc_data_version"] == NARC_DATA_VERSION
     assert payload["probe_config"]["seed"] == 0
     assert payload["probe_config"]["input_seed"] == 0
 
@@ -92,8 +101,10 @@ def test_cpu_correctness_probe_uses_input_seed():
     assert first.probe_config["input_seed"] == 1234
     assert different_inputs.probe_config["input_seed"] == 5678
     assert first.probe_config_hash == second.probe_config_hash
+    assert first.checks["input_hash"] == second.checks["input_hash"]
     assert first.checks["output_hash"] == second.checks["output_hash"]
     assert first.probe_config_hash != different_inputs.probe_config_hash
+    assert first.checks["input_hash"] != different_inputs.checks["input_hash"]
     assert first.checks["output_hash"] != different_inputs.checks["output_hash"]
 
 
