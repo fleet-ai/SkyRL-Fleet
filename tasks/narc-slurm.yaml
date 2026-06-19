@@ -1,4 +1,11 @@
 name: narc-slurm
+# Usage:
+#   install the research-jobs AWS credentials on the cluster as an AWS
+#   shared-credentials file, then run:
+#   sky launch tasks/narc-slurm.yaml
+#
+# Override NARC_OUT_DIR to change the result prefix. It may be a local path or
+# an S3 prefix.
 
 resources:
   disk_size: 100
@@ -11,9 +18,11 @@ num_nodes: 1
 workdir: .
 
 envs:
-  NARC_OUT_DIR: "/workspace/narc"
+  NARC_OUT_DIR: "s3://fleet-research/narc"
   NARC_PROFILE: "correctness"
   NARC_TASKS: "8"
+  AWS_SHARED_CREDENTIALS_FILE: "/workspace/.secrets/research-jobs.aws-credentials"
+  AWS_PROFILE: "research-jobs"
 
 setup: |
   if ! command -v uv >/dev/null 2>&1; then
@@ -27,26 +36,30 @@ run: |
   set -euo pipefail
   export PATH="$HOME/.local/bin:$PATH"
   JOB_ID="${SLURM_JOB_ID:-manual-$(date +%s)}"
-  OUT_DIR="${NARC_OUT_DIR}/${JOB_ID}"
-  EXPECTED_RESULTS="${NARC_EXPECTED_RESULTS:-${NARC_TASKS}}"
-  mkdir -p "${OUT_DIR}"
-
-  set +e
-  srun --ntasks-per-node="${NARC_TASKS}" --gpus-per-task=1 --gpu-bind=single:1 \
-    uv run --project tools/narc --no-sync narc run-local \
-      --profile "${NARC_PROFILE}" \
-      --device cuda \
-      --dtype fp32 \
-      --out-dir "${OUT_DIR}"
-  SRUN_EXIT=$?
-
-  uv run --project tools/narc --no-sync narc aggregate "${OUT_DIR}" \
-    --expected-results "${EXPECTED_RESULTS}" \
-    --fail-on-fail
-  AGGREGATE_EXIT=$?
-  set -e
-
-  if [ "${SRUN_EXIT}" -ne 0 ] || [ "${AGGREGATE_EXIT}" -ne 0 ]; then
-    echo "narc failed: srun_exit=${SRUN_EXIT} aggregate_exit=${AGGREGATE_EXIT}" >&2
-    exit 1
+  OUT_DIR="${NARC_OUT_DIR%/}/${JOB_ID}"
+  export OUT_DIR NARC_PROFILE
+  if [[ "${OUT_DIR}" != s3://* ]]; then
+    mkdir -p "${OUT_DIR}"
   fi
+
+  srun --ntasks-per-node="${NARC_TASKS}" --gpus-per-task=1 --gpu-bind=single:1 \
+    bash -c '
+      set -euo pipefail
+      logical_device=0
+      visible="${CUDA_VISIBLE_DEVICES:-${NVIDIA_VISIBLE_DEVICES:-}}"
+      if [ -n "${visible}" ] && [ "${visible}" != "all" ]; then
+        IFS="," read -r -a visible_devices <<< "${visible}"
+        if [ "${#visible_devices[@]}" -gt 1 ]; then
+          logical_device="${SLURM_LOCALID:-0}"
+        fi
+      else
+        logical_device="${SLURM_LOCALID:-0}"
+      fi
+      echo "narc rank=${SLURM_PROCID:-unknown} local_rank=${SLURM_LOCALID:-unknown} visible_gpus=${visible:-unset} logical_device=${logical_device}" >&2
+      uv run --project tools/narc --no-sync narc run \
+        --profile "${NARC_PROFILE}" \
+        --device cuda \
+        --logical-device "${logical_device}" \
+        --dtype fp32 \
+        --out-dir "${OUT_DIR}"
+    '

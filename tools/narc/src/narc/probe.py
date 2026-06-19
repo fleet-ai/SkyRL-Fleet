@@ -7,7 +7,6 @@ import socket
 import sys
 import time
 import uuid
-from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,14 @@ from narc.env import (
     collect_fingerprint,
     prepare_deterministic_environment,
     slurm_context,
+)
+from narc.files import (
+    ResultLocation,
+    is_s3_uri,
+    parse_s3_uri,
+    require_s3_object_uri,
+    s3_uri,
+    write_json_report,
 )
 from narc.schema import SCHEMA_VERSION, ProbeConfig, ProbeResult
 
@@ -46,6 +53,23 @@ def safe_filename_component(value: Any) -> str:
         for character in text
     )
     return safe.strip("-") or "unknown"
+
+
+def output_device_id(result: ProbeResult) -> Any:
+    device = result.fingerprint.get("device")
+    if not isinstance(device, dict):
+        return result.run_id
+    accelerator_id = device.get("accelerator_id")
+    if accelerator_id:
+        return accelerator_id
+    pci_bus_id = device.get("pci_bus_id")
+    if pci_bus_id:
+        return pci_bus_id
+    device_type = device.get("type")
+    logical_index = device.get("logical_index")
+    if device_type is not None and logical_index is not None:
+        return f"{device_type}-{logical_index}"
+    return result.run_id
 
 
 def resolve_device(torch: Any, device: str, logical_device: int) -> Any:
@@ -499,34 +523,77 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
 
 
 def default_output_path(result: ProbeResult, out_dir: Path) -> Path:
-    hostname = safe_filename_component(result.hostname)
+    device_id = safe_filename_component(output_device_id(result))
     rank = safe_filename_component(result.slurm.get("slurm_procid") or "local")
     local_rank = safe_filename_component(result.slurm.get("slurm_localid") or "0")
     run_id = safe_filename_component(result.run_id)
     filename = (
-        f"{hostname}-rank{rank}-local{local_rank}-pid{result.pid}-"
+        f"{device_id}-rank{rank}-local{local_rank}-pid{result.pid}-"
         f"{run_id}.json"
     )
     return out_dir / filename
 
 
-def handle_run_local(args: argparse.Namespace) -> None:
+def default_output_filename(result: ProbeResult) -> str:
+    return default_output_path(result, Path(".")).name
+
+
+def default_output_location(result: ProbeResult, out_dir: ResultLocation) -> ResultLocation:
+    filename = default_output_filename(result)
+    if is_s3_uri(out_dir):
+        bucket, prefix = parse_s3_uri(str(out_dir))
+        key = f"{prefix.rstrip('/')}/{filename}" if prefix else filename
+        return s3_uri(bucket, key)
+    return Path(out_dir) / filename
+
+
+def write_probe_result(location: ResultLocation, payload: dict[str, Any]) -> None:
+    if is_s3_uri(location):
+        write_json_report(location, payload)
+        return
+    write_json(Path(location), payload)
+
+
+def write_result_to_outfile(outfile: str, payload: dict[str, Any]) -> None:
+    if outfile == "-":
+        dump_json(sys.stdout, payload)
+        return
+    if is_s3_uri(outfile):
+        write_json_report(outfile, payload)
+        return
+    write_json(Path(outfile), payload)
+
+
+def validate_run_outfile(outfile: str) -> None:
+    if outfile == "-":
+        return
+    if is_s3_uri(outfile):
+        require_s3_object_uri(outfile)
+        return
+    output_path = Path(outfile)
+    if output_path.exists() and output_path.is_dir():
+        raise ValueError("outfile must not be an existing directory")
+    parent = output_path.parent
+    if parent.exists() and not parent.is_dir():
+        raise ValueError("outfile parent must be a directory")
+
+
+def handle_run(args: argparse.Namespace) -> None:
+    validate_run_outfile(args.outfile)
     result = run_probe(args)
     payload = result.to_dict()
     if args.out_dir:
-        output_path = default_output_path(result, Path(args.out_dir))
-        payload["output_path"] = str(output_path)
-        write_json(output_path, payload)
+        output_location = default_output_location(result, args.out_dir)
+        payload["output_path"] = str(output_location)
+        write_probe_result(output_location, payload)
 
-    context = nullcontext(args.outfile) if args.outfile is sys.stdout else args.outfile
-    with context as outfile:
-        dump_json(outfile, payload)
+    write_result_to_outfile(args.outfile, payload)
 
     if result.status == "fail":
         raise SystemExit(1)
 
 
-def generate_run_local_parser() -> argparse.ArgumentParser:
+def generate_run_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run a deterministic PyTorch probe on the assigned local device",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -594,14 +661,13 @@ def generate_run_local_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out-dir",
         type=str,
-        help="Directory to write the per-device JSON result.",
+        help="Local directory or S3 prefix to write the per-device JSON result.",
     )
     parser.add_argument(
         "-o",
         "--outfile",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
-        help="Output file for JSON result.",
+        default="-",
+        help="Output file, S3 URI, or '-' for stdout.",
     )
-    parser.set_defaults(func=handle_run_local)
+    parser.set_defaults(func=handle_run)
     return parser

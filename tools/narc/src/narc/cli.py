@@ -3,7 +3,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from narc.aggregate import generate_aggregate_parser
 from narc.compare import generate_compare_parser
-from narc.probe import generate_run_local_parser
+from narc.probe import generate_run_parser
 
 
 def package_version() -> str:
@@ -33,12 +33,12 @@ def generate_cli() -> argparse.ArgumentParser:
     parser.set_defaults(func=lambda _: parser.print_help())
     subparsers = parser.add_subparsers()
 
-    run_local_parser = generate_run_local_parser()
+    run_parser = generate_run_parser()
     subparsers.add_parser(
-        "run-local",
-        parents=[run_local_parser],
+        "run",
+        parents=[run_parser],
         add_help=False,
-        help=run_local_parser.description,
+        help=run_parser.description,
     )
 
     aggregate_parser = generate_aggregate_parser()
