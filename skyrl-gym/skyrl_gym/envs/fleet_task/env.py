@@ -211,8 +211,10 @@ def _bu_interaction_hints(portal_url: Optional[str]) -> str:
         "- DO NOT type `http://localhost...` or any made-up domain. The page renders\n"
         "  Django ALLOWED_HOSTS 403 if you guess wrong and you lose the working session URL.\n"
         "- After any action: take a screenshot to verify the screen changed.\n"
-        "- If `navigate` returns a 403 page, you guessed a wrong host. Use the back\n"
-        "  button (`key(\"Alt\",\"Left\")`) to recover.\n"
+        "- If `navigate` returns a 403 page, you guessed a wrong host. Recover with\n"
+        "  the browser back-button keystroke — call `computer` with arguments\n"
+        "  `{\"action\": \"key\", \"text\": \"alt+Left\"}` (xdotool combo syntax in the\n"
+        "  `text` field; the schema has no `keys` field).\n"
         "- When the task is fully complete, output your final answer and emit <done>.\n"
         f"\n## Action Vocabulary\n"
         f"Valid `action` values: {_ACTION_VOCAB}, navigate.\n"
@@ -316,14 +318,27 @@ def build_system_content(
     elif modality == "computer_use":
         computer_use_hints = _cu_interaction_hints()
 
-    if use_tools_channel:
-        tools_block = ""
-    else:
-        tools_json = json.dumps(tools, indent=2)
+    # Two independent decisions are bundled into this block:
+    #   (a) ALWAYS dump the `## Available Tools` schema. Even when the model
+    #       has a native tool channel (Kimi <|tool_declare_begin|>, Qwen3+
+    #       <tools> block), the in-prompt JSON dump is the canonical reference
+    #       the model can fall back to when prose hints in the system prompt
+    #       are ambiguous. Cost is ~400-600 tokens on a 131K context (<0.5%).
+    #       Tinker job 4746408e proved the cost of omitting it: every BU/CU
+    #       rollout where the model hallucinated `keys: [...]` instead of
+    #       `text: "alt+Left"` for the `key` action (matching the prose hint
+    #       rather than the schema) burned the entire trajectory.
+    #   (b) The `## Tool Call Format` example (`<tool_call>{...}</tool_call>`)
+    #       is Qwen's call syntax. Models with native channels (Kimi, Qwen3+
+    #       via tool_declare) must NOT be pushed off their native channel,
+    #       so this block is conditional on `use_tools_channel=False`.
+    # Split, not bundled — see job 4746408e_4 root cause.
+    tools_json = json.dumps(tools, indent=2)
+    tools_block = f"## Available Tools\n{tools_json}\n\n"
+    if not use_tools_channel:
         tool_names = [t["function"]["name"] for t in tools if "function" in t]
         tool_names_str = ", ".join(tool_names)
-        tools_block = (
-            f"## Available Tools\n{tools_json}\n\n"
+        tools_block += (
             f"## Tool Call Format\n"
             f"Use the tools listed above by name ({tool_names_str}). "
             f"Format each call as:\n"

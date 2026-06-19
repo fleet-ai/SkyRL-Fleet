@@ -6,23 +6,36 @@ Written blind from the contract, not the implementation. The contract:
   build_system_content(tools, *, modality, env_variables, env_key,
                        use_tools_channel, now) -> str
 
+  - The result ALWAYS contains "## Available Tools" + the full JSON dump of
+    the tools list (both `use_tools_channel=True` and `False`). The dump is
+    the canonical schema reference the model can fall back to when prose
+    hints in the system prompt are ambiguous. See job 4746408e_4 root cause:
+    Kimi hallucinated `keys: [...]` instead of `text: "alt+Left"` for the
+    `key` action because the prose hint suggested the former and the
+    schema dump was suppressed.
+
   - When `use_tools_channel=False` (default, legacy vLLM/SkyRL path):
-    * the result contains "## Available Tools" and the full JSON dump of
-      the tools list
-    * the result contains "## Tool Call Format" with the <tool_call>{...}
+    * additionally contains "## Tool Call Format" with the <tool_call>{...}
       grammar example
-    * the result lists tool names by name
+    * lists tool names in the call-format reminder
 
   - When `use_tools_channel=True` (Tinker / HF-standard path):
-    * the result does NOT contain "## Available Tools"
-    * the result does NOT contain "## Tool Call Format"
-    * the result does NOT mention the <tool_call> XML grammar
-    * EVERY other section (date, env context, hints, error handling,
-      response format) is unchanged
+    * "## Available Tools" still present (schema is the canonical fallback)
+    * "## Tool Call Format" omitted (model uses native tool channel —
+      forcing it onto Qwen's <tool_call> syntax would push it OFF its
+      native <|tool_call_begin|> channel)
+    * the <tool_call> XML grammar example is absent
+    * EVERY non-tools section (date, env context, hints, error handling,
+      response format) is unchanged between the two paths
 
   - Modality affects browser/computer-use hints:
     * "computer_use" / "browser_use" include "## Browser Interaction Strategy"
     * "tool_use" omits it
+
+  - Hint examples must be schema-compliant: every literal JSON-shape
+    example in the BU/CU hints must round-trip through json.loads and match
+    the MCP `computer` tool schema. The misleading `key("Alt","Left")`
+    prose hint that tripped job 4746408e is forbidden by regression test.
 
   - env_key="fostgres" injects "## Database Exploration"
 
@@ -112,24 +125,33 @@ class TestLegacyToolsInPrompt:
 # --------------------------------------------------------------------------- #
 
 class TestToolsChannel:
-    def test_no_available_tools_section(self):
+    def test_available_tools_section_still_present(self):
+        # New contract: the schema dump is the canonical reference and must
+        # be present even when the model has a native tool channel. See
+        # job 4746408e_4: Kimi-K2.6 hallucinated a `keys: [...]` arg shape
+        # when this block was suppressed, because the prose hint was the
+        # only concrete example of the `key` action it had.
         out = build_system_content(SAMPLE_TOOLS, use_tools_channel=True, now=FIXED_NOW)
-        assert "## Available Tools" not in out
+        assert "## Available Tools" in out
+
+    def test_tool_json_dump_still_present(self):
+        out = build_system_content(SAMPLE_TOOLS, use_tools_channel=True, now=FIXED_NOW)
+        # The JSON dump keys that came from the tools list must appear.
+        assert '"bash"' in out
+        assert '"read_file"' in out
+        assert '"cmd"' in out
 
     def test_no_tool_call_format_section(self):
+        # Tool Call Format teaches Qwen's <tool_call>{...}</tool_call> syntax.
+        # Forcing a Kimi or Qwen3+ model onto that syntax pushes it off its
+        # native <|tool_call_begin|>/<tools> channel — bad.
         out = build_system_content(SAMPLE_TOOLS, use_tools_channel=True, now=FIXED_NOW)
         assert "## Tool Call Format" not in out
 
     def test_no_xml_grammar_example(self):
-        out = build_system_content(SAMPLE_TOOLS, use_tools_channel=True, now=FIXED_NOW)
         # The XML grammar example is gone — model uses its native channel.
-        assert "<tool_call>" not in out
-
-    def test_no_tool_json_dump_in_body(self):
         out = build_system_content(SAMPLE_TOOLS, use_tools_channel=True, now=FIXED_NOW)
-        # Tool-specific JSON keys that only appear in the dump should be absent.
-        assert '"function"' not in out
-        assert '"parameters"' not in out
+        assert "<tool_call>" not in out
 
     def test_done_signal_still_documented(self):
         # We still need to teach the model the <done> completion signal — it's
@@ -149,15 +171,22 @@ class TestToolsChannel:
         out = build_system_content(SAMPLE_TOOLS, use_tools_channel=True, now=FIXED_NOW)
         assert "2026-06-15" in out
 
-    def test_no_tools_channel_difference_outside_tools_block(self):
-        """The ONLY difference between legacy and tools-channel outputs should
-        be the presence/absence of the tools-as-text block. Every other
-        section must be byte-identical."""
+    def test_tools_channel_only_drops_call_format_block(self):
+        """The ONLY difference between legacy and tools-channel outputs is
+        the presence/absence of the `## Tool Call Format` example block.
+        The schema dump (`## Available Tools`) and every non-tools section
+        is identical between paths."""
         legacy = build_system_content(SAMPLE_TOOLS, use_tools_channel=False, now=FIXED_NOW)
         channel = build_system_content(SAMPLE_TOOLS, use_tools_channel=True, now=FIXED_NOW)
-        # Channel form must be strictly shorter (the tools block is removed).
+        # Channel form must be strictly shorter (no Tool Call Format block).
         assert len(channel) < len(legacy)
-        # All sections we expect to be unchanged must appear identically in both.
+        # Schema dump present in BOTH.
+        assert "## Available Tools" in legacy
+        assert "## Available Tools" in channel
+        # Call-format block present in legacy, absent in channel.
+        assert "## Tool Call Format" in legacy
+        assert "## Tool Call Format" not in channel
+        # All non-tools sections appear identically in both.
         for section in (
             "## Current Date",
             "## Error Handling",
@@ -378,6 +407,161 @@ class TestEnvVariables:
     def test_no_env_variables_omits_environment_context_section(self):
         out = build_system_content(SAMPLE_TOOLS, env_variables={}, now=FIXED_NOW)
         assert "## Environment Context" not in out
+
+
+# --------------------------------------------------------------------------- #
+# Hint-example schema compliance (regression: job 4746408e_4)
+# --------------------------------------------------------------------------- #
+
+# Minimal fixture for the Fleet MCP `computer` tool schema. Mirrors
+# Anthropic's computer_20250124 contract (taiga/.../computer.py:104).
+# `key` and `type` actions require `text: string`; the schema has NO
+# `keys` field. Used for round-tripping hint examples against the
+# canonical shape Kimi sees through apply_chat_template(tools=...).
+_COMPUTER_ACTIONS_WITH_TEXT_ARG = {"key", "type", "hold_key"}
+_COMPUTER_ACTIONS_WITHOUT_KEYS_ARG = {
+    "screenshot", "left_click", "right_click", "middle_click",
+    "double_click", "triple_click", "type", "key", "scroll",
+    "wait", "mouse_move", "left_click_drag", "cursor_position",
+    "left_mouse_down", "left_mouse_up", "hold_key",
+}
+
+
+class TestHintSchemaCompliance:
+    """Every literal `{...}`-shaped example in BU/CU hints must round-trip
+    through json.loads and conform to the MCP `computer` tool schema.
+
+    The misleading prose hint `key("Alt","Left")` in the previous version
+    caused Kimi-K2.6 to emit `{"action":"key","keys":["Alt","Left"]}` —
+    a `keys` field that does not exist on the tool schema. The MCP server
+    silently returned a null screenshot, the model spiraled, two real BU
+    sessions burned. Regression-pinned here.
+    """
+
+    def _bu_hint_text(self) -> str:
+        return build_system_content(
+            SAMPLE_TOOLS,
+            modality="browser_use",
+            portal_url="https://x.env.fleet-prod.fleetai.com",
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+
+    def _cu_hint_text(self) -> str:
+        return build_system_content(
+            SAMPLE_TOOLS,
+            modality="computer_use",
+            use_tools_channel=True,
+            now=FIXED_NOW,
+        )
+
+    def test_bu_hint_never_suggests_keys_array_shape(self):
+        """`keys: ["Alt","Left"]` is the exact hallucination Kimi made in
+        session fa2c9e97. The hint must not push the model toward that
+        shape — `keys` is not on the schema."""
+        text = self._bu_hint_text()
+        assert '"keys"' not in text, (
+            "BU hint contains `\"keys\"` which is not on the MCP computer "
+            "schema; the `key` action takes `text: string` (xdotool combo). "
+            "See job 4746408e_4 root cause."
+        )
+        # The function-call sugar that originally caused the hallucination
+        # must also be gone.
+        assert 'key("Alt","Left")' not in text
+        assert 'key("Alt", "Left")' not in text
+
+    def test_bu_hint_teaches_text_arg_for_key_action(self):
+        """The hint must direct the model to the `text` arg, not invent a
+        `keys` arg. Either via prose or via a literal JSON example."""
+        text = self._bu_hint_text()
+        # Either a literal JSON example with action=key+text=alt+Left, or
+        # prose that names the `text` arg + xdotool syntax. We accept any
+        # of these to leave room for hint rephrasing without breaking
+        # the test.
+        accepts = (
+            '"action": "key"' in text and '"text": "alt+Left"' in text,
+            '"action":"key"' in text and '"text":"alt+Left"' in text,
+            ('"text"' in text and 'alt+Left' in text),
+        )
+        assert any(accepts), (
+            "BU hint must teach the schema-compliant `key` action shape: "
+            '{"action": "key", "text": "alt+Left"}. Current hint suggests '
+            "neither the `text` field nor xdotool combo syntax."
+        )
+
+    def test_bu_hint_json_examples_match_computer_schema(self):
+        """Every literal JSON object in the BU hint that looks like a
+        computer tool call must:
+          - parse as JSON
+          - have an `action` field whose value is on the action vocabulary
+          - not introduce arg fields outside the known schema
+        """
+        text = self._bu_hint_text()
+        examples = _extract_json_objects_containing(text, '"action"')
+        assert examples, (
+            "BU hint has no literal JSON `action` examples to validate; "
+            "the model has nothing concrete to anchor on for `key`/`type`."
+        )
+        for ex in examples:
+            assert "action" in ex, f"example missing action: {ex!r}"
+            # action must be in the documented vocabulary
+            assert ex["action"] in _COMPUTER_ACTIONS_WITHOUT_KEYS_ARG | {"navigate"}, (
+                f"action {ex['action']!r} not in computer vocabulary"
+            )
+            # `keys` is not a real field on the schema.
+            assert "keys" not in ex, (
+                f"example uses `keys` arg which is not on schema: {ex!r}"
+            )
+            # key/type/hold_key actions must provide `text`.
+            if ex["action"] in _COMPUTER_ACTIONS_WITH_TEXT_ARG:
+                assert "text" in ex, (
+                    f"action {ex['action']!r} requires `text`: {ex!r}"
+                )
+                assert isinstance(ex["text"], str), (
+                    f"`text` must be a string for {ex['action']!r}: {ex!r}"
+                )
+
+    def test_cu_hint_does_not_reintroduce_keys_shape(self):
+        # CU hint never had the bad example, but pin it so a future edit
+        # that copies from BU doesn't bring the bug across.
+        text = self._cu_hint_text()
+        assert '"keys"' not in text
+        assert 'key("Alt","Left")' not in text
+
+
+def _extract_json_objects_containing(text: str, marker: str) -> list:
+    """Pull `{...}` substrings out of `text` that contain `marker`, parse as
+    JSON, return the parsed objects. Best-effort balanced-brace scan; skips
+    substrings that don't json.loads cleanly so unrelated `{` in prose
+    don't fail the test."""
+    import json as _json
+    results = []
+    i = 0
+    while i < len(text):
+        start = text.find("{", i)
+        if start == -1:
+            break
+        # Find the matching close brace.
+        depth = 0
+        end = start
+        for j in range(start, len(text)):
+            if text[j] == "{":
+                depth += 1
+            elif text[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = j
+                    break
+        if depth != 0:
+            break
+        candidate = text[start : end + 1]
+        if marker in candidate:
+            try:
+                results.append(_json.loads(candidate))
+            except _json.JSONDecodeError:
+                pass
+        i = end + 1
+    return results
 
 
 # --------------------------------------------------------------------------- #
