@@ -332,15 +332,19 @@ def validate_config(config: ProbeConfig) -> None:
         raise ValueError("sequence_length must be at least 2")
     if config.vocab_size < 2:
         raise ValueError("vocab_size must be at least 2")
-    if config.narc_data_version < 0:
-        raise ValueError("narc_data_version must be at least 0")
     if config.warmup_steps < 0:
         raise ValueError("warmup_steps must be at least 0")
     if config.d_model % config.num_heads != 0:
         raise ValueError("d_model must be divisible by num_heads")
 
 
-def run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
+def run_correctness(
+    torch: Any,
+    config: ProbeConfig,
+    *,
+    device: Any,
+    dtype: Any,
+) -> dict:
     runs = [
         run_training_steps(
             torch,
@@ -364,7 +368,13 @@ def run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any)
     }
 
 
-def run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
+def run_performance(
+    torch: Any,
+    config: ProbeConfig,
+    *,
+    device: Any,
+    dtype: Any,
+) -> dict:
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
     if config.warmup_steps:
@@ -532,7 +542,6 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
     finished_at = utc_now()
     result = ProbeResult(
         schema_version=SCHEMA_VERSION,
-        narc_data_version=config.narc_data_version,
         status=status,  # type: ignore[arg-type]
         profile=config.profile,
         run_id=run_id,
@@ -574,7 +583,10 @@ def default_output_filename(result: ProbeResult) -> str:
     return default_output_path(result, Path(".")).name
 
 
-def default_output_location(result: ProbeResult, out_dir: ResultLocation) -> ResultLocation:
+def default_output_location(
+    result: ProbeResult,
+    out_dir: ResultLocation,
+) -> ResultLocation:
     filename = default_output_filename(result)
     if is_s3_uri(out_dir):
         bucket, prefix = parse_s3_uri(str(out_dir))

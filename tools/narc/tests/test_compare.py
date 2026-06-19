@@ -6,6 +6,7 @@ import pytest
 import narc.files as files_module
 from narc.cli import generate_cli
 from narc.compare import compare, compare_paths, handle_compare
+from narc.schema import SCHEMA_VERSION
 
 
 class FakeS3Body:
@@ -76,7 +77,6 @@ def result_payload(
     errors: list[dict[str, str]] | None = None,
     checks: dict[str, object] | None = None,
     accelerator_id: str = "GPU-a",
-    narc_data_version: int = 1,
 ) -> dict[str, object]:
     result_checks = {"input_hash": input_hash, "output_hash": output_hash}
     if checks:
@@ -86,8 +86,7 @@ def result_payload(
     if input_hash is None:
         result_checks.pop("input_hash")
     return {
-        "schema_version": 1,
-        "narc_data_version": narc_data_version,
+        "schema_version": SCHEMA_VERSION,
         "status": status,
         "profile": "correctness",
         "hostname": "node-a",
@@ -201,8 +200,7 @@ def test_compare_paths_reports_partitions(tmp_path):
     assert report["partition_count"] == 1
     assert report["partitions"][0]["size"] == 2
     assert report["partitions"][0]["equivalence"] == {
-        "schema_version": 1,
-        "narc_data_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "status": "pass",
         "profile": "correctness",
         "probe_config_hash": "config-a",
@@ -248,7 +246,7 @@ def test_compare_paths_fails_on_explicit_schema_less_object_json(tmp_path):
         {
             "path": str(malformed),
             "type": "SchemaError",
-            "message": "unsupported schema_version None; expected 1",
+            "message": f"unsupported schema_version None; expected {SCHEMA_VERSION}",
         }
     ]
 

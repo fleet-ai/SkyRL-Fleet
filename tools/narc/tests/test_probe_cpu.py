@@ -8,7 +8,7 @@ from narc.probe import (
     output_device_id,
     run_probe,
 )
-from narc.schema import NARC_DATA_VERSION, ProbeConfig, ProbeResult
+from narc.schema import SCHEMA_VERSION, ProbeConfig, ProbeResult
 
 
 def test_cpu_correctness_probe_is_repeatable():
@@ -57,8 +57,7 @@ def test_cpu_correctness_probe_is_repeatable():
         == payload["checks"]["input_hash"]
     )
     assert payload["fingerprint_hash"]
-    assert payload["narc_data_version"] == NARC_DATA_VERSION
-    assert payload["probe_config"]["narc_data_version"] == NARC_DATA_VERSION
+    assert payload["schema_version"] == SCHEMA_VERSION
     assert payload["probe_config"]["seed"] == 0
     assert payload["probe_config"]["input_seed"] == 0
 
@@ -133,7 +132,11 @@ def test_fixed_inputs_ignore_global_default_device():
 
     torch.set_default_device("meta")
     try:
-        input_ids, labels = probe_module.fixed_inputs(torch, config, torch.device("cpu"))
+        input_ids, labels = probe_module.fixed_inputs(
+            torch,
+            config,
+            torch.device("cpu"),
+        )
     finally:
         torch.set_default_device("cpu")
 
@@ -177,7 +180,7 @@ def test_cpu_probe_rejects_zero_overrides_instead_of_defaulting():
 
 def test_default_output_path_sanitizes_user_controlled_components(tmp_path):
     result = ProbeResult(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         status="pass",
         profile="correctness",
         run_id="../../escape",
@@ -207,7 +210,7 @@ def test_default_output_path_sanitizes_user_controlled_components(tmp_path):
 
 def test_output_device_id_falls_back_for_cpu_result(tmp_path):
     result = ProbeResult(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         status="pass",
         profile="correctness",
         run_id="run-a",
@@ -232,7 +235,7 @@ def test_output_device_id_falls_back_for_cpu_result(tmp_path):
 
 def test_default_output_location_supports_s3_prefix():
     result = ProbeResult(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         status="pass",
         profile="correctness",
         run_id="run-a",

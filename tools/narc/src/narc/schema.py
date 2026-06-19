@@ -3,9 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-
-SCHEMA_VERSION = 1
-NARC_DATA_VERSION = 1
+SCHEMA_VERSION = 2
 
 ProbeStatus = Literal["pass", "fail", "warn"]
 ProbeProfile = Literal["correctness", "performance"]
@@ -29,7 +27,6 @@ class ProbeConfig:
     repeat: int
     deterministic: bool
     allow_tf32: bool
-    narc_data_version: int = NARC_DATA_VERSION
     optimizer: str = "manual_sgd"
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,7 +53,6 @@ class ProbeResult:
     measurements: dict[str, Any]
     errors: list[dict[str, Any]] = field(default_factory=list)
     output_path: str | None = None
-    narc_data_version: int = NARC_DATA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

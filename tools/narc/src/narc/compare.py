@@ -45,7 +45,6 @@ REQUIRED_RESULT_KEYS = {
 }
 RESULT_FIELD_TYPES = {
     "schema_version": int,
-    "narc_data_version": int,
     "status": str,
     "profile": str,
     "run_id": str,
@@ -117,10 +116,6 @@ def probe_schema_messages(document: dict[str, Any]) -> list[str]:
     profile = document.get("profile")
     if isinstance(profile, str) and profile not in VALID_PROFILES:
         messages.append(f"profile must be one of {', '.join(sorted(VALID_PROFILES))}")
-
-    data_version = document.get("narc_data_version")
-    if is_integer(data_version) and data_version < 0:
-        messages.append("narc_data_version must be at least 0")
 
     errors = document.get("errors")
     if isinstance(errors, list):
@@ -240,7 +235,6 @@ def equivalence(result: dict[str, Any]) -> dict[str, Any]:
     status = result["status"]
     value: dict[str, Any] = {
         "schema_version": result["schema_version"],
-        "narc_data_version": result.get("narc_data_version"),
         "status": status,
         "profile": result["profile"],
         "probe_config_hash": result["probe_config_hash"],
@@ -275,7 +269,6 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "hostname": result.get("hostname"),
         "accelerator_id": device.get("accelerator_id"),
         "run_id": result.get("run_id"),
-        "narc_data_version": result.get("narc_data_version"),
         "probe_config_hash": result.get("probe_config_hash"),
         "input_hash": result.get("checks", {}).get("input_hash"),
         "output_hash": result.get("checks", {}).get("output_hash"),
