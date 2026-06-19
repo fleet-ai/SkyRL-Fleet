@@ -75,13 +75,9 @@ def type_description(expected_type: type[Any]) -> str:
     return expected_type.__name__
 
 
-def is_integer(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
-
-
 def matches_expected_type(value: Any, expected_type: type[Any]) -> bool:
     if expected_type is int:
-        return is_integer(value)
+        return isinstance(value, int) and not isinstance(value, bool)
     return isinstance(value, expected_type)
 
 
