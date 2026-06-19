@@ -1,7 +1,6 @@
 # narc
 
-`narc` runs deterministic accelerator correctness and performance checks for
-compute clusters.
+`narc` runs deterministic accelerator probes for compute clusters.
 
 The first implementation is deliberately small:
 
@@ -23,7 +22,8 @@ uv run narc compare s3://fleet-research/path/to/narc-results/ \
 controls model initialization and torch setup; `--input-seed` controls the input
 token IDs and labels. Both are serialized in `probe_config`. Each result also
 stores `checks.input_hash`, so result files record the generated input tensor
-hash.
+hash. The same measured runs also record timing for forward, loss, backward, and
+optimizer-step operations.
 
 `narc compare` exits non-zero when valid inputs split into more than one
 equivalence class, contain non-pass probe results, or have pass results without

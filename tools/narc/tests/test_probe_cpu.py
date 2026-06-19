@@ -18,8 +18,6 @@ def test_cpu_correctness_probe_is_repeatable():
             "run",
             "--device",
             "cpu",
-            "--profile",
-            "correctness",
             "--dtype",
             "fp32",
             "--repeat",
@@ -52,6 +50,12 @@ def test_cpu_correctness_probe_is_repeatable():
     assert payload["checks"]["input_repeat_match"] is True
     assert payload["checks"]["input_hash"]
     assert payload["measurements"]["input_hash"] == payload["checks"]["input_hash"]
+    timing = payload["measurements"]["runs"][0]["timing"]
+    assert timing["forward_seconds"]
+    assert timing["backward_seconds"]
+    assert timing["optimizer_step_seconds"]
+    assert timing["mean_forward_seconds"] is not None
+    assert timing["mean_backward_seconds"] is not None
     assert (
         payload["measurements"]["runs"][0]["input_hash"]
         == payload["checks"]["input_hash"]
@@ -68,8 +72,6 @@ def test_cpu_correctness_probe_uses_input_seed():
         "run",
         "--device",
         "cpu",
-        "--profile",
-        "correctness",
         "--dtype",
         "fp32",
         "--repeat",
@@ -112,7 +114,6 @@ def test_fixed_inputs_ignore_global_default_device():
     if not hasattr(torch, "set_default_device"):
         pytest.skip("torch.set_default_device is unavailable")
     config = ProbeConfig(
-        profile="correctness",
         seed=0,
         input_seed=0,
         batch_size=1,
@@ -182,7 +183,6 @@ def test_default_output_path_sanitizes_user_controlled_components(tmp_path):
     result = ProbeResult(
         schema_version=SCHEMA_VERSION,
         status="pass",
-        profile="correctness",
         run_id="../../escape",
         started_at="2026-01-01T00:00:00+00:00",
         finished_at="2026-01-01T00:00:01+00:00",
@@ -212,7 +212,6 @@ def test_output_device_id_falls_back_for_cpu_result(tmp_path):
     result = ProbeResult(
         schema_version=SCHEMA_VERSION,
         status="pass",
-        profile="correctness",
         run_id="run-a",
         started_at="2026-01-01T00:00:00+00:00",
         finished_at="2026-01-01T00:00:01+00:00",
@@ -237,7 +236,6 @@ def test_default_output_location_supports_s3_prefix():
     result = ProbeResult(
         schema_version=SCHEMA_VERSION,
         status="pass",
-        profile="correctness",
         run_id="run-a",
         started_at="2026-01-01T00:00:00+00:00",
         finished_at="2026-01-01T00:00:01+00:00",

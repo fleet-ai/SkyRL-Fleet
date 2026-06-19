@@ -6,12 +6,10 @@ from typing import Any, Literal
 SCHEMA_VERSION = 2
 
 ProbeStatus = Literal["pass", "fail", "warn"]
-ProbeProfile = Literal["correctness", "performance"]
 
 
 @dataclass(frozen=True)
 class ProbeConfig:
-    profile: ProbeProfile
     seed: int
     input_seed: int
     batch_size: int
@@ -37,7 +35,6 @@ class ProbeConfig:
 class ProbeResult:
     schema_version: int
     status: ProbeStatus
-    profile: ProbeProfile
     run_id: str
     started_at: str
     finished_at: str

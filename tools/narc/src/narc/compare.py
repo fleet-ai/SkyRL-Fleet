@@ -36,7 +36,6 @@ REQUIRED_RESULT_KEYS = {
     "pid",
     "probe_config",
     "probe_config_hash",
-    "profile",
     "run_id",
     "schema_version",
     "slurm",
@@ -46,7 +45,6 @@ REQUIRED_RESULT_KEYS = {
 RESULT_FIELD_TYPES = {
     "schema_version": int,
     "status": str,
-    "profile": str,
     "run_id": str,
     "started_at": str,
     "finished_at": str,
@@ -62,7 +60,6 @@ RESULT_FIELD_TYPES = {
     "measurements": dict,
     "errors": list,
 }
-VALID_PROFILES = {"correctness", "performance"}
 VALID_STATUSES = {"pass", "warn", "fail"}
 
 
@@ -112,10 +109,6 @@ def probe_schema_messages(document: dict[str, Any]) -> list[str]:
     status = document.get("status")
     if isinstance(status, str) and status not in VALID_STATUSES:
         messages.append(f"status must be one of {', '.join(sorted(VALID_STATUSES))}")
-
-    profile = document.get("profile")
-    if isinstance(profile, str) and profile not in VALID_PROFILES:
-        messages.append(f"profile must be one of {', '.join(sorted(VALID_PROFILES))}")
 
     errors = document.get("errors")
     if isinstance(errors, list):
@@ -236,7 +229,6 @@ def equivalence(result: dict[str, Any]) -> dict[str, Any]:
     value: dict[str, Any] = {
         "schema_version": result["schema_version"],
         "status": status,
-        "profile": result["profile"],
         "probe_config_hash": result["probe_config_hash"],
         "input_hash": checks.get("input_hash"),
         "output_hash": checks.get("output_hash"),
@@ -265,7 +257,6 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "path": result.get("source_path"),
         "status": result.get("status"),
-        "profile": result.get("profile"),
         "hostname": result.get("hostname"),
         "accelerator_id": device.get("accelerator_id"),
         "run_id": result.get("run_id"),

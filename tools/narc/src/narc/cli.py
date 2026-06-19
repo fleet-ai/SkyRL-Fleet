@@ -15,8 +15,7 @@ def package_version() -> str:
 def generate_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "narc: deterministic accelerator correctness and performance checks "
-            "for compute clusters"
+            "narc: deterministic accelerator probes for compute clusters"
         )
     )
     parser.add_argument(

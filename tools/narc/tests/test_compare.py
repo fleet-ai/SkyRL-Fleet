@@ -88,7 +88,6 @@ def result_payload(
     return {
         "schema_version": SCHEMA_VERSION,
         "status": status,
-        "profile": "correctness",
         "hostname": "node-a",
         "run_id": accelerator_id,
         "started_at": "2026-01-01T00:00:00+00:00",
@@ -202,7 +201,6 @@ def test_compare_paths_reports_partitions(tmp_path):
     assert report["partitions"][0]["equivalence"] == {
         "schema_version": SCHEMA_VERSION,
         "status": "pass",
-        "profile": "correctness",
         "probe_config_hash": "config-a",
         "input_hash": "input-a",
         "output_hash": "hash-a",

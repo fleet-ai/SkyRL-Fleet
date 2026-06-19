@@ -19,7 +19,6 @@ workdir: .
 
 envs:
   NARC_OUT_DIR: "s3://fleet-research/narc"
-  NARC_PROFILE: "correctness"
   NARC_TASKS: "8"
   AWS_SHARED_CREDENTIALS_FILE: "/workspace/.secrets/research-jobs.aws-credentials"
   AWS_PROFILE: "research-jobs"
@@ -37,7 +36,7 @@ run: |
   export PATH="$HOME/.local/bin:$PATH"
   JOB_ID="${SLURM_JOB_ID:-manual-$(date +%s)}"
   OUT_DIR="${NARC_OUT_DIR%/}/${JOB_ID}"
-  export OUT_DIR NARC_PROFILE
+  export OUT_DIR
   if [[ "${OUT_DIR}" != s3://* ]]; then
     mkdir -p "${OUT_DIR}"
   fi
@@ -57,7 +56,6 @@ run: |
       fi
       echo "narc rank=${SLURM_PROCID:-unknown} local_rank=${SLURM_LOCALID:-unknown} visible_gpus=${visible:-unset} logical_device=${logical_device}" >&2
       uv run --project tools/narc --no-sync narc run \
-        --profile "${NARC_PROFILE}" \
         --device cuda \
         --logical-device "${logical_device}" \
         --dtype fp32 \
