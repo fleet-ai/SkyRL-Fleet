@@ -1044,6 +1044,7 @@ async def main(
     eval_dataset_file: str = None,
     batch_size: int = 8,
     eval_batch_size: int = 32,
+    eval_n_samples_per_prompt: int = 3,
     learning_rate: float = 4e-5,
     lora_rank: int = 16,
     max_steps: int = 200,
@@ -1087,7 +1088,7 @@ async def main(
                 max_turns=max_turns,
                 max_generate_length=max_generate_length,
                 max_input_length=max_input_length,
-                n_samples_per_prompt=1,
+                n_samples_per_prompt=eval_n_samples_per_prompt,
                 temperature=temperature,
                 top_p=top_p,
                 stop_sequences=stop_sequences,
@@ -1099,8 +1100,8 @@ async def main(
             return None
         eval_rewards = [r.reward for r in all_eval_rollouts]
         eval_rollouts_dicts = [r.model_dump() for r in all_eval_rollouts]
-        eval_pass_at_1 = compute_pass_at_n(eval_rollouts_dicts, 1)
-        eval_per_env = compute_per_env_metrics(eval_rollouts_dicts, 1)
+        eval_pass_at_1 = compute_pass_at_n(eval_rollouts_dicts, eval_n_samples_per_prompt)
+        eval_per_env = compute_per_env_metrics(eval_rollouts_dicts, eval_n_samples_per_prompt)
         eval_metrics = {
             "eval/all/pass_at_1": eval_pass_at_1,
             "eval/all/mean_positive_reward": (
@@ -1438,6 +1439,10 @@ if __name__ == "__main__":
     parser.add_argument("--eval-dataset-file", type=str, default=None, help="Path to eval parquet")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--eval-batch-size", type=int, default=32)
+    parser.add_argument(
+        "--eval-n-samples-per-prompt", type=int, default=3,
+        help="Number of eval rollouts per task; reported as pass@N. Default 3.",
+    )
     parser.add_argument("--learning-rate", type=float, default=4e-5)
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--max-steps", type=int, default=200)
@@ -1508,6 +1513,7 @@ if __name__ == "__main__":
             eval_dataset_file=args.eval_dataset_file,
             batch_size=args.batch_size,
             eval_batch_size=args.eval_batch_size,
+            eval_n_samples_per_prompt=args.eval_n_samples_per_prompt,
             learning_rate=args.learning_rate,
             lora_rank=args.lora_rank,
             max_steps=args.max_steps,

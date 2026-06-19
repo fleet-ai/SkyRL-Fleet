@@ -68,6 +68,9 @@ fi
 if [ "${EVAL_BEFORE_TRAIN:-}" = "1" ] || [ "${EVAL_BEFORE_TRAIN:-}" = "true" ]; then
     EXTRA_ARGS+=(--eval-before-train)
 fi
+if [ -n "${EVAL_N_SAMPLES_PER_PROMPT:-}" ]; then
+    EXTRA_ARGS+=(--eval-n-samples-per-prompt "$EVAL_N_SAMPLES_PER_PROMPT")
+fi
 if [ -n "${WANDB_NAME:-}" ]; then
     EXTRA_ARGS+=(--wandb-name "$WANDB_NAME")
 fi
