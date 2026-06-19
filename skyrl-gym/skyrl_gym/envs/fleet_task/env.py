@@ -103,14 +103,45 @@ def truncate_tool_result(tool_result: Any, max_chars: int = MAX_TOOL_OUTPUT_CHAR
 
     Contract:
       - None passes through unchanged.
-      - Anything whose serialized length is within `max_chars` passes through
-        unchanged (preserves the original shape — str stays str, dict stays
-        dict, list-of-content-blocks stays multimodal).
-      - Anything that exceeds `max_chars` is coerced to a truncated string
-        with a "[TRUNCATED — N chars elided.]" suffix.
+      - Multimodal list-of-content-blocks ([{"type": "text"|"image_url", ...}]):
+        preserved as a list. Only the text blocks are length-checked; the
+        image_url blocks pass through untouched. `[image]` placeholders the
+        VL pipeline reads do NOT get counted against the text budget.
+      - Anything else: serialized once; if within `max_chars` passes through
+        unchanged; otherwise coerced to a truncated string with a marker.
+
+    Previous behavior counted the entire JSON repr of multimodal content —
+    including base64 image bytes — against the text budget, which forced
+    every screenshot tool result into the truncated-string fallback. That
+    leaked base64 into the tokenizer as `Tool result:\\n[{"type": ...`
+    instead of letting the VL pipeline see actual images.
     """
     if tool_result is None:
         return None
+
+    # Multimodal content blocks: never serialize whole structure.
+    if (
+        isinstance(tool_result, list)
+        and tool_result
+        and all(isinstance(b, dict) and "type" in b for b in tool_result)
+    ):
+        out: list[dict] = []
+        for b in tool_result:
+            if b.get("type") == "text":
+                t = b.get("text", "")
+                if isinstance(t, str) and len(t) > max_chars:
+                    elided = len(t) - max_chars
+                    out.append({
+                        "type": "text",
+                        "text": t[:max_chars] + f"\n\n[TRUNCATED — {elided} chars elided.]",
+                    })
+                else:
+                    out.append(b)
+            else:
+                # image_url or anything else: pass through unchanged.
+                out.append(b)
+        return out
+
     if isinstance(tool_result, str):
         text = tool_result
     else:
