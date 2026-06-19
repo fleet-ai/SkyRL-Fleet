@@ -432,6 +432,15 @@ generator:
   # default; adds one decode/encode pass per response. See GeneratorConfig.log_thinking_token_metrics.
   log_thinking_token_metrics: false
 
+  # Reward-shaping penalty for degenerate n-gram repetition loops (the pathological length-inflation
+  # tail). frac = 1 - unique_ngrams/total_ngrams over token `repetition_ngram`-grams of the response.
+  #   penalty = repetition_penalty_coef * max(0, (frac - repetition_min_frac) / (1 - repetition_min_frac))
+  # 0.0 disables the reward shaping (repetition metrics generate/repetition_frac_{mean,max} and
+  # generate/repetition_loop_frac are still logged). Distinct from sampling_params.repetition_penalty.
+  repetition_penalty_coef: 0.0
+  repetition_ngram: 10
+  repetition_min_frac: 0.5
+
   # rope parameters, can be optionally different from the trainer , useful in some cases like with thinking models.
   rope_scaling: ${trainer.rope_scaling}
   rope_theta: ${trainer.rope_theta}

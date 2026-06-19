@@ -24,6 +24,25 @@ ASK_ONLY_BLOCK = (
     "probe first, then propose."
 )
 
+# Mutual-disclosure "recover Nash" variant (research_logs/recover-nash-06-18.md):
+# the simplest possible test of whether SHARED values let both sides reach the
+# (near-)Nash / Pareto-optimal allocation. Both sides may ask about the other's
+# values AND must answer truthfully when asked, and are told to reason about what
+# they know of the respective values before proposing/accepting. Injected into BOTH
+# system prompts (policy AND opponent) so the disclosure handshake actually works.
+# Hypothesis: once the information channel is open on both sides, thinking-on play
+# overfits to equilibrium — closing the Pareto gap the proactive.md autopsy traced
+# to proposers defaulting to a blind "fair" split because the values were never on
+# the table.
+CAN_ASK_BLOCK = (
+    "You are allowed to ask the other player about their values. Your hidden values almost certainly "
+    "differ, so asking would allow you to find trades that make BOTH of you better off -- but you can "
+    "only find them if you know what they care about. You may ask which items matter most to them and "
+    "roughly how much, then use their answer to route each item to whoever values it more. When the "
+    "other side asks about your values, you should answer truthfully. You should reason about what you "
+    "know about your respective values before making / accepting proposals."
+)
+
 # Aggressive-adversary block (research_logs/negotiation-35b-thinking-leakage-06-16.md
 # item 4): appended ONLY to the opponent's ("them") system prompt when the env is
 # launched with opponent_aggressive=true. Turns the opponent into a tough, self-interested

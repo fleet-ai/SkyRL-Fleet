@@ -75,7 +75,18 @@ fi
 source .venv/bin/activate
 # vLLM 0.17.0 (native Qwen3.5/GDN support) + FlashAttention + PyTorch 2.10 come
 # from the fsdp extra, matching the 35B/9B Fleet jobs.
-uv sync --extra fsdp
+# Megatron: transformer-engine builds from source during uv sync and needs CUDA dev headers.
+if [ "${TRAIN_EXTRA:-fsdp}" = "megatron" ]; then
+  export CUDA_HOME=/usr/local/cuda-12.8
+  export PATH="$CUDA_HOME/bin:$PATH"
+  export CPATH="$CUDA_HOME/targets/x86_64-linux/include:/usr/include:${CPATH:-}"
+  export LIBRARY_PATH="$CUDA_HOME/targets/x86_64-linux/lib:$CUDA_HOME/lib64:${LIBRARY_PATH:-}"
+  export LD_LIBRARY_PATH="$CUDA_HOME/targets/x86_64-linux/lib:$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+  export NVTE_CUDA_ARCHS="90"
+  export MAX_JOBS="${MAX_JOBS:-64}"
+  echo "[megatron] CUDA build env: CUDA_HOME=$CUDA_HOME NVTE_CUDA_ARCHS=$NVTE_CUDA_ARCHS"
+fi
+uv sync --extra "${TRAIN_EXTRA:-fsdp}"
 # wandb: logging. boto3/awscli: optional S3 checkpoint upload. litellm: opponent LLM.
 uv pip install wandb boto3 awscli
 uv pip install "litellm>=1.75.5"
@@ -92,8 +103,13 @@ fi
 # --- Pre-download model weights (head node only, shared NFS) ---
 if [ -n "${MODEL_PATH:-}" ]; then
   echo "Pre-downloading model: $MODEL_PATH"
-  HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet \
-    || echo "WARN: model pre-download failed; nodes will fetch at runtime"
+  if command -v hf >/dev/null 2>&1; then
+    HF_HOME=/workspace/hf_cache hf download "$MODEL_PATH" --quiet \
+      || echo "WARN: model pre-download failed; nodes will fetch at runtime"
+  else
+    HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet \
+      || echo "WARN: model pre-download failed; nodes will fetch at runtime"
+  fi
   chmod -R a+rwX /workspace/hf_cache 2>/dev/null || true
 fi
 

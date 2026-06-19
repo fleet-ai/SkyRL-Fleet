@@ -13,10 +13,13 @@ resources:
 
 num_nodes: 2
 
-workdir: .
+# No workdir sync: the repo lives on the shared /workspace volume and the cluster mounts
+# it, so we run from there directly (avoids a large, flaky rsync on the saturated login node
+# and uses the live scripts). Setup already ran at launch.
 
 envs:
   WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""        # required by the shared setup script (unused by export)
   AWS_ACCESS_KEY_ID: ""
   AWS_SECRET_ACCESS_KEY: ""
   AWS_REGION: "us-east-1"
@@ -26,10 +29,20 @@ envs:
   MODALITY: "negotiation"
   PROJECT_NAME: "fleet-negotiation-grpo"
   HF_HOME: "/workspace/hf_cache"
+  # Per-export knobs (override via `sky exec ... --env RESUME_PATH=... --env EXPORT_PATH=...`):
+  RESUME_PATH: ""
+  EXPORT_PATH: "/workspace/allie/exports"
 
 setup: |
+  cd /workspace/allie/skyrl-neg-wt
   bash scripts/fleet-negotiation-setup.sh \
     --extra-setup scripts/fleet-qwen35-extra-setup.sh
 
 run: |
-  echo "export cluster ready on $(hostname); use 'sky exec' to run fleet-export-run.sh"
+  cd /workspace/allie/skyrl-neg-wt
+  if [ -n "$RESUME_PATH" ]; then
+    echo "Exporting $RESUME_PATH -> $EXPORT_PATH"
+    bash scripts/fleet-export-run.sh
+  else
+    echo "export cluster ready on $(hostname); sky exec this yaml with --env RESUME_PATH=... to export"
+  fi

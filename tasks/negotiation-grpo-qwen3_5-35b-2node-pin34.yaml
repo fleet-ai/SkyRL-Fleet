@@ -59,6 +59,10 @@ envs:
   # penalty (-0.05) stay ON via the run-script defaults (generator.length_penalty_*
   # + invalid_penalty).
   DECEPTION_PENALTY: "0"
+  # Log the think vs visible (non-think) token split of the LP'd response_ids, plus how much of the
+  # length penalty comes from thinking tokens (generate/thinking_tokens_mean, generate/visible_tokens_mean,
+  # generate/thinking_token_frac, generate/length_penalty_{visible,thinking}_mean). Measurement only.
+  LOG_THINKING_TOKEN_METRICS: "true"
   # Thinking is ALWAYS ON: the policy emits <think> (full reasoning kept in the saved
   # traces) but it is STRIPPED from the multi-turn transcript and the opponent's view
   # via the qwen3_without_thinking template, so the policy's own context never carries

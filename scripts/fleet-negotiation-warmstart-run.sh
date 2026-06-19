@@ -112,8 +112,8 @@ fi
 SFT_DATASET="${SFT_DATASET:-casino}"
 
 if [ "$ARM" = "baseline" ]; then
-  RUN_ID="ws_baseline"
-  CKPT_PATH="$HOME/ckpts/ws_baseline"
+  RUN_ID="${RUN_ID:-ws_baseline}"
+  CKPT_PATH="$HOME/ckpts/${RUN_ID}"
   # MODEL_PATH: intentionally not overridden; fleet-negotiation-35b-run.sh defaults
   # to Qwen/Qwen3.5-35B-A3B. Inheriting MODEL_PATH from the environment is fine
   # only if it is genuinely the base model — do not accidentally pass an SFT ckpt here.

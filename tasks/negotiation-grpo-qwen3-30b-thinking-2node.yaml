@@ -1,13 +1,20 @@
-# Negotiation RLVR GRPO Training via SkyPilot — Qwen3.5-35B-A3B (2-node)
+# Negotiation RLVR GRPO Training via SkyPilot — Qwen3-30B-A3B-Thinking-2507 (2-node)
 #
 # 2 nodes x 8 H200 = 16 GPUs; TP=2 -> 8 inference engines (4 per node).
 # Training uses FSDP2 across all 16 GPUs.
+#
+# Model note: Qwen3-30B-A3B-Thinking-2507 is the standard qwen3_moe arch (NOT the
+# GatedDeltaNet qwen3_5_moe). It needs no GDN extra deps — the base `fsdp` extra's
+# transformers 4.56.x + vLLM 0.18.0 + flash-attn 2.8.3 support it directly, so this
+# task drops the fleet-qwen35-extra-setup.sh hook. It is also a thinking-only model
+# (chat template auto-injects <think>); the qwen3_without_thinking template still
+# strips reasoning correctly since it splits on </think>, which the model emits.
 #
 # Reward ablation arms (set before launch via --env REWARD_MODE=...):
 #   outcome        (default) — pure normalized self-score
 #   outcome_pareto           — self-score + PARETO_COEF * Pareto bonus
 
-name: negotiation-grpo-qwen3-5-35b-2node
+name: negotiation-grpo-qwen3-30b-thinking-2node
 
 resources:
   disk_size: 1000
@@ -43,8 +50,8 @@ envs:
   OPENROUTER_API_KEY: ""
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
-  MODEL_PATH: "Qwen/Qwen3.5-35B-A3B"
-  MODEL_TAG: "qwen35"
+  MODEL_PATH: "Qwen/Qwen3-30B-A3B-Thinking-2507"
+  MODEL_TAG: "qwen3-30b-thinking"
   MODALITY: "negotiation"
   # --- Negotiation task knobs ---
   NEGOTIATION_DATASET: "dnd"
@@ -97,8 +104,7 @@ envs:
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
 
 setup: |
-  bash scripts/fleet-negotiation-setup.sh \
-    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+  bash scripts/fleet-negotiation-setup.sh
 
 run: |
   bash scripts/fleet-negotiation-35b-run.sh

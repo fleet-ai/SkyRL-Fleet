@@ -111,6 +111,22 @@ class BaseVLLMInferenceEngine(InferenceEngineInterface):
         self._dp_size = kwargs.get("data_parallel_size", 1)
         self._is_lora = kwargs.get("enable_lora", False)
 
+        # Register the negotiation think-gate logits processor on every vLLM engine.
+        # It is inert unless a request sets SamplingParams.extra_args[EXTRA_ARGS_KEY]
+        # (only the generator does so, for training rollouts of the thinking arm), so
+        # non-thinking / eval / other-task requests are unaffected. Passed as an FQCN
+        # string so vLLM re-imports it on Ray workers (avoids pickling a class object).
+        # NOTE: vLLM rejects custom logits processors when speculative decoding is
+        # enabled; this repo's negotiation runs don't use spec decode.
+        _think_gate_fqcn = (
+            "skyrl.backends.skyrl_train.inference_engines.vllm."
+            "think_gate_logits_processor:ThinkGateLogitsProcessor"
+        )
+        _lps = list(kwargs.get("logits_processors") or [])
+        if _think_gate_fqcn not in _lps:
+            _lps.append(_think_gate_fqcn)
+        kwargs["logits_processors"] = _lps
+
         # Let subclass create the appropriate engine
         self.llm = self._create_engine(*args, **kwargs)
 

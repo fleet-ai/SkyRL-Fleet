@@ -344,6 +344,10 @@ def get_rollout_metrics(
         "generate/max_num_tokens": np.max(num_tokens_arr).item(),
         "generate/avg_num_tokens": np.mean(num_tokens_arr).item(),
         "generate/std_num_tokens": np.std(num_tokens_arr).item(),
+        "generate/p50_num_tokens": np.percentile(num_tokens_arr, 50).item(),
+        "generate/p90_num_tokens": np.percentile(num_tokens_arr, 90).item(),
+        "generate/p95_num_tokens": np.percentile(num_tokens_arr, 95).item(),
+        "generate/p99_num_tokens": np.percentile(num_tokens_arr, 99).item(),
         "generate/avg_tokens_non_zero_rewards": avg_tokens_non_zero_rewards.item(),
         "generate/avg_tokens_zero_rewards": avg_tokens_zero_rewards.item(),
     }

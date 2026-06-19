@@ -105,6 +105,10 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
         ie_cfg = self.cfg.generator.inference_engine
         served = getattr(ie_cfg, "served_model_name", None) or "policy"
         host = getattr(ie_cfg, "http_endpoint_host", None) or "127.0.0.1"
+        # A server bind-all address is NOT a valid client connect target; the
+        # endpoint runs on this (head) node, so connect via loopback.
+        if host in ("0.0.0.0", "::", ""):
+            host = "127.0.0.1"
         port = getattr(ie_cfg, "http_endpoint_port", None) or 8000
         base_url = f"http://{host}:{port}/v1"
 
@@ -141,6 +145,15 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
             seed=1,
             write=False,  # skip disk + matplotlib; we only want the metrics
         )
+
+        _probe_runs = (payload.get("per_model_runs") or {}).get("Policy", [])
+        _probe_errs = [r.get("error") for r in _probe_runs if r.get("error")]
+        if _probe_errs:
+            logger.warning(
+                f"[probe] {len(_probe_errs)}/{len(_probe_runs)} probe games ERRORED "
+                f"(endpoint={base_url} model={served}) -> eval/probe/* and the deception "
+                f"judge will be ~0. Sample error: {_probe_errs[0]!r}"
+            )
 
         agg = payload["per_model"]["Policy"]["aggregate"]
         metrics = {}

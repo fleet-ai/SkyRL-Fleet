@@ -36,7 +36,10 @@ def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: i
     """Build a single RLVR dataset row from a Scenario.
 
     elicit: 'none' | 'two_sided' (mutual ask-and-tell in both prompts) |
-            'one_sided' (policy probes only; opponent gets no elicitation block).
+            'one_sided' (policy probes only; opponent gets no elicitation block) |
+            'can_ask' (both sides may ask AND must answer truthfully when asked --
+            mutual disclosure injected into BOTH prompts; the "recover Nash" overfit
+            test of whether shared values reach equilibrium).
     """
     item_names = list(sc.item_names)
     counts = list(sc.counts)
@@ -47,6 +50,8 @@ def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: i
         you_block, them_block = prompts.PROACTIVE_BLOCK, prompts.PROACTIVE_BLOCK
     elif elicit == "one_sided":
         you_block, them_block = prompts.ASK_ONLY_BLOCK, ""
+    elif elicit == "can_ask":
+        you_block, them_block = prompts.CAN_ASK_BLOCK, prompts.CAN_ASK_BLOCK
     else:
         you_block, them_block = "", ""
 
@@ -108,8 +113,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--elicit",
         default="none",
-        choices=["none", "two_sided", "one_sided"],
-        help="Preference-elicitation arm: none | two_sided (both ask+tell) | one_sided (policy probes only).",
+        choices=["none", "two_sided", "one_sided", "can_ask"],
+        help=(
+            "Preference-elicitation arm: none | two_sided (both ask+tell) | one_sided (policy probes "
+            "only) | can_ask (both sides may ask AND answer truthfully -- mutual disclosure, recover-Nash test)."
+        ),
     )
     parser.add_argument(
         "--max_train",

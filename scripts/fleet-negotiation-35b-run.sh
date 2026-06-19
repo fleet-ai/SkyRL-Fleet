@@ -57,6 +57,17 @@ export LENGTH_PENALTY_REF="${LENGTH_PENALTY_REF:-1500}"  # calibrated to operati
 # NOTE: with the qwen3_without_thinking template only the LAST turn's <think> survives in response_ids,
 # so this reflects exactly the thinking the LP penalizes (not total thinking across all turns).
 export LOG_THINKING_TOKEN_METRICS="${LOG_THINKING_TOKEN_METRICS:-false}"
+# Reward-shaping penalty for degenerate n-gram repetition loops (the pathological length-inflation
+# tail: a small % of episodes that loop the same span to the token cap). The penalty scales with the
+# fraction of repeated token n-grams above REPETITION_MIN_FRAC, up to COEF at frac=1; coherent (even
+# verbose) reasoning is unaffected. Metrics generate/repetition_frac_{mean,max} and
+# generate/repetition_loop_frac are logged even when COEF=0. Set COEF=0 to disable the reward shaping.
+export REPETITION_PENALTY_COEF="${REPETITION_PENALTY_COEF:-0.5}"
+export REPETITION_NGRAM="${REPETITION_NGRAM:-10}"
+export REPETITION_MIN_FRAC="${REPETITION_MIN_FRAC:-0.5}"
+# Optional decode-time repetition penalty (vLLM logit penalty; 1.0 = off). Complementary to the
+# reward shaping above; prevents wasting compute generating loops. Leave at 1.0 unless needed.
+export DECODE_REPETITION_PENALTY="${DECODE_REPETITION_PENALTY:-1.0}"
 export ENABLE_THINKING="${ENABLE_THINKING:-true}"
 export OPPONENT_MODEL="${OPPONENT_MODEL:-openrouter/openai/gpt-4o-mini}"
 # Adversary cost tracking (logged to wandb as environment/opponent_*tokens[_sum] and
@@ -203,14 +214,20 @@ fi
 # Preference-elicitation arm (the 2x2 Elicitation factor). NEGOTIATION_ELICIT=two_sided
 # injects the prepared proactive mutual-disclosure instruction (ask their priorities +
 # state yours, route by value) into BOTH system prompts via prepare_dataset --proactive.
-# 'none' (default) = no elicitation. ('one_sided' is not yet wired — needs an ask-only
-# prompt variant.) Cells: C3=outcome+two_sided, C4=outcome_jointeff+two_sided.
+# 'none' (default) = no elicitation. Cells: C3=outcome+two_sided, C4=outcome_jointeff+two_sided.
+# 'one_sided' = policy probes only (ASK_ONLY directive). 'can_ask' (research_logs/
+# recover-nash-06-18.md) = MUTUAL disclosure: both sides may ask AND must answer
+# truthfully when asked (CAN_ASK block injected into BOTH prompts) — the recover-Nash
+# overfit test of whether shared values reach equilibrium. NOTE: this arm intentionally
+# discloses values, so launch with VALUE_LEAK_PENALTY=0 (the baseline thinking arm
+# penalizes value disclosure, which would fight this arm's whole point).
 ELICIT_ARGS=()
 case "${NEGOTIATION_ELICIT:-none}" in
   two_sided) ELICIT_ARGS=(--elicit two_sided) ;;
   one_sided) ELICIT_ARGS=(--elicit one_sided) ;;
+  can_ask) ELICIT_ARGS=(--elicit can_ask) ;;
   none) ;;
-  *) echo "WARN: NEGOTIATION_ELICIT='${NEGOTIATION_ELICIT}' unsupported (use none|two_sided|one_sided); treating as none" ;;
+  *) echo "WARN: NEGOTIATION_ELICIT='${NEGOTIATION_ELICIT}' unsupported (use none|two_sided|one_sided|can_ask); treating as none" ;;
 esac
 python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --output_dir "$DATA_DIR" \
@@ -271,6 +288,18 @@ STABILITY_ARGS=(
 # The no-think default keeps token-in-token-out (the tuned recipe) and the original
 # stop set including "</think>".
 if [ "$ENABLE_THINKING" = "true" ]; then
+  # Constrained-decoding think gate (research_logs/think-close-debugging-0618.md, Fix 3).
+  # Forces every TRAINING-rollout turn into <think> (>= _MIN tokens) </think> <message>
+  # <action>, so the missing-</think> pathology (the model nesting its <propose>/<accept>
+  # inside an unclosed <think>, ~31% of turns) cannot occur — which keeps both the
+  # opponent-view strip and the qwen3_without_thinking training-context strip well-defined.
+  # Read by the generator -> SamplingParams.extra_args -> ThinkGateLogitsProcessor on the
+  # vLLM engine. Eval is intentionally left unconstrained so environment/think_closed_rate
+  # is a real signal of learned behavior. The _MIN floor (anti-gaming) blocks the empty
+  # <think></think> escape that collapsed the prior force-open-think attempt. Set
+  # NEGOTIATION_THINK_GATE=0 to disable.
+  export NEGOTIATION_THINK_GATE="${NEGOTIATION_THINK_GATE:-1}"
+  export NEGOTIATION_THINK_GATE_MIN="${NEGOTIATION_THINK_GATE_MIN:-16}"
   THINK_ARGS=(
     generator.chat_template.source=name
     generator.chat_template.name_or_path=qwen3_without_thinking
@@ -360,7 +389,7 @@ bash scripts/fleet-common-run.sh \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.ckpt_interval=10 \
-  trainer.hf_save_interval=${HF_SAVE_INTERVAL:-30} \
+  trainer.hf_save_interval=${HF_SAVE_INTERVAL:0} \
   trainer.max_ckpts_to_keep=${MAX_CKPTS_TO_KEEP:-2} \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
@@ -372,6 +401,10 @@ bash scripts/fleet-common-run.sh \
   generator.length_penalty_fn=$LENGTH_PENALTY_FN \
   generator.length_penalty_ref=$LENGTH_PENALTY_REF \
   generator.log_thinking_token_metrics=$LOG_THINKING_TOKEN_METRICS \
+  generator.repetition_penalty_coef=$REPETITION_PENALTY_COEF \
+  generator.repetition_ngram=$REPETITION_NGRAM \
+  generator.repetition_min_frac=$REPETITION_MIN_FRAC \
+  generator.sampling_params.repetition_penalty=$DECODE_REPETITION_PENALTY \
   trainer.policy.optimizer_config.lr=5.0e-7 \
   trainer.algorithm.use_kl_loss=true \
   trainer.algorithm.zero_variance_filter=true \

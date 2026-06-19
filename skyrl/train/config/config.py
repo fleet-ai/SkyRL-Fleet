@@ -536,6 +536,20 @@ class GeneratorConfig(BaseConfig):
     decomposition ``generate/length_penalty_visible_mean`` and ``generate/length_penalty_thinking_mean``
     (the marginal penalty attributable to the thinking tokens). Off by default (adds a decode/encode
     pass per response). Intended for thinking models; a no-op for token-in-token-out runs."""
+    repetition_penalty_coef: float = 0.0
+    """Subtract a penalty from each trajectory's final reward when its response degenerates into
+    n-gram repetition loops (the pathological 'length inflation' tail). The penalty is computed from
+    the fraction of repeated token n-grams: ``frac = 1 - unique_ngrams / total_ngrams``. Coherent
+    (even verbose) text has low ``frac``; a repeated-span loop has ``frac`` near 1. The penalty is
+    ``coef * max(0, (frac - repetition_min_frac) / (1 - repetition_min_frac))`` so it is 0 below the
+    threshold and rises to ``coef`` at ``frac == 1``. ``0.0`` disables the reward shaping (the
+    repetition metrics are still logged). Distinct from ``sampling_params.repetition_penalty`` (a
+    decode-time logit penalty)."""
+    repetition_ngram: int = 10
+    """Token n-gram size used to measure repetition for ``repetition_penalty_coef``."""
+    repetition_min_frac: float = 0.5
+    """Repeated-n-gram fraction below which no repetition penalty is applied (gates out benign
+    repetition in coherent text; degenerate loops sit well above it)."""
     rope_scaling: Optional[Dict[str, Any]] = None
     """Can differ from the trainer's ``rope_scaling``, useful for thinking models."""
     rope_theta: Optional[float] = None

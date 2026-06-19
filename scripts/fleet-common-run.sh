@@ -115,7 +115,11 @@ mkdir -p "$TMP_DIR"
 # connects to their GCS and dies with a session-name mismatch. Key everything on
 # SLURM_JOB_ID: it's identical across all nodes in the allocation, so head and
 # workers independently derive the same temp dir and ports and still agree.
-JOB_KEY="${SLURM_JOB_ID:-${SLURM_JOBID:-}}"
+# FLEET_JOB_KEY override: SLURM reuses allocation ids, and within a long-lived sky
+# cluster every `sky exec` shares the SAME SLURM_JOB_ID — so if a recycled id collides
+# with a stale (possibly root-owned) Ray still holding that port, every job here fails on
+# a session-name mismatch. Pass FLEET_JOB_KEY to pick a fresh, collision-free port/tmpdir.
+JOB_KEY="${FLEET_JOB_KEY:-${SLURM_JOB_ID:-${SLURM_JOBID:-}}}"
 [ -n "$JOB_KEY" ] || JOB_KEY=$(pwd | cksum | cut -d' ' -f1)  # cwd = shared NFS workdir
 RAY_TMPDIR="/tmp/skyrl-ray-${JOB_KEY}"
 # A 500-port block per job in [20000,60000): GCS, client-server, dashboard, plus a
@@ -137,6 +141,10 @@ RAY_RUNTIME_ENV_AGENT_PORT=$(( RAY_PORT_BASE + 5 ))
 RAY_METRICS_EXPORT_PORT=$(( RAY_PORT_BASE + 6 ))
 RAY_WORKER_PORT_MIN=$(( RAY_PORT_BASE + 50 ))
 RAY_WORKER_PORT_MAX=$(( RAY_PORT_BASE + 499 ))
+# Clear any stale Ray state at this path (SLURM reuses job IDs, so a prior run — possibly
+# root-owned — can leave a temp dir whose persisted session name no longer matches, making
+# Ray refuse to start). Runs on every node before Ray starts; sudo handles root-owned leftovers.
+rm -rf "$RAY_TMPDIR" 2>/dev/null || sudo rm -rf "$RAY_TMPDIR" 2>/dev/null || true
 mkdir -p "$RAY_TMPDIR"
 export TMPDIR="/tmp"
 export RAY_TMPDIR="$RAY_TMPDIR"
@@ -350,7 +358,11 @@ cleanup_existing_ray() {
   # per-job port targets only this job.
   pkill -9 -f "$RAY_TMPDIR" 2>/dev/null || true
   fuser -k "${RAY_GCS_PORT}/tcp" 2>/dev/null || true
-  rm -rf "$RAY_TMPDIR" 2>/dev/null || true
+  # A stale Ray left by a recycled SLURM job id can be root-owned (a prior sky/root job),
+  # so the non-sudo kills above no-op and our head then connects to its old GCS/Redis and
+  # dies on a session-name mismatch. sudo so we can actually free OUR port + temp dir.
+  sudo fuser -k "${RAY_GCS_PORT}/tcp" 2>/dev/null || true
+  rm -rf "$RAY_TMPDIR" 2>/dev/null || sudo rm -rf "$RAY_TMPDIR" 2>/dev/null || true
   mkdir -p "$RAY_TMPDIR"
   for _ in $(seq 1 10); do
     if ! fuser "${RAY_GCS_PORT}/tcp" >/dev/null 2>&1; then

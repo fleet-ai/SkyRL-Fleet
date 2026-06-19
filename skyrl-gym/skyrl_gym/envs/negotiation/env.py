@@ -241,6 +241,11 @@ class NegotiationEnv(BaseTextEnv):
         self.think_nonempty_msgs: int = 0
         self.empty_think_msgs: int = 0
         self.value_leak_msgs: int = 0
+        # Turns whose action carries a properly CLOSED <think>...</think>. Under the
+        # constrained-decoding think gate (research_logs/think-close-debugging-0618.md,
+        # Fix 3) this should be ~100%; tracked unconditionally so the rate is a live
+        # signal that the gate is doing its job (and catches regressions if it's off).
+        self.think_closed_msgs: int = 0
 
         # --- Thinking-trace inspection log ---
         # When set, each finished episode's FULL transcript (the policy's raw "you"
@@ -416,6 +421,8 @@ class NegotiationEnv(BaseTextEnv):
             self.think_nonempty_msgs += 1
         if reasoned_in_open:
             self.empty_think_msgs += 1
+        if "<think>" in action and "</think>" in action:
+            self.think_closed_msgs += 1
         if _leaks_values(visible):
             self.value_leak_msgs += 1
 
@@ -596,6 +603,7 @@ class NegotiationEnv(BaseTextEnv):
         # Thinking-channel health (visible during training, not only in post-hoc eval).
         think_metrics = {
             "think_nonempty_rate": (self.think_nonempty_msgs / self.you_msgs) if self.you_msgs else 0.0,
+            "think_closed_rate": (self.think_closed_msgs / self.you_msgs) if self.you_msgs else 0.0,
             "empty_think_msgs": float(self.empty_think_msgs),
             "value_leak_msgs": float(self.value_leak_msgs),
         }

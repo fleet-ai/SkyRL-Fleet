@@ -79,6 +79,19 @@ class FleetExportExp(FleetEvalExp):
         """No eval dataset needed for export-only runs."""
         return None
 
+    def get_inference_client(self):
+        """Export does a pure FSDP-load -> save_hf; it never generates rollouts, so skip
+        building the vLLM inference engines entirely. They are heavy and, for the 35B-A3B
+        GDN MoE, flaky to init (16 engines JIT-compiling the GDN kernel). `_setup_trainer`
+        builds the client BEFORE `build_models`, so skipping it here avoids that failure;
+        `build_models` only reads the inference-engine *config*, not this client object."""
+        logger.info("Export run: skipping inference engine creation (not needed for FSDP->HF export).")
+        return None
+
+    def get_generator(self, cfg, tokenizer, inference_engine_client):
+        """No generator needed for export (we only call save_models)."""
+        return None
+
     def run(self):
         trainer = self._setup_trainer()
 
