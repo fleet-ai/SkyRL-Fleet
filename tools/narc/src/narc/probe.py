@@ -133,13 +133,25 @@ def configure_torch(
 
 
 def fixed_inputs(torch: Any, config: ProbeConfig, device: Any) -> tuple[Any, Any]:
-    token_count = config.batch_size * config.sequence_length
-    base = torch.arange(token_count, dtype=torch.long, device=device).view(
-        config.batch_size,
-        config.sequence_length,
-    )
-    input_ids = (base * 17 + 23) % config.vocab_size
-    labels = (base * 31 + 7) % config.vocab_size
+    generator = torch.Generator()
+    generator.manual_seed(config.input_seed)
+    shape = (config.batch_size, config.sequence_length)
+    input_ids = torch.randint(
+        low=0,
+        high=config.vocab_size,
+        size=shape,
+        dtype=torch.long,
+        device="cpu",
+        generator=generator,
+    ).to(device=device)
+    labels = torch.randint(
+        low=0,
+        high=config.vocab_size,
+        size=shape,
+        dtype=torch.long,
+        device="cpu",
+        generator=generator,
+    ).to(device=device)
     return input_ids, labels
 
 
@@ -169,6 +181,15 @@ def hash_named_tensors(tensors: list[tuple[str, Any]]) -> str:
                 "dtype": str(tensor.dtype),
             }
             for name, tensor in tensors
+        ]
+    )
+
+
+def input_hash(input_ids: Any, labels: Any) -> str:
+    return hash_named_tensors(
+        [
+            ("input_ids", input_ids),
+            ("labels", labels),
         ]
     )
 
@@ -207,6 +228,59 @@ def synchronize(torch: Any, device: Any) -> None:
         torch.cuda.synchronize(device)
 
 
+def timed_call(
+    torch: Any,
+    device: Any,
+    timed: bool,
+    operation: Any,
+) -> tuple[Any, float | None]:
+    if not timed:
+        return operation(), None
+    if device.type == "cuda":
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
+        value = operation()
+        end_event.record()
+        torch.cuda.synchronize(device)
+        return value, start_event.elapsed_time(end_event) / 1000.0
+    start_time = time.perf_counter()
+    value = operation()
+    return value, time.perf_counter() - start_time
+
+
+def mean(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def timing_summary(
+    step_timings: list[dict[str, float]],
+    config: ProbeConfig,
+) -> dict[str, Any]:
+    step_seconds = [entry["step_seconds"] for entry in step_timings]
+    elapsed = sum(step_seconds)
+    token_count = config.batch_size * config.sequence_length * len(step_seconds)
+    timing: dict[str, Any] = {
+        "steps": step_timings,
+        "step_seconds": step_seconds,
+        "mean_step_seconds": mean(step_seconds),
+        "elapsed_seconds": elapsed,
+        "tokens_per_second": token_count / elapsed if elapsed else None,
+    }
+    for key in (
+        "forward_seconds",
+        "loss_seconds",
+        "backward_seconds",
+        "optimizer_step_seconds",
+    ):
+        values = [entry[key] for entry in step_timings]
+        timing[key] = values
+        timing[f"mean_{key}"] = mean(values)
+    return timing
+
+
 def run_training_steps(
     torch: Any,
     config: ProbeConfig,
@@ -221,38 +295,59 @@ def run_training_steps(
 
     model = build_model(config, seed=seed).to(device=device, dtype=dtype)
     input_ids, labels = fixed_inputs(torch, config, device)
+    generated_input_hash = input_hash(input_ids, labels)
     learning_rate = 1e-3
     losses: list[str] = []
-    step_seconds: list[float] = []
+    step_timings: list[dict[str, float]] = []
     final_logits = None
     final_grad_hash = None
 
     for _ in range(steps):
         model.zero_grad(set_to_none=True)
-        if device.type == "cuda":
-            start_event = torch.cuda.Event(enable_timing=True) if timed else None
-            end_event = torch.cuda.Event(enable_timing=True) if timed else None
-            if start_event is not None:
-                start_event.record()
-        else:
-            start_time = time.perf_counter() if timed else None
 
-        logits = model(input_ids)
-        loss = manual_cross_entropy(torch, logits, labels)
+        logits, forward_seconds = timed_call(
+            torch,
+            device,
+            timed,
+            lambda: model(input_ids),
+        )
+        loss, loss_seconds = timed_call(
+            torch,
+            device,
+            timed,
+            lambda: manual_cross_entropy(torch, logits, labels),
+        )
         if not bool(torch.isfinite(loss).detach().cpu().item()):
             raise RuntimeError(f"loss is not finite: {loss.detach().cpu().item()}")
-        loss.backward()
+        _, backward_seconds = timed_call(
+            torch,
+            device,
+            timed,
+            loss.backward,
+        )
         final_grad_hash = gradient_hash(model)
-        with torch.no_grad():
-            manual_sgd_step(model, learning_rate=learning_rate)
 
-        if device.type == "cuda":
-            if end_event is not None and start_event is not None:
-                end_event.record()
-                torch.cuda.synchronize(device)
-                step_seconds.append(start_event.elapsed_time(end_event) / 1000.0)
-        elif start_time is not None:
-            step_seconds.append(time.perf_counter() - start_time)
+        def optimizer_step() -> None:
+            with torch.no_grad():
+                manual_sgd_step(model, learning_rate=learning_rate)
+
+        if timed:
+            _, optimizer_step_seconds = timed_call(
+                torch,
+                device,
+                timed,
+                optimizer_step,
+            )
+            step_timing = {
+                "forward_seconds": forward_seconds or 0.0,
+                "loss_seconds": loss_seconds or 0.0,
+                "backward_seconds": backward_seconds or 0.0,
+                "optimizer_step_seconds": optimizer_step_seconds or 0.0,
+            }
+            step_timing["step_seconds"] = sum(step_timing.values())
+            step_timings.append(step_timing)
+        else:
+            optimizer_step()
 
         losses.append(f"{float(loss.detach().cpu()):.17g}")
         final_logits = logits.detach()
@@ -276,15 +371,9 @@ def run_training_steps(
         "selected_logits": [f"{value:.9g}" for value in selected],
     }
     output["output_hash"] = stable_hash(output)
-    if step_seconds:
-        token_count = config.batch_size * config.sequence_length * len(step_seconds)
-        elapsed = sum(step_seconds)
-        output["timing"] = {
-            "step_seconds": step_seconds,
-            "mean_step_seconds": elapsed / len(step_seconds),
-            "elapsed_seconds": elapsed,
-            "tokens_per_second": token_count / elapsed if elapsed else None,
-        }
+    output["input_hash"] = generated_input_hash
+    if step_timings:
+        output["timing"] = timing_summary(step_timings, config)
     return output
 
 
@@ -315,30 +404,13 @@ def validate_config(config: ProbeConfig) -> None:
         raise ValueError("d_model must be divisible by num_heads")
 
 
-def run_correctness(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
-    runs = [
-        run_training_steps(
-            torch,
-            config,
-            device=device,
-            dtype=dtype,
-            seed=config.seed,
-            steps=config.steps,
-            timed=False,
-        )
-        for _ in range(config.repeat)
-    ]
-    output_hashes = [run["output_hash"] for run in runs]
-    return {
-        "repeat_match": len(set(output_hashes)) == 1,
-        "output_hash": output_hashes[0],
-        "runs": runs,
-    }
-
-
-def run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any) -> dict:
-    if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
+def run_measurements(
+    torch: Any,
+    config: ProbeConfig,
+    *,
+    device: Any,
+    dtype: Any,
+) -> dict:
     if config.warmup_steps:
         run_training_steps(
             torch,
@@ -350,64 +422,48 @@ def run_performance(torch: Any, config: ProbeConfig, *, device: Any, dtype: Any)
             timed=False,
         )
     synchronize(torch, device)
-    measured = run_training_steps(
-        torch,
-        config,
-        device=device,
-        dtype=dtype,
-        seed=config.seed,
-        steps=config.steps,
-        timed=True,
-    )
-    memory = cuda_memory(torch, device)
-    timings = measured.get("timing", {})
-    step_seconds = timings.get("step_seconds", [])
-    variance = None
-    if step_seconds:
-        mean = timings["mean_step_seconds"]
-        variance = sum((value - mean) ** 2 for value in step_seconds) / len(
-            step_seconds
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+    runs = [
+        run_training_steps(
+            torch,
+            config,
+            device=device,
+            dtype=dtype,
+            seed=config.seed,
+            steps=config.steps,
+            timed=True,
         )
+        for _ in range(config.repeat)
+    ]
+    output_hashes = [run["output_hash"] for run in runs]
+    input_hashes = [run["input_hash"] for run in runs]
     return {
-        "output_hash": measured["output_hash"],
-        "losses": measured["losses"],
-        "timing": timings,
-        "step_seconds_variance": variance,
-        "memory": memory,
+        "repeat_match": len(set(output_hashes)) == 1,
+        "output_hash": output_hashes[0],
+        "input_repeat_match": len(set(input_hashes)) == 1,
+        "input_hash": input_hashes[0],
+        "memory": cuda_memory(torch, device),
+        "runs": runs,
     }
 
 
 def default_config(args: argparse.Namespace, dtype_name: str) -> ProbeConfig:
-    profile = args.profile
-    if profile == "correctness":
-        defaults = {
-            "batch_size": 2,
-            "sequence_length": 16,
-            "vocab_size": 128,
-            "d_model": 32,
-            "num_layers": 2,
-            "num_heads": 4,
-            "mlp_ratio": 2,
-            "steps": 3,
-            "warmup_steps": 0,
-            "repeat": args.repeat,
-        }
-    else:
-        defaults = {
-            "batch_size": 8,
-            "sequence_length": 128,
-            "vocab_size": 1024,
-            "d_model": 256,
-            "num_layers": 4,
-            "num_heads": 8,
-            "mlp_ratio": 4,
-            "steps": 10,
-            "warmup_steps": 5,
-            "repeat": 1,
-        }
+    defaults = {
+        "batch_size": 2,
+        "sequence_length": 16,
+        "vocab_size": 128,
+        "d_model": 32,
+        "num_layers": 2,
+        "num_heads": 4,
+        "mlp_ratio": 2,
+        "steps": 3,
+        "warmup_steps": 0,
+        "repeat": args.repeat,
+    }
     return ProbeConfig(
-        profile=profile,
         seed=args.seed,
+        input_seed=args.input_seed,
         batch_size=argument_or_default(args.batch_size, defaults["batch_size"]),
         sequence_length=argument_or_default(
             args.sequence_length,
@@ -465,25 +521,20 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
     status = "pass"
 
     try:
-        if config.profile == "correctness":
-            measurements = run_correctness(torch, config, device=device, dtype=dtype)
-            checks["repeat_match"] = measurements["repeat_match"]
-            checks["output_hash"] = measurements["output_hash"]
-            if not measurements["repeat_match"]:
+        measurements = run_measurements(torch, config, device=device, dtype=dtype)
+        checks["repeat_match"] = measurements["repeat_match"]
+        checks["output_hash"] = measurements["output_hash"]
+        checks["input_repeat_match"] = measurements["input_repeat_match"]
+        checks["input_hash"] = measurements["input_hash"]
+        if not measurements["repeat_match"]:
+            status = "fail"
+        if not measurements["input_repeat_match"]:
+            status = "fail"
+        if args.expected_hash:
+            expected_match = measurements["output_hash"] == args.expected_hash
+            checks["expected_hash_match"] = expected_match
+            if not expected_match:
                 status = "fail"
-            if args.expected_hash:
-                expected_match = measurements["output_hash"] == args.expected_hash
-                checks["expected_hash_match"] = expected_match
-                if not expected_match:
-                    status = "fail"
-        else:
-            measurements = run_performance(torch, config, device=device, dtype=dtype)
-            checks["output_hash"] = measurements["output_hash"]
-            if args.expected_hash:
-                expected_match = measurements["output_hash"] == args.expected_hash
-                checks["expected_hash_match"] = expected_match
-                if not expected_match:
-                    status = "fail"
     except Exception as error:
         status = "fail"
         errors.append(
@@ -498,7 +549,6 @@ def run_probe(args: argparse.Namespace) -> ProbeResult:
     result = ProbeResult(
         schema_version=SCHEMA_VERSION,
         status=status,  # type: ignore[arg-type]
-        profile=config.profile,
         run_id=run_id,
         started_at=started_at,
         finished_at=finished_at,
@@ -538,7 +588,10 @@ def default_output_filename(result: ProbeResult) -> str:
     return default_output_path(result, Path(".")).name
 
 
-def default_output_location(result: ProbeResult, out_dir: ResultLocation) -> ResultLocation:
+def default_output_location(
+    result: ProbeResult,
+    out_dir: ResultLocation,
+) -> ResultLocation:
     filename = default_output_filename(result)
     if is_s3_uri(out_dir):
         bucket, prefix = parse_s3_uri(str(out_dir))
@@ -599,12 +652,6 @@ def generate_run_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--profile",
-        choices=("correctness", "performance"),
-        default="correctness",
-        help="Probe profile to run.",
-    )
-    parser.add_argument(
         "--device",
         choices=("auto", "cpu", "cuda"),
         default="auto",
@@ -616,18 +663,24 @@ def generate_run_parser() -> argparse.ArgumentParser:
         default=0,
         help="Logical CUDA device index when --device=cuda.",
     )
-    parser.add_argument("--seed", type=int, default=1234, help="Probe seed.")
+    parser.add_argument("--seed", type=int, default=0, help="Probe seed.")
+    parser.add_argument(
+        "--input-seed",
+        type=int,
+        default=0,
+        help="Seed for deterministic randomized input token IDs and labels.",
+    )
     parser.add_argument(
         "--repeat",
         type=int,
         default=2,
-        help="Fresh repeated runs for the correctness profile.",
+        help="Fresh repeated measured runs.",
     )
     parser.add_argument(
         "--dtype",
         choices=("auto", "fp32", "fp16", "bf16"),
         default="fp32",
-        help="Computation dtype. Use auto for bf16/fp16 performance on CUDA.",
+        help="Computation dtype. Use auto for bf16/fp16 on CUDA.",
     )
     parser.add_argument("--batch-size", type=int, help="Override batch size.")
     parser.add_argument("--sequence-length", type=int, help="Override sequence length.")
@@ -640,7 +693,7 @@ def generate_run_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--warmup-steps",
         type=int,
-        help="Override warmup steps for the performance profile.",
+        help="Warmup steps to run before the measured repeats.",
     )
     parser.add_argument(
         "--allow-tf32",

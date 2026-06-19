@@ -6,6 +6,7 @@ import pytest
 import narc.files as files_module
 from narc.cli import generate_cli
 from narc.compare import compare, compare_paths, handle_compare
+from narc.schema import SCHEMA_VERSION
 
 
 class FakeS3Body:
@@ -72,19 +73,21 @@ def result_payload(
     *,
     status: str = "pass",
     output_hash: str | None = "hash-a",
+    input_hash: str | None = "input-a",
     errors: list[dict[str, str]] | None = None,
     checks: dict[str, object] | None = None,
     accelerator_id: str = "GPU-a",
 ) -> dict[str, object]:
-    result_checks = {"output_hash": output_hash}
+    result_checks = {"input_hash": input_hash, "output_hash": output_hash}
     if checks:
         result_checks.update(checks)
     if output_hash is None:
         result_checks.pop("output_hash")
+    if input_hash is None:
+        result_checks.pop("input_hash")
     return {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "status": status,
-        "profile": "correctness",
         "hostname": "node-a",
         "run_id": accelerator_id,
         "started_at": "2026-01-01T00:00:00+00:00",
@@ -124,6 +127,15 @@ def test_compare_groups_matching_pass_results():
 def test_compare_splits_pass_results_by_output_hash():
     first = result_payload(output_hash="hash-a", accelerator_id="GPU-a")
     second = result_payload(output_hash="hash-b", accelerator_id="GPU-b")
+
+    partitions = compare([first, second])
+
+    assert partitions == [[first], [second]]
+
+
+def test_compare_splits_pass_results_by_input_hash():
+    first = result_payload(input_hash="input-a", accelerator_id="GPU-a")
+    second = result_payload(input_hash="input-b", accelerator_id="GPU-b")
 
     partitions = compare([first, second])
 
@@ -187,10 +199,10 @@ def test_compare_paths_reports_partitions(tmp_path):
     assert report["partition_count"] == 1
     assert report["partitions"][0]["size"] == 2
     assert report["partitions"][0]["equivalence"] == {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "status": "pass",
-        "profile": "correctness",
         "probe_config_hash": "config-a",
+        "input_hash": "input-a",
         "output_hash": "hash-a",
     }
 
@@ -232,7 +244,7 @@ def test_compare_paths_fails_on_explicit_schema_less_object_json(tmp_path):
         {
             "path": str(malformed),
             "type": "SchemaError",
-            "message": "unsupported schema_version None; expected 1",
+            "message": f"unsupported schema_version None; expected {SCHEMA_VERSION}",
         }
     ]
 
@@ -294,6 +306,34 @@ def test_compare_paths_fails_when_pass_result_has_empty_output_hash(tmp_path):
     assert not report["pass"]
     assert not report["split"]
     assert report["missing_output_hash"] == [str(tmp_path / "a.json")]
+
+
+def test_compare_paths_fails_when_pass_result_has_no_input_hash(tmp_path):
+    write_result(tmp_path / "a.json", result_payload(input_hash=None))
+
+    report = compare_paths([tmp_path])
+
+    assert not report["pass"]
+    assert not report["split"]
+    assert report["missing_input_hash"] == [str(tmp_path / "a.json")]
+
+
+def test_compare_paths_rejects_bad_input_hash_type(tmp_path):
+    result = result_payload()
+    result["checks"]["input_hash"] = []
+    write_result(tmp_path / "bad-input-hash.json", result)
+
+    report = compare_paths([tmp_path])
+
+    assert not report["pass"]
+    assert report["loaded_results"] == 0
+    assert report["schema_errors"] == [
+        {
+            "path": str(tmp_path / "bad-input-hash.json"),
+            "type": "SchemaError",
+            "message": "checks.input_hash must be a string when present",
+        }
+    ]
 
 
 def test_compare_cli_fails_on_split_by_default(tmp_path):

@@ -8,7 +8,7 @@ from narc.probe import (
     output_device_id,
     run_probe,
 )
-from narc.schema import ProbeResult
+from narc.schema import SCHEMA_VERSION, ProbeConfig, ProbeResult
 
 
 def test_cpu_correctness_probe_is_repeatable():
@@ -18,8 +18,6 @@ def test_cpu_correctness_probe_is_repeatable():
             "run",
             "--device",
             "cpu",
-            "--profile",
-            "correctness",
             "--dtype",
             "fp32",
             "--repeat",
@@ -49,7 +47,104 @@ def test_cpu_correctness_probe_is_repeatable():
     assert payload["status"] == "pass"
     assert payload["checks"]["repeat_match"] is True
     assert payload["checks"]["output_hash"]
+    assert payload["checks"]["input_repeat_match"] is True
+    assert payload["checks"]["input_hash"]
+    assert payload["measurements"]["input_hash"] == payload["checks"]["input_hash"]
+    timing = payload["measurements"]["runs"][0]["timing"]
+    assert timing["forward_seconds"]
+    assert timing["backward_seconds"]
+    assert timing["optimizer_step_seconds"]
+    assert timing["mean_forward_seconds"] is not None
+    assert timing["mean_backward_seconds"] is not None
+    assert (
+        payload["measurements"]["runs"][0]["input_hash"]
+        == payload["checks"]["input_hash"]
+    )
     assert payload["fingerprint_hash"]
+    assert payload["schema_version"] == SCHEMA_VERSION
+    assert payload["probe_config"]["seed"] == 0
+    assert payload["probe_config"]["input_seed"] == 0
+
+
+def test_cpu_correctness_probe_uses_input_seed():
+    parser = generate_cli()
+    base_args = [
+        "run",
+        "--device",
+        "cpu",
+        "--dtype",
+        "fp32",
+        "--repeat",
+        "2",
+        "--steps",
+        "1",
+        "--batch-size",
+        "1",
+        "--sequence-length",
+        "8",
+        "--vocab-size",
+        "64",
+        "--d-model",
+        "16",
+        "--num-layers",
+        "1",
+        "--num-heads",
+        "4",
+        "--mlp-ratio",
+        "2",
+    ]
+    first = run_probe(parser.parse_args([*base_args, "--input-seed", "1234"]))
+    second = run_probe(parser.parse_args([*base_args, "--input-seed", "1234"]))
+    different_inputs = run_probe(
+        parser.parse_args([*base_args, "--input-seed", "5678"])
+    )
+
+    assert first.probe_config["input_seed"] == 1234
+    assert different_inputs.probe_config["input_seed"] == 5678
+    assert first.probe_config_hash == second.probe_config_hash
+    assert first.checks["input_hash"] == second.checks["input_hash"]
+    assert first.checks["output_hash"] == second.checks["output_hash"]
+    assert first.probe_config_hash != different_inputs.probe_config_hash
+    assert first.checks["input_hash"] != different_inputs.checks["input_hash"]
+    assert first.checks["output_hash"] != different_inputs.checks["output_hash"]
+
+
+def test_fixed_inputs_ignore_global_default_device():
+    torch = pytest.importorskip("torch")
+    if not hasattr(torch, "set_default_device"):
+        pytest.skip("torch.set_default_device is unavailable")
+    config = ProbeConfig(
+        seed=0,
+        input_seed=0,
+        batch_size=1,
+        sequence_length=8,
+        vocab_size=64,
+        d_model=16,
+        num_layers=1,
+        num_heads=4,
+        mlp_ratio=2,
+        steps=1,
+        warmup_steps=0,
+        dtype="float32",
+        repeat=1,
+        deterministic=True,
+        allow_tf32=False,
+    )
+
+    torch.set_default_device("meta")
+    try:
+        input_ids, labels = probe_module.fixed_inputs(
+            torch,
+            config,
+            torch.device("cpu"),
+        )
+    finally:
+        torch.set_default_device("cpu")
+
+    assert input_ids.device.type == "cpu"
+    assert labels.device.type == "cpu"
+    assert not input_ids.is_meta
+    assert not labels.is_meta
 
 
 def test_cpu_probe_rejects_sequence_length_without_targets():
@@ -86,9 +181,8 @@ def test_cpu_probe_rejects_zero_overrides_instead_of_defaulting():
 
 def test_default_output_path_sanitizes_user_controlled_components(tmp_path):
     result = ProbeResult(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         status="pass",
-        profile="correctness",
         run_id="../../escape",
         started_at="2026-01-01T00:00:00+00:00",
         finished_at="2026-01-01T00:00:01+00:00",
@@ -116,9 +210,8 @@ def test_default_output_path_sanitizes_user_controlled_components(tmp_path):
 
 def test_output_device_id_falls_back_for_cpu_result(tmp_path):
     result = ProbeResult(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         status="pass",
-        profile="correctness",
         run_id="run-a",
         started_at="2026-01-01T00:00:00+00:00",
         finished_at="2026-01-01T00:00:01+00:00",
@@ -141,9 +234,8 @@ def test_output_device_id_falls_back_for_cpu_result(tmp_path):
 
 def test_default_output_location_supports_s3_prefix():
     result = ProbeResult(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         status="pass",
-        profile="correctness",
         run_id="run-a",
         started_at="2026-01-01T00:00:00+00:00",
         finished_at="2026-01-01T00:00:01+00:00",

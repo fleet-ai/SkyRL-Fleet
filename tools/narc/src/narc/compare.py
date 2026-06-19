@@ -6,12 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from narc.aggregate import (
-    device_fingerprint,
-    invalid_result_error,
-    is_probe_result,
-    probe_schema_error,
-)
 from narc.files import (
     ResultLocation,
     explicit_input_identities,
@@ -27,9 +21,186 @@ from narc.files import (
     validate_output_path,
     write_json_report,
 )
-
+from narc.schema import SCHEMA_VERSION
 
 COMPARE_SCHEMA_VERSION = 1
+REQUIRED_RESULT_KEYS = {
+    "checks",
+    "command",
+    "errors",
+    "fingerprint",
+    "fingerprint_hash",
+    "finished_at",
+    "hostname",
+    "measurements",
+    "pid",
+    "probe_config",
+    "probe_config_hash",
+    "run_id",
+    "schema_version",
+    "slurm",
+    "started_at",
+    "status",
+}
+RESULT_FIELD_TYPES = {
+    "schema_version": int,
+    "status": str,
+    "run_id": str,
+    "started_at": str,
+    "finished_at": str,
+    "hostname": str,
+    "pid": int,
+    "slurm": dict,
+    "command": dict,
+    "probe_config": dict,
+    "probe_config_hash": str,
+    "fingerprint": dict,
+    "fingerprint_hash": str,
+    "checks": dict,
+    "measurements": dict,
+    "errors": list,
+}
+VALID_STATUSES = {"pass", "warn", "fail"}
+
+
+def type_description(expected_type: type[Any]) -> str:
+    if expected_type is dict:
+        return "an object"
+    if expected_type is list:
+        return "an array"
+    if expected_type is str:
+        return "a string"
+    if expected_type is int:
+        return "an integer"
+    return expected_type.__name__
+
+
+def matches_expected_type(value: Any, expected_type: type[Any]) -> bool:
+    if expected_type is int:
+        return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, expected_type)
+
+
+def probe_schema_messages(document: dict[str, Any]) -> list[str]:
+    if document.get("schema_version") != SCHEMA_VERSION:
+        return [
+            (
+                f"unsupported schema_version {document.get('schema_version')!r}; "
+                f"expected {SCHEMA_VERSION}"
+            )
+        ]
+
+    messages: list[str] = []
+    missing = sorted(REQUIRED_RESULT_KEYS.difference(document.keys()))
+    if missing:
+        messages.append(f"missing required result keys: {', '.join(missing)}")
+
+    for field, expected_type in RESULT_FIELD_TYPES.items():
+        if field not in document:
+            continue
+        value = document[field]
+        if not matches_expected_type(value, expected_type):
+            messages.append(f"{field} must be {type_description(expected_type)}")
+
+    status = document.get("status")
+    if isinstance(status, str) and status not in VALID_STATUSES:
+        messages.append(f"status must be one of {', '.join(sorted(VALID_STATUSES))}")
+
+    errors = document.get("errors")
+    if isinstance(errors, list):
+        for index, entry in enumerate(errors):
+            if not isinstance(entry, dict):
+                messages.append(f"errors[{index}] must be an object")
+    if document.get("status") == "pass" and errors:
+        messages.append("errors must be empty when status is pass")
+
+    checks = document.get("checks")
+    if isinstance(checks, dict):
+        output_hash = checks.get("output_hash")
+        if output_hash is not None and not isinstance(output_hash, str):
+            messages.append("checks.output_hash must be a string when present")
+        input_hash = checks.get("input_hash")
+        if input_hash is not None and not isinstance(input_hash, str):
+            messages.append("checks.input_hash must be a string when present")
+
+    measurements = document.get("measurements")
+    if isinstance(measurements, dict):
+        timing = measurements.get("timing")
+        if timing is not None and not isinstance(timing, dict):
+            messages.append("measurements.timing must be an object when present")
+
+    fingerprint = document.get("fingerprint")
+    if isinstance(fingerprint, dict):
+        device = fingerprint.get("device")
+        if not isinstance(device, dict):
+            messages.append("fingerprint.device must be an object")
+        else:
+            device_type = device.get("type")
+            if not isinstance(device_type, str) or not device_type:
+                messages.append("fingerprint.device.type must be a non-empty string")
+            elif device_type not in {"cpu", "cuda"}:
+                messages.append("fingerprint.device.type must be cpu or cuda")
+            accelerator_id = device.get("accelerator_id")
+            valid_accelerator_id = (
+                isinstance(accelerator_id, str) and bool(accelerator_id)
+            )
+            if accelerator_id is not None and not valid_accelerator_id:
+                messages.append(
+                    "fingerprint.device.accelerator_id must be a non-empty string "
+                    "when present"
+                )
+            if device_type == "cuda" and accelerator_id is None:
+                messages.append(
+                    "fingerprint.device.accelerator_id must be a non-empty string "
+                    "for cuda results"
+                )
+            cuda_driver = device.get("cuda_driver")
+            if cuda_driver is not None and not isinstance(cuda_driver, dict):
+                messages.append(
+                    "fingerprint.device.cuda_driver must be an object when present"
+                )
+    return messages
+
+
+def is_probe_result(document: dict[str, Any]) -> bool:
+    return not probe_schema_messages(document)
+
+
+def probe_schema_error(
+    path: ResultLocation,
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    message = "; ".join(probe_schema_messages(document))
+    return {
+        "path": location_text(path),
+        "type": "SchemaError",
+        "message": message,
+    }
+
+
+def invalid_result_error(path: ResultLocation, message: str) -> dict[str, Any]:
+    return {
+        "path": location_text(path),
+        "type": "SchemaError",
+        "message": message,
+    }
+
+
+def device_fingerprint(result: dict[str, Any]) -> dict[str, Any]:
+    device = result.get("fingerprint", {}).get("device", {})
+    cuda_driver = device.get("cuda_driver", {})
+    slurm = result.get("slurm", {})
+    return {
+        "path": result.get("source_path"),
+        "status": result.get("status"),
+        "hostname": result.get("hostname"),
+        "accelerator_id": device.get("accelerator_id"),
+        "logical_index": device.get("logical_index"),
+        "cuda_uuid": cuda_driver.get("uuid"),
+        "pci_bus_id": cuda_driver.get("pci_bus_id"),
+        "slurm_procid": slurm.get("slurm_procid"),
+        "slurm_localid": slurm.get("slurm_localid"),
+    }
 
 
 def canonical_json(value: Any) -> str:
@@ -54,8 +225,8 @@ def equivalence(result: dict[str, Any]) -> dict[str, Any]:
     value: dict[str, Any] = {
         "schema_version": result["schema_version"],
         "status": status,
-        "profile": result["profile"],
         "probe_config_hash": result["probe_config_hash"],
+        "input_hash": checks.get("input_hash"),
         "output_hash": checks.get("output_hash"),
     }
     if status != "pass":
@@ -82,11 +253,11 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "path": result.get("source_path"),
         "status": result.get("status"),
-        "profile": result.get("profile"),
         "hostname": result.get("hostname"),
         "accelerator_id": device.get("accelerator_id"),
         "run_id": result.get("run_id"),
         "probe_config_hash": result.get("probe_config_hash"),
+        "input_hash": result.get("checks", {}).get("input_hash"),
         "output_hash": result.get("checks", {}).get("output_hash"),
         "fingerprint_hash": result.get("fingerprint_hash"),
     }
@@ -141,6 +312,11 @@ def compare_paths(
         for result in loaded
         if result["status"] == "pass" and not result["checks"].get("output_hash")
     ]
+    missing_input_hash = [
+        result.get("source_path")
+        for result in loaded
+        if result["status"] == "pass" and not result["checks"].get("input_hash")
+    ]
     partition_reports = [
         {
             "id": index,
@@ -162,6 +338,7 @@ def compare_paths(
         "ignored_files": ignored_files,
         "status_counts": status_counts,
         "missing_output_hash": missing_output_hash,
+        "missing_input_hash": missing_input_hash,
         "partition_count": len(partitions),
         "split": split,
         "partitions": partition_reports,
@@ -170,6 +347,7 @@ def compare_paths(
             and not load_errors
             and not schema_errors
             and not missing_output_hash
+            and not missing_input_hash
             and len(partitions) == 1
             and status_counts["warn"] == 0
             and status_counts["fail"] == 0
