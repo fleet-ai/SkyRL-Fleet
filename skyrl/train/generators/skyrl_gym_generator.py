@@ -8,7 +8,6 @@ For details, see https://docs.skyrl.ai/docs/tutorials/skyrl_gym_generator
 import asyncio
 import copy
 import math
-import os
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -1073,9 +1072,6 @@ class SkyRLGymGenerator(GeneratorInterface):
             rewards, mean_length_penalty = self._apply_length_penalty(rewards, truncated_responses)
             rollout_metrics["generate/length_penalty_mean"] = mean_length_penalty
 
-        rewards, rep_metrics = self._apply_repetition_penalty(rewards, truncated_responses)
-        rollout_metrics.update(rep_metrics)
-
         if self.generator_cfg.log_thinking_token_metrics:
             self._add_thinking_token_metrics(rollout_metrics, truncated_responses)
 
@@ -1097,43 +1093,6 @@ class SkyRLGymGenerator(GeneratorInterface):
 
         return generator_output
 
-    def _maybe_inject_think_gate(
-        self, sampling_params: Optional[dict], input_batch: GeneratorInput
-    ) -> Optional[dict]:
-        """Attach the negotiation think-gate config to ``sampling_params.extra_args`` for
-        training rollouts when ``NEGOTIATION_THINK_GATE`` is set.
-
-        The engine-side ``ThinkGateLogitsProcessor`` reads this to force the
-        ``<think> (>= floor) </think> <message> <action>`` structure (Fix 3 in
-        research_logs/think-close-debugging-0618.md). No-op for eval and when disabled.
-        Returns a shallow copy so the shared config sampling-params dict is not mutated.
-        """
-        if not os.environ.get("NEGOTIATION_THINK_GATE"):
-            return sampling_params
-        batch_metadata = input_batch.get("batch_metadata")
-        is_training = batch_metadata is not None and getattr(batch_metadata, "training_phase", None) == "train"
-        if not is_training:
-            return sampling_params
-
-        if getattr(self, "_think_gate_extra_args", None) is None:
-            from skyrl.backends.skyrl_train.inference_engines.vllm.think_gate_logits_processor import (
-                EXTRA_ARGS_KEY,
-                build_think_gate_extra_args,
-            )
-
-            min_think = int(os.environ.get("NEGOTIATION_THINK_GATE_MIN", "16"))
-            self._think_gate_key = EXTRA_ARGS_KEY
-            self._think_gate_extra_args = build_think_gate_extra_args(self.tokenizer, min_think)
-            logger.info(
-                f"Negotiation think-gate ENABLED (min_think={min_think}): {self._think_gate_extra_args}"
-            )
-
-        sp = dict(sampling_params) if sampling_params else {}
-        extra_args = dict(sp.get("extra_args") or {})
-        extra_args[self._think_gate_key] = self._think_gate_extra_args
-        sp["extra_args"] = extra_args
-        return sp
-
     async def generate(self, input_batch: GeneratorInput, disable_tqdm: bool = False) -> GeneratorOutput:
         """
         Generate trajectories for the input batch.
@@ -1152,11 +1111,6 @@ class SkyRLGymGenerator(GeneratorInterface):
         if self.generator_cfg.step_wise_trajectories:
             assert trajectory_ids is not None, "`trajectory_ids` is a required field for step wise training"
         sampling_params: Optional[dict] = input_batch.get("sampling_params", None)
-        # Negotiation think-gate (research_logs/think-close-debugging-0618.md, Fix 3):
-        # constrain decoding so each turn is <think> (>= floor) </think> <msg> <action>.
-        # Training rollouts only (eval stays unconstrained so think_closed_rate is a real
-        # signal); activated via SamplingParams.extra_args consumed by the engine LP.
-        sampling_params = self._maybe_inject_think_gate(sampling_params, input_batch)
         max_tokens = self.generator_cfg.sampling_params.max_generate_length
         max_input_length = self.generator_cfg.max_input_length
 
@@ -1358,9 +1312,6 @@ class SkyRLGymGenerator(GeneratorInterface):
             rewards, mean_length_penalty = self._apply_length_penalty(rewards, responses)
             rollout_metrics["generate/length_penalty_mean"] = mean_length_penalty
 
-        rewards, rep_metrics = self._apply_repetition_penalty(rewards, responses)
-        rollout_metrics.update(rep_metrics)
-
         if self.generator_cfg.log_thinking_token_metrics:
             self._add_thinking_token_metrics(rollout_metrics, responses)
 
@@ -1392,77 +1343,6 @@ class SkyRLGymGenerator(GeneratorInterface):
         }
 
         return generator_output
-
-    def _repetition_frac(self, response: List[int]) -> float:
-        """Fraction of repeated token n-grams in ``response``: ``1 - unique_ngrams / total_ngrams``.
-
-        ~0 for coherent text (even long/verbose reasoning); approaches 1 for degenerate loops that
-        repeat the same span until the generation budget is exhausted. Computed on token ids (no
-        decode). Returns 0.0 for responses too short to form an n-gram.
-        """
-        n = int(self.generator_cfg.repetition_ngram)
-        if n <= 0 or len(response) <= n:
-            return 0.0
-        grams = [tuple(response[i : i + n]) for i in range(len(response) - n + 1)]
-        total = len(grams)
-        if total <= 0:
-            return 0.0
-        return 1.0 - (len(set(grams)) / total)
-
-    def _apply_repetition_penalty(
-        self,
-        rewards: List[Union[float, List[float]]],
-        responses: List[List[int]],
-    ) -> Tuple[List[Union[float, List[float]]], Dict[str, float]]:
-        """Penalize degenerate n-gram repetition loops; always returns repetition metrics for logging.
-
-        The penalty (applied only when ``repetition_penalty_coef > 0``) is subtracted from each
-        trajectory's final reward (folded into the last token for per-token reward trajectories):
-
-            frac    = _repetition_frac(response)
-            excess  = max(0, (frac - repetition_min_frac) / (1 - repetition_min_frac))
-            penalty = repetition_penalty_coef * excess
-
-        Returns ``(rewards, metrics)`` where ``metrics`` carries ``generate/repetition_frac_mean``,
-        ``generate/repetition_frac_max``, ``generate/repetition_loop_frac`` (fraction of responses
-        above the threshold), and (when the penalty is on) ``generate/repetition_penalty_mean``.
-        """
-        n = len(responses)
-        if not n:
-            return rewards, {}
-        coef = float(self.generator_cfg.repetition_penalty_coef or 0.0)
-        min_frac = float(self.generator_cfg.repetition_min_frac)
-        denom = max(1e-6, 1.0 - min_frac)
-
-        frac_sum = 0.0
-        frac_max = 0.0
-        loop_count = 0
-        penalty_sum = 0.0
-        for i, response in enumerate(responses):
-            frac = self._repetition_frac(response)
-            frac_sum += frac
-            frac_max = max(frac_max, frac)
-            if frac > min_frac:
-                loop_count += 1
-            if coef:
-                excess = max(0.0, (frac - min_frac) / denom)
-                penalty = coef * excess
-                if penalty:
-                    penalty_sum += penalty
-                    if isinstance(rewards[i], list):
-                        if rewards[i]:
-                            rewards[i][-1] -= penalty
-                    else:
-                        rewards[i] -= penalty
-
-        metrics = {
-            "generate/repetition_frac_mean": frac_sum / n,
-            "generate/repetition_frac_max": frac_max,
-            "generate/repetition_loop_frac": loop_count / n,
-        }
-        if coef:
-            metrics["generate/repetition_penalty_mean"] = penalty_sum / n
-        return rewards, metrics
 
     def _apply_length_penalty(
         self,
