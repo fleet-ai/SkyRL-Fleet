@@ -917,6 +917,30 @@ class FleetTaskEnv(BaseTextEnv):
         if tool_call and getattr(self, "screen_width", None):
             self._convert_normalized_coordinates(tool_call)
 
+        # Attach OpenAI-shaped tool_calls to the assistant message we
+        # appended at line 882. The model's raw text already carries the
+        # call (in family-native grammar — Kimi specials, Qwen <tool_call>
+        # etc.); the structured field is purely for the trace upload to
+        # link this turn's screenshot tool result back to its caller.
+        #
+        # Without this the Fleet trace viewer can't pair tool messages to
+        # assistant turns (it keys off `tool_calls[0].id` matching the
+        # next tool message's `tool_call_id`), so it shows Tool Calls=0
+        # and renders screenshots only inside the JSON tree instead of
+        # the top-of-session preview. Verified by a dummy-job A/B probe:
+        # identical content with `tool_calls` set renders top-level, the
+        # same content without it doesn't. `call_{turn}` is unique per
+        # session and matches what trace.py's _assemble_messages reads.
+        if tool_call:
+            assistant_msg["tool_calls"] = [{
+                "id": f"call_{self.turns}",
+                "type": "function",
+                "function": {
+                    "name": tool_call["name"],
+                    "arguments": json.dumps(tool_call.get("arguments", {})),
+                },
+            }]
+
         # Send done=True at max_turns even without <done> — otherwise OpenEnv
         # never trips _done and the verifier never runs.
         force_done = agent_done or max_turns_reached

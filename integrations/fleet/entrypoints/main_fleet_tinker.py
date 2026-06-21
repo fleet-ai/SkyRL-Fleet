@@ -1170,17 +1170,30 @@ async def main(
     if eval_dataset:
         logger.info(f"Loaded {len(eval_dataset)} eval samples")
 
-    # Fleet trace job — env.step_async uploads on episode_done once set_trace_config is set.
+    # Fleet trace jobs — one per phase (eval_pre, train_step_N, eval_step_N,
+    # eval_final). Rotating per phase makes the trace viewer's session list
+    # filterable: each pane shows only its own phase's sessions instead of
+    # 200 steps × eval_n_samples worth of rollouts all collapsed under one
+    # job. Race safety: phase boundaries are sequential (collect_batch_rollouts
+    # and _run_eval both await every session upload before returning), so
+    # rotating the class-level _trace_config between phases is safe.
     fleet_api_key = os.environ.get("FLEET_API_KEY")
-    if fleet_api_key:
+    _trace_job_stem = f"tinker_{wandb_name}_{datetime.now().strftime('%m%d_%H%M')}"
+
+    async def _rotate_trace_job(label: str) -> None:
+        if not fleet_api_key:
+            return
         try:
             from envs.fleet_env.trace import create_trace_job
-            trace_job_name = f"tinker_{wandb_name}_{datetime.now().strftime('%m%d_%H%M')}"
-            trace_job_id = await create_trace_job(fleet_api_key, trace_job_name)
-            FleetTaskEnv.set_trace_config(job_id=trace_job_id, model=model_name)
-            logger.info(f"Fleet trace job: {trace_job_id} ({trace_job_name})")
+            name = f"{_trace_job_stem}_{label}"
+            job_id = await create_trace_job(fleet_api_key, name)
+            FleetTaskEnv.set_trace_config(job_id=job_id, model=model_name)
+            logger.info(f"Fleet trace job ({label}): {job_id} ({name})")
         except Exception as e:
-            logger.warning(f"Fleet trace job creation failed: {e}")
+            # Don't fail the rollout if trace-job creation hiccups; the
+            # previous phase's job_id stays in effect, sessions still go
+            # somewhere viewable. Logged so it's noticeable in trainer logs.
+            logger.warning(f"Fleet trace job creation failed for {label}: {e}")
 
     # Setup Tinker
     tinker_url = os.environ.get("TINKER_API_URL")
@@ -1226,6 +1239,7 @@ async def main(
     if eval_before_train and eval_dataset:
         pre_sampling_path = training_client.save_weights_for_sampler(name="step_pretrain").result().path
         pre_sampling_client = service_client.create_sampling_client(model_path=pre_sampling_path)
+        await _rotate_trace_job("eval_pre")
         await _run_eval(pre_sampling_client, step_index=-1)
 
     # Training loop
@@ -1249,6 +1263,12 @@ async def main(
             train_dataloader = create_dataloader(current_epoch)
             train_iterator = iter(train_dataloader)
             batch = next(train_iterator)
+
+        # Rotate to a fresh trace job for THIS step's rollouts so the
+        # viewer's session list isn't a 200-step soup. Race-safe because
+        # _run_eval below (and the previous step's collect_batch_rollouts)
+        # both fully await their session uploads before returning.
+        await _rotate_trace_job(f"train_step_{step}")
 
         # Collect rollouts
         logger.info(f"Step {step}: Collecting rollouts for {len(batch)} tasks...")
@@ -1395,8 +1415,10 @@ async def main(
             if is_final_step:
                 final_sampling_path = training_client.save_weights_for_sampler(name="step_final").result().path
                 eval_client = service_client.create_sampling_client(model_path=final_sampling_path)
+                await _rotate_trace_job("eval_final")
                 await _run_eval(eval_client, step_index=max_steps)
             else:
+                await _rotate_trace_job(f"eval_step_{step}")
                 await _run_eval(sampling_client, step_index=step)
 
     # Surface pre/post pass rates to disk for the launcher to read. The first
