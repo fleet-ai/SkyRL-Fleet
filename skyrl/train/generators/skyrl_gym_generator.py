@@ -44,6 +44,40 @@ from skyrl.train.generators.utils import (
 from skyrl_gym.envs.base_text_env import BaseTextEnvStepOutput
 
 
+# Fleet env families that use the per-turn observation scaffold + per-family
+# canonical_tool_call. Class-name prefix check kept narrow so non-Fleet envs
+# never see the inject.
+_FLEET_ENV_CLASS_PREFIXES = ("fleet_task", "fleet_env", "fleet")
+
+
+def _inject_fleet_model_family(
+    env_extras: Dict[str, Any],
+    env_class: str,
+    model_name: str,
+) -> None:
+    """For Fleet envs only: derive `model_family` from `model_name` and inject
+    into `env_extras` if the caller did not set it. Lets SkyRL Qwen / Kimi
+    GRPO runs pick up the per-family YAML scaffold and reject content
+    without requiring every dataset row to carry the family tag.
+
+    Explicit `env_extras["model_family"]` always wins. Unknown model name →
+    no inject → env falls through to the no-scaffold / generic-reject path,
+    same as today's pre-scaffold behavior. No-op for non-Fleet envs."""
+    if not isinstance(env_class, str) or not any(
+        env_class.startswith(p) for p in _FLEET_ENV_CLASS_PREFIXES
+    ):
+        return
+    if env_extras.get("model_family"):
+        return
+    try:
+        from skyrl_gym.envs.fleet_task.config import family_for_model
+    except ImportError:
+        return
+    family = family_for_model(model_name)
+    if family:
+        env_extras["model_family"] = family
+
+
 @dataclass
 class TrajectoryOutput:
     """Output from a single agent_loop execution."""
@@ -335,6 +369,10 @@ class SkyRLGymGenerator(GeneratorInterface):
 
         # Create a new environment instance
         env_extras["max_turns"] = self.max_turns  # TODO(shu): move this to config
+        # Fleet env: derive model_family from self.model_name so per-turn
+        # YAML scaffold + canonical-format reject message resolve correctly.
+        # Explicit value in env_extras wins (datasets can override).
+        _inject_fleet_model_family(env_extras, env_class, self.model_name)
         env_config = getattr(self.skyrl_gym_cfg, env_class, dict())
         env = skyrl_gym.make(env_class, env_config=env_config, extras=env_extras)
 
@@ -1005,6 +1043,7 @@ class SkyRLGymGenerator(GeneratorInterface):
         init_prompts = []
         for env_class, env_extra, prompt in zip(env_classes, env_extras, prompts):
             env_extra["max_turns"] = self.max_turns
+            _inject_fleet_model_family(env_extra, env_class, self.model_name)
             env_config = getattr(self.skyrl_gym_cfg, env_class, dict())
             env = skyrl_gym.make(env_class, env_config=env_config, extras=env_extra)
             init_prompt, _ = await self._env_init(env, prompt)

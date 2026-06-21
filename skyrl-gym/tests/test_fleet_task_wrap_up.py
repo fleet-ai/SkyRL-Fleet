@@ -146,11 +146,11 @@ class TestTurnFooterTextOnly:
 
     @pytest.mark.asyncio
     async def test_no_footer_when_model_family_unset(self):
-        """When model_family is missing from extras (no YAML family match)
-        the env appends no per-turn scaffold. Pinned to surface the
-        migration gap: SkyRL's Qwen generator currently does NOT plumb
-        model_family into env_extras, so production Qwen runs land here
-        and silently lose the turn indicator until SkyRL is updated."""
+        """When model_family is missing from extras (and the caller did
+        not plumb it via _inject_fleet_model_family in skyrl_gym_generator),
+        the env appends no per-turn scaffold. This is the documented
+        fallback path: unknown family → no scaffold, byte-identical to
+        today for any caller that doesn't opt in."""
         env = _make_env(max_turns=50)  # no model_family
         env.turns = 10
         step_ret = ({"observation": "ls\nfile.txt"}, 0.0, False, {})

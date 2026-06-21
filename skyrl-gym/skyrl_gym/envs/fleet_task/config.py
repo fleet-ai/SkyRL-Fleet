@@ -21,6 +21,23 @@ from pydantic import BaseModel, Field, ValidationError
 _DEFAULT_YAML = Path(__file__).parent / "fleet_task.yaml"
 
 
+# Prefix-based derivation of the per-family canonical-format key from a
+# HuggingFace model id. Single source of truth — used by main_fleet_tinker
+# (Tinker entrypoint) and by SkyRL's generator when it constructs the env.
+# Returns None for an unrecognized model name; the env then falls through
+# to the "no scaffold" / "generic reject" path. Explicit family in extras
+# always wins (callers can override the derivation).
+def family_for_model(model_name: Optional[str]) -> Optional[str]:
+    if not model_name:
+        return None
+    n = model_name.lower()
+    if "moonshotai" in n or "kimi" in n:
+        return "kimi"
+    if "qwen" in n:
+        return "qwen"
+    return None
+
+
 class ModelFamilyConfig(BaseModel):
     """Per-model-family prompt content."""
 
