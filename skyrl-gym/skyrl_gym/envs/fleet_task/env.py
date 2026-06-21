@@ -1194,9 +1194,22 @@ class FleetTaskEnv(BaseTextEnv):
 
         Strip is exact-match via str.removesuffix using the scaffold string
         recorded in self._scaffold_per_msg at append time — no regex, no
-        guessing. Multimodal text blocks that strip to empty are dropped.
-        image_url blocks pass through unchanged.
+        guessing.
+
+        Multimodal: only the trailing text block (the one step_async
+        appended) is touched; earlier text blocks pass through unchanged
+        even if they happen to end with the same suffix. If the trailing
+        text block strips to empty it is dropped; image_url blocks pass
+        through byte-identical.
+
+        Raises ValueError on a chat_history / _scaffold_per_msg length
+        mismatch rather than silently truncating via zip().
         """
+        if len(self.chat_history) != len(self._scaffold_per_msg):
+            raise ValueError(
+                f"chat_history ({len(self.chat_history)}) and _scaffold_per_msg "
+                f"({len(self._scaffold_per_msg)}) length mismatch — programmer error"
+            )
         out: ConversationType = []
         for msg, scaffold in zip(self.chat_history, self._scaffold_per_msg):
             if not scaffold:
@@ -1204,25 +1217,26 @@ class FleetTaskEnv(BaseTextEnv):
                 continue
             c = msg.get("content")
             if isinstance(c, list):
-                # Multimodal: the scaffold was appended as the trailing
-                # text block via `scaffold.lstrip("\n")`. Strip that exact
-                # form; drop the block if it strips to empty.
+                # Multimodal: step_async appended the scaffold as the last
+                # text block via `scaffold.lstrip("\n")`. Locate the
+                # trailing text block by index and strip it only; earlier
+                # blocks (image_url + any text the tool result carried)
+                # pass through unchanged.
                 lstripped = scaffold.lstrip("\n")
-                new_blocks = []
-                for b in c:
-                    if (
-                        isinstance(b, dict)
-                        and b.get("type") == "text"
-                        and isinstance(b.get("text"), str)
-                    ):
-                        stripped = b["text"]
-                        if stripped.endswith(lstripped):
-                            stripped = stripped[: -len(lstripped)]
-                        if stripped:
-                            new_blocks.append({**b, "text": stripped})
-                        # else: scaffold-only block, drop
+                new_blocks = list(c)
+                last_text_idx = next(
+                    (i for i in range(len(new_blocks) - 1, -1, -1)
+                     if isinstance(new_blocks[i], dict)
+                     and new_blocks[i].get("type") == "text"),
+                    None,
+                )
+                if last_text_idx is not None:
+                    block = new_blocks[last_text_idx]
+                    stripped = (block.get("text") or "").removesuffix(lstripped)
+                    if stripped:
+                        new_blocks[last_text_idx] = {**block, "text": stripped}
                     else:
-                        new_blocks.append(b)
+                        del new_blocks[last_text_idx]
                 out.append({**msg, "content": new_blocks})
             elif isinstance(c, str):
                 out.append({**msg, "content": c.removesuffix(scaffold)})
