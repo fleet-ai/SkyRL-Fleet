@@ -627,8 +627,33 @@ class FleetTaskEnv(BaseTextEnv):
             )
             break
 
-    def _convert_qwen_coordinates(self, tool_call: Dict[str, Any]):
-        """Convert Qwen's [0, 1000] normalized coordinates to pixel coordinates.
+    def _convert_normalized_coordinates(self, tool_call: Dict[str, Any]):
+        """Normalize-to-pixel conversion that handles BOTH conventions:
+          - Kimi [0, 1.0] float regression       → x * screen_w
+          - Qwen-VL [0, 1000] integer convention → x / 1000 * screen_w
+          - Pixel                                → leave alone
+
+        Detection by range of `max(x, y)`:
+          0 < max ≤ 1.0    → Kimi [0,1]   (e.g. [0.273, 0.298] → pixel(372,228))
+          1.0 < max ≤ 1000 → Qwen [0,1000] (e.g. [200, 400] → pixel(273,307))
+          max > 1000       → pixel, no-op (e.g. [1216, 90])
+
+        Why Kimi case matters: per the K2.6 model card the system prompt
+        instructs pixel coords, but Kimi's VL training prior occasionally
+        regresses to [0,1] floats. Observed in session 827f4376 turns 6 & 8
+        (`[0.273, 0.298]` when the model meant pixel `(372, 228)` on a
+        1366x768 viewport). The MCP server then treats the float as pixel,
+        rounding to (0, 0) — dead space, no state change, model gets the
+        same screenshot back and assumes its click failed.
+
+        The previous version of this method only handled the Qwen branch;
+        the Kimi branch was a no-op (and worse: `0.273 / 1000 * 1366 = 0` —
+        the Qwen scaler ACTIVELY broke the Kimi regression case by
+        scaling it down by another 1000x). Unified here.
+
+        Excludes (0, 0) clicks (max == 0) and mixed-format inputs (one
+        pixel + one float) as a no-op — surfaces as a bug rather than
+        getting silently papered over.
 
         Modifies tool_call arguments in-place.
         """
@@ -641,15 +666,34 @@ class FleetTaskEnv(BaseTextEnv):
             return
         for field in ("coordinate", "start_coordinate"):
             coords = args.get(field)
-            if (
+            if not (
                 coords
                 and isinstance(coords, (list, tuple))
                 and len(coords) == 2
             ):
+                continue
+            try:
+                x, y = float(coords[0]), float(coords[1])
+            except (TypeError, ValueError):
+                continue
+            mx = max(x, y)
+            if 0 < x <= 1.0 and 0 < y <= 1.0:
+                # Kimi [0,1] regression
                 args[field] = [
-                    int(coords[0] / 1000 * self.screen_width),
-                    int(coords[1] / 1000 * self.screen_height),
+                    int(x * self.screen_width),
+                    int(y * self.screen_height),
                 ]
+            elif 1.0 < mx <= 1000 and x >= 0 and y >= 0:
+                # Qwen-VL [0,1000] convention
+                args[field] = [
+                    int(x / 1000 * self.screen_width),
+                    int(y / 1000 * self.screen_height),
+                ]
+            # else: already pixels, leave alone
+
+    # Back-compat alias for the old name — anything else in the codebase
+    # that called `_convert_qwen_coordinates` keeps working.
+    _convert_qwen_coordinates = _convert_normalized_coordinates
 
     def _normalize_task_config(self) -> Dict[str, Any]:
         """Normalize task config to OpenEnv's expected format."""
@@ -858,9 +902,10 @@ class FleetTaskEnv(BaseTextEnv):
             agent_done = True
             tool_call = None
 
-        # VL: convert Qwen [0,1000] coordinates to pixel coordinates
+        # VL: convert normalized coordinates to pixels. Single function
+        # handles both Qwen [0,1000] and Kimi [0,1.0] by range detection.
         if tool_call and getattr(self, "screen_width", None):
-            self._convert_qwen_coordinates(tool_call)
+            self._convert_normalized_coordinates(tool_call)
 
         # Send done=True at max_turns even without <done> — otherwise OpenEnv
         # never trips _done and the verifier never runs.
