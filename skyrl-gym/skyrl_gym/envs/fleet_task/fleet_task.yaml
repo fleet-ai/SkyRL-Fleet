@@ -67,7 +67,10 @@ model_families:
         [Next tool call format]
         $canonical_tool_call
   qwen:
-    canonical_tool_call: |-
-      <tool_call>{"name": "<tool_name>", "arguments": {...}}</tool_call>
+    # No canonical_tool_call: Qwen's chat template already injects the
+    # `<tool_call>{...}</tool_call>` format spec via the `tools` argument
+    # to apply_chat_template, and Qwen knows the grammar from pretraining.
+    # The system-prompt `## Tool Call Format` block and the no-tool-call
+    # reject example are both redundant for Qwen and would be dead weight.
     per_turn_reminder:
       - "\n\n[Turn $turn/$max_turns]"

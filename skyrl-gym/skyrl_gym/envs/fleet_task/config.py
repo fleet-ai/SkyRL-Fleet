@@ -42,11 +42,20 @@ class ModelFamilyConfig(BaseModel):
     """Per-model-family prompt content."""
 
     # Canonical tool-call shape the model emits. Inserted into the reject
-    # message and into the `## Tool Call Format` block in the system
-    # prompt. For Kimi the <|...|> markers are single special-token IDs
-    # the tokenizer recognizes at encode time; same string lands the
-    # right token IDs in the model's context.
-    canonical_tool_call: str = Field(..., min_length=1)
+    # message and the `## Tool Call Format` block in the system prompt;
+    # also substituted into per_turn_reminder via $canonical_tool_call.
+    #
+    # Load-bearing for Kimi: the <|...|> markers are single special-token
+    # IDs the tokenizer recognizes at encode time; echoing them back lands
+    # the right IDs in the model's context.
+    #
+    # Optional because some families (e.g. Qwen) don't benefit: Qwen's
+    # chat template already injects the canonical format spec via the
+    # `tools` argument to apply_chat_template, and Qwen knows its
+    # `<tool_call>{...}</tool_call>` text-based grammar from pretraining.
+    # When None, the system-prompt format block and the no-tool-call
+    # reject's canonical example are both skipped for that family.
+    canonical_tool_call: Optional[str] = None
 
     # List of strings appended to every observation, in order. Each item is
     # templated via string.Template.safe_substitute ($-syntax — avoids
@@ -99,7 +108,10 @@ class FleetTaskConfig(BaseModel):
             Template(item).safe_substitute(
                 turn=turn,
                 max_turns=max_turns,
-                canonical_tool_call=fam.canonical_tool_call,
+                # `or ""` so a family with canonical_tool_call=None whose
+                # template happens to reference $canonical_tool_call gets
+                # an empty substitution rather than the string "None".
+                canonical_tool_call=fam.canonical_tool_call or "",
             )
             for item in fam.per_turn_reminder
         )

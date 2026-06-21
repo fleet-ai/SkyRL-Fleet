@@ -268,9 +268,11 @@ class TestNoToolCallHint:
         assert "<|tool_call_end|>" in body
 
     @pytest.mark.asyncio
-    async def test_no_tool_call_hint_includes_qwen_canonical(self):
-        """When model_family='qwen' is in extras, the reject message
-        prescribes Qwen's text-based grammar instead."""
+    async def test_no_tool_call_hint_qwen_omits_canonical_example(self):
+        """Qwen has no canonical_tool_call in YAML — the reject message
+        falls back to the generic 'tool call in the canonical format for
+        your model' line instead of echoing `<tool_call>...</tool_call>`.
+        Qwen already knows its own format; echoing it back was redundant."""
         env = _make_env(max_turns=50)
         env.turns = 5
         env.extras = dict(env.extras or {})
@@ -279,8 +281,7 @@ class TestNoToolCallHint:
         out = await env.step_async("plain reasoning with no tool call")
         body = out["observations"][0]["content"]
         assert "No tool call landed" in body
-        assert "<tool_call>" in body
-        assert "</tool_call>" in body
+        assert "<tool_call>" not in body
 
 
 # --------------------------------------------------------------------------- #
