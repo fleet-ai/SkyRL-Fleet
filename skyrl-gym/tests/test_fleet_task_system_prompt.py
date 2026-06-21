@@ -586,3 +586,70 @@ class TestPurity:
         out = build_system_content(weird, use_tools_channel=False, now=FIXED_NOW)
         # The tools-block is still rendered (we don't crash on missing "function").
         assert "## Available Tools" in out
+
+
+# --------------------------------------------------------------------------- #
+# Model-family-specific format example block
+# --------------------------------------------------------------------------- #
+
+class TestModelFamilyFormatBlock:
+    """When use_tools_channel=True AND a known model_family is passed,
+    the system prompt must include `## Tool Call Format` with the
+    canonical shape that family uses. The shape's special tokens land
+    as their actual single-special-token IDs when this prompt is
+    tokenized, anchoring the model's marginal probability on those IDs
+    at every turn so format drift can't compound on long rollouts.
+
+    Without family info (or use_tools_channel=False), the block must be
+    omitted or use the legacy Qwen text-grammar example respectively.
+    See env.py:build_system_content branches.
+    """
+
+    def test_kimi_family_emits_kimi_canonical_block(self):
+        out = build_system_content(
+            SAMPLE_TOOLS, modality="browser_use",
+            use_tools_channel=True, model_family="kimi", now=FIXED_NOW,
+        )
+        assert "## Tool Call Format" in out
+        # Literal Kimi special-token markers must be present in the text
+        # so the tokenizer re-encodes them as the right special-token IDs.
+        assert "<|tool_call_begin|>" in out
+        assert "<|tool_call_argument_begin|>" in out
+        assert "<|tool_call_end|>" in out
+
+    def test_qwen_family_emits_qwen_canonical_block(self):
+        out = build_system_content(
+            SAMPLE_TOOLS, modality="tool_use",
+            use_tools_channel=True, model_family="qwen", now=FIXED_NOW,
+        )
+        assert "## Tool Call Format" in out
+        assert "<tool_call>" in out
+        assert "</tool_call>" in out
+        # Kimi markers must NOT be present.
+        assert "<|tool_call_begin|>" not in out
+
+    def test_unknown_family_omits_block(self):
+        out = build_system_content(
+            SAMPLE_TOOLS, modality="tool_use",
+            use_tools_channel=True, model_family="llama", now=FIXED_NOW,
+        )
+        # No format example for unknown families — safer than guessing.
+        assert "## Tool Call Format" not in out
+
+    def test_no_family_omits_block(self):
+        out = build_system_content(
+            SAMPLE_TOOLS, modality="tool_use",
+            use_tools_channel=True, model_family=None, now=FIXED_NOW,
+        )
+        assert "## Tool Call Format" not in out
+
+    def test_legacy_path_unaffected_by_family(self):
+        """When use_tools_channel=False, build_system_content uses the
+        text-grammar Qwen example (the legacy path) regardless of
+        model_family — this branch was never gated on family."""
+        out = build_system_content(
+            SAMPLE_TOOLS, modality="tool_use",
+            use_tools_channel=False, model_family="kimi", now=FIXED_NOW,
+        )
+        assert "## Tool Call Format" in out
+        assert "<tool_call>" in out

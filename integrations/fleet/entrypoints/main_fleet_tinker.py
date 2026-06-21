@@ -717,7 +717,24 @@ async def collect_fleet_rollout(
         # the binary score.
         "partial_reward": True,
     })
-    extras = {"task_key": task_key, "max_turns": max_turns, "use_tools_channel": True}
+    # model_family picks the canonical tool-call shape that env.py inserts
+    # in the system prompt and in reject messages. Derived from the
+    # tokenizer's `name_or_path` so we don't need to thread model_name
+    # through every helper. Unknown family → env falls back to a generic
+    # reject and omits the format example.
+    _name = (getattr(tokenizer, "name_or_path", "") or "").lower()
+    if "kimi" in _name or _name.startswith("moonshotai/"):
+        model_family = "kimi"
+    elif "qwen" in _name:
+        model_family = "qwen"
+    else:
+        model_family = None
+    extras = {
+        "task_key": task_key,
+        "max_turns": max_turns,
+        "use_tools_channel": True,
+        "model_family": model_family,
+    }
 
     env = FleetTaskEnv(env_config=env_config, extras=extras)
 

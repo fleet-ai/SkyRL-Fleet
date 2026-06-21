@@ -188,6 +188,33 @@ _ACTION_VOCAB = (
 )
 
 
+# Trailing chars stripped from the end of a response before checking for
+# a done signal. Catches "<done>", "<done>.", "<done>\n", "<done> ", and
+# common combinations the sampler likes to emit.
+_DONE_RSTRIP_CHARS = " \t\n\r.!?'\"`*"
+
+
+def is_done_signal(action: str, signals: List[str]) -> bool:
+    """Return True iff the response ends with one of the done signals.
+
+    Endswith (after stripping trailing whitespace + punctuation) is the
+    literal reading of the system prompt's contract: "EVERY response MUST
+    end with exactly ONE of: a tool call, OR <done>". The previous
+    substring match (``"<done>" in action.lower()``) fired on any
+    occurrence anywhere in the response, including when the model quoted
+    the system prompt back to itself while debugging format issues —
+    every BU rollout in job c4b429ae terminated this way with score=0.
+
+    Implementation:
+      - Strip trailing whitespace + common terminal punctuation so
+        "<done>." / "<done>\\n" / "<done> " all match.
+      - Lowercase both sides.
+      - endswith() against each configured signal in order.
+    """
+    s = action.rstrip(_DONE_RSTRIP_CHARS).lower()
+    return any(s.endswith(sig.lower()) for sig in signals)
+
+
 def _bu_interaction_hints(portal_url: Optional[str]) -> str:
     """browser_use system-prompt addendum.
 
@@ -263,6 +290,7 @@ def build_system_content(
     use_tools_channel: bool = False,
     now: Optional[datetime] = None,
     portal_url: Optional[str] = None,
+    model_family: Optional[str] = None,
 ) -> str:
     """Build the system-message text for a Fleet rollout.
 
@@ -345,6 +373,32 @@ def build_system_content(
             f'<tool_call>{{"name": "<tool_name_from_above>", "arguments": '
             f"{{...}}}}</tool_call>\n\n"
         )
+    else:
+        # use_tools_channel=True: the trainer is passing tools via
+        # apply_chat_template(tools=...), so the model's native tool
+        # declaration block already renders the schema. We add a
+        # `## Tool Call Format` block here ONLY with the canonical shape
+        # the model emits — the literal special tokens of the chosen
+        # family. The tokenizer re-encodes the <|...|> markers below
+        # back into single special-token IDs when this prompt is
+        # tokenized for the model, anchoring the model's marginal
+        # probability on those IDs at every turn so format drift can't
+        # compound over long rollouts. Without this, BU job c4b429ae
+        # showed 43% parse rate / 57% reject (format drift starting
+        # ~turn 5-13 in 14/14 sessions).
+        #
+        # When model_family is None or not configured in YAML, fall back
+        # to omitting the block — safer than guessing the wrong shape.
+        from .config import get_config
+        canonical = get_config().canonical_tool_call_for(model_family)
+        if canonical:
+            tools_block += (
+                f"## Tool Call Format\n"
+                f"End each response with exactly this shape (the <|...|> "
+                f"markers below are single special tokens, not literal "
+                f"text — they encode as the corresponding vocab IDs):\n"
+                f"{canonical}\n\n"
+            )
 
     return (
         f"You are a helpful agent. Complete the task by calling tools.\n\n"
@@ -413,6 +467,10 @@ class FleetTaskEnv(BaseTextEnv):
 
         self.extras = extras
         self.max_turns = extras.get("max_turns", 50)
+        # Resolved from task_config at init (in init() below). Default here
+        # so step_async's post-action wait gating doesn't AttributeError on
+        # rollouts that fail before init() runs.
+        self.modality: str = "tool_use"
 
         # Task configuration from extras (set by dataset)
         self.task_key = extras.get("task_key")
@@ -660,8 +718,10 @@ class FleetTaskEnv(BaseTextEnv):
                 f"Task {self.task_key}: no tools found. Fleet env requires tools."
             )
 
-        # VL: adapt computer tool for Qwen's normalized coordinate space
+        # VL: adapt computer tool for Qwen's normalized coordinate space.
+        # Cache on self for step_async (post-action wait gating).
         modality = self.task_config.get("task_modality", "tool_use")
+        self.modality = modality
         if modality in ("computer_use", "browser_use"):
             self._adapt_computer_tool_for_qwen()
 
@@ -702,6 +762,11 @@ class FleetTaskEnv(BaseTextEnv):
             env_key=env_key,
             use_tools_channel=use_tools_channel,
             portal_url=portal_url,
+            # Trainer sets this from model_name prefix; env reads it to
+            # pick the canonical tool-call shape inserted in the system
+            # prompt (and later in reject messages). Unknown family → no
+            # format example block; safe fallback.
+            model_family=self.extras.get("model_family"),
         )
 
         system_message = {"role": "system", "content": system_content}
@@ -768,8 +833,13 @@ class FleetTaskEnv(BaseTextEnv):
 
         max_turns_reached = self.turns >= self.max_turns
 
-        # Check if agent signals completion
-        agent_done = "<done>" in action.lower() or "[done]" in action.lower()
+        # Check if agent signals completion. Must be the LITERAL end of the
+        # response (after stripping trailing whitespace/punctuation), not a
+        # substring anywhere — see is_done_signal docstring + job c4b429ae
+        # where 14/14 sessions fired falsely on quoted-system-prompt text.
+        from .config import get_config
+        _cfg = get_config()
+        agent_done = is_done_signal(action, _cfg.done_signals)
 
         # Parse tool call from LLM response
         tool_call = parse_tool_call(action)
@@ -833,6 +903,21 @@ class FleetTaskEnv(BaseTextEnv):
                         tool_result = self.context_manager.truncate_output(text)
                     else:
                         tool_result = truncate_tool_result(tool_result)
+
+                # Modality-gated post-action wait. Browser-based modalities
+                # (browser_use, computer_use) take the MCP tool result
+                # synchronously but the browser DOM may still be repainting,
+                # so the screenshot returned (or the next screenshot the
+                # model takes) can capture a blank/mid-load state. The
+                # post_action_wait_for(modality) returns 0 for tool_use
+                # where SQL/REST results are atomic.
+                # getattr with default keeps existing tests passing —
+                # some fixtures construct FleetTaskEnv without running
+                # init() to skip MCP setup, leaving self.modality unset.
+                _mod = getattr(self, "modality", "tool_use")
+                wait_s = _cfg.post_action_wait_for(_mod)
+                if wait_s > 0:
+                    await asyncio.sleep(wait_s)
             except Exception as e:
                 mcp_time = time.time() - mcp_start
                 error = str(e)
@@ -954,16 +1039,34 @@ class FleetTaskEnv(BaseTextEnv):
         elif agent_done:
             obs_content = "Task marked as complete."
         elif not tool_call:
-            # No tool call landed. Truncation and "model emitted prose without
-            # calling a tool" are the same observable from here: world state
-            # didn't change. The earlier version prescribed
-            # `<tool_call>{...}</tool_call>` which is wrong for Kimi-K2.6 and
-            # Qwen3+ native tool-call channels; the rephrased version covers
-            # truncation in one line without a separate code path.
-            obs_content = (
-                "No tool call landed. If your response was cut off at the "
-                "per-turn token limit, be more concise next turn."
+            # No tool call landed. The previous reject text blamed
+            # truncation ("be more concise") which was the wrong diagnosis
+            # in 55 / 231 cases observed in job c4b429ae: responses were
+            # well under MAX_GENERATE_LENGTH, but the model dropped its
+            # native special-token markers under format-stress. Believing
+            # the truncation hint, the model wrote even more text trying
+            # to be "concise," kept dropping markers, and spiralled.
+            #
+            # Echo the canonical shape back instead. When this string is
+            # encoded by the tokenizer for the next-turn prompt, the
+            # <|...|> markers in canonical (for kimi) land as their actual
+            # single-special-token IDs in the model's context — giving the
+            # model a literal copy-this anchor.
+            canonical = _cfg.canonical_tool_call_for(
+                self.extras.get("model_family")
             )
+            if canonical:
+                obs_content = (
+                    "No tool call landed. End your response with exactly "
+                    "this shape (the <|...|> markers below are single "
+                    "special tokens, not literal text):\n"
+                    f"{canonical}"
+                )
+            else:
+                obs_content = (
+                    "No tool call landed. End your response with a tool "
+                    "call in the canonical format for your model."
+                )
         else:
             obs_content = "Action executed."
 

@@ -199,18 +199,64 @@ class TestTurnFooterMultimodal:
 class TestNoToolCallHint:
     @pytest.mark.asyncio
     async def test_no_tool_call_hint_is_format_agnostic(self):
-        # The earlier version prescribed `<tool_call>{"name":...}</tool_call>`
-        # which is wrong for Kimi-K2.6 / Qwen3+ native tool-call channels.
+        """Without model_family in extras, the env falls back to a
+        generic hint — no per-family canonical shape included.
+
+        The previous version of this test pinned the literal string
+        'cut off' from the old reject message. That message ("If your
+        response was cut off at the per-turn token limit, be more
+        concise") was actively misleading the model: across 14 BU
+        sessions in job c4b429ae, responses were well under the
+        generation limit but the model believed the truncation hint
+        and spiralled trying to be "more concise" — 55 such turns
+        observed. Fixed by removing the truncation framing entirely.
+        """
         env = _make_env(max_turns=50)
         env.turns = 5
         env.openenv_task_env.step_async = AsyncMock(return_value=({"observation": "ok"}, 0.0, False, {}))
         out = await env.step_async("plain reasoning with no tool call")
         body = out["observations"][0]["content"]
         assert "No tool call landed" in body
-        # Covers truncation in the same line, no separate code path.
-        assert "cut off" in body
-        # Must not return.
+        # The misleading "cut off" framing is GONE. Pinning its absence.
+        assert "cut off" not in body
+        # Must not prescribe Qwen syntax (wrong for Kimi/Qwen3+ native).
         assert "<tool_call>" not in body
+
+    @pytest.mark.asyncio
+    async def test_no_tool_call_hint_includes_kimi_canonical(self):
+        """When model_family='kimi' is in extras, the reject message
+        must echo the canonical Kimi tool-call shape so the special
+        tokens land in the model's next-turn context as anchors."""
+        env = _make_env(max_turns=50)
+        env.turns = 5
+        env.extras = dict(env.extras or {})
+        env.extras["model_family"] = "kimi"
+        env.openenv_task_env.step_async = AsyncMock(return_value=({"observation": "ok"}, 0.0, False, {}))
+        out = await env.step_async("plain reasoning with no tool call")
+        body = out["observations"][0]["content"]
+        assert "No tool call landed" in body
+        # The literal Kimi special-token markers must appear in the
+        # body — the tokenizer encodes these as single special-token
+        # IDs when this message is rendered into the next prompt,
+        # putting the right IDs in the model's context to copy.
+        assert "<|tool_call_begin|>" in body
+        assert "<|tool_call_argument_begin|>" in body
+        assert "<|tool_call_end|>" in body
+
+    @pytest.mark.asyncio
+    async def test_no_tool_call_hint_includes_qwen_canonical(self):
+        """When model_family='qwen' is in extras, the reject message
+        prescribes Qwen's text-based grammar instead."""
+        env = _make_env(max_turns=50)
+        env.turns = 5
+        env.extras = dict(env.extras or {})
+        env.extras["model_family"] = "qwen"
+        env.openenv_task_env.step_async = AsyncMock(return_value=({"observation": "ok"}, 0.0, False, {}))
+        out = await env.step_async("plain reasoning with no tool call")
+        body = out["observations"][0]["content"]
+        assert "No tool call landed" in body
+        assert "<tool_call>" in body
+        assert "</tool_call>" in body
 
 
 # --------------------------------------------------------------------------- #

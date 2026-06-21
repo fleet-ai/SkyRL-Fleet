@@ -1,0 +1,51 @@
+# Fleet task env configuration.
+#
+# Operator-tunable behavior split from code so per-model and per-modality
+# knobs can be adjusted without touching env.py. Lives next to env.py and
+# is loaded once at FleetTaskEnv.__init__ via config.get_config().
+
+# Seconds to await after every MCP tool call before composing the next
+# observation. Gives the browser DOM time to repaint between actions so
+# screenshots don't capture mid-load state. tool_use is 0 because tool
+# results (SQL rows, REST responses) are returned synchronously by the
+# MCP server — no render race.
+post_action_wait:
+  browser_use: 0.5
+  computer_use: 0.5
+  tool_use: 0.0
+
+# Literal end-of-response terminators that mark the agent as done. Match
+# is endswith() over the action with trailing whitespace and common
+# terminal punctuation stripped — must be the LITERAL last meaningful
+# content, not a substring match anywhere. The previous version used a
+# naive `"<done>" in action` which fired on quoted references to the
+# system prompt (every BU session in job c4b429ae terminated this way).
+done_signals:
+  - "<done>"
+  - "[done]"
+
+# Per model family: the canonical tool-call shape the model has been
+# pre-trained to emit. Used in two places:
+#   1. Echoed back in the `No tool call landed` reject message so the
+#      special tokens land in the model's context as anchors for the
+#      next generation step.
+#   2. Inserted as a `## Tool Call Format` block in the system prompt
+#      when use_tools_channel=True, so the model has a canonical example
+#      in every turn's context regardless of how many turns have passed.
+#
+# The <|...|> markers in the kimi shape are SINGLE special-token IDs in
+# Kimi's vocabulary. The tokenizer recognizes the literal string and
+# emits one ID. Putting these strings in observations/prompts means
+# those exact IDs land in the model's context window.
+#
+# Selected by extras["model_family"] passed by the trainer (kimi when
+# model_name starts with moonshotai/, qwen when model_name starts with
+# Qwen/). Unknown family falls back to a generic reject message and no
+# format example.
+model_families:
+  kimi:
+    canonical_tool_call: |-
+      <|tool_calls_section_begin|><|tool_call_begin|>functions.<name>:<n><|tool_call_argument_begin|>{...JSON args...}<|tool_call_end|><|tool_calls_section_end|>
+  qwen:
+    canonical_tool_call: |-
+      <tool_call>{"name": "<tool_name>", "arguments": {...}}</tool_call>
