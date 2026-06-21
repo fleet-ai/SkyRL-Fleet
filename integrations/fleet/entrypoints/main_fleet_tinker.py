@@ -717,18 +717,13 @@ async def collect_fleet_rollout(
         # the binary score.
         "partial_reward": True,
     })
-    # model_family picks the canonical tool-call shape that env.py inserts
-    # in the system prompt and in reject messages. Derived from the
-    # tokenizer's `name_or_path` so we don't need to thread model_name
-    # through every helper. Unknown family → env falls back to a generic
-    # reject and omits the format example.
-    _name = (getattr(tokenizer, "name_or_path", "") or "").lower()
-    if "kimi" in _name or _name.startswith("moonshotai/"):
-        model_family = "kimi"
-    elif "qwen" in _name:
-        model_family = "qwen"
-    else:
-        model_family = None
+    # model_family picks the per-family YAML scaffold + canonical-format
+    # reject content. Derived from the tokenizer's `name_or_path` so we
+    # don't need to thread model_name through every helper. Unknown
+    # family → env falls back to no scaffold + generic reject. Shared
+    # helper with SkyRL's generator inject so both paths agree.
+    from skyrl_gym.envs.fleet_task.config import family_for_model
+    model_family = family_for_model(getattr(tokenizer, "name_or_path", ""))
     extras = {
         "task_key": task_key,
         "max_turns": max_turns,

@@ -617,15 +617,17 @@ class TestModelFamilyFormatBlock:
         assert "<|tool_call_argument_begin|>" in out
         assert "<|tool_call_end|>" in out
 
-    def test_qwen_family_emits_qwen_canonical_block(self):
+    def test_qwen_family_omits_canonical_block(self):
+        """Qwen has no canonical_tool_call in fleet_task.yaml — Qwen's
+        chat template already injects the spec via apply_chat_template's
+        `tools` argument, and Qwen knows the grammar from pretraining.
+        The `## Tool Call Format` block is dead weight for Qwen and
+        intentionally skipped."""
         out = build_system_content(
             SAMPLE_TOOLS, modality="tool_use",
             use_tools_channel=True, model_family="qwen", now=FIXED_NOW,
         )
-        assert "## Tool Call Format" in out
-        assert "<tool_call>" in out
-        assert "</tool_call>" in out
-        # Kimi markers must NOT be present.
+        assert "## Tool Call Format" not in out
         assert "<|tool_call_begin|>" not in out
 
     def test_unknown_family_omits_block(self):

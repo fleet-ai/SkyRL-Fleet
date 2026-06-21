@@ -42,6 +42,26 @@ from skyrl.train.generators.utils import (
     try_load_processor,
 )
 from skyrl_gym.envs.base_text_env import BaseTextEnvStepOutput
+from skyrl_gym.envs.fleet_task.config import family_for_model
+
+
+def _inject_fleet_model_family(
+    env_extras: Dict[str, Any],
+    env_class: str,
+    model_name: str,
+) -> None:
+    """For the fleet_task env only: derive model_family from model_name and
+    inject into env_extras when the caller hasn't set it. Explicit value
+    in env_extras always wins (datasets can override). Unknown model name
+    → no inject → env falls through to the no-scaffold / generic-reject
+    path. No-op for any other env class."""
+    if env_class != "fleet_task":
+        return
+    if "model_family" in env_extras:
+        return
+    family = family_for_model(model_name)
+    if family is not None:
+        env_extras["model_family"] = family
 
 
 @dataclass
@@ -335,6 +355,10 @@ class SkyRLGymGenerator(GeneratorInterface):
 
         # Create a new environment instance
         env_extras["max_turns"] = self.max_turns  # TODO(shu): move this to config
+        # Fleet env: derive model_family from self.model_name so per-turn
+        # YAML scaffold + canonical-format reject message resolve correctly.
+        # Explicit value in env_extras wins (datasets can override).
+        _inject_fleet_model_family(env_extras, env_class, self.model_name)
         env_config = getattr(self.skyrl_gym_cfg, env_class, dict())
         env = skyrl_gym.make(env_class, env_config=env_config, extras=env_extras)
 
@@ -1005,6 +1029,7 @@ class SkyRLGymGenerator(GeneratorInterface):
         init_prompts = []
         for env_class, env_extra, prompt in zip(env_classes, env_extras, prompts):
             env_extra["max_turns"] = self.max_turns
+            _inject_fleet_model_family(env_extra, env_class, self.model_name)
             env_config = getattr(self.skyrl_gym_cfg, env_class, dict())
             env = skyrl_gym.make(env_class, env_config=env_config, extras=env_extra)
             init_prompt, _ = await self._env_init(env, prompt)

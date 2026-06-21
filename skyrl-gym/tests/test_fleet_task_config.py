@@ -69,13 +69,16 @@ class TestConfigLoader:
         assert "<|tool_call_argument_begin|>" in canon
         assert "<|tool_call_end|>" in canon
 
-    def test_qwen_family_present(self):
+    def test_qwen_family_canonical_intentionally_unset(self):
+        """Qwen has NO canonical_tool_call. Its chat template injects the
+        `<tool_call>{...}</tool_call>` spec via apply_chat_template's
+        `tools` argument, and Qwen knows the grammar from pretraining —
+        echoing it back in the system prompt + reject path is dead
+        weight. The system-prompt format block and the no-tool-call
+        reject canonical example are both skipped for Qwen as a result.
+        Pinned so a future re-add must be justified."""
         cfg = get_config()
-        canon = cfg.canonical_tool_call_for("qwen")
-        assert canon is not None
-        # Qwen uses text-based markers, not special tokens.
-        assert "<tool_call>" in canon
-        assert "</tool_call>" in canon
+        assert cfg.canonical_tool_call_for("qwen") is None
 
     def test_unknown_family_returns_none(self):
         cfg = get_config()
