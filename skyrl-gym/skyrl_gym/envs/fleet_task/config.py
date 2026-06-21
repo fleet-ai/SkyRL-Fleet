@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from string import Template
 from typing import Dict, List, Optional
 
 import yaml
@@ -29,6 +30,14 @@ class ModelFamilyConfig(BaseModel):
     # the tokenizer recognizes at encode time; same string lands the
     # right token IDs in the model's context.
     canonical_tool_call: str = Field(..., min_length=1)
+
+    # List of strings appended to every observation, in order. Each item is
+    # templated via string.Template.safe_substitute ($-syntax — avoids
+    # collision with literal `{}` in the canonical value or tool arguments).
+    # Substitutable vars: $turn, $max_turns, $canonical_tool_call.
+    # Empty list / None = no per-turn injection (byte-identical to today's
+    # behavior for callers that don't configure it).
+    per_turn_reminder: List[str] = Field(default_factory=list)
 
 
 class FleetTaskConfig(BaseModel):
@@ -58,6 +67,25 @@ class FleetTaskConfig(BaseModel):
             return None
         fam = self.model_families.get(family)
         return fam.canonical_tool_call if fam else None
+
+    def scaffold_for(
+        self, family: Optional[str], turn: int, max_turns: int
+    ) -> str:
+        """Resolved per-turn observation scaffold: concatenation of the
+        family's per_turn_reminder list with $turn/$max_turns/$canonical_tool_call
+        substituted. '' when the family is missing / unconfigured / has an
+        empty list — appending it is a no-op."""
+        fam = self.model_families.get(family) if family else None
+        if not fam or not fam.per_turn_reminder:
+            return ""
+        return "".join(
+            Template(item).safe_substitute(
+                turn=turn,
+                max_turns=max_turns,
+                canonical_tool_call=fam.canonical_tool_call,
+            )
+            for item in fam.per_turn_reminder
+        )
 
 
 def load_config(path: Path = _DEFAULT_YAML) -> FleetTaskConfig:

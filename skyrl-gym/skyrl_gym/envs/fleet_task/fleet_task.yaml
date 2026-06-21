@@ -46,6 +46,28 @@ model_families:
   kimi:
     canonical_tool_call: |-
       <|tool_calls_section_begin|><|tool_call_begin|>functions.<name>:<n><|tool_call_argument_begin|>{...JSON args...}<|tool_call_end|><|tool_calls_section_end|>
+    # List of strings appended to every observation, in order. Each item
+    # is templated via string.Template.safe_substitute ($-syntax, no
+    # collision with literal `{}` in the canonical value or tool args):
+    #   $turn, $max_turns                — substituted per step
+    #   $canonical_tool_call             — substituted from this family
+    # Empty / null list disables all per-turn injection. Items are
+    # concatenated verbatim; operator owns whitespace and line breaks.
+    #
+    # Grounded in BU job d6d6f7eb: 60% of rejects (2,927/7,605 turns) were
+    # NAKED-format calls where the model dropped <|tool_call_begin|> /
+    # <|tool_call_argument_begin|> literally. 119 of 131 sessions show the
+    # model emitting canonical AND naked turns in the same trajectory — the
+    # model knows the format; the reminder reinforces it every turn so the
+    # 5 Kimi special-token IDs land in context.
+    per_turn_reminder:
+      - "\n\n[Turn $turn/$max_turns]"
+      - |2-
+
+        [Next tool call format]
+        $canonical_tool_call
   qwen:
     canonical_tool_call: |-
       <tool_call>{"name": "<tool_name>", "arguments": {...}}</tool_call>
+    per_turn_reminder:
+      - "\n\n[Turn $turn/$max_turns]"

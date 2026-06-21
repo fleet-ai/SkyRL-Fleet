@@ -45,14 +45,15 @@ _TASK_CACHE: Dict[str, Dict[str, Any]] = {}
 # Truncate any single tool output past this many chars (caught a 5.8M-char query_data_lake return).
 MAX_TOOL_OUTPUT_CHARS = 16_000
 
-# Per-turn budget footer appended to every observation. Canonical-v3 had a
-# threshold-based nudge ("Emit <done> NOW or reward 0") that fired every turn
-# for the last 5; 98 of 271 such events were immediately followed by bare
-# <done> with no answer (learned surrender). Continuous low-key budget framing
-# avoids the threshold cliff: the agent sees pacing context every turn and can
-# self-regulate without the harness ever issuing a stop ultimatum.
-def _turn_footer(turn: int, max_turns: int) -> str:
-    return f"\n\n[Turn {turn}/{max_turns}]"
+# Per-turn observation scaffold (turn_indicator + per_turn_reminder) is built
+# from the per-family YAML templates in fleet_task.yaml. Source of truth is
+# the YAML; env.py is the consumer. Canonical-v3 had a threshold-based nudge
+# ("Emit <done> NOW or reward 0") that fired every turn for the last 5; 98 of
+# 271 such events were immediately followed by bare <done> with no answer
+# (learned surrender). Continuous low-key framing (turn indicator) avoids the
+# threshold cliff. The per_turn_reminder reinforces the canonical tool-call
+# format on every turn — addressing the NAKED-format failure where the model
+# drops <|tool_call_begin|> / <|tool_call_argument_begin|> literally.
 
 
 def load_tasks_from_json(tasks_file: str) -> Dict[str, Any]:
@@ -539,6 +540,11 @@ class FleetTaskEnv(BaseTextEnv):
         # Environment state (initialized on init())
         self.openenv_task_env = None
         self.chat_history: ConversationType = []
+        # Parallel to chat_history: the exact per-turn scaffold suffix
+        # appended to that message's text destination, or "" if none. Used
+        # by chat_history_for_trace() to strip the scaffold before upload
+        # so the trace viewer shows only env content + image payloads.
+        self._scaffold_per_msg: List[str] = []
         self.turns = 0
         self.tool_calls = 0
         self.tool_errors = 0
@@ -827,6 +833,9 @@ class FleetTaskEnv(BaseTextEnv):
             user_message = {"role": "user", "content": task_prompt}
 
         self.chat_history = [system_message, user_message]
+        # System + initial user carry no per-turn scaffold; they pass
+        # through chat_history_for_trace() unchanged.
+        self._scaffold_per_msg = ["", ""]
 
         metadata = {
             "task_key": self.task_key,
@@ -872,6 +881,7 @@ class FleetTaskEnv(BaseTextEnv):
         self.turns += 1
         assistant_msg = {"role": "assistant", "content": action}
         self.chat_history.append(assistant_msg)
+        self._scaffold_per_msg.append("")  # assistant turns carry no scaffold
         if self.context_manager:
             self.context_manager.track_message(assistant_msg)
 
@@ -1024,7 +1034,11 @@ class FleetTaskEnv(BaseTextEnv):
                     job_id=FleetTaskEnv._trace_config["job_id"],
                     task_key=self.task_key,
                     model=FleetTaskEnv._trace_config["model"],
-                    chat_history=self.chat_history,
+                    # Stripped of per-turn scaffold so the trace viewer
+                    # shows only env content + image payloads; the model
+                    # still sees the scaffold via self.chat_history during
+                    # rollout.
+                    chat_history=self.chat_history_for_trace(),
                     reward=reward,
                     instance_id=inst_id,
                     metadata={
@@ -1050,7 +1064,13 @@ class FleetTaskEnv(BaseTextEnv):
                 },
             )
 
-        footer = _turn_footer(self.turns, self.max_turns)
+        # Per-turn observation scaffold: turn indicator + canonical-format
+        # reminder, both templated per family in fleet_task.yaml. "" when
+        # the family is unset / has an empty list, in which case all
+        # downstream concatenations are no-ops (byte-identical to today).
+        scaffold = _cfg.scaffold_for(
+            self.extras.get("model_family"), self.turns, self.max_turns
+        )
 
         # Build response observation
         if error:
@@ -1060,10 +1080,13 @@ class FleetTaskEnv(BaseTextEnv):
         elif tool_result:
             content = tool_result_to_message_content(tool_result)
             if isinstance(content, list):
-                # Multimodal obs — pass blocks through; always append turn footer.
-                content = list(content) + [{"type": "text", "text": footer.lstrip("\n")}]
+                # Multimodal obs — pass blocks through; append scaffold as
+                # trailing text block (leading newlines stripped because the
+                # screenshot+text composition handles spacing).
+                content = list(content) + [{"type": "text", "text": scaffold.lstrip("\n")}]
                 new_obs = {"role": "user", "content": content}
                 self.chat_history.append(new_obs)
+                self._scaffold_per_msg.append(scaffold)
                 if self.context_manager:
                     self.context_manager.track_message(new_obs)
                 return BaseTextEnvStepOutput(
@@ -1117,10 +1140,11 @@ class FleetTaskEnv(BaseTextEnv):
 
         if not isinstance(obs_content, str):
             obs_content = str(obs_content)
-        obs_content += footer
+        obs_content += scaffold
 
         new_obs = {"role": "user", "content": obs_content}
         self.chat_history.append(new_obs)
+        self._scaffold_per_msg.append(scaffold)
         if self.context_manager:
             self.context_manager.track_message(new_obs)
 
@@ -1160,6 +1184,51 @@ class FleetTaskEnv(BaseTextEnv):
     def step(self, action: str) -> BaseTextEnvStepOutput:
         """Execute one step in the Fleet environment (sync wrapper)."""
         return asyncio.run(self.step_async(action))
+
+    def chat_history_for_trace(self) -> ConversationType:
+        """chat_history with the per-turn scaffold (turn indicator +
+        canonical-format reminder) stripped from observation messages, so
+        the trace viewer shows only the env content + image payloads. The
+        model still sees the scaffold during rollout via self.chat_history;
+        this projection is for upload only.
+
+        Strip is exact-match via str.removesuffix using the scaffold string
+        recorded in self._scaffold_per_msg at append time — no regex, no
+        guessing. Multimodal text blocks that strip to empty are dropped.
+        image_url blocks pass through unchanged.
+        """
+        out: ConversationType = []
+        for msg, scaffold in zip(self.chat_history, self._scaffold_per_msg):
+            if not scaffold:
+                out.append(msg)
+                continue
+            c = msg.get("content")
+            if isinstance(c, list):
+                # Multimodal: the scaffold was appended as the trailing
+                # text block via `scaffold.lstrip("\n")`. Strip that exact
+                # form; drop the block if it strips to empty.
+                lstripped = scaffold.lstrip("\n")
+                new_blocks = []
+                for b in c:
+                    if (
+                        isinstance(b, dict)
+                        and b.get("type") == "text"
+                        and isinstance(b.get("text"), str)
+                    ):
+                        stripped = b["text"]
+                        if stripped.endswith(lstripped):
+                            stripped = stripped[: -len(lstripped)]
+                        if stripped:
+                            new_blocks.append({**b, "text": stripped})
+                        # else: scaffold-only block, drop
+                    else:
+                        new_blocks.append(b)
+                out.append({**msg, "content": new_blocks})
+            elif isinstance(c, str):
+                out.append({**msg, "content": c.removesuffix(scaffold)})
+            else:
+                out.append(msg)
+        return out
 
     def _capture_verifier_feedback(self):
         """Capture verifier feedback from OpenEnv before nulling the env."""
