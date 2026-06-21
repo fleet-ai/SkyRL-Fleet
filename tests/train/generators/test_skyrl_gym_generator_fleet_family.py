@@ -34,6 +34,13 @@ class TestInjectFleetModelFamily:
         _inject_fleet_model_family(extras, "fleet_task", "Qwen/Qwen3.5-9B")
         assert extras["model_family"] == "custom"
 
+    def test_explicit_none_disables_derivation(self):
+        """A dataset can opt out by setting model_family=None explicitly.
+        The presence-check (`in`) rather than truthy-check lets None win."""
+        extras = {"model_family": None}
+        _inject_fleet_model_family(extras, "fleet_task", "Qwen/Qwen3.5-9B")
+        assert extras["model_family"] is None
+
     def test_unknown_model_name_no_inject(self):
         """Unrecognized model → no inject → env falls through to today's
         no-scaffold behavior. Better silent passthrough than wrong family."""
@@ -52,12 +59,3 @@ class TestInjectFleetModelFamily:
         extras = {}
         _inject_fleet_model_family(extras, "gsm8k", "Qwen/Qwen3.5-9B")
         assert "model_family" not in extras
-
-    def test_fleet_env_prefix_match(self):
-        """Variant Fleet env class names (fleet_env, fleet_task) all match."""
-        for env_class in ("fleet_task", "fleet_env", "fleet_browser"):
-            extras = {}
-            _inject_fleet_model_family(extras, env_class, "Qwen/Qwen3.5-9B")
-            assert extras.get("model_family") == "qwen", (
-                f"prefix match failed for env_class={env_class}"
-            )

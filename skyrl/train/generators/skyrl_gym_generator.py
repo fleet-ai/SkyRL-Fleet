@@ -42,12 +42,7 @@ from skyrl.train.generators.utils import (
     try_load_processor,
 )
 from skyrl_gym.envs.base_text_env import BaseTextEnvStepOutput
-
-
-# Fleet env families that use the per-turn observation scaffold + per-family
-# canonical_tool_call. Class-name prefix check kept narrow so non-Fleet envs
-# never see the inject.
-_FLEET_ENV_CLASS_PREFIXES = ("fleet_task", "fleet_env", "fleet")
+from skyrl_gym.envs.fleet_task.config import family_for_model
 
 
 def _inject_fleet_model_family(
@@ -55,26 +50,17 @@ def _inject_fleet_model_family(
     env_class: str,
     model_name: str,
 ) -> None:
-    """For Fleet envs only: derive `model_family` from `model_name` and inject
-    into `env_extras` if the caller did not set it. Lets SkyRL Qwen / Kimi
-    GRPO runs pick up the per-family YAML scaffold and reject content
-    without requiring every dataset row to carry the family tag.
-
-    Explicit `env_extras["model_family"]` always wins. Unknown model name →
-    no inject → env falls through to the no-scaffold / generic-reject path,
-    same as today's pre-scaffold behavior. No-op for non-Fleet envs."""
-    if not isinstance(env_class, str) or not any(
-        env_class.startswith(p) for p in _FLEET_ENV_CLASS_PREFIXES
-    ):
+    """For the fleet_task env only: derive model_family from model_name and
+    inject into env_extras when the caller hasn't set it. Explicit value
+    in env_extras always wins (datasets can override). Unknown model name
+    → no inject → env falls through to the no-scaffold / generic-reject
+    path. No-op for any other env class."""
+    if env_class != "fleet_task":
         return
-    if env_extras.get("model_family"):
-        return
-    try:
-        from skyrl_gym.envs.fleet_task.config import family_for_model
-    except ImportError:
+    if "model_family" in env_extras:
         return
     family = family_for_model(model_name)
-    if family:
+    if family is not None:
         env_extras["model_family"] = family
 
 
