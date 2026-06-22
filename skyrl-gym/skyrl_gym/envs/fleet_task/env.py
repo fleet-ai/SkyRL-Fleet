@@ -26,6 +26,7 @@ from skyrl_gym.envs.base_text_env import (
     BaseTextEnvStepOutput,
     ConversationType,
 )
+from skyrl_gym.envs.fleet_task.families import get_family
 from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
 
 # Reduce MCP client log noise
@@ -391,7 +392,6 @@ def build_system_content(
         # When model_family is None or has no canonical_tool_call (e.g.
         # Qwen, whose chat template renders the format spec via the
         # `tools` argument), omit the block — safer than guessing.
-        from .families import get_family
         family = get_family(model_family)
         canonical = family.canonical_tool_call if family else None
         if canonical:
@@ -910,7 +910,6 @@ class FleetTaskEnv(BaseTextEnv):
         # template extracts <think> inline). When no family is registered,
         # fall back to the raw-content shape (byte-identical to pre-family
         # behavior — preserves any caller that doesn't set model_family).
-        from .families import get_family
         family = get_family(self.extras.get("model_family"))
         if family is not None:
             assistant_msg = family.build_assistant_message(action, tool_call, self.turns)
