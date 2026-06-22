@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 
 import ray
+
 from skyrl.train.config import SkyRLTrainConfig
 from skyrl.train.entrypoints.main_base import BasePPOExp
 from skyrl.train.utils import validate_cfg
@@ -69,6 +70,17 @@ class FleetEvalExp(BasePPOExp):
     eval dump and S3 upload when `trainer.dump_eval_results=true`, so this
     entrypoint just needs to wire up resume + run a single eval pass.
     """
+
+    def get_generator(self, cfg, tokenizer, inference_engine_client):
+        generator = super().get_generator(cfg, tokenizer, inference_engine_client)
+        from integrations.fleet.trace_jobs import wrap_generator_for_fleet_traces
+
+        return wrap_generator_for_fleet_traces(
+            generator,
+            run_name=cfg.trainer.run_name,
+            model=cfg.trainer.policy.model.path,
+            force_eval_only=True,
+        )
 
     def get_train_dataset(self):
         """No train dataset is needed for eval-only runs."""
@@ -114,7 +126,9 @@ class FleetEvalExp(BasePPOExp):
         # Load only the policy FSDP shards. We bypass `trainer.load_checkpoints()`
         # because it also restores `train_dataloader.state_dict()`, which is None
         # in eval-only mode. Optimizer / lr scheduler state are skipped too.
-        self._load_policy_only(trainer)
+        loaded_checkpoint = self._load_policy_only(trainer)
+        if not loaded_checkpoint:
+            trainer.global_step = None
 
         # Push fresh weights to the inference engine for evaluation.
         await trainer.dispatch.save_weights_for_sampler()
@@ -127,7 +141,7 @@ class FleetEvalExp(BasePPOExp):
         trainer.tracker.finish()
         logger.info(f"Eval-only metrics: {eval_metrics}")
 
-    def _load_policy_only(self, trainer):
+    def _load_policy_only(self, trainer) -> bool:
         """Load only the policy FSDP shards from a `global_step_<N>` directory.
 
         Resolves the checkpoint path the same way `trainer.load_checkpoints()`
@@ -154,7 +168,7 @@ class FleetEvalExp(BasePPOExp):
 
         if trainer.resume_mode == ResumeMode.NONE:
             logger.info("resume_mode=none; evaluating base model weights")
-            return
+            return False
 
         if trainer.resume_mode == ResumeMode.LATEST:
             latest_file = os.path.join(
@@ -165,7 +179,7 @@ class FleetEvalExp(BasePPOExp):
                     "resume_mode=latest but no checkpoint found at "
                     f"{trainer.cfg.trainer.ckpt_path}; using base weights"
                 )
-                return
+                return False
             with io.open_file(latest_file, "r") as f:
                 step = int(f.read().strip())
             ckpt_dir = os.path.join(
@@ -198,6 +212,7 @@ class FleetEvalExp(BasePPOExp):
             load_lr_scheduler_states=False,
         )
         logger.info("Successfully loaded policy checkpoint for eval")
+        return True
 
 
 @ray.remote(num_cpus=1)
