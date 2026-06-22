@@ -1,14 +1,21 @@
 # Fleet task env configuration.
 #
-# Operator-tunable behavior split from code so per-model and per-modality
-# knobs can be adjusted without touching env.py. Lives next to env.py and
-# is loaded once at FleetTaskEnv.__init__ via config.get_config().
+# Operator-tunable runtime knobs that aren't tied to per-family chat-template
+# behavior. Lives next to env.py, loaded once at FleetTaskEnv.__init__ via
+# config.get_config().
+#
+# Per-family logic (canonical tool-call shape, per-turn reminder text,
+# reject message body, assistant-message structuring) lives in
+# families.py because it's tightly coupled to per-family Python code
+# (Kimi splits <think> into reasoning_content to avoid a chat-template
+# double-think bug; Qwen passes content through because its template
+# extracts <think> inline). Values + logic in one place.
 
 # Seconds to await after every MCP tool call before composing the next
 # observation. Gives the browser DOM time to repaint between actions so
 # screenshots don't capture mid-load state. tool_use is 0 because tool
 # results (SQL rows, REST responses) are returned synchronously by the
-# MCP server — no render race.
+# MCP server, no render race.
 post_action_wait:
   browser_use: 0.5
   computer_use: 0.5
@@ -16,61 +23,10 @@ post_action_wait:
 
 # Literal end-of-response terminators that mark the agent as done. Match
 # is endswith() over the action with trailing whitespace and common
-# terminal punctuation stripped — must be the LITERAL last meaningful
+# terminal punctuation stripped: must be the LITERAL last meaningful
 # content, not a substring match anywhere. The previous version used a
 # naive `"<done>" in action` which fired on quoted references to the
 # system prompt (every BU session in job c4b429ae terminated this way).
 done_signals:
   - "<done>"
   - "[done]"
-
-# Per model family: the canonical tool-call shape the model has been
-# pre-trained to emit. Used in two places:
-#   1. Echoed back in the `No tool call landed` reject message so the
-#      special tokens land in the model's context as anchors for the
-#      next generation step.
-#   2. Inserted as a `## Tool Call Format` block in the system prompt
-#      when use_tools_channel=True, so the model has a canonical example
-#      in every turn's context regardless of how many turns have passed.
-#
-# The <|...|> markers in the kimi shape are SINGLE special-token IDs in
-# Kimi's vocabulary. The tokenizer recognizes the literal string and
-# emits one ID. Putting these strings in observations/prompts means
-# those exact IDs land in the model's context window.
-#
-# Selected by extras["model_family"] passed by the trainer (kimi when
-# model_name starts with moonshotai/, qwen when model_name starts with
-# Qwen/). Unknown family falls back to a generic reject message and no
-# format example.
-model_families:
-  kimi:
-    canonical_tool_call: |-
-      <|tool_calls_section_begin|><|tool_call_begin|>functions.<name>:<n><|tool_call_argument_begin|>{...JSON args...}<|tool_call_end|><|tool_calls_section_end|>
-    # List of strings appended to every observation, in order. Each item
-    # is templated via string.Template.safe_substitute ($-syntax, no
-    # collision with literal `{}` in the canonical value or tool args):
-    #   $turn, $max_turns                — substituted per step
-    #   $canonical_tool_call             — substituted from this family
-    # Empty / null list disables all per-turn injection. Items are
-    # concatenated verbatim; operator owns whitespace and line breaks.
-    #
-    # Grounded in BU job d6d6f7eb: 60% of rejects (2,927/7,605 turns) were
-    # NAKED-format calls where the model dropped <|tool_call_begin|> /
-    # <|tool_call_argument_begin|> literally. 119 of 131 sessions show the
-    # model emitting canonical AND naked turns in the same trajectory — the
-    # model knows the format; the reminder reinforces it every turn so the
-    # 5 Kimi special-token IDs land in context.
-    per_turn_reminder:
-      - "\n\n[Turn $turn/$max_turns]"
-      - |2-
-
-        [Next tool call format]
-        $canonical_tool_call
-  qwen:
-    # No canonical_tool_call: Qwen's chat template already injects the
-    # `<tool_call>{...}</tool_call>` format spec via the `tools` argument
-    # to apply_chat_template, and Qwen knows the grammar from pretraining.
-    # The system-prompt `## Tool Call Format` block and the no-tool-call
-    # reject example are both redundant for Qwen and would be dead weight.
-    per_turn_reminder:
-      - "\n\n[Turn $turn/$max_turns]"

@@ -722,7 +722,7 @@ async def collect_fleet_rollout(
     # don't need to thread model_name through every helper. Unknown
     # family → env falls back to no scaffold + generic reject. Shared
     # helper with SkyRL's generator inject so both paths agree.
-    from skyrl_gym.envs.fleet_task.config import family_for_model
+    from skyrl_gym.envs.fleet_task.families import family_for_model
     model_family = family_for_model(getattr(tokenizer, "name_or_path", ""))
     extras = {
         "task_key": task_key,
@@ -1501,8 +1501,13 @@ if __name__ == "__main__":
         default=False,
         help="Track additional gradient metrics (for parity with SkyRL config)",
     )
-    parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature")
-    parser.add_argument("--top-p", type=float, default=1.0, help="Top-p (nucleus) sampling")
+    # temperature=0.6 / top_p=0.95 follow Kimi K2's recommended sampling for
+    # tool-calling reliability. The prior 1.0/1.0 high-entropy setting was
+    # correlated with the model skipping low-probability marker tokens like
+    # <|tool_call_argument_begin|>, producing naked-format calls the parser
+    # drops. Lowering both reduces format drift without making rollouts deterministic.
+    parser.add_argument("--temperature", type=float, default=0.6, help="Sampling temperature")
+    parser.add_argument("--top-p", type=float, default=0.95, help="Top-p (nucleus) sampling")
     parser.add_argument(
         "--stop-sequences",
         type=str,

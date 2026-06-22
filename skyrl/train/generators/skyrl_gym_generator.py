@@ -42,7 +42,7 @@ from skyrl.train.generators.utils import (
     try_load_processor,
 )
 from skyrl_gym.envs.base_text_env import BaseTextEnvStepOutput
-from skyrl_gym.envs.fleet_task.config import family_for_model
+from skyrl_gym.envs.fleet_task.families import family_for_model
 
 
 def _inject_fleet_model_family(
