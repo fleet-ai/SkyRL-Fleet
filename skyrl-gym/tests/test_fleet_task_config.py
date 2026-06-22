@@ -2,9 +2,10 @@
 
 Two pieces under test:
   1. `config.get_config()` reads fleet_task.yaml and exposes
-     post_action_wait, done_signals, and per-family canonical_tool_call.
+     post_action_wait + done_signals. Per-family canonical tool-call
+     shapes moved to families.py — see test_fleet_task_families.py.
   2. `env.is_done_signal()` decides whether the model's last response is
-     a done signal — must be the LITERAL end of the response, not a
+     a done signal: must be the LITERAL end of the response, not a
      substring match anywhere. The previous substring match fired on
      quoted system-prompt references (14/14 sessions in job c4b429ae
      terminated this way with score=0).
@@ -58,33 +59,8 @@ class TestConfigLoader:
         assert "<done>" in cfg.done_signals
         assert "[done]" in cfg.done_signals
 
-    def test_kimi_family_present(self):
-        cfg = get_config()
-        canon = cfg.canonical_tool_call_for("kimi")
-        assert canon is not None
-        # The kimi canonical must reference the native special tokens.
-        # When this string is tokenized, those <|...|> markers become
-        # single special-token IDs — that's the whole point.
-        assert "<|tool_call_begin|>" in canon
-        assert "<|tool_call_argument_begin|>" in canon
-        assert "<|tool_call_end|>" in canon
-
-    def test_qwen_family_canonical_intentionally_unset(self):
-        """Qwen has NO canonical_tool_call. Its chat template injects the
-        `<tool_call>{...}</tool_call>` spec via apply_chat_template's
-        `tools` argument, and Qwen knows the grammar from pretraining —
-        echoing it back in the system prompt + reject path is dead
-        weight. The system-prompt format block and the no-tool-call
-        reject canonical example are both skipped for Qwen as a result.
-        Pinned so a future re-add must be justified."""
-        cfg = get_config()
-        assert cfg.canonical_tool_call_for("qwen") is None
-
-    def test_unknown_family_returns_none(self):
-        cfg = get_config()
-        assert cfg.canonical_tool_call_for("llama") is None
-        assert cfg.canonical_tool_call_for(None) is None
-        assert cfg.canonical_tool_call_for("") is None
+    # Per-family canonical-tool-call tests moved to test_fleet_task_families.py
+    # (Kimi/Qwen adapters live in families.py).
 
     def test_load_config_rejects_malformed_yaml(self, tmp_path):
         # Non-mapping at top level
@@ -101,7 +77,6 @@ class TestConfigLoader:
         cfg = load_config(empty)
         assert cfg.post_action_wait_for("browser_use") == 0.0
         assert "<done>" in cfg.done_signals  # default still applied
-        assert cfg.canonical_tool_call_for("kimi") is None  # no families
 
 
 # --------------------------------------------------------------------------- #

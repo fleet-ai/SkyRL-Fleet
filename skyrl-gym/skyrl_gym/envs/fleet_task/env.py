@@ -388,10 +388,12 @@ def build_system_content(
         # showed 43% parse rate / 57% reject (format drift starting
         # ~turn 5-13 in 14/14 sessions).
         #
-        # When model_family is None or not configured in YAML, fall back
-        # to omitting the block — safer than guessing the wrong shape.
-        from .config import get_config
-        canonical = get_config().canonical_tool_call_for(model_family)
+        # When model_family is None or has no canonical_tool_call (e.g.
+        # Qwen, whose chat template renders the format spec via the
+        # `tools` argument), omit the block — safer than guessing.
+        from .families import get_family
+        family = get_family(model_family)
+        canonical = family.canonical_tool_call if family else None
         if canonical:
             tools_block += (
                 f"## Tool Call Format\n"
@@ -879,31 +881,16 @@ class FleetTaskEnv(BaseTextEnv):
                 metadata={"done_reason": "already_finalized", "task_key": self.task_key},
             )
         self.turns += 1
-        assistant_msg = {"role": "assistant", "content": action}
-        self.chat_history.append(assistant_msg)
-        self._scaffold_per_msg.append("")  # assistant turns carry no scaffold
-        if self.context_manager:
-            self.context_manager.track_message(assistant_msg)
 
-        max_turns_reached = self.turns >= self.max_turns
-
-        # Check if agent signals completion. Must be the LITERAL end of the
-        # response (after stripping trailing whitespace/punctuation), not a
-        # substring anywhere — see is_done_signal docstring + job c4b429ae
-        # where 14/14 sessions fired falsely on quoted-system-prompt text.
+        # Parse + coord-scale the model's emission BEFORE building the
+        # assistant message so the per-family adapter can structure the
+        # message correctly with reasoning_content / tool_calls fields.
         from .config import get_config
         _cfg = get_config()
         agent_done = is_done_signal(action, _cfg.done_signals)
-
-        # Parse tool call from LLM response
         tool_call = parse_tool_call(action)
 
-        tool_result = None
-        error = None
-        reward = 0.0
-        mcp_time = 0.0
-
-        # VL: catch done signal wrapped in a computer tool call
+        # VL: catch done signal wrapped in a computer tool call.
         if (
             not agent_done
             and tool_call
@@ -917,29 +904,38 @@ class FleetTaskEnv(BaseTextEnv):
         if tool_call and getattr(self, "screen_width", None):
             self._convert_normalized_coordinates(tool_call)
 
-        # Attach OpenAI-shaped tool_calls to the assistant message we
-        # appended at line 882. The model's raw text already carries the
-        # call (in family-native grammar — Kimi specials, Qwen <tool_call>
-        # etc.); the structured field is purely for the trace upload to
-        # link this turn's screenshot tool result back to its caller.
-        #
-        # Without this the Fleet trace viewer can't pair tool messages to
-        # assistant turns (it keys off `tool_calls[0].id` matching the
-        # next tool message's `tool_call_id`), so it shows Tool Calls=0
-        # and renders screenshots only inside the JSON tree instead of
-        # the top-of-session preview. Verified by a dummy-job A/B probe:
-        # identical content with `tool_calls` set renders top-level, the
-        # same content without it doesn't. `call_{turn}` is unique per
-        # session and matches what trace.py's _assemble_messages reads.
-        if tool_call:
-            assistant_msg["tool_calls"] = [{
-                "id": f"call_{self.turns}",
-                "type": "function",
-                "function": {
-                    "name": tool_call["name"],
-                    "arguments": json.dumps(tool_call.get("arguments", {})),
-                },
-            }]
+        # Per-family adapter owns the assistant-message shape (Kimi splits
+        # <think> into reasoning_content to avoid the Kimi chat template's
+        # double-think bug; Qwen passes content through because its
+        # template extracts <think> inline). When no family is registered,
+        # fall back to the raw-content shape (byte-identical to pre-family
+        # behavior — preserves any caller that doesn't set model_family).
+        from .families import get_family
+        family = get_family(self.extras.get("model_family"))
+        if family is not None:
+            assistant_msg = family.build_assistant_message(action, tool_call, self.turns)
+        else:
+            assistant_msg = {"role": "assistant", "content": action}
+            if tool_call:
+                assistant_msg["tool_calls"] = [{
+                    "id": f"call_{self.turns}",
+                    "type": "function",
+                    "function": {
+                        "name": tool_call["name"],
+                        "arguments": json.dumps(tool_call.get("arguments", {})),
+                    },
+                }]
+        self.chat_history.append(assistant_msg)
+        self._scaffold_per_msg.append("")  # assistant turns carry no scaffold
+        if self.context_manager:
+            self.context_manager.track_message(assistant_msg)
+
+        max_turns_reached = self.turns >= self.max_turns
+
+        tool_result = None
+        error = None
+        reward = 0.0
+        mcp_time = 0.0
 
         # Send done=True at max_turns even without <done> — otherwise OpenEnv
         # never trips _done and the verifier never runs.
@@ -1088,13 +1084,12 @@ class FleetTaskEnv(BaseTextEnv):
                 },
             )
 
-        # Per-turn observation scaffold: turn indicator + canonical-format
-        # reminder, both templated per family in fleet_task.yaml. "" when
-        # the family is unset / has an empty list, in which case all
-        # downstream concatenations are no-ops (byte-identical to today).
-        scaffold = _cfg.scaffold_for(
-            self.extras.get("model_family"), self.turns, self.max_turns
-        )
+        # Per-turn observation scaffold (turn indicator + canonical-format
+        # reminder). Owned by the per-family adapter — Kimi emits both,
+        # Qwen indicator-only, unknown family emits nothing. "" path means
+        # downstream concatenations are no-ops, byte-identical to a caller
+        # that doesn't set model_family.
+        scaffold = family.per_turn_reminder(self.turns, self.max_turns) if family else ""
 
         # Build response observation
         if error:
@@ -1131,29 +1126,18 @@ class FleetTaskEnv(BaseTextEnv):
         elif agent_done:
             obs_content = "Task marked as complete."
         elif not tool_call:
-            # No tool call landed. The previous reject text blamed
-            # truncation ("be more concise") which was the wrong diagnosis
-            # in 55 / 231 cases observed in job c4b429ae: responses were
-            # well under MAX_GENERATE_LENGTH, but the model dropped its
-            # native special-token markers under format-stress. Believing
-            # the truncation hint, the model wrote even more text trying
-            # to be "concise," kept dropping markers, and spiralled.
+            # No tool call landed. Owned by the per-family adapter so the
+            # canonical-format anchor (Kimi <|...|> specials, Qwen text
+            # grammar) matches what that family's template renders.
             #
-            # Echo the canonical shape back instead. When this string is
-            # encoded by the tokenizer for the next-turn prompt, the
-            # <|...|> markers in canonical (for kimi) land as their actual
-            # single-special-token IDs in the model's context — giving the
-            # model a literal copy-this anchor.
-            canonical = _cfg.canonical_tool_call_for(
-                self.extras.get("model_family")
-            )
-            if canonical:
-                obs_content = (
-                    "No tool call landed. End your response with exactly "
-                    "this shape (the <|...|> markers below are single "
-                    "special tokens, not literal text):\n"
-                    f"{canonical}"
-                )
+            # History: the previous reject text blamed truncation ("be
+            # more concise") which was the wrong diagnosis in 55/231 cases
+            # observed in job c4b429ae — responses were well under
+            # MAX_GENERATE_LENGTH but the model dropped markers under
+            # format-stress and spiralled trying to be "concise." Family
+            # adapter echoes a concrete canonical example instead.
+            if family is not None:
+                obs_content = family.reject_message()
             else:
                 obs_content = (
                     "No tool call landed. End your response with a tool "
