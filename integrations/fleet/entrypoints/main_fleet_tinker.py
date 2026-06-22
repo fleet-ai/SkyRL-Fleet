@@ -1178,7 +1178,18 @@ async def main(
     # and _run_eval both await every session upload before returning), so
     # rotating the class-level _trace_config between phases is safe.
     fleet_api_key = os.environ.get("FLEET_API_KEY")
-    _trace_job_stem = f"tinker_{wandb_name}_{datetime.now().strftime('%m%d_%H%M')}"
+    # Trace job stem format: tinker_<DATASET_KEY>_<wandb_name>_<phase>
+    # wandb_name already contains a timestamp suffix (line ~1139: model+%m%d_%H%M),
+    # so DO NOT append another one — that produced the prior ugly double-
+    # stamped name `tinker_<model>_<ts>_<ts>_<phase>`. DATASET_KEY comes from
+    # fleet-research-api's job env (e.g. JUNE16-PSI-HEALTH); when unset
+    # (local dev, smoke tests) the stem just drops that prefix.
+    _dataset_key = os.environ.get("DATASET_KEY", "").strip()
+    _stem_parts = ["tinker"]
+    if _dataset_key:
+        _stem_parts.append(_dataset_key)
+    _stem_parts.append(wandb_name)
+    _trace_job_stem = "_".join(_stem_parts)
 
     async def _rotate_trace_job(label: str) -> None:
         if not fleet_api_key:
