@@ -11,7 +11,7 @@ from integrations.fleet.trace_jobs import (
 from skyrl.train.generators.base import BatchMetadata
 
 
-def _batch(phase: str, step: int | None, env_class: str = "fleet_task"):
+def batch(phase: str, step: int | None, env_class: str = "fleet_task"):
     return {
         "prompts": [[{"role": "user", "content": "hi"}]],
         "env_classes": [env_class],
@@ -23,12 +23,12 @@ def _batch(phase: str, step: int | None, env_class: str = "fleet_task"):
 
 
 def test_trace_label_for_input_matches_phase_taxonomy():
-    assert trace_label_for_input(_batch("eval", 0)) == "eval_pre"
-    assert trace_label_for_input(_batch("train", 7)) == "train_step_7"
-    assert trace_label_for_input(_batch("eval", 7)) == "eval_step_7"
-    assert trace_label_for_input(_batch("eval", 7), total_training_steps=7) == "eval_final"
-    assert trace_label_for_input(_batch("eval", 7), force_eval_only=True) == "eval_only"
-    assert trace_label_for_input(_batch("eval", None)) == "eval_only"
+    assert trace_label_for_input(batch("eval", 0)) == "eval_pre"
+    assert trace_label_for_input(batch("train", 7)) == "train_step_7"
+    assert trace_label_for_input(batch("eval", 7)) == "eval_step_7"
+    assert trace_label_for_input(batch("eval", 7), total_training_steps=7) == "eval_final"
+    assert trace_label_for_input(batch("eval", 7), force_eval_only=True) == "eval_only"
+    assert trace_label_for_input(batch("eval", None)) == "eval_only"
 
 
 def test_trace_job_stem_uses_dataset_key_without_extra_timestamp(monkeypatch):
@@ -62,7 +62,7 @@ def test_trace_job_stem_omits_empty_dataset_key(monkeypatch):
 async def test_rotator_is_noop_without_api_key():
     rotator = FleetTraceJobRotator(run_name="run", model="model", api_key="")
     cleared = []
-    rotator._clear_trace_config = lambda: cleared.append(None)
+    rotator.clear_trace_config = lambda: cleared.append(None)
 
     assert await rotator.rotate("train_step_1") is None
     assert cleared == [None]
@@ -79,9 +79,9 @@ async def test_rotator_reuses_current_label_without_new_job(monkeypatch):
         created.append(name)
         return f"job-{len(created)}"
 
-    monkeypatch.setattr(rotator, "_create_trace_job", fake_create)
-    monkeypatch.setattr(rotator, "_set_trace_config", configured.append)
-    monkeypatch.setattr(rotator, "_clear_trace_config", lambda: cleared.append(None))
+    monkeypatch.setattr(rotator, "create_trace_job", fake_create)
+    monkeypatch.setattr(rotator, "set_trace_config", configured.append)
+    monkeypatch.setattr(rotator, "clear_trace_config", lambda: cleared.append(None))
 
     assert await rotator.rotate("train_step_3") == "job-1"
     assert await rotator.rotate("train_step_3") == "job-1"
@@ -96,8 +96,8 @@ async def test_rotator_clears_stale_config_when_new_job_fails(monkeypatch):
     configured = []
     cleared = []
     rotator = FleetTraceJobRotator(run_name="run", model="model", api_key="key")
-    monkeypatch.setattr(rotator, "_set_trace_config", configured.append)
-    monkeypatch.setattr(rotator, "_clear_trace_config", lambda: cleared.append(None))
+    monkeypatch.setattr(rotator, "set_trace_config", configured.append)
+    monkeypatch.setattr(rotator, "clear_trace_config", lambda: cleared.append(None))
 
     async def create_success(name: str) -> str:
         return "job-1"
@@ -105,18 +105,18 @@ async def test_rotator_clears_stale_config_when_new_job_fails(monkeypatch):
     async def create_failure(name: str) -> str:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(rotator, "_create_trace_job", create_success)
+    monkeypatch.setattr(rotator, "create_trace_job", create_success)
     assert await rotator.rotate("train_step_1") == "job-1"
 
-    monkeypatch.setattr(rotator, "_create_trace_job", create_failure)
+    monkeypatch.setattr(rotator, "create_trace_job", create_failure)
     assert await rotator.rotate("eval_step_1") is None
-    assert rotator._current_label is None
-    assert rotator._current_job_id is None
+    assert rotator.current_label is None
+    assert rotator.current_job_id is None
     assert configured == ["job-1"]
     assert len(cleared) == 3
 
 
-class _DummyGenerator:
+class DummyGenerator:
     def __init__(self):
         self.calls = []
 
@@ -138,7 +138,7 @@ class _DummyGenerator:
         }
 
 
-class _DummyRotator:
+class DummyRotator:
     def __init__(self):
         self.labels = []
 
@@ -148,12 +148,12 @@ class _DummyRotator:
 
 @pytest.mark.asyncio
 async def test_wrapped_generator_rotates_only_for_fleet_batches():
-    generator = _DummyGenerator()
-    rotator = _DummyRotator()
+    generator = DummyGenerator()
+    rotator = DummyRotator()
     wrapped = FleetTraceWrappedGenerator(generator, rotator)
 
-    await wrapped.generate(_batch("train", 4), disable_tqdm=True)
-    await wrapped.generate(_batch("train", 5, env_class="gsm8k"))
+    await wrapped.generate(batch("train", 4), disable_tqdm=True)
+    await wrapped.generate(batch("train", 5, env_class="gsm8k"))
 
     assert rotator.labels == ["train_step_4"]
     assert generator.calls[0][1] is True
@@ -162,29 +162,29 @@ async def test_wrapped_generator_rotates_only_for_fleet_batches():
 
 @pytest.mark.asyncio
 async def test_wrapped_generator_uses_final_eval_label():
-    generator = _DummyGenerator()
-    rotator = _DummyRotator()
+    generator = DummyGenerator()
+    rotator = DummyRotator()
     wrapped = FleetTraceWrappedGenerator(generator, rotator)
 
     wrapped.set_total_training_steps(5)
-    await wrapped.generate(_batch("eval", 5))
+    await wrapped.generate(batch("eval", 5))
 
     assert rotator.labels == ["eval_final"]
 
 
 @pytest.mark.asyncio
 async def test_wrapped_generator_can_force_eval_only_label():
-    generator = _DummyGenerator()
-    rotator = _DummyRotator()
+    generator = DummyGenerator()
+    rotator = DummyRotator()
     wrapped = FleetTraceWrappedGenerator(generator, rotator, force_eval_only=True)
 
     wrapped.set_total_training_steps(5)
-    await wrapped.generate(_batch("eval", 5))
+    await wrapped.generate(batch("eval", 5))
 
     assert rotator.labels == ["eval_only"]
 
 
-class _BlockingGenerator:
+class BlockingGenerator:
     def __init__(self):
         self.started = []
 
@@ -214,15 +214,15 @@ class _BlockingGenerator:
 async def test_wrapped_generator_serializes_fleet_batches():
     import asyncio
 
-    generator = _BlockingGenerator()
-    rotator = _DummyRotator()
+    generator = BlockingGenerator()
+    rotator = DummyRotator()
     wrapped = FleetTraceWrappedGenerator(generator, rotator)
 
-    first = asyncio.create_task(wrapped.generate(_batch("train", 4)))
+    first = asyncio.create_task(wrapped.generate(batch("train", 4)))
     while not generator.started:
         await asyncio.sleep(0)
 
-    second = asyncio.create_task(wrapped.generate(_batch("eval", 4)))
+    second = asyncio.create_task(wrapped.generate(batch("eval", 4)))
     await asyncio.sleep(0)
 
     assert rotator.labels == ["train_step_4"]

@@ -23,7 +23,7 @@ from skyrl.train.generators.base import (
 )
 
 
-def _clean_trace_part(value: object) -> str:
+def clean_trace_part(value: object) -> str:
     text = str(value or "unknown")
     text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("_")
     return text[:80] or "unknown"
@@ -45,11 +45,11 @@ def build_trace_job_stem(
     if dataset_key is None:
         dataset_key = os.environ.get("DATASET_KEY", "") or os.environ.get("DATA_VERSION", "")
 
-    parts = [_clean_trace_part(prefix)]
+    parts = [clean_trace_part(prefix)]
     dataset_key = dataset_key.strip()
     if dataset_key:
-        parts.append(_clean_trace_part(dataset_key))
-    parts.append(_clean_trace_part(run_name))
+        parts.append(clean_trace_part(dataset_key))
+    parts.append(clean_trace_part(run_name))
     return "_".join(parts)
 
 
@@ -92,9 +92,9 @@ class FleetTraceJobRotator:
     ):
         self.api_key = api_key if api_key is not None else os.environ.get("FLEET_API_KEY")
         self.model = model
-        self._current_label: Optional[str] = None
-        self._current_job_id: Optional[str] = None
-        self._job_stem = build_trace_job_stem(run_name=run_name, prefix=prefix)
+        self.current_label: Optional[str] = None
+        self.current_job_id: Optional[str] = None
+        self.job_stem = build_trace_job_stem(run_name=run_name, prefix=prefix)
 
     async def rotate(self, label: Optional[str]) -> Optional[str]:
         """Rotate to ``label`` unless already active.
@@ -105,16 +105,16 @@ class FleetTraceJobRotator:
         if not label or not self.api_key:
             self.clear()
             return None
-        if label == self._current_label:
-            return self._current_job_id
+        if label == self.current_label:
+            return self.current_job_id
 
         self.clear()
         try:
-            job_name = f"{self._job_stem}_{_clean_trace_part(label)}"
-            job_id = await self._create_trace_job(job_name)
-            self._set_trace_config(job_id)
-            self._current_label = label
-            self._current_job_id = job_id
+            job_name = f"{self.job_stem}_{clean_trace_part(label)}"
+            job_id = await self.create_trace_job(job_name)
+            self.set_trace_config(job_id)
+            self.current_label = label
+            self.current_job_id = job_id
             logger.info(f"Fleet trace job ({label}): {job_id} ({job_name})")
             return job_id
         except Exception as e:
@@ -123,21 +123,21 @@ class FleetTraceJobRotator:
             return None
 
     def clear(self) -> None:
-        self._current_label = None
-        self._current_job_id = None
-        self._clear_trace_config()
+        self.current_label = None
+        self.current_job_id = None
+        self.clear_trace_config()
 
-    async def _create_trace_job(self, name: str) -> str:
+    async def create_trace_job(self, name: str) -> str:
         from envs.fleet_env.trace import create_trace_job
 
         return await create_trace_job(self.api_key, name)
 
-    def _set_trace_config(self, job_id: str) -> None:
+    def set_trace_config(self, job_id: str) -> None:
         from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
 
         FleetTaskEnv.set_trace_config(job_id=job_id, model=self.model)
 
-    def _clear_trace_config(self) -> None:
+    def clear_trace_config(self) -> None:
         from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
 
         FleetTaskEnv.clear_trace_config()
@@ -154,43 +154,43 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
         force_eval_only: bool = False,
         total_training_steps: Optional[int] = None,
     ):
-        self._generator = generator
-        self._rotator = rotator
-        self._force_eval_only = force_eval_only
-        self._total_training_steps = total_training_steps
-        self._lock = Lock()
+        self.generator = generator
+        self.rotator = rotator
+        self.force_eval_only = force_eval_only
+        self.total_training_steps = total_training_steps
+        self.lock = Lock()
 
     def __getattr__(self, name: str) -> Any:
-        return getattr(self._generator, name)
+        return getattr(self.generator, name)
 
     async def generate(self, input_batch: GeneratorInput, disable_tqdm: bool = False) -> GeneratorOutput:
-        if not self._contains_fleet_task(input_batch):
-            return await self._generate_inner(input_batch, disable_tqdm=disable_tqdm)
+        if not self.contains_fleet_task(input_batch):
+            return await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
 
         # FleetTaskEnv reads trace config from class state at upload time.
         # Keep rotate+generate atomic so overlapping eval/train generate calls
         # cannot move in-flight rollouts into another phase's dashboard job.
-        async with self._lock:
-            await self._rotator.rotate(
+        async with self.lock:
+            await self.rotator.rotate(
                 trace_label_for_input(
                     input_batch,
-                    force_eval_only=self._force_eval_only,
-                    total_training_steps=self._total_training_steps,
+                    force_eval_only=self.force_eval_only,
+                    total_training_steps=self.total_training_steps,
                 )
             )
-            return await self._generate_inner(input_batch, disable_tqdm=disable_tqdm)
+            return await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
 
     def set_total_training_steps(self, total_training_steps: Optional[int]) -> None:
-        self._total_training_steps = total_training_steps
+        self.total_training_steps = total_training_steps
 
-    async def _generate_inner(self, input_batch: GeneratorInput, disable_tqdm: bool = False) -> GeneratorOutput:
-        params = inspect.signature(self._generator.generate).parameters
+    async def generate_inner(self, input_batch: GeneratorInput, disable_tqdm: bool = False) -> GeneratorOutput:
+        params = inspect.signature(self.generator.generate).parameters
         if "disable_tqdm" in params:
-            return await self._generator.generate(input_batch, disable_tqdm=disable_tqdm)
-        return await self._generator.generate(input_batch)
+            return await self.generator.generate(input_batch, disable_tqdm=disable_tqdm)
+        return await self.generator.generate(input_batch)
 
     @staticmethod
-    def _contains_fleet_task(input_batch: GeneratorInput) -> bool:
+    def contains_fleet_task(input_batch: GeneratorInput) -> bool:
         return any(env_class == "fleet_task" for env_class in input_batch.get("env_classes") or [])
 
 
