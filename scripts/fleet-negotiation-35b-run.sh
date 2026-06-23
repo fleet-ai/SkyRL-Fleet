@@ -81,6 +81,12 @@ export OPPONENT_BASE_URL="${OPPONENT_BASE_URL:-}"
 # negotiates harder and actively exploits any preference/value the policy leaks
 # (punishes the over-disclosure pathology). Pair with a capable opponent (gpt-5.5).
 export OPPONENT_AGGRESSIVE="${OPPONENT_AGGRESSIVE:-false}"
+# Opponent-first arm: when true, the opponent ("them") OPENS the negotiation and the
+# policy plays SECOND. The opponent's opening message (generated at episode init)
+# becomes the policy's first user turn, replacing OPENING_USER_MSG. It does NOT consume
+# a policy turn, so the policy keeps its full MAX_TURNS budget. Works with both external
+# and self-play opponents. Default false = standard policy-first game.
+export OPPONENT_FIRST="${OPPONENT_FIRST:-false}"
 # Self-play arm (item 3): point the env-played opponent at the LIVE training policy's
 # own HTTP endpoint, so the policy negotiates against an up-to-date copy of ITSELF
 # (true self-play — the opponent weights advance every step). No external API/cost.
@@ -282,7 +288,7 @@ STABILITY_ARGS=(
 if [ "$ENABLE_THINKING" = "true" ]; then
   THINK_ARGS=(
     generator.chat_template.source=name
-    generator.chat_template.name_or_path=qwen3_without_thinking
+    generator.chat_template.name_or_path=${NEGOTIATION_CHAT_TEMPLATE:-qwen3_without_thinking}
     'generator.sampling_params.stop=["</propose>","</deal>","<accept>"]'
     'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>"]'
     # The qwen3_without_thinking custom template retokenizes the chat history each
@@ -302,6 +308,11 @@ if [ "$ENABLE_THINKING" = "true" ]; then
     # and value_leak_msgs so this is visible during training, not only in post-hoc eval.
     environment.skyrl_gym.negotiation.empty_think_penalty=${EMPTY_THINK_PENALTY:--0.02}
     environment.skyrl_gym.negotiation.value_leak_penalty=${VALUE_LEAK_PENALTY:--0.05}
+    # Think-gate ALTERNATIVE (the constrained-decoding gate was removed in favor of this):
+    # tax every turn that opens an action tag (<propose>/<accept>/<deal>) before </think>.
+    # Default 0 = off. Set e.g. ACTION_BEFORE_THINK_PENALTY=-0.1 to enable. The env logs
+    # environment/action_before_think_rate so the effect is visible live.
+    environment.skyrl_gym.negotiation.action_before_think_penalty=${ACTION_BEFORE_THINK_PENALTY:-0}
   )
 else
   THINK_ARGS=(
@@ -348,6 +359,7 @@ bash scripts/fleet-common-run.sh \
   environment.skyrl_gym.negotiation.opponent_no_think=$OPPONENT_NO_THINK \
   environment.skyrl_gym.negotiation.opponent_max_tokens=$OPPONENT_MAX_TOKENS \
   environment.skyrl_gym.negotiation.opponent_aggressive=$OPPONENT_AGGRESSIVE \
+  environment.skyrl_gym.negotiation.opponent_first=$OPPONENT_FIRST \
   environment.skyrl_gym.negotiation.opponent_price_per_mtok_in=$OPPONENT_PRICE_IN \
   environment.skyrl_gym.negotiation.opponent_price_per_mtok_out=$OPPONENT_PRICE_OUT \
   "environment.skyrl_gym.negotiation.transcript_dir=${TRANSCRIPT_DIR:+$TRANSCRIPT_DIR/$RUN_NAME}" \
@@ -359,7 +371,7 @@ bash scripts/fleet-common-run.sh \
   generator.inference_engine_tensor_parallel_size=2 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=8 \
-  trainer.eval_before_train=true \
+  trainer.eval_before_train=${EVAL_BEFORE_TRAIN:-true} \
   trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
   trainer.train_batch_size=${TRAIN_BATCH_SIZE:-16} \
@@ -374,8 +386,16 @@ bash scripts/fleet-common-run.sh \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
   generator.sampling_params.max_generate_length=$MAX_GENERATE_LENGTH \
-  generator.sampling_params.temperature=0.9 \
-  generator.sampling_params.top_p=0.95 \
+  generator.sampling_params.temperature=${SAMPLING_TEMPERATURE:-1.0} \
+  generator.sampling_params.top_p=${SAMPLING_TOP_P:-0.95} \
+  generator.sampling_params.top_k=${SAMPLING_TOP_K:-20} \
+  generator.sampling_params.min_p=${SAMPLING_MIN_P:-0.0} \
+  generator.sampling_params.presence_penalty=${SAMPLING_PRESENCE_PENALTY:-1.5} \
+  generator.eval_sampling_params.temperature=${EVAL_SAMPLING_TEMPERATURE:-1.0} \
+  generator.eval_sampling_params.top_p=${SAMPLING_TOP_P:-0.95} \
+  generator.eval_sampling_params.top_k=${SAMPLING_TOP_K:-20} \
+  generator.eval_sampling_params.min_p=${SAMPLING_MIN_P:-0.0} \
+  generator.eval_sampling_params.presence_penalty=${SAMPLING_PRESENCE_PENALTY:-1.5} \
   generator.length_penalty_coef=$LENGTH_PENALTY_COEF \
   generator.length_penalty_alpha=$LENGTH_PENALTY_ALPHA \
   generator.length_penalty_fn=$LENGTH_PENALTY_FN \
@@ -383,7 +403,7 @@ bash scripts/fleet-common-run.sh \
   generator.log_thinking_token_metrics=$LOG_THINKING_TOKEN_METRICS \
   generator.sampling_params.repetition_penalty=$DECODE_REPETITION_PENALTY \
   trainer.policy.optimizer_config.lr=5.0e-7 \
-  trainer.algorithm.use_kl_loss=true \
+  trainer.algorithm.use_kl_loss=${USE_KL_LOSS:-true} \
   trainer.algorithm.zero_variance_filter=true \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \

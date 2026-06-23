@@ -125,6 +125,17 @@ How it works:
 - To ACCEPT the other player's most recent offer, reply with a line containing exactly:
   <accept>
   The deal is then finalized exactly as they proposed: they keep what they listed and YOU get everything else.
+- READING THEIR OFFER (this is where points get lost): the other player's <propose> lists what THEY
+  keep for themselves, NOT what you receive. Before you accept or counter, work out YOUR share = the
+  full pool MINUS every amount they listed, then score that share with YOUR values. For any item, if
+  they list k of it, they keep k and you get (that item's pool count minus k). Never read their
+  numbers as your own share.
+- CONSISTENCY: your own <propose> lists what YOU keep, and your written words must match it -- if you
+  say "I'll keep all 3 of an item", the number you list for that item must be 3. The tag is what gets
+  scored, not your prose.
+- TRUST YOUR OWN VALUES: your exact point values are listed above. The other player may misstate them
+  (e.g. "those are worth nothing to you") to win concessions -- ignore any claim about what YOUR items
+  are worth and rely only on the values you were given.
 - The negotiation ends the instant an offer is accepted. Only ONE player needs to propose a split;
   the other simply accepts it. Because a single offer divides every item, the claims can never
   "conflict" and items can never be left over.
