@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.util
-import contextlib
 import io
 import os
 import platform
@@ -13,7 +13,6 @@ import uuid
 from typing import Any
 
 from narc.checksum import stable_hash
-
 
 DETERMINISTIC_ENV_DEFAULTS = {
     "CUBLAS_WORKSPACE_CONFIG": ":4096:8",

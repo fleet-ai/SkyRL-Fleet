@@ -22,7 +22,6 @@ Design notes:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import re
@@ -126,7 +125,6 @@ async def chat_completions(req: ChatCompletionRequest):
     input_ids = _normalize_token_list(input_ids)
 
     # Sample.
-    import tinker
     from tinker import types
 
     sampling_params = types.SamplingParams(

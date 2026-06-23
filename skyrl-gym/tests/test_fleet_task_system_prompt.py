@@ -44,7 +44,6 @@ Written blind from the contract, not the implementation. The contract:
 
 from __future__ import annotations
 
-import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -55,7 +54,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.env import build_system_content
+from skyrl_gym.envs.fleet_task.env import build_system_content  # noqa: E402
 
 
 SAMPLE_TOOLS = [

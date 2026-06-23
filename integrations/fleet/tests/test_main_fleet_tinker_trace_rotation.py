@@ -14,7 +14,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 SRC = Path(__file__).resolve().parents[3] / "integrations/fleet/entrypoints/main_fleet_tinker.py"
 
 
