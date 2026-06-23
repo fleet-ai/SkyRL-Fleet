@@ -116,7 +116,7 @@ class Counterpart:
     def _softmax_sample(self, logits: list, temperature: float = 1.0) -> int:
         """Sample a Categorical(softmax(logits / T)) index using cumulative rng draw."""
         m = max(logits)
-        exps = [math.exp((l - m) / temperature) for l in logits]
+        exps = [math.exp((val - m) / temperature) for val in logits]
         total = sum(exps)
         probs = [e / total for e in exps]
         u = self.rng.random()

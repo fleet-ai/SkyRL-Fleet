@@ -12,7 +12,6 @@ This is demo data only. For real runs use ``build_manifest.py``.
 import argparse
 import json
 import random
-import time
 from pathlib import Path
 
 # A handful of Deal-or-No-Deal style scenarios reused across every step.

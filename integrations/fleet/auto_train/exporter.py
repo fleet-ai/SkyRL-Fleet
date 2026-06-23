@@ -6,16 +6,15 @@ scoped to a single Fleet dataset + modality. Reads directly from Supabase.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import random as _random
 from typing import Iterable
 
 import boto3
 import httpx
 from botocore.config import Config
-
-import hashlib
-import random as _random
 
 from .config import (
     AWS_DEFAULT_REGION,

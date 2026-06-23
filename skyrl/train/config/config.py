@@ -11,6 +11,7 @@ import os
 import typing
 from abc import ABC
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, Type, TypeVar, Union
 
 import yaml

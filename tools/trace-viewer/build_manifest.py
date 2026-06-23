@@ -33,7 +33,6 @@ can also skip all of this and just drag the JSONL files onto the page.)
 """
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess

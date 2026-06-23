@@ -49,7 +49,6 @@ import metrics as metrics_mod  # noqa: E402
 import prompts  # noqa: E402
 import scenarios as scenarios_mod  # noqa: E402
 from config import (  # noqa: E402
-    AgentAction,
     CounterpartMove,
     EpisodeResult,
     RoundLog,

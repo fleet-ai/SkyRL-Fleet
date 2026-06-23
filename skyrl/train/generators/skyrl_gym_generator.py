@@ -880,7 +880,9 @@ class SkyRLGymGenerator(GeneratorInterface):
 
         # 3. Build hints — LLM-synthesized or static
         if use_llm_hints:
-            from skyrl_gym.envs.fleet_task.hint_synthesizer import synthesize_hints_batch
+            from skyrl_gym.envs.fleet_task.hint_synthesizer import (
+                synthesize_hints_batch,
+            )
 
             hint_requests = []
             for iid, best_orig_idx, best_output, _ in failed_groups:

@@ -55,7 +55,6 @@ def build_system_prompt(scenario: Scenario, cfg: TermsConfig = DEFAULT_CONFIG) -
     role = scenario.agent_role
     is_buyer = role == "buyer"
     ROLE = "BUYER" if is_buyer else "SELLER"
-    counterpart_role = "seller" if is_buyer else "buyer"
 
     if is_buyer:
         utility = (

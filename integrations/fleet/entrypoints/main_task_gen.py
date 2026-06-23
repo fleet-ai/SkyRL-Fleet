@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import ray
+
 from skyrl.train.config import SkyRLTrainConfig
 from skyrl.train.entrypoints.main_base import BasePPOExp
 from skyrl.train.utils import validate_cfg
@@ -35,7 +36,9 @@ class FleetPPOExp(BasePPOExp):
         resume_run_name = os.environ.get("RESUME_RUN_NAME", "")
         if resume_run_name:
             try:
-                from integrations.fleet.s3_checkpoints import download_checkpoint_from_s3
+                from integrations.fleet.s3_checkpoints import (
+                    download_checkpoint_from_s3,
+                )
 
                 ckpt_path = trainer.cfg.trainer.ckpt_path
                 model_path = getattr(trainer.cfg.trainer.policy.model, "path", "unknown-model")

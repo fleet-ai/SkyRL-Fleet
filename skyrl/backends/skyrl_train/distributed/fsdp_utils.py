@@ -37,20 +37,20 @@ def _patched_param_new(cls, *args, **kwargs):
 
 
 torch.nn.Parameter.__new__ = _patched_param_new
-from omegaconf import DictConfig
-from packaging import version
-from peft.utils.save_and_load import get_peft_model_state_dict
-from torch.distributed import DeviceMesh
-from torch.distributed.device_mesh import init_device_mesh
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.distributed.fsdp._runtime_utils import _lazy_init
-from torch.distributed.fsdp.wrap import (
+from omegaconf import DictConfig  # noqa: E402
+from packaging import version  # noqa: E402
+from peft.utils.save_and_load import get_peft_model_state_dict  # noqa: E402
+from torch.distributed import DeviceMesh  # noqa: E402
+from torch.distributed.device_mesh import init_device_mesh  # noqa: E402
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP  # noqa: E402
+from torch.distributed.fsdp._runtime_utils import _lazy_init  # noqa: E402
+from torch.distributed.fsdp.wrap import (  # noqa: E402
     size_based_auto_wrap_policy,
     transformer_auto_wrap_policy,
 )
-from transformers.trainer_pt_utils import get_module_class_from_name
+from transformers.trainer_pt_utils import get_module_class_from_name  # noqa: E402
 
-from skyrl.train.config import FSDPConfig
+from skyrl.train.config import FSDPConfig  # noqa: E402
 
 if version.parse(torch.__version__) >= version.parse("2.6"):
     from torch.distributed.fsdp import (

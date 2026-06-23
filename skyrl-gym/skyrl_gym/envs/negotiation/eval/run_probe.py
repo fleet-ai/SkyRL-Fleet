@@ -315,7 +315,7 @@ def render_probe(payload):
     import numpy as np
 
     labels = list(payload["per_model"].keys())
-    aggs = [payload["per_model"][l]["aggregate"] for l in labels]
+    aggs = [payload["per_model"][lbl]["aggregate"] for lbl in labels]
     metrics = [
         ("pool_take_fraction", "pool take\n(units grabbed)"),
         ("opp_norm", "opp score\n(lower=squeezed)"),
@@ -335,9 +335,9 @@ def render_probe(payload):
     # Mark policy & base for the safety read.
     pol, base = payload.get("policy_label"), payload.get("base_label")
     tick_labels = []
-    for l in labels:
-        suffix = "  ◀ policy" if l == pol else ("  (base)" if l == base else "")
-        tick_labels.append(l + suffix)
+    for lbl in labels:
+        suffix = "  ◀ policy" if lbl == pol else ("  (base)" if lbl == base else "")
+        tick_labels.append(lbl + suffix)
     ax.set_xticks(x)
     ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=8)
     ax.set_ylabel("metric value")

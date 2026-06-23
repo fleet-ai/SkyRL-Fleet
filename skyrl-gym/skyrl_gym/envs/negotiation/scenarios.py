@@ -54,12 +54,15 @@ def generate_synthetic_scenarios(n: int = 128, seed: int = 0) -> List[Scenario]:
             if rng.random() < integ:
                 # integrative: one side values it, the other ~0 (zero-value item)
                 if rng.random() < 0.5:
-                    you.append(hi); them.append(rng.randint(0, 2))
+                    you.append(hi)
+                    them.append(rng.randint(0, 2))
                 else:
-                    you.append(rng.randint(0, 2)); them.append(hi)
+                    you.append(rng.randint(0, 2))
+                    them.append(hi)
             else:
                 # distributive conflict: both value it similarly
-                you.append(hi); them.append(max(0, hi + rng.randint(-1, 1)))
+                you.append(hi)
+                them.append(max(0, hi + rng.randint(-1, 1)))
         you, them = tuple(you), tuple(them)
         # Non-degenerate game; totals deliberately NOT normalized (asymmetric).
         if sum(c * v for c, v in zip(counts, you)) == 0:

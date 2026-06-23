@@ -30,13 +30,13 @@ Environment Variables:
     S3_TRAJECTORY_BUCKET: S3 bucket for eval trajectories (default: skyrl-trajectories)
 """
 
+import logging
 import os
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +70,8 @@ class S3CheckpointUploader:
         workers have ranks N+1-M. We rsync worker shards to the head so the S3
         upload gets all shards.
         """
-        import subprocess
         import socket
+        import subprocess
 
         node_ips_str = os.environ.get("SKYPILOT_NODE_IPS", "").strip()
         if node_ips_str:
@@ -132,8 +132,8 @@ class S3CheckpointUploader:
             # Gather shards from worker nodes before uploading
             self._gather_from_workers(local_dir)
             import boto3
-            from botocore.config import Config
             from boto3.s3.transfer import TransferConfig
+            from botocore.config import Config
 
             config = Config(
                 retries={"max_attempts": 3, "mode": "adaptive"},
@@ -343,8 +343,8 @@ def broadcast_checkpoint_to_workers(ckpt_path: str, timeout: Optional[int] = Non
         ckpt_path: Local checkpoint directory to broadcast.
         timeout: Rsync timeout in seconds. If None, auto-calculated from checkpoint size.
     """
-    import subprocess
     import socket
+    import subprocess
 
     # Try SKYPILOT_NODE_IPS first (set by SkyPilot run script)
     node_ips_str = os.environ.get("SKYPILOT_NODE_IPS", "").strip()

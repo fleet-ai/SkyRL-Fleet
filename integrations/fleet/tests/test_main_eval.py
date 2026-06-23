@@ -13,7 +13,6 @@ from integrations.fleet.entrypoints.main_eval import (
     _strip_hydra_prefixes,
 )
 
-
 # ---------------------------------------------------------------------------
 # _strip_hydra_prefixes
 # ---------------------------------------------------------------------------

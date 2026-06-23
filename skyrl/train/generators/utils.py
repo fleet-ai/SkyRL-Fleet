@@ -19,6 +19,9 @@ from skyrl.train.generators.base import (
 )
 from skyrl_gym.metrics import aggregate_for_environment
 
+if TYPE_CHECKING:
+    from PIL import Image
+
 
 def _validate_template_file_path(file_path: str) -> str:
     """

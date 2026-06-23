@@ -20,7 +20,6 @@ from typing import Optional
 from config import (
     ACCEPTING_TAG,
     AgentAction,
-    GOALS_TAG,
     MESSAGE_TAG,
     MY_NAME_TAG,
     PLAYER_ANSWER_TAG,
@@ -28,7 +27,6 @@ from config import (
     PROPOSED_TRADE_TAG,
     REASONING_TAG,
     REFUSING_OR_WAIT_TAG,
-    RESOURCES_TAG,
     RESPONSE_TAG_ORDER,
     SEAT_NAMES,
     Scenario,
@@ -505,7 +503,6 @@ def detect_violations(
 
 if __name__ == "__main__":
     from config import (
-        GAME_PRESETS,
         SELL_BUY_BUYER_BUDGET,
         SELL_BUY_DEFAULT_COST,
         SELL_BUY_DEFAULT_WILLINGNESS,

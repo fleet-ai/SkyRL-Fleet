@@ -18,7 +18,7 @@ from __future__ import annotations
 import itertools
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 DEAL_RE = re.compile(r"<deal>\s*(\{.*?\})\s*</deal>", re.DOTALL | re.IGNORECASE)

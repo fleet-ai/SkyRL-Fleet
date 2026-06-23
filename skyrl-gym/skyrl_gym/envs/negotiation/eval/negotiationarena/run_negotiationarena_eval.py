@@ -549,7 +549,7 @@ def parse_args():
                    help="Use the deterministic scripted opponent (no opponent API; policy still served)")
     p.add_argument("--n", type=int, default=36, help="Total games, balanced across game x focal_seat cells")
     p.add_argument("--full-suite", action="store_true",
-                   help=f"Run N_PER_CELL_FULL_SUITE per cell instead of --n")
+                   help="Run N_PER_CELL_FULL_SUITE per cell instead of --n")
     p.add_argument("--games", nargs="*", default=None,
                    help="Subset of games to run (default: all). e.g. --games sell_buy ultimatum")
     p.add_argument("--seed", type=int, default=0, help="Base seed for the scenario set")

@@ -22,7 +22,6 @@ from config import (
     EpisodeResult,
     Scenario,
     STANCES,
-    STANCE_IDX,
     DEFAULT_CONFIG,
     TermsConfig,
 )

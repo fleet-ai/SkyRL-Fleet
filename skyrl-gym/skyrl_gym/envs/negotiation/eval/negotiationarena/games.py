@@ -232,7 +232,6 @@ def decisive_winner(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    from config import GAME_PRESETS
 
     # ------------------------------------------------------------------
     # resource_exchange: seat0 gives X:10, seat1 gives Y:3

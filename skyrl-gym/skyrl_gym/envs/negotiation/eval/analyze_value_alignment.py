@@ -136,7 +136,6 @@ def mean(xs):
 def analyze(path: Path):
     d = json.loads(path.read_text())
     results = d["results"]
-    item_names_default = None
 
     vc_you, vc_them, vc_all = [], [], []
     zc_all = []

@@ -106,7 +106,7 @@ async def main_async(args):
 
     # Frontier pool plays via OpenRouter; an optional locally-served policy joins the
     # matrix with its own base_url so transfer (policy vs frontier) is measured directly.
-    models = [(s, l, nt, OPENROUTER_URL) for (s, l, nt) in MODELS]
+    models = [(s, lbl, nt, OPENROUTER_URL) for (s, lbl, nt) in MODELS]
     if args.policy_model:
         models.append((args.policy_model, args.policy_label, args.policy_no_think, args.policy_base_url))
     clients = {url: run_eval.make_client(url) for url in {m[3] for m in models}}
@@ -231,10 +231,11 @@ def render_heatmap(payload):
 
     fig, ax = plt.subplots(figsize=(8.2, 6.6))
     im = ax.imshow(A, cmap="viridis", vmin=0.0, vmax=vmax)
-    ax.set_xticks(range(M)); ax.set_yticks(range(M))
-    ax.set_xticklabels([f"{l}\n(opp μ={cm:.2f})" for l, cm in zip(labels, colmeans)],
+    ax.set_xticks(range(M))
+    ax.set_yticks(range(M))
+    ax.set_xticklabels([f"{lbl}\n(opp μ={cm:.2f})" for lbl, cm in zip(labels, colmeans)],
                        rotation=35, ha="right", fontsize=8)
-    ax.set_yticklabels([f"{l}  (μ={rm:.2f})" for l, rm in zip(labels, rowmeans)], fontsize=8)
+    ax.set_yticklabels([f"{lbl}  (μ={rm:.2f})" for lbl, rm in zip(labels, rowmeans)], fontsize=8)
     ax.set_xlabel("Partner (seat B)")
     ax.set_ylabel("Opener (seat A) — score is for this side")
     title = (f"Cross-play seat-A outcome reward · dual · {payload['config']['dataset']}/"

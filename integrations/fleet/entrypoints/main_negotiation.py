@@ -39,12 +39,12 @@ import os
 import sys
 
 import ray
+
+from integrations.fleet.entrypoints.main_fleet import FleetPPOExp, _strip_hydra_prefixes
 from skyrl.train.config import SkyRLTrainConfig
 from skyrl.train.trainer import RayPPOTrainer
 from skyrl.train.utils import validate_cfg
 from skyrl.train.utils.utils import initialize_ray
-
-from integrations.fleet.entrypoints.main_fleet import FleetPPOExp, _strip_hydra_prefixes
 
 logger = logging.getLogger(__name__)
 
@@ -202,8 +202,8 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
         eval_dir = os.path.join(os.path.dirname(_neg.__file__), "eval")
         if eval_dir not in sys.path:
             sys.path.insert(0, eval_dir)
-        import run_eval  # noqa: E402  (script-style module)
         import deception_judge  # noqa: E402
+        import run_eval  # noqa: E402  (script-style module)
 
         runs = (payload.get("per_model_runs") or {}).get("Policy", [])
         if not runs:

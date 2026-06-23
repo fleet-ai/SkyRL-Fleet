@@ -276,7 +276,9 @@ class RayPPOTrainer:
                                 global_step=self.global_step,
                             )
                             try:
-                                from integrations.fleet.s3_checkpoints import upload_training_trajectories_to_s3
+                                from integrations.fleet.s3_checkpoints import (
+                                    upload_training_trajectories_to_s3,
+                                )
                                 upload_training_trajectories_to_s3(
                                     local_path=traj_file,
                                     run_name=self.cfg.trainer.run_name,
@@ -338,7 +340,9 @@ class RayPPOTrainer:
                             self.save_checkpoints()
                         if self.cfg.trainer.dump_training_trajectories:
                             try:
-                                from integrations.fleet.s3_checkpoints import upload_reward_rollouts_to_s3
+                                from integrations.fleet.s3_checkpoints import (
+                                    upload_reward_rollouts_to_s3,
+                                )
                                 reward_rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR", "/workspace/reward_rollouts")
                                 upload_reward_rollouts_to_s3(
                                     rollout_dir=reward_rollout_dir,

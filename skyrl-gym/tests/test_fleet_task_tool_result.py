@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from skyrl_gym.envs.fleet_task.env import tool_result_to_message_content
 
