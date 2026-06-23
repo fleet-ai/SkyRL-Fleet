@@ -450,12 +450,12 @@ class FleetTaskEnv(BaseTextEnv):
 
     @classmethod
     def set_trace_config(cls, job_id: str, model: str):
-        """Set trace config for uploading eval traces to Fleet."""
+        """Set trace config for uploading rollout traces to Fleet."""
         cls._trace_config = {"job_id": job_id, "model": model}
 
     @classmethod
     def clear_trace_config(cls):
-        """Clear trace config after eval is done."""
+        """Clear trace config after traced rollouts are done."""
         cls._trace_config = None
 
     def __init__(

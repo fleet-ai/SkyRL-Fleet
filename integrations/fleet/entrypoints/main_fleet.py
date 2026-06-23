@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 import ray
+
 from skyrl.train.config import SkyRLTrainConfig
 from skyrl.train.entrypoints.main_base import BasePPOExp
 from skyrl.train.utils import validate_cfg
@@ -55,14 +56,29 @@ def _strip_hydra_prefixes(args: list[str]) -> list[str]:
 class FleetPPOExp(BasePPOExp):
     """Fleet-specific PPO experiment with S3 checkpoint management."""
 
+    def get_generator(self, cfg, tokenizer, inference_engine_client):
+        generator = super().get_generator(cfg, tokenizer, inference_engine_client)
+        from integrations.fleet.trace_jobs import wrap_generator_for_fleet_traces
+
+        return wrap_generator_for_fleet_traces(
+            generator,
+            run_name=cfg.trainer.run_name,
+            model=cfg.trainer.policy.model.path,
+        )
+
     def run(self):
         trainer = self._setup_trainer()
+        from integrations.fleet.trace_jobs import set_fleet_trace_total_training_steps
+
+        set_fleet_trace_total_training_steps(trainer.generator, trainer.total_training_steps)
 
         # Download checkpoint from S3 if RESUME_RUN_NAME is set (cross-VM resume)
         resume_run_name = os.environ.get("RESUME_RUN_NAME", "")
         if resume_run_name:
             try:
-                from integrations.fleet.s3_checkpoints import download_checkpoint_from_s3
+                from integrations.fleet.s3_checkpoints import (
+                    download_checkpoint_from_s3,
+                )
 
                 ckpt_path = trainer.cfg.trainer.ckpt_path
                 model_path = getattr(trainer.cfg.trainer.policy.model, "path", "unknown-model")
@@ -76,7 +92,9 @@ class FleetPPOExp(BasePPOExp):
                 )
 
                 # Broadcast checkpoint to worker nodes (FSDP requires shards on every node)
-                from integrations.fleet.s3_checkpoints import broadcast_checkpoint_to_workers
+                from integrations.fleet.s3_checkpoints import (
+                    broadcast_checkpoint_to_workers,
+                )
                 broadcast_checkpoint_to_workers(ckpt_path)
             except Exception as e:
                 logger.warning(f"Failed to download checkpoint from S3: {e}")

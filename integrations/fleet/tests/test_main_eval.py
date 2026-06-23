@@ -13,7 +13,6 @@ from integrations.fleet.entrypoints.main_eval import (
     _strip_hydra_prefixes,
 )
 
-
 # ---------------------------------------------------------------------------
 # _strip_hydra_prefixes
 # ---------------------------------------------------------------------------
@@ -88,8 +87,9 @@ def test_load_policy_only_resume_none_is_noop():
     exp = _make_exp()
     trainer = _make_trainer_mock("none", ckpt_path="/tmp/does-not-matter")
 
-    exp._load_policy_only(trainer)
+    loaded = exp._load_policy_only(trainer)
 
+    assert loaded is False
     trainer.dispatch.load_checkpoint.assert_not_called()
     assert trainer.global_step == 0
 
@@ -99,8 +99,9 @@ def test_load_policy_only_latest_with_no_marker_file_is_noop(tmp_path):
     trainer = _make_trainer_mock("latest", ckpt_path=str(tmp_path))
     # No latest_ckpt_global_step.txt written → fall through, no load.
 
-    exp._load_policy_only(trainer)
+    loaded = exp._load_policy_only(trainer)
 
+    assert loaded is False
     trainer.dispatch.load_checkpoint.assert_not_called()
     assert trainer.global_step == 0
 
@@ -119,8 +120,9 @@ def test_load_policy_only_latest_loads_policy_and_sets_global_step(tmp_path):
     with patch(
         "skyrl.train.utils.trainer_utils.validate_consistency_for_latest_checkpoint"
     ) as validator:
-        exp._load_policy_only(trainer)
+        loaded = exp._load_policy_only(trainer)
 
+    assert loaded is True
     validator.assert_called_once()
     trainer.dispatch.load_checkpoint.assert_called_once_with(
         "policy",
@@ -138,8 +140,9 @@ def test_load_policy_only_from_path_loads_specified_checkpoint(tmp_path):
     exp = _make_exp()
     trainer = _make_trainer_mock("from_path", ckpt_path=str(tmp_path), resume_path=str(ckpt_dir))
 
-    exp._load_policy_only(trainer)
+    loaded = exp._load_policy_only(trainer)
 
+    assert loaded is True
     trainer.dispatch.load_checkpoint.assert_called_once_with(
         "policy",
         str(ckpt_dir / "policy"),

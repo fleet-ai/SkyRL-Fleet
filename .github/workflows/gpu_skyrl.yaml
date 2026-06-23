@@ -29,6 +29,9 @@ concurrency:
 jobs:
   skyrl_gpu_tests:
     runs-on: ubuntu-latest
+    env:
+      ANYSCALE_CLI_TOKEN: ${{ secrets.ANYSCALE_CLI_TOKEN }}
+      ANYSCALE_HOST: https://console.anyscale.com
     defaults:
       run:
         shell: bash
@@ -45,12 +48,20 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           activate-environment: true
+      - name: Check Anyscale credentials
+        id: anyscale_credentials
+        run: |
+          if [[ -n "${ANYSCALE_CLI_TOKEN:-}" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping GPU tests because ANYSCALE_CLI_TOKEN is not configured."
+          fi
       - name: Install dependencies
+        if: steps.anyscale_credentials.outputs.available == 'true'
         run: uv pip install anyscale==0.24.79 typer==0.9.0
       - name: GPU tests
-        env:
-          ANYSCALE_CLI_TOKEN: ${{ secrets.ANYSCALE_CLI_TOKEN }}
-          ANYSCALE_HOST: https://console.anyscale.com
+        if: steps.anyscale_credentials.outputs.available == 'true'
         run: |
           anyscale job submit -f ci/anyscale_gpu_ci.yaml --timeout 10000
           anyscale job wait --cloud sky-anyscale-aws-us-east-1 --name skyrl-tx-gpu-ci --timeout 10000
