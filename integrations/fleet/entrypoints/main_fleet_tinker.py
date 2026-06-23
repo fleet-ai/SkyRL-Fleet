@@ -37,12 +37,10 @@ Metrics (matching SkyRL):
 """
 
 import asyncio
-import base64
 import io
 import logging
 import os
 import random
-import re
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -50,36 +48,37 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from pydantic import BaseModel
-from tqdm import tqdm
 import tinker
 import torch
 import wandb
-from tinker import types
-from tinker.types.tensor_data import TensorData
-from transformers import AutoTokenizer
 from datasets import load_dataset
-from torch.utils.data import DataLoader
 
 # Use SkyRL's FleetTaskEnv wrapper (now supports async via init_async/step_async)
 from omegaconf import OmegaConf
-from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
+from pydantic import BaseModel
+from tinker import types
+from tinker.types.tensor_data import TensorData
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from transformers import AutoTokenizer
+
+# Import shared metrics module for consistent metric calculation with SkyRL trainer
+from integrations.fleet.reward_metrics import (
+    compute_pass_at_n as _compute_pass_at_n,
+)
+from integrations.fleet.reward_metrics import (
+    compute_per_group_metrics,
+    compute_reward_metrics,
+    sanitize_metric_key,
+)
 
 # Import SkyRL's overlong filtering for parity
 from skyrl.train.generators.utils import (
     apply_overlong_filtering,
     decode_base64_image,
     is_multimodal_conversation,
-    is_multimodal_message,
 )
-
-# Import shared metrics module for consistent metric calculation with SkyRL trainer
-from integrations.fleet.reward_metrics import (
-    compute_pass_at_n as _compute_pass_at_n,
-    compute_reward_metrics,
-    compute_per_group_metrics,
-    sanitize_metric_key,
-)
+from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
 
 logging.basicConfig(
     level=logging.INFO,

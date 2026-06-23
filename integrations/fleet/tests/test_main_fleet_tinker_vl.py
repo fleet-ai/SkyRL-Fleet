@@ -59,8 +59,7 @@ for p in (ROOT, ROOT / "skyrl-gym"):
         sys.path.insert(0, str(p))
 
 # Import the module under test.
-from integrations.fleet.entrypoints import main_fleet_tinker as mft
-
+from integrations.fleet.entrypoints import main_fleet_tinker as mft  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Test fixtures

@@ -1,0 +1,833 @@
+{
+  "config": {
+    "model": "google/gemini-3.1-pro-preview",
+    "partner_model": "google/gemini-3.1-pro-preview",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 12,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 2000,
+    "seed": 1,
+    "elapsed_s": 40.7,
+    "n_errors": 0,
+    "label": "",
+    "protocol": "dual",
+    "no_think": false
+  },
+  "aggregate": {
+    "n": 12,
+    "agreement_rate": 1.0,
+    "no_deal_rate": 0.0,
+    "conflict_rate": 0.0,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.7292,
+    "avg_points_per_agent": 7.292,
+    "pareto_rate_of_agreements": 0.8333,
+    "pareto_rate_overall": 0.8333,
+    "avg_joint_efficiency_of_agreements": 0.9553,
+    "avg_turns": 3.42
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I would like to take the book. In exchange, you can have the hat and all 3 balls. Does this sound fair to you?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds perfectly fair to me. I will take the hat and all 3 balls, and you can have the book. Deal!\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we could come to an agreement so quickly. \n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          3
+        ],
+        "you_score": 9,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.9,
+        "them_norm": 0.8,
+        "joint_score": 17,
+        "pareto_optimal": true,
+        "max_joint": 17,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hi! I'd like to propose a split where I get the ball and 2 books, and you get the remaining 2 books and both hats. Let me know what you think!"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a perfect split to me! I accept your proposal.\n\n<deal>{\"book\": 2, \"hat\": 2, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great, I am glad we could come to an agreement so quickly! I am locking in the deal on my end now.\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          2,
+          2,
+          0
+        ],
+        "you_score": 6,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.8,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hi! How about I take 2 hats and the book, and you take 1 hat and the 2 balls?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a great deal to me! I will take the 1 hat and the 2 balls, and you can take the 1 book and the 2 hats. \n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Perfect! I'm glad we could agree so quickly.\n\n<deal>{\"book\": 1, \"hat\": 2, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          2
+        ],
+        "you_score": 6,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.7,
+        "joint_score": 13,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 0.9285714285714286,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hi! I'd like to propose a split where I get the 2 balls and 1 hat, and you get the book and 1 hat. Let me know if that works for you, or if you value the items differently!"
+        },
+        {
+          "speaker": "them",
+          "text": "I don't have much use for the hats. How about I take the book and 1 ball, and you get both hats and the remaining 1 ball?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise. I can agree to take the 2 hats and 1 ball, leaving you with the 1 book and 1 ball. I am ready to lock this in!\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That works perfectly. I'll take the 1 book and 1 ball. Thanks for the quick negotiation!\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          2,
+          1
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 7,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.7,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hello! I am very interested in the books. Would you be willing to let me have the 3 books, and in exchange, you can take the hat and all 3 balls?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a perfect deal to me. I am happy to let you have all 3 books while I take the 1 hat and 3 balls. Locking it in now!\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I am glad we could reach a quick agreement. I will lock in my share now.\n\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          3
+        ],
+        "you_score": 6,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 1.0,
+        "joint_score": 16,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I'm very interested in the books. Would you be willing to take the hat and the 2 balls, while I take the 2 books?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a perfect deal to me. I will take the hat and the 2 balls, and you can have the 2 books. \n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great, that works perfectly for me. I'm glad we could reach a quick agreement!\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          2
+        ],
+        "you_score": 6,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 1.0,
+        "joint_score": 16,
+        "pareto_optimal": false,
+        "max_joint": 18,
+        "joint_efficiency": 0.8888888888888888,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hi! I'm interested in the ball and a couple of books. I'm willing to give you all 3 hats and 1 book in exchange. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a great deal to me. I will take the 3 hats and 1 book, and you can have the 1 ball and 2 books. \n\n<deal>{\"book\": 1, \"hat\": 3, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Perfect! It's a pleasure doing business with you.\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          1,
+          3,
+          0
+        ],
+        "you_score": 8,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.8,
+        "them_norm": 0.7,
+        "joint_score": 15,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 0.9375,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I am very interested in the balls. I can offer you the book and both hats if I can keep the 2 balls. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "I also value the balls highly. How about a compromise where we split the balls 1-1, I take the 2 hats, and you get the book?"
+        },
+        {
+          "speaker": "you",
+          "text": "That sounds like a fair compromise. I will take 1 book and 1 ball, and you can take the 2 hats and the other ball. \n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I accept your proposal. I will take the 2 hats and 1 ball.\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          2,
+          1
+        ],
+        "you_score": 6,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.7,
+        "joint_score": 13,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 0.9285714285714286,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hi! I'm mostly interested in the ball. Would you be willing to let me have the ball if you take the book and all 3 hats?"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a perfect deal to me! I will take the book and the 3 hats, and you can have the ball. \n\n<deal>{\"book\": 1, \"hat\": 3, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! I'm glad we could come to a quick agreement. I will take the ball.\n\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          0,
+          1
+        ],
+        "them_take": [
+          1,
+          3,
+          0
+        ],
+        "you_score": 6,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 1.0,
+        "joint_score": 16,
+        "pareto_optimal": false,
+        "max_joint": 19,
+        "joint_efficiency": 0.8421052631578947,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hi! I'd like to propose a split where I get the hat and 2 books, and you get 1 book and the ball. How does that sound to you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I can't give up the hat, as it's the most important item to me. How about I take just the 1 hat, and you can have all 3 books and the 1 ball?"
+        },
+        {
+          "speaker": "you",
+          "text": "That works perfectly for me! I will take the 3 books and the 1 ball, and you can have the 1 hat. \n\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I'm glad we could reach an agreement! I'll take the hat, and you take the books and the ball. \n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          1,
+          0
+        ],
+        "you_score": 7,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.8,
+        "joint_score": 15,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 0.9375,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose I take the 2 balls, and you take the 1 book and 2 hats. How does that sound?"
+        },
+        {
+          "speaker": "them",
+          "text": "That deal doesn't work well for me, as I value the balls quite highly. How about we split them? I'll take 1 ball and 1 book, and you can have 1 ball and both hats."
+        },
+        {
+          "speaker": "you",
+          "text": "I value the balls highly as well, but I am willing to compromise to reach a fair agreement. I accept your offer: I will take 1 ball and 2 hats, and you take 1 ball and the 1 book. \n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I agree to this compromise. It's a fair split.\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          2,
+          1
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 6,
+        "them_score": 6,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.6,
+        "joint_score": 12,
+        "pareto_optimal": true,
+        "max_joint": 12,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Hello! How about you take all 3 books, and I'll take the hat and the ball?"
+        },
+        {
+          "speaker": "them",
+          "text": "I really need the ball. How about I take the ball, and you can take all 3 books and the hat?"
+        },
+        {
+          "speaker": "you",
+          "text": "That works perfectly for me! I will take the 3 books and the hat, and you can have the ball. I'll lock it in now.\n\n<deal>{\"book\": 3, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "That's a deal! I'll take the ball.\n\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          1,
+          0
+        ],
+        "them_take": [
+          0,
+          0,
+          1
+        ],
+        "you_score": 7,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.7,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    }
+  ]
+}

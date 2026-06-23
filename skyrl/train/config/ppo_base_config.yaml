@@ -417,6 +417,21 @@ generator:
   # EOS token), this masks out every token in the loss mask.
   apply_overlong_filtering: false
 
+  # Sublinear length penalty subtracted from each trajectory's final reward, computed from the
+  # total number of response tokens (same quantity logged as `policy/response_length`).
+  #   fn="power": penalty = length_penalty_coef * (tokens / ref) ** length_penalty_alpha   (sqrt at alpha=0.5)
+  #   fn="log":   penalty = length_penalty_coef * log1p(tokens / ref) / log(2)
+  # `ref` defaults to max_turns * sampling_params.max_generate_length when length_penalty_ref <= 0.
+  # 0.0 disables (default). Useful to counter length runaway -> truncation/no-progress collapse.
+  length_penalty_coef: 0.0
+  length_penalty_alpha: 0.5
+  length_penalty_fn: "power"
+  length_penalty_ref: 0
+  # Log a think vs visible (non-think) token breakdown of response_ids to wandb (and, when the
+  # length penalty is on, how much of the penalty is attributable to thinking tokens). Off by
+  # default; adds one decode/encode pass per response. See GeneratorConfig.log_thinking_token_metrics.
+  log_thinking_token_metrics: false
+
   # rope parameters, can be optionally different from the trainer , useful in some cases like with thinking models.
   rope_scaling: ${trainer.rope_scaling}
   rope_theta: ${trainer.rope_theta}

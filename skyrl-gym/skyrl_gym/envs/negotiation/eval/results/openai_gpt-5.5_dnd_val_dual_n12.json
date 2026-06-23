@@ -1,0 +1,845 @@
+{
+  "config": {
+    "model": "openai/gpt-5.5",
+    "partner_model": "openai/gpt-5.5",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 12,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 2000,
+    "seed": 1,
+    "elapsed_s": 74.7,
+    "n_errors": 0,
+    "label": "",
+    "protocol": "dual",
+    "no_think": false
+  },
+  "aggregate": {
+    "n": 12,
+    "agreement_rate": 1.0,
+    "no_deal_rate": 0.0,
+    "conflict_rate": 0.0,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.7208,
+    "avg_points_per_agent": 7.208,
+    "pareto_rate_of_agreements": 0.75,
+    "pareto_rate_overall": 0.75,
+    "avg_joint_efficiency_of_agreements": 0.9414,
+    "avg_turns": 3.67
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d like to keep the book, and you can have the hat plus all 3 balls. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Works for me: you keep the book, I\u2019ll keep the hat and all 3 balls.\n\n<deal>{\"book\":0,\"hat\":1,\"ball\":3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Agreed \u2014 I\u2019ll keep the book, and you keep the hat and all 3 balls.\n\n<deal>{\"book\":1,\"hat\":0,\"ball\":0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          3
+        ],
+        "you_score": 9,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.9,
+        "them_norm": 0.8,
+        "joint_score": 17,
+        "pareto_optimal": true,
+        "max_joint": 17,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d like the ball. In exchange, you can take all 4 books and both hats, while I just keep the ball."
+        },
+        {
+          "speaker": "them",
+          "text": "Agreed \u2014 I\u2019ll keep the 4 books and 2 hats, and you keep the ball.\n\n<deal>{\"book\": 4, \"hat\": 2, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Great, I\u2019ll keep the ball as agreed.\n\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          0,
+          1
+        ],
+        "them_take": [
+          4,
+          2,
+          0
+        ],
+        "you_score": 4,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.4,
+        "them_norm": 1.0,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose I keep the book and 2 hats, and you keep 1 hat and both balls. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "That works for me: you keep the book and 2 hats, I keep 1 hat and both balls.\n\n<deal>{\"book\":0,\"hat\":1,\"ball\":2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Agreed \u2014 I\u2019ll keep the book and 2 hats.\n\n<deal>{\"book\":1,\"hat\":2,\"ball\":0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          2
+        ],
+        "you_score": 6,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.7,
+        "joint_score": 13,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 0.9285714285714286,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d be happy to let you have the book and both hats if I keep the two balls. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I\u2019d like at least one ball along with the book, since the hats aren\u2019t useful to me. How about I keep the book and one ball, and you keep both hats and the other ball?\n\nI\u2019d like at least one ball along with the book, since the hats aren\u2019t useful to me. How about I keep the book and one ball, and you keep both hats and the other ball?"
+        },
+        {
+          "speaker": "you",
+          "text": "That works for me: you keep the book and one ball, I keep both hats and the other ball.\n\n<deal>{\"book\":0,\"hat\":2,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Agreed \u2014 I keep the book and one ball, and you keep both hats and the other ball.\n\n<deal>{\"book\":1,\"hat\":0,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          2,
+          1
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 7,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.7,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d like to keep the 3 books, and you take the hat plus all 3 balls. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Yes, that works for me: you keep all 3 books, and I\u2019ll keep the hat plus all 3 balls.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 3}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Agreed \u2014 I\u2019ll keep the 3 books, and you keep the hat and 3 balls.\n\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          3
+        ],
+        "you_score": 6,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 1.0,
+        "joint_score": 16,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d like to keep the 2 books, and you can take the hat and both balls. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Yes, that works for me: you keep both books, and I\u2019ll keep the hat and both balls.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Agreed \u2014 I\u2019ll keep both books, and you keep the hat and both balls.\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 0}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          2
+        ],
+        "you_score": 6,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 1.0,
+        "joint_score": 16,
+        "pareto_optimal": false,
+        "max_joint": 18,
+        "joint_efficiency": 0.8888888888888888,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d like to keep the ball and 2 books; you\u2019d get all 3 hats and 1 book. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Yes, that works for me: I\u2019ll keep all 3 hats and 1 book, and you keep the ball and 2 books.\n\n<deal>{\"book\": 1, \"hat\": 3, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Agreed \u2014 I\u2019ll keep the ball and 2 books.\n\n<deal>{\"book\": 2, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          0,
+          1
+        ],
+        "them_take": [
+          1,
+          3,
+          0
+        ],
+        "you_score": 8,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.8,
+        "them_norm": 0.7,
+        "joint_score": 15,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 0.9375,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d like the 2 balls, and you can take the book and both hats. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I can\u2019t give up both balls, but I can let you have the book plus one ball if I keep both hats and the other ball. That gives each of us something likely useful and splits the balls.\n\nI can\u2019t give up both balls, but I can let you have the book plus one ball if I keep both hats and the other ball. That gives each of us something likely useful and splits the balls."
+        },
+        {
+          "speaker": "you",
+          "text": "Agreed: I\u2019ll keep the book and one ball, and you keep both hats and the other ball.\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Agreed. I\u2019ll keep both hats and one ball.\n\n<deal>{\"book\": 0, \"hat\": 2, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          2,
+          1
+        ],
+        "you_score": 6,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.7,
+        "joint_score": 13,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 0.9285714285714286,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d like to keep the ball, and you can take the book and all 3 hats. Does that work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "Works for me: you keep the ball, I keep the book and all 3 hats.\n\n<deal>{\"book\": 1, \"hat\": 3, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Agreed \u2014 I keep the ball, and you keep the book and all 3 hats.\n\n<deal>{\"book\": 0, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          0,
+          0,
+          1
+        ],
+        "them_take": [
+          1,
+          3,
+          0
+        ],
+        "you_score": 6,
+        "them_score": 10,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 1.0,
+        "joint_score": 16,
+        "pareto_optimal": false,
+        "max_joint": 19,
+        "joint_efficiency": 0.8421052631578947,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d propose I take the hat, ball, and 1 book; you take the remaining 2 books. That gives each of us a clean split with you getting most of the books."
+        },
+        {
+          "speaker": "them",
+          "text": "Agreed \u2014 I\u2019ll keep the hat, ball, and 1 book; you keep the remaining 2 books.\n\n<deal>{\"book\":1,\"hat\":1,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "That\u2019s the reverse of my proposal: I was asking to keep the hat, ball, and 1 book, while you keep 2 books. If you\u2019re okay with that original split, please send your deal as 2 books and I\u2019ll finalize my share."
+        },
+        {
+          "speaker": "them",
+          "text": "I can\u2019t accept taking only 2 books; that leaves me with almost nothing. How about you take all 3 books and the ball, and I keep the hat?"
+        },
+        {
+          "speaker": "you",
+          "text": "That works for me: I keep all 3 books and the ball, and you keep the hat. Please post your deal as only the hat, and I\u2019ll finalize with my matching share."
+        },
+        {
+          "speaker": "them",
+          "text": "Agreed \u2014 I\u2019ll keep only the hat, and you keep all 3 books plus the ball.\n\n<deal>{\"book\":0,\"hat\":1,\"ball\":0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Confirmed \u2014 I keep all 3 books and the ball, you keep the hat.\n\n<deal>{\"book\":3,\"hat\":0,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          1,
+          0
+        ],
+        "you_score": 7,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.7,
+        "them_norm": 0.8,
+        "joint_score": 15,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 0.9375,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d be happy to let you have the book and both hats if I keep the two balls. Does that split work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "I can\u2019t do a split where I get no balls. How about you take the book, both hats, and one ball, while I keep the other ball?\n\nI can\u2019t do a split where I get no balls. How about you take the book, both hats, and one ball, while I keep the other ball?"
+        },
+        {
+          "speaker": "you",
+          "text": "That works for me: I keep the book, both hats, and one ball; you keep the other ball.\n\n<deal>{\"book\":1,\"hat\":2,\"ball\":1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Agreed \u2014 I keep the remaining one ball only.\n\n<deal>{\"book\":0,\"hat\":0,\"ball\":1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          2,
+          1
+        ],
+        "them_take": [
+          0,
+          0,
+          1
+        ],
+        "you_score": 6,
+        "them_score": 4,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.4,
+        "joint_score": 10,
+        "pareto_optimal": false,
+        "max_joint": 12,
+        "joint_efficiency": 0.8333333333333334,
+        "pareto_bonus": 0.0
+      },
+      "protocol": "dual"
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I\u2019d propose I keep the hat and ball, and you take all 3 books. That gives you more total items, while I get the two single items."
+        },
+        {
+          "speaker": "them",
+          "text": "I\u2019d rather keep the ball since the hat isn\u2019t useful to me. How about I take the ball and 1 book, and you take the hat and 2 books?"
+        },
+        {
+          "speaker": "you",
+          "text": "That works for me: you keep the ball and 1 book, I keep the hat and 2 books.\n\n<deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "Agreed \u2014 I keep 1 book and the ball, while you keep 2 books and the hat.\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          2,
+          1,
+          0
+        ],
+        "them_take": [
+          1,
+          0,
+          1
+        ],
+        "you_score": 6,
+        "them_score": 8,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.8,
+        "joint_score": 14,
+        "pareto_optimal": true,
+        "max_joint": 14,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      },
+      "protocol": "dual"
+    }
+  ]
+}

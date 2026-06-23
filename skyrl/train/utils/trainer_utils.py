@@ -200,6 +200,32 @@ def sanitize_data_source(data_source: str) -> str:
     return data_source.replace("/", "_")
 
 
+def mean_numeric_env_metrics(metrics: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Mean-aggregate numeric fields across a list of per-episode env metric dicts.
+
+    Mirrors the env-side default aggregator (skyrl_gym.metrics.default_aggregate_metrics)
+    but lives trainer-side so the eval path can surface per-episode environment metrics
+    (e.g. negotiation you_norm / them_norm / joint_efficiency / pareto). These are
+    otherwise dropped during eval: concatenate_generator_outputs re-derives
+    rollout_metrics from rewards alone, so the env_metrics never reach wandb unless we
+    aggregate them here. Keys present on only some episodes are averaged over the
+    episodes that reported them.
+    """
+    sums: Dict[str, float] = {}
+    counts: Dict[str, int] = {}
+    for m in metrics:
+        if not isinstance(m, dict):
+            continue
+        for k, v in m.items():
+            if isinstance(v, bool):
+                v = float(v)
+            elif not isinstance(v, (int, float)):
+                continue
+            sums[k] = sums.get(k, 0.0) + float(v)
+            counts[k] = counts.get(k, 0) + 1
+    return {k: sums[k] / counts[k] for k in sums}
+
+
 def calculate_per_dataset_metrics(
     concat_generator_outputs: GeneratorOutput,
     concat_uids: List[str],
@@ -236,6 +262,16 @@ def calculate_per_dataset_metrics(
         eval_metrics[f"eval/{sanitized_data_source}/avg_score"] = overall_metrics["avg_score"]
         eval_metrics[f"eval/{sanitized_data_source}/pass_at_{n_samples_per_prompt}"] = overall_metrics["pass_at_n"]
         eval_metrics[f"eval/{sanitized_data_source}/mean_positive_reward"] = overall_metrics["mean_positive_reward"]
+
+        # Per-dataset environment metrics (negotiation: you_norm / them_norm /
+        # joint_efficiency / pareto / agreed / ...). These live in env_metrics, which
+        # concatenate_generator_outputs does NOT fold into rollout_metrics, so without
+        # this they never reach wandb at eval time. Surfacing them per dataset lets us
+        # read the pie-expansion signal (joint_efficiency / pareto) and the opponent's
+        # score (them_norm) next to avg_score on each held-out eval set.
+        subset_env_metrics = subset_generator_output.get("env_metrics") or []
+        for key, mean_val in mean_numeric_env_metrics(subset_env_metrics).items():
+            eval_metrics[f"eval/{sanitized_data_source}/{key}"] = mean_val
 
     return eval_metrics
 
@@ -411,6 +447,22 @@ def dump_training_trajectories(
                 "text": tokenizer.decode(generator_output["response_ids"][i]),
                 "timestamp": ts,
             }
+            # Some multi-turn envs (e.g. negotiation) end the episode on an opponent
+            # turn that is never returned to the policy as an observation, so it is
+            # absent from `text` (the decoded response_ids). When the env surfaces that
+            # closing turn + resolved outcome in its metrics, attach them here so the
+            # trace viewer can show how the episode actually ended. These are kept OUT
+            # of `text` on purpose — the policy was not trained on them.
+            closing = env_m.get("closing_observation")
+            if closing:
+                entry["closing_turn"] = closing
+            outcome_info = {
+                k: env_m[k]
+                for k in ("you_take", "them_take", "accepted_by", "item_names", "outcome")
+                if env_m.get(k) is not None
+            }
+            if outcome_info:
+                entry["outcome_info"] = outcome_info
             if image_paths:
                 entry["image_paths"] = image_paths
                 entry["num_screenshots"] = len(image_paths)

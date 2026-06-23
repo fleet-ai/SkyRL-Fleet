@@ -74,6 +74,21 @@ if [ "$SAW_DASHDASH" = false ]; then
   PREFLIGHT_ARGS=()
 fi
 
+# Consume the preflight-side `--keep-cluster` flag (documented above): when set,
+# we do NOT append `--down`, so the cluster persists after the job exits (for
+# sky exec follow-ups, debugging, or surviving a dropped log stream). It is
+# stripped here so it is never forwarded to fleet-preflight.sh or sky launch.
+KEEP_CLUSTER=false
+FILTERED_PREFLIGHT_ARGS=()
+for arg in ${PREFLIGHT_ARGS[@]+"${PREFLIGHT_ARGS[@]}"}; do
+  if [ "$arg" = "--keep-cluster" ]; then
+    KEEP_CLUSTER=true
+  else
+    FILTERED_PREFLIGHT_ARGS+=("$arg")
+  fi
+done
+PREFLIGHT_ARGS=(${FILTERED_PREFLIGHT_ARGS[@]+"${FILTERED_PREFLIGHT_ARGS[@]}"})
+
 # Auto-teardown by default: append `--down` so the cluster is released when
 # the job exits (SUCCEEDED or FAILED). Per SkyPilot docs, --down does NOT
 # tear down during setup failures (kept for debugging). Safe with
@@ -85,8 +100,11 @@ for arg in ${SKY_ARGS[@]+"${SKY_ARGS[@]}"}; do
     break
   fi
 done
-if [ "$ALREADY_HAS_DOWN" = false ]; then
+if [ "$ALREADY_HAS_DOWN" = false ] && [ "$KEEP_CLUSTER" = false ]; then
   SKY_ARGS+=("--down")
+fi
+if [ "$KEEP_CLUSTER" = true ]; then
+  echo "=== --keep-cluster set: NOT appending --down; cluster persists after job exit ==="
 fi
 
 if [ "${SKIP_PREFLIGHT:-0}" = "1" ]; then

@@ -26,6 +26,7 @@ from skyrl.train.utils.logging_utils import log_example
 from skyrl.train.utils.trainer_utils import (
     calculate_per_dataset_metrics,
     dump_per_dataset_eval_results,
+    mean_numeric_env_metrics,
     validate_generator_output,
 )
 
@@ -104,6 +105,13 @@ async def evaluate(
 
     for key, value in concat_generator_outputs["rollout_metrics"].items():
         eval_metrics[f"eval/all/{key}"] = value
+
+    # Overall environment metrics across all eval datasets. concatenate_generator_outputs
+    # re-derives rollout_metrics from rewards alone (dropping env_metrics), so aggregate
+    # the raw per-episode env_metrics here to keep them_norm / joint_efficiency / pareto
+    # in eval/all alongside avg_score.
+    for key, mean_val in mean_numeric_env_metrics(concat_generator_outputs.get("env_metrics") or []).items():
+        eval_metrics[f"eval/all/{key}"] = mean_val
 
     # 4. Prepare dumping data
     # TODO[Ben] update this to be cloud-compatible
@@ -219,6 +227,12 @@ async def evaluate_step_wise(
             "eval/all/mean_positive_reward": overall_metrics["mean_positive_reward"],
         }
     )
+
+    # Overall environment metrics (them_norm / joint_efficiency / pareto / ...) across
+    # all eval datasets. See the non-step-wise evaluate() for why this is aggregated
+    # from the raw env_metrics rather than read off rollout_metrics.
+    for key, mean_val in mean_numeric_env_metrics(generator_output_last_step.get("env_metrics") or []).items():
+        eval_metrics[f"eval/all/{key}"] = mean_val
 
     # 4. Prepare dumping data
     # TODO[Ben] update this to be cloud-compatible

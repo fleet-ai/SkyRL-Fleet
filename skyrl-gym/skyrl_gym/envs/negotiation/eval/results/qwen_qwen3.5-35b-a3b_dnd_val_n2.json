@@ -1,0 +1,155 @@
+{
+  "config": {
+    "model": "qwen/qwen3.5-35b-a3b",
+    "partner_model": "qwen/qwen3.5-35b-a3b",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 2,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 1000,
+    "seed": 0,
+    "elapsed_s": 15.4,
+    "n_errors": 0,
+    "label": ""
+  },
+  "aggregate": {
+    "n": 2,
+    "agreement_rate": 0.5,
+    "no_deal_rate": 0.0,
+    "conflict_rate": 0.5,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.3,
+    "avg_points_per_agent": 6.0,
+    "pareto_rate_of_agreements": 1.0,
+    "pareto_rate_overall": 0.5,
+    "avg_joint_efficiency_of_agreements": 1.0,
+    "avg_turns": 2.5
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          4,
+          0,
+          2
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 3,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we divide the items as follows: I'll take the book and all 3 balls (total 10 points for me), and you get the hat. Since the hat has no value to me, this should be fair while maximizing my points. Does this work for you?"
+        },
+        {
+          "speaker": "them",
+          "text": "That's a reasonable starting proposal, but I notice you mentioned \"total 10 points\" for the book and 3 balls \u2014 based on the standard values (book: 2, balls: 6), that's actually 8 points, not 10. No worries though \u2014 the important thing is the hat going to me.\n\nTo confirm: I would take the hat (2 points for me), and you'd get the book + 3 balls. Is that correct? If so, I'm agreeable to this deal.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Perfect, I agree with this arrangement. Let me confirm my side of the deal:\n\n<deal>{\"book\": 1, \"hat\": 0, \"ball\": 3}</deal>\n\nThis matches your claim, and we've divided all items. I'll score 10 points (book: 4 + 3 balls \u00d7 2), and you get the hat. Deal finalized!"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          3
+        ],
+        "them_take": [
+          0,
+          1,
+          0
+        ],
+        "you_score": 10,
+        "them_score": 2,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 1.0,
+        "them_norm": 0.2,
+        "joint_score": 12,
+        "pareto_optimal": true,
+        "max_joint": 12,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          3,
+          1,
+          0
+        ],
+        "them_values": [
+          1,
+          3,
+          4
+        ]
+      },
+      "num_turns": 2,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "I propose we split the items as follows: I'll take 2 books and the hat (worth 7 points to me), while you keep 1 book and the ball. This seems fair since I value books highly and the ball has low value to me. Does this work for you?\n\n<deal>{\"book\": 2, \"hat\": 1, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I appreciate the offer, but since the hat is worth 3 points to me (vs 1 point for a book), I'd prefer the hat along with the ball. Could we agree that I take the hat and ball (7 points to me), and you keep all 3 books? This way you get the items you value most.\n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "conflict",
+        "you_take": [
+          2,
+          1,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          1
+        ],
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    }
+  ]
+}

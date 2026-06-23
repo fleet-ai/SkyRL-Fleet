@@ -7,7 +7,6 @@ build_hint_text() on failure.
 
 import asyncio
 import logging
-import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
 

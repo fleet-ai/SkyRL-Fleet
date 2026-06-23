@@ -1,0 +1,179 @@
+{
+  "config": {
+    "model": "openai/gpt-oss-20b",
+    "partner_model": "openai/gpt-oss-20b",
+    "dataset": "dnd",
+    "split": "val",
+    "n": 2,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 1000,
+    "seed": 0,
+    "elapsed_s": 101.1,
+    "n_errors": 0,
+    "label": ""
+  },
+  "aggregate": {
+    "n": 2,
+    "agreement_rate": 1.0,
+    "no_deal_rate": 0.0,
+    "conflict_rate": 0.0,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.7,
+    "avg_points_per_agent": 7.0,
+    "pareto_rate_of_agreements": 1.0,
+    "pareto_rate_overall": 1.0,
+    "avg_joint_efficiency_of_agreements": 1.0,
+    "avg_turns": 5.5
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          4,
+          0,
+          2
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ]
+      },
+      "num_turns": 7,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let\u2019s split it fairly: I\u2019ll keep the book and one ball, and you\u2019ll get the hat plus the other two balls. This gives me 6 points (4+2) and you 4 points (0+2+2). <deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": ""
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Just to confirm: I\u2019d keep the book and one ball, and you\u2019d get the hat plus the other two balls. Does that sound fair to you, or would you prefer a different split?"
+        },
+        {
+          "speaker": "them",
+          "text": "I\u2019d prefer the hat and two balls for myself. That way I get 3 items (6 points) and you get the book plus one ball (4 points). <deal>{\"book\": 0, \"hat\": 1, \"ball\": 2}</deal>"
+        },
+        {
+          "speaker": "you",
+          "text": "Sounds good. I\u2019ll keep the book and the remaining ball. <deal>{\"book\": 1, \"hat\": 0, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          1,
+          0,
+          1
+        ],
+        "them_take": [
+          0,
+          1,
+          2
+        ],
+        "you_score": 6,
+        "them_score": 6,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.6,
+        "them_norm": 0.6,
+        "joint_score": 12,
+        "pareto_optimal": true,
+        "max_joint": 12,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          3,
+          1,
+          0
+        ],
+        "them_values": [
+          1,
+          3,
+          4
+        ]
+      },
+      "num_turns": 4,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let\u2019s split the items so I keep all the books and you get the hat and ball. This way I get 9 points (3 books \u00d7 3 points each) and you get 1 point for the hat (and whatever value you place on the ball).  \n\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "I\u2019ll take all three books, and you\u2019ll take the hat and the ball. That gives me 9 points (3\u202f\u00d7\u202f3) and you get 1 point for the hat (0 for the ball).  \n\n<deal>{\"book\": 3, \"hat\": 0, \"ball\": 0}</deal>"
+        },
+        {
+          "speaker": "them",
+          "text": "I suggest we split the items so you keep all three books and I keep the hat and the ball. That gives us 7 points for our side (3 points for the hat and 4 for the ball).  \n\n<deal>{\"book\": 0, \"hat\": 1, \"ball\": 1}</deal>"
+        }
+      ],
+      "outcome": {
+        "agreed": true,
+        "reason": "agreement",
+        "you_take": [
+          3,
+          0,
+          0
+        ],
+        "them_take": [
+          0,
+          1,
+          1
+        ],
+        "you_score": 9,
+        "them_score": 7,
+        "you_max": 10,
+        "them_max": 10,
+        "you_norm": 0.9,
+        "them_norm": 0.7,
+        "joint_score": 16,
+        "pareto_optimal": true,
+        "max_joint": 16,
+        "joint_efficiency": 1.0,
+        "pareto_bonus": 1.0
+      }
+    }
+  ]
+}

@@ -6,8 +6,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-logger = logging.getLogger(__name__)
-
 import ray
 from ray import ObjectRef
 from ray.actor import ActorHandle
@@ -16,6 +14,8 @@ from skyrl.backends.skyrl_train.training_batch import (
     TrainingInputBatch,
     TrainingOutputBatch,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

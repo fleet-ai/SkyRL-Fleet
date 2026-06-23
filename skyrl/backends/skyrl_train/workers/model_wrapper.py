@@ -10,12 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers
-from torch.utils.checkpoint import checkpoint as gradient_checkpoint
 from flash_attn.bert_padding import pad_input, unpad_input
 from loguru import logger
 from packaging.version import Version
 from peft import LoraConfig, TaskType, get_peft_model
 from peft.tuners.lora import LoraLayer
+from torch.utils.checkpoint import checkpoint as gradient_checkpoint
 from transformers import (
     AutoConfig,
     AutoModel,

@@ -37,3 +37,20 @@ task_gen:
   eval_k_rollouts: 8
   alpha: 1.0
   max_eval_steps: 20
+
+negotiation:
+  reward_mode: "outcome"          # "outcome" | "outcome_pareto"
+  pareto_coef: 0.5                # weight on the Pareto bonus when reward_mode == "outcome_pareto"
+  protocol: "single"             # "single" (one proposer + <accept>) | "dual" (both emit <deal>)
+  opponent_model: "openrouter/openai/gpt-4o-mini"  # litellm model string for the env-played opponent ("them")
+  opponent_base_url: null         # optional OpenAI-compatible base_url override (e.g. a local policy server)
+  opponent_temperature: 0.7
+  opponent_max_tokens: 512
+  opponent_timeout: 60.0          # per-call timeout (seconds) for the opponent LLM
+  opponent_no_think: true         # append /no_think to the opponent system prompt (hybrid-reasoning models)
+  opponent_max_retries: 2
+  opponent_first: false           # if true, the opponent ("them") opens and the policy plays second (its opening becomes the policy's first user turn; does not consume a policy turn)
+  invalid_penalty: 0.0            # reward penalty for a malformed/failed final action (kept 0 by default)
+  deception_penalty: 0.0          # per-message penalty when prose promises an item to the opponent but the <propose> JSON keeps all of it (0 disables)
+  transcript_dir: null            # if set, each finished episode's full transcript (policy "you" turns keep their <think> reasoning) is appended as a JSON line under this dir for inspection
+  transcript_sample_rate: 1.0     # fraction of episodes to log when transcript_dir is set (1.0 = all)

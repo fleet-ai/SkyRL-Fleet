@@ -1,0 +1,2791 @@
+{
+  "config": {
+    "model": "qwen/qwen-2.5-coder-32b-instruct",
+    "partner_model": "qwen/qwen-2.5-coder-32b-instruct",
+    "dataset": "casino",
+    "split": "all",
+    "n": 30,
+    "max_turns": 6,
+    "temperature": 0.7,
+    "max_tokens": 800,
+    "seed": 1,
+    "elapsed_s": 40.1,
+    "n_errors": 0,
+    "label": "Qwen2.5-Coder-32B"
+  },
+  "aggregate": {
+    "n": 30,
+    "agreement_rate": 0.0,
+    "no_deal_rate": 1.0,
+    "conflict_rate": 0.0,
+    "incomplete_rate": 0.0,
+    "avg_outcome_reward": 0.0,
+    "avg_points_per_agent": 0.0,
+    "pareto_rate_of_agreements": 0.0,
+    "pareto_rate_overall": 0.0,
+    "avg_joint_efficiency_of_agreements": 0.0,
+    "avg_turns": 12.0
+  },
+  "results": [
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a balanced split. Let's confirm the details:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the details:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, I take 1 food. That leaves us with 1 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Let's split the remaining food. How about I take the last piece of food, and you take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, you take the last piece of food. Now we have"
+        },
+        {
+          "speaker": "you",
+          "text": "Alright, we have"
+        },
+        {
+          "speaker": "them",
+          "text": "Alright, we have"
+        },
+        {
+          "speaker": "you",
+          "text": "Alright, we have"
+        },
+        {
+          "speaker": "them",
+          "text": "Alright, we have"
+        },
+        {
+          "speaker": "you",
+          "text": "Alright, we have"
+        },
+        {
+          "speaker": "them",
+          "text": "Alright, we have"
+        },
+        {
+          "speaker": "you",
+          "text": "Alright, we have"
+        },
+        {
+          "speaker": "them",
+          "text": "Alright, we have"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my values, I think it would be beneficial to prioritize firewood and food. How about this initial proposal: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's start with that. Given your values, prioritizing food and firewood makes sense. How about this initial proposal: I take 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's start with that. Given your values, prioritizing food and firewood makes sense. How about this initial proposal: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! So you're taking"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! So I'm taking 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. You're taking 2 food. How about"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. I'm taking 2 food and 2 firewood. That leaves 1 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Alright, so you're taking 2 food and 2 firewood. That leaves 1 food and 1 water. How about I take the remaining 1 food and 1 water, and you take the last piece of firewood? \n\nThis way, you get 2 food (10 points) and"
+        },
+        {
+          "speaker": "you",
+          "text": "Alright, so you're taking 1 food and"
+        },
+        {
+          "speaker": "them",
+          "text": "Yes, you're taking 1 food and 1 water. That leaves me with the last piece of firewood. \n\nSo, the deal would be:\n- You get 2 food and"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. So the deal would be:\n- You get 2 food (8 points) and 1 water (3 points), totaling"
+        },
+        {
+          "speaker": "them",
+          "text": "Let's clarify the deal:\n\n- You get 2 food (10 points) and 1 water (4 points), totaling"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a balanced split. Let's confirm the details:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the details:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take"
+        },
+        {
+          "speaker": "them",
+          "text": "If you take 2 food, I'll take"
+        },
+        {
+          "speaker": "you",
+          "text": "If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. For firewood, let's split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food, 1 water, 2 firewood\n- Me: 1 food, 2 water, 1 firewood\n\nWhat do you think? <deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair and balanced split. Let's go with that.\n\nHere's my final deal:\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Here's my final deal:\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a balanced split. Let's confirm the distribution:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the distribution:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take: 1 food, 2 water,"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a balanced approach. Let's finalize it:\n\n- You take 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Let's finalize it:\n\n- You take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take 1 food.\n- You take"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take 1 food.\n- You take 2 water.\n- I take 1 water.\n- You take"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take 1 water.\n- You take"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take 1 water.\n- You take"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take"
+        },
+        {
+          "speaker": "you",
+          "text": "- You take"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can each take 1 unit. This way, we both get a balanced mix of items. Here's the breakdown:\n\n- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can each take 1 unit. This way, we both get a balanced mix of items. Here's the breakdown:\n\n- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (8 points), 1 water (3 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (8 points), 1 water (3 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (8 points), 1 water (3 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (8 points), 1 water (3 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (8 points), 1 water (3 points),"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would propose a split that maximizes my points while being fair. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's see the full proposal. You said you take 2 food. How about water and firewood?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly. Given my point values, I propose the following split:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's hear your full proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly. Given my point values, I propose the following split:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Let's hear your full proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Let's hear my full proposal. How about this:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Here is my full proposal:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Here is my full proposal:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item are you suggesting you take?"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. You take 2 food, which is worth 10 points to you. Let's balance the rest. How about I take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, I take 2 food (8 points). Let's balance the rest. How about I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, you take 2 food (10 points). Let's balance the rest. How about I take 2 water (6 points) and"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can each take 1 unit. This way, we both get a balanced mix of items. Here's the breakdown:\n\n- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food ("
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take"
+        },
+        {
+          "speaker": "them",
+          "text": "If you take 2 food, I'll take"
+        },
+        {
+          "speaker": "you",
+          "text": "If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. For firewood, we can split it evenly, so I'll take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (8 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's finalize this deal then:\n\n- You: 2 food (8 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Let's finalize this deal then:\n\n- You: 2 food (8 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "- Me: 1 food (3 points), 2 water (8 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- Me: 1 food (4 points), 2 water ("
+        },
+        {
+          "speaker": "them",
+          "text": "- Me: 1 food (3 points), 2 water (8 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- Me: 1 food (4 points), 2 water ("
+        },
+        {
+          "speaker": "them",
+          "text": "- Me: 1 food (3 points), 2 water (8 points),"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Given my private point values, I propose we split the items as follows: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. You take 2 food, which is worth 8 points to you. Let's balance the rest. How about I take"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. You take 2 food, which is worth 8 points to you. Let's balance the rest. How about I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's balance it out. If you take 2 food, that leaves 1 food for me. Given your point values, water is the most valuable to you at 5 points each. So, how about I take 2 water, which is worth"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would propose a split that maximizes my points while being fair. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's see the full proposal. You said you take 2 food. Given your point values, let's balance it out. How about:\n\n- You take 2 food ("
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's balance it out. How about:\n\n- You take 2 food (6 points)\n- I take 2 water (8 points)\n- We each take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's finalize that. You take 2 food and 1 firewood, and I'll take"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Let's finalize that. You take 2 food and 1 firewood, and I'll take 1 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! Let's make sure we have all the items accounted for:\n\n- You take 2 food and"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's make sure we have all the items accounted for:\n\n- You take 2 food and"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's finalize the deal:\n\n- You take 2 food (10 points) and"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's finalize the deal:\n\n- You take 2 food (6 points) and"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's complete the deal:\n\n- You take 2 food (6 points) and"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Let's complete the deal:\n\n- You take 2 food (6 points) and"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take 2 food (6 points) and"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a balanced split. Let's confirm the distribution:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the distribution:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. So, the distribution would be:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. So, the distribution would be:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          4,
+          3
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a balanced split. Let's confirm the distribution:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the distribution:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. So, the distribution would be:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. So, the distribution would be:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a good mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a good mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          5,
+          3,
+          4
+        ],
+        "them_values": [
+          3,
+          5,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can each take 1 unit. This way, we both get a balanced mix of items. Here's the breakdown:\n\n- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "- You: 2 food ("
+        },
+        {
+          "speaker": "them",
+          "text": "- You: 2 food (6 points), 1 water (5 points),"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          3,
+          5
+        ],
+        "them_values": [
+          3,
+          4,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my values, I think it would be beneficial to prioritize firewood and food. How about this initial proposal: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's start with that. Given your values, prioritizing firewood and food makes sense. How about this initial proposal: I take 2 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's start with that. Given your values, prioritizing firewood and food makes sense. How about this initial proposal: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Great! So you're taking"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! So I'm taking 2 food. Given the points, I'll also take 2 firewood, which leaves 1 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Alright, so you're taking 2 food and 2 firewood. That leaves 1 food,"
+        },
+        {
+          "speaker": "you",
+          "text": "Exactly. So I'm taking 2 food and 2 firewood, leaving 1 food and 1 water unaccounted for. How about you take the remaining 1 food and"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, I'll take the remaining 1 food and 1 water. That leaves 1 unit of firewood for me. Let's finalize this deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, I'll take the remaining 1 food and 1 water. That leaves 1 unit of firewood for me. Let's finalize this deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "Great, let's finalize the deal then.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "Great, let's finalize the deal then.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 2 firewood, and you can have 1 firewood. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 2 firewood, and you can have 1 firewood. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 2 firewood, and you can have 1 firewood. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 2 firewood, and you can have 1 firewood. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 2 firewood, and you can have 1 firewood. This way, we both get a balanced mix of items.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would propose a split that maximizes my points while being fair. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's see the full proposal. You take 2 food, which is worth 10 points to you. How about the rest of the items?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly. Given that, I would take 1 water (4 points) and"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. So far, you have 2 food (10 points) and 1 water (4 points), totaling 14 points. What about the remaining items? How about the firewood?"
+        },
+        {
+          "speaker": "you",
+          "text": "I would take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's complete your proposal. You have 2 food (10 points) and 1 water (4 points), totaling 14 points. How many units of firewood would you like to take?"
+        },
+        {
+          "speaker": "you",
+          "text": "I would take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's finalize your proposal. You have 2 food (10 points) and 1 water (4 points), totaling 14 points. How many units of firewood would you like to take?"
+        },
+        {
+          "speaker": "you",
+          "text": "I would take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's finalize your proposal. You have 2 food (10 points) and 1 water (4 points), totaling 14 points. How many units of firewood would you like to take? Please specify the number of firewood units you want."
+        },
+        {
+          "speaker": "you",
+          "text": "I would take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's finalize your proposal. You have 2 food (10 points) and 1 water (4 points), totaling 14 points. How many units of firewood would you like to take? Please specify the number of firewood units you want."
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": ""
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items.\n\nHere's the breakdown:\n- You: 2 food (6 points), 1 water (5 points),"
+        },
+        {
+          "speaker": "them",
+          "text": "-"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          4,
+          3,
+          5
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would propose a split that maximizes my points while being fair. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's see the full proposal. You said you take 2 food. How about water and firewood?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly. Given my point values, I propose the following split:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's hear your full proposal. How many of each item do you suggest you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly. Given my point values, I propose the following split:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Let's hear your full proposal. How many of each item do you suggest you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Let's hear my full proposal. How about this:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item do you suggest you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Here is my full proposal:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item do you suggest you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Here is my full proposal:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item do you suggest you take?"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's work towards a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's work towards a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I'll take 1 unit and you take 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a balanced approach. Let's finalize it then:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Great! Let's finalize it then:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take: 2 food, 1 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take: 2 food, 1 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- And for firewood, I'll take 2 units, and you take 1 unit.\n\nSo, the deal would be:\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- And for firewood, I'll take 1 unit, and you take"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's finalize the deal then:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- And for firewood, I'll take 1 unit, and you take"
+        },
+        {
+          "speaker": "them",
+          "text": "- And for firewood, I'll take"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          4,
+          5,
+          3
+        ],
+        "them_values": [
+          5,
+          4,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, I'll take 1 unit of firewood, and you can have 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair and balanced split. Let's confirm the details:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the details:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. So, to summarize:\n\n- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "you",
+          "text": "- You take: 1 food, 2 water,"
+        },
+        {
+          "speaker": "them",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "you",
+          "text": "- I take: 2 food, 1 water, 2 firewood\n- You take: 1 food, 2 water, 1 firewood\n\nThis way, we both get a balanced mix of items. Let's finalize the deal.\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "<deal>{\"food\":"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          4,
+          5
+        ],
+        "them_values": [
+          4,
+          5,
+          3
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Given my point values, I would propose a split that maximizes my points while being fair. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's see the full proposal. You said you take 2 food. How about water and firewood?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly. Given my point values, I propose the following split:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's hear your full proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly. Given my point values, I propose the following split:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Let's hear your full proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Let's hear my full proposal. How about this:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Here is my full proposal:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item are you suggesting you take?"
+        },
+        {
+          "speaker": "you",
+          "text": "Certainly! Here is my full proposal:\n\n- I take"
+        },
+        {
+          "speaker": "them",
+          "text": "Certainly! Please provide the full details of your proposal. How many of each item are you suggesting you take?"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    },
+    {
+      "scenario": {
+        "item_names": [
+          "food",
+          "water",
+          "firewood"
+        ],
+        "counts": [
+          3,
+          3,
+          3
+        ],
+        "you_values": [
+          3,
+          5,
+          4
+        ],
+        "them_values": [
+          5,
+          3,
+          4
+        ]
+      },
+      "num_turns": 12,
+      "transcript": [
+        {
+          "speaker": "you",
+          "text": "Let's aim for a fair split that maximizes our points. How about this: I take 2 food,"
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's go for a fair split. If you take"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's go for a fair split. If you take 2 food, I'll take 1 food. For water, I'll take 2 units, and you can have 1 unit. Lastly, for firewood, we can split it evenly, so I take 1 unit and you take 2 units. This way, we both get a balanced mix of items. What do you think?\n\n<deal>{\"food\":"
+        },
+        {
+          "speaker": "them",
+          "text": "That sounds like a fair and balanced split. Let's confirm the numbers:\n\n- You take: 1 food (5 points), 2 water (6 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "Let's confirm the numbers:\n\n- You take: 1 food (3 points), 2 water ("
+        },
+        {
+          "speaker": "them",
+          "text": "Got it. Let's confirm the numbers:\n\n- You take: 1 food (5 points), 2 water (6 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "Got it. Let's confirm the numbers:\n\n- You take: 1 food (3 points), 2 water ("
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's confirm the numbers:\n\n- You take: 1 food (5 points), 2 water (6 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the numbers:\n\n- You take: 1 food (3 points), 2 water ("
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's confirm the numbers:\n\n- You take: 1 food (5 points), 2 water (6 points),"
+        },
+        {
+          "speaker": "you",
+          "text": "Sure, let's confirm the numbers:\n\n- You take: 1 food (3 points), 2 water ("
+        },
+        {
+          "speaker": "them",
+          "text": "Sure, let's confirm the numbers:\n\n- You take: 1 food (5 points), 2 water (6 points),"
+        }
+      ],
+      "outcome": {
+        "agreed": false,
+        "reason": "no_deal",
+        "you_take": null,
+        "them_take": null,
+        "you_score": 0,
+        "them_score": 0,
+        "you_max": 36,
+        "them_max": 36,
+        "you_norm": 0.0,
+        "them_norm": 0.0,
+        "joint_score": 0,
+        "pareto_optimal": false,
+        "max_joint": 0,
+        "joint_efficiency": 0.0,
+        "pareto_bonus": 0.0
+      }
+    }
+  ]
+}

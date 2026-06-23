@@ -11,6 +11,7 @@ import os
 import typing
 from abc import ABC
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, Type, TypeVar, Union
 
 import yaml
@@ -405,6 +406,7 @@ class FullyAsyncConfig(BaseConfig):
 class SamplingParams(BaseConfig):
     max_generate_length: int = 1024
     repetition_penalty: float = 1.0
+    presence_penalty: float = 0.0
     temperature: float = 1.0
     top_p: float = 1.0
     min_p: float = 0.0
@@ -515,6 +517,27 @@ class GeneratorConfig(BaseConfig):
     apply_overlong_filtering: bool = False
     """Apply DAPO Overlong Filtering: mask out all tokens in the loss mask for trajectories that
     exceed max length (truncated, no EOS token)."""
+    length_penalty_coef: float = 0.0
+    """Subtract a sublinear length penalty from each trajectory's final reward, computed from the
+    total number of response tokens (the same quantity logged as ``policy/response_length``).
+    ``0.0`` disables it. The penalty discourages length runaway (e.g. multi-turn rollouts that
+    burn the whole generation budget on prose and never commit a terminal action)."""
+    length_penalty_alpha: float = 0.5
+    """Exponent for the ``"power"`` length penalty (``0 < alpha < 1`` keeps it sublinear; ``0.5`` = sqrt)."""
+    length_penalty_fn: str = "power"
+    """Shape of the length penalty: ``"power"`` -> ``coef * (tokens / ref) ** alpha`` (sqrt at alpha=0.5),
+    or ``"log"`` -> ``coef * log1p(tokens / ref) / log(2)`` (both normalized so penalty == coef at tokens == ref)."""
+    length_penalty_ref: int = 0
+    """Reference token length that normalizes the penalty. When ``<= 0`` it defaults to
+    ``max_turns * sampling_params.max_generate_length`` (the full multi-turn generation budget)."""
+    log_thinking_token_metrics: bool = False
+    """If ``True``, log a per-rollout breakdown of response tokens into ``<think>...</think>``
+    reasoning tokens vs visible (non-thinking) tokens, measured on the same ``response_ids`` the
+    length penalty sees. Logs ``generate/thinking_tokens_mean``, ``generate/visible_tokens_mean``,
+    ``generate/thinking_token_frac``; and when ``length_penalty_coef`` is set, the penalty
+    decomposition ``generate/length_penalty_visible_mean`` and ``generate/length_penalty_thinking_mean``
+    (the marginal penalty attributable to the thinking tokens). Off by default (adds a decode/encode
+    pass per response). Intended for thinking models; a no-op for token-in-token-out runs."""
     rope_scaling: Optional[Dict[str, Any]] = None
     """Can differ from the trainer's ``rope_scaling``, useful for thinking models."""
     rope_theta: Optional[float] = None
@@ -554,6 +577,7 @@ class SkyRLGymConfig(BaseConfig):
     search: SearchEnvConfig = field(default_factory=SearchEnvConfig)
     fleet_task: Optional[Dict[str, Any]] = None
     task_gen: Optional[Dict[str, Any]] = None
+    negotiation: Optional[Dict[str, Any]] = None
 
 
 @dataclass

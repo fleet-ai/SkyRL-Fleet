@@ -1,0 +1,94 @@
+# Negotiation RLVR GRPO — Qwen3.5-35B-A3B (2-node) — AGGRESSIVE-ADVERSARY arm
+#
+# research_logs/negotiation-35b-thinking-leakage-06-16.md item 4:
+#   "Prompt GPT 5.5 adversary to negotiate more aggressively and exploit any value leak."
+#
+# Raw-baseline config (penalties OFF, thinking ON) with ONE change: OPPONENT_AGGRESSIVE=true
+# appends ADVERSARY_AGGRESSIVE_BLOCK to the opponent's system prompt, turning the gpt-5.5
+# opponent into a tough, self-interested negotiator that probes the policy and actively
+# EXPLOITS any preference/value it leaks. Tests whether a harder adversary suppresses the
+# over-disclosure / value-leak pathology seen in the raw baseline (value_leak 0.45->~0.8).
+#
+# 2 nodes x 8 H200 = 16 GPUs; TP=2 -> 8 inference engines. FSDP2 across all 16 GPUs.
+
+name: negotiation-grpo-qwen3-5-35b-2node-aggressive
+
+resources:
+  disk_size: 1000
+  memory: 800+
+  ordered:
+    # RunPod Slurm cluster (reserved H200s, no preemption)
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    # RunPod on-demand (API provisioned)
+    - accelerators: H200-SXM:8
+      cloud: runpod
+      ports: 6479
+    # GKE fallback
+    - accelerators: H200:8
+      cloud: kubernetes
+      network_tier: best
+      use_spot: true
+      ports: 6479
+    # GCP fallback
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 2
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""      # powers the gpt-5.5 opponent + the deception judge
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-35B-A3B"
+  MODEL_TAG: "qwen35"
+  MODALITY: "negotiation"
+  # --- Negotiation task knobs ---
+  NEGOTIATION_DATASET: "dnd"
+  NEGOTIATION_PROTOCOL: "single"
+  REWARD_MODE: "outcome"            # normalized self-score (you_norm = you_score/you_max)
+  PARETO_COEF: "0.5"
+  # AGGRESSIVE ADVERSARY: gpt-5.5 opponent + the aggressive system-prompt block.
+  OPPONENT_MODEL: "openrouter/openai/gpt-5.5"
+  OPPONENT_AGGRESSIVE: "true"
+  SELF_PLAY: "false"
+  # Clean baseline: NO behavior-shaping penalties (matches the raw baseline so the
+  # aggressive-adversary effect is isolated). Length + invalid/format (-0.05) stay ON.
+  DECEPTION_PENALTY: "0"
+  ENABLE_THINKING: "true"
+  EMPTY_THINK_PENALTY: "0"
+  VALUE_LEAK_PENALTY: "0"
+  MAX_TURNS: 6
+  CASINO_EVAL: "36"
+  EVAL_DND: "false"
+  PROBE_EVAL: "true"
+  PROBE_N: "16"
+  JUDGE_EVAL: "true"
+  JUDGE_MODEL: "openai/gpt-4.1-mini"
+  MAX_INPUT_LENGTH: 8192
+  MAX_GENERATE_LENGTH: 8192
+  NUM_EPOCHS: 20
+  RUN_ID: ""
+  RESUME_RUN_NAME: ""
+  # 2 nodes x 8 H200; TP=2 -> 8 inference engines (4 per node).
+  NUM_INFERENCE_ENGINES: 8
+  # Optional: only used for S3 checkpoint upload (safe to leave blank).
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-negotiation-setup.sh \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-negotiation-35b-run.sh

@@ -34,9 +34,17 @@ from .smoke import run_smoke_test
 from .state import ProcessedState
 from .tinker_config import (
     DEFAULT_BASE_MODEL as TINKER_DEFAULT_BASE_MODEL,
+)
+from .tinker_config import (
     DEFAULT_LORA_RANK as TINKER_DEFAULT_LORA_RANK,
+)
+from .tinker_config import (
     DEFAULT_MAX_CONCURRENT as TINKER_DEFAULT_MAX_CONCURRENT,
+)
+from .tinker_config import (
     DEFAULT_NUM_STEPS as TINKER_DEFAULT_NUM_STEPS,
+)
+from .tinker_config import (
     TINKER_MODALITY_SUPPORT,
     TINKER_STATE_KEY,
 )

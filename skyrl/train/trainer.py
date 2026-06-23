@@ -276,7 +276,9 @@ class RayPPOTrainer:
                                 global_step=self.global_step,
                             )
                             try:
-                                from integrations.fleet.s3_checkpoints import upload_training_trajectories_to_s3
+                                from integrations.fleet.s3_checkpoints import (
+                                    upload_training_trajectories_to_s3,
+                                )
                                 upload_training_trajectories_to_s3(
                                     local_path=traj_file,
                                     run_name=self.cfg.trainer.run_name,
@@ -338,7 +340,9 @@ class RayPPOTrainer:
                             self.save_checkpoints()
                         if self.cfg.trainer.dump_training_trajectories:
                             try:
-                                from integrations.fleet.s3_checkpoints import upload_reward_rollouts_to_s3
+                                from integrations.fleet.s3_checkpoints import (
+                                    upload_reward_rollouts_to_s3,
+                                )
                                 reward_rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR", "/workspace/reward_rollouts")
                                 upload_reward_rollouts_to_s3(
                                     rollout_dir=reward_rollout_dir,
@@ -813,6 +817,26 @@ class RayPPOTrainer:
                     [0] * len(mask) if i not in kept_indices_set else mask
                     for i, mask in enumerate(generator_output["loss_masks"])
                 ]
+                # Log how many GROUPS (prompts/uids) had zero reward variance and were
+                # therefore loss-masked out (no learning signal — e.g. all samples failed
+                # or all hit the same reward). High values mean wasted rollout compute.
+                num_groups = len(set(uids))
+                num_kept_groups = len({uids[i] for i in kept_indices_set})
+                num_filtered_groups = num_groups - num_kept_groups
+                self.all_metrics.update(
+                    {
+                        "reward/zero_variance_filtered_frac": (
+                            num_filtered_groups / num_groups if num_groups else 0.0
+                        ),
+                        "reward/zero_variance_filtered_groups": float(num_filtered_groups),
+                        "reward/num_groups": float(num_groups),
+                    }
+                )
+                logger.info(
+                    f"reward/zero_variance_filtered_frac: "
+                    f"{num_filtered_groups / num_groups if num_groups else 0.0:.4f} "
+                    f"({num_filtered_groups}/{num_groups} groups)"
+                )
             # Response-level rewards: rewards is List[float], convert to per-token rewards
             for reward, response in zip(rewards, responses):
                 per_token_reward = [0.0] * len(response)

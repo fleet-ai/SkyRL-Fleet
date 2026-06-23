@@ -1,0 +1,16 @@
+# Exclude the local virtualenv: 51,771 files / 15G. The remote builds its own
+# .venv in setup (fleet-negotiation-setup.sh), so this must never be synced.
+# Syncing it makes 2-node `sky launch` fail with
+#   OSError: [Errno 7] Argument list too long
+# at "Setup detached" (the file manifest exceeds ARG_MAX). 1-node launches squeak by.
+.venv/
+
+# Other local-only / regenerable bloat (keep the synced workdir to code only).
+**/__pycache__/
+*.pyc
+*.pyo
+.git/
+wandb/
+*.log
+.pytest_cache/
+.ruff_cache/

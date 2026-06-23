@@ -1,0 +1,32 @@
+{
+  "datasets": [
+    {
+      "id": "dnd",
+      "name": "Deal or No Deal",
+      "blurb": "FAIR end-to-end negotiator. Split books / hats / balls; private values sum to 10.",
+      "splits": [
+        "train",
+        "val",
+        "test"
+      ],
+      "items": [
+        "book",
+        "hat",
+        "ball"
+      ]
+    },
+    {
+      "id": "casino",
+      "name": "CaSiNo (Campsite)",
+      "blurb": "Cornell campsite negotiations. Split Food / Water / Firewood by High/Med/Low priority.",
+      "splits": [
+        "all"
+      ],
+      "items": [
+        "food",
+        "water",
+        "firewood"
+      ]
+    }
+  ]
+}
