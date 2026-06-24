@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from skyrl_gym.envs.fleet_task.env import (
     MAX_TOOL_OUTPUT_CHARS,

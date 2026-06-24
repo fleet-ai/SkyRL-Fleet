@@ -21,17 +21,15 @@ Kimi-K2 native grammar:
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
+from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #

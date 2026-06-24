@@ -23,12 +23,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.config import (
+from skyrl_gym.envs.fleet_task.config import (  # noqa: E402
     FleetTaskConfig,
     get_config,
     load_config,
 )
-from skyrl_gym.envs.fleet_task.env import is_done_signal
+from skyrl_gym.envs.fleet_task.env import is_done_signal  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
