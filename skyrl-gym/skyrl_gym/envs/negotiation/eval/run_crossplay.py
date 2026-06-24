@@ -332,7 +332,7 @@ def render_heatmap(payload, out_prefix="crossplay_matrix"):
     ax.set_yticklabels([f"{l}  (μ={rm:.2f})" for l, rm in zip(labels, rowmeans)], fontsize=8)
     ax.set_xlabel("Partner (seat B)")
     ax.set_ylabel("Opener (seat A) — score is for this side")
-    title = (f"Cross-play seat-A outcome reward · dual · {payload['config']['dataset']}/"
+    title = (f"Cross-play seat-A outcome reward · {payload['config'].get('protocol', 'dual')} · {payload['config']['dataset']}/"
              f"{payload['config']['split']} · n={payload['config']['n']}/cell\n"
              f"row μ = how well the opener does vs the field (higher = stronger)")
     ax.set_title(title, fontsize=10)
