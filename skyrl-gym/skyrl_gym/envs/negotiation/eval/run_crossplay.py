@@ -63,14 +63,15 @@ def _build_sampling(url: str, no_think: bool, *, temperature, max_tokens,
     extra: dict = {}
     if no_think:
         extra.update(_no_think_body(url))
-    if stop_tags:
+    # Action tags as stop sequences are ONLY safe on the local vLLM, where
+    # include_stop_str_in_output keeps the matched tag in the output. OpenRouter
+    # providers (Anthropic/Google/Meta observed) strip the matched stop string AND
+    # ignore include_stop_str_in_output, which deletes the </propose>/<accept> tag and
+    # makes every deal fail to parse (cells collapse to 0.0). So for OpenRouter seats we
+    # use NO stop tags: the model emits the full message and parsing scans all of it.
+    if stop_tags and "openrouter" not in url:
         extra["stop"] = list(stop_tags)
-        # vLLM excludes the matched stop string from the output by default, which would
-        # strip the action tag (</propose>, <accept>) and break parsing/acceptance. Keep
-        # it in the output. OpenRouter already returns the tag (and may reject this vLLM
-        # param), so only set it for the locally-served checkpoint.
-        if "openrouter" not in url:
-            extra["include_stop_str_in_output"] = True
+        extra["include_stop_str_in_output"] = True
     if presence_penalty is not None:
         extra["presence_penalty"] = presence_penalty
     return {"temperature": temperature, "max_tokens": max_tokens, "extra_body": (extra or None)}

@@ -85,23 +85,17 @@ parsed for the action tag but stripped before re-entering context (matches train
 the policy seat only; frontier opponents play naturally on penalty. The chosen per-model
 sampling is recorded under `config.sampling` in each output JSON.
 
-**`include_stop_str_in_output`**: the local vLLM checkpoint drops the matched stop string
-from the response by default, which would strip the action tag (`</propose>`, `<accept>`)
-and make every deal fail to parse/close. We set `include_stop_str_in_output: true` for the
-locally-served seat (OpenRouter already returns the tag), matching the SkyRL training
-default (`skyrl_train/inference_engines/utils.py`). Without it the policy's `<accept>` is
-silently truncated and agreement collapses to ~0 — an eval artifact, not model behavior.
+**Stop tags only on the local vLLM seat.** A matched `stop` string is excluded from the
+response by default, which strips the action tag (`</propose>`, `<accept>`) and makes the
+deal fail to parse/close (cells collapse to 0.0). On the **local vLLM** we set
+`include_stop_str_in_output: true` to keep the tag (matches the SkyRL training default,
+`skyrl_train/inference_engines/utils.py`). On **OpenRouter** that flag is ignored and
+several providers (Anthropic/Google/Meta observed) strip the tag regardless, so we apply
+**no stop tags** to OpenRouter seats — the model emits the full `<propose>…</propose>` /
+`<accept>` and parsing scans the whole message. (This is why an early matrix run showed
+Opus/Gemini/Llama cells stuck at 0.0 — an eval artifact, not model behavior.)
 
 ## 7. Exact commands
-
-One-liners via the row-only config script (`crossplay_rowonly.sh`):
-
-```bash
-OPENROUTER_API_KEY=...  ./crossplay_rowonly.sh base
-OPENROUTER_API_KEY=...  S30_BASE_URL=http://10.66.0.6:6479/v1  ./crossplay_rowonly.sh s30
-```
-
-Equivalent explicit invocations:
 
 ```bash
 export OPENROUTER_API_KEY=...

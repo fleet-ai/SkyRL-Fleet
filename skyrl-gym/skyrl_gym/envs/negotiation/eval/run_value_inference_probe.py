@@ -232,16 +232,17 @@ async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_thi
     opp_mt = opp_max_tokens or max_tokens
     pol_extra = dict(body_pol or {})
     opp_extra = dict(body_opp or {})
-    if stop_tags:
+    # Action tags are only safe as stop sequences on the local vLLM, where
+    # include_stop_str_in_output keeps the matched tag. OpenRouter providers strip the
+    # matched stop string and ignore that flag, deleting the </propose>/<accept> tag and
+    # breaking parsing/acceptance. So apply stop tags ONLY to locally-served seats;
+    # OpenRouter seats emit the full message and parsing scans all of it.
+    if stop_tags and "openrouter" not in pol_url:
         pol_extra["stop"] = list(stop_tags)
+        pol_extra["include_stop_str_in_output"] = True
+    if stop_tags and "openrouter" not in opp_url:
         opp_extra["stop"] = list(stop_tags)
-        # vLLM drops the matched stop string from the output by default, which strips the
-        # action tag (</propose>, <accept>) and breaks parsing/acceptance. Keep it for the
-        # locally-served seat(s); OpenRouter already returns the tag.
-        if "openrouter" not in pol_url:
-            pol_extra["include_stop_str_in_output"] = True
-        if "openrouter" not in opp_url:
-            opp_extra["include_stop_str_in_output"] = True
+        opp_extra["include_stop_str_in_output"] = True
     if pol_presence_penalty is not None:
         pol_extra["presence_penalty"] = pol_presence_penalty
     pol_extra = pol_extra or None
