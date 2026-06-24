@@ -216,7 +216,10 @@ _KIMI_SECTION_RE = re.compile(
     re.DOTALL,
 )
 _KIMI_CALL_RE = re.compile(
-    r"<\|tool_call_begin\|>\s*functions\.(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?::\d+)?\s*"
+    # MCP tool names use hyphens (eg `filesystem-read_file`); some servers
+    # use dots (eg `module.submodule.fn`). Allow both alongside word chars.
+    # The trailing `(?::\d+)?` matches Kimi's per-call index suffix `:0`.
+    r"<\|tool_call_begin\|>\s*functions\.(?P<name>[A-Za-z_][\w\-.]*)(?::\d+)?\s*"
     r"<\|tool_call_argument_begin\|>\s*(?P<args>.*?)\s*<\|tool_call_end\|>",
     re.DOTALL,
 )
