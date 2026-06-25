@@ -15,17 +15,18 @@ Endpoints:
 Design notes:
 - One sampling_client per process, bound at startup. Restart to switch checkpoints.
 - Tokenizer loaded once with trust_remote_code=True. Kimi-K2.6 cold load is ~2 min.
-- Hermes-style tool_call parser: extract <tool_call>{...}</tool_call> blocks
-  from decoded text, JSON-parse, expose as response.message.tool_calls.
+- Tool-call parsing and assistant-message construction reuse the SkyRL trainer's
+  family adapters (skyrl_gym.envs.fleet_task.families) and parser
+  (skyrl_gym.envs.fleet_task.tool_call_parser). The shim therefore renders
+  history to the chat template in exactly the format the model was trained on
+  (Kimi: `id="functions.<NAME>:<turn>"`), avoiding the parser-drop bug seen
+  with arbitrary `call_<uuid>` ids.
 - No streaming (stream=true -> 400). No multi-checkpoint.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import os
-import re
 import sys
 import time
 import uuid
@@ -35,10 +36,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-# NOTE: not importing from integrations.fleet.entrypoints.main_fleet_tinker —
-# that module pulls in wandb / training-only deps not in the [tinker] extra.
-# _normalize_token_list below handles the AutoTokenizer return-type variance
-# (list[int] vs BatchEncoding) directly.
+from skyrl_gym.envs.fleet_task.families import Family, get_family, family_for_model
+from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
 
 
 # ─── Globals (bound in startup) ──────────────────────────────────────────
@@ -47,6 +46,7 @@ from pydantic import BaseModel, Field
 _service_client: Any = None             # tinker.ServiceClient
 _sampling_client: Any = None            # tinker.SamplingClient
 _tokenizer: Any = None                  # transformers.AutoTokenizer
+_family: Optional[Family] = None        # per-base-model family adapter
 _ready: bool = False
 _model_id: str = "tinker"               # served-model name surfaced in /v1/models
 _token_logs: list[tuple[int, int]] = [] # (prompt_tokens, completion_tokens) running log
@@ -78,12 +78,12 @@ class ChatCompletionRequest(BaseModel):
 # ─── FastAPI app ─────────────────────────────────────────────────────────
 
 
-app = FastAPI(title="fleet tinker shim", version="0.1.0")
+app = FastAPI(title="fleet tinker shim", version="0.2.0")
 
 
 @app.get("/health")
 async def health():
-    return {"ok": _ready, "model": _model_id}
+    return {"ok": _ready, "model": _model_id, "family": _family.name if _family else None}
 
 
 @app.get("/v1/models")
@@ -108,9 +108,13 @@ async def chat_completions(req: ChatCompletionRequest):
     if req.stream:
         raise HTTPException(400, "streaming not supported (v0)")
 
-    # Build the chat history. Pass `tools` through apply_chat_template so the
-    # template renders them in the model's expected tool-spec block.
+    # Coerce incoming OpenAI-style ids to the trainer's canonical format BEFORE
+    # rendering through apply_chat_template. Kimi's chat template emits
+    # tool_calls[].id verbatim — if we let `call_<uuid>` ids reach the template,
+    # the model echoes them on subsequent turns and the parser drops the call.
     msgs = [_msg_to_dict(m) for m in req.messages]
+    msgs = _normalize_history_ids(msgs, _family) if _family is not None else msgs
+
     try:
         input_ids = _tokenizer.apply_chat_template(
             msgs,
@@ -126,7 +130,6 @@ async def chat_completions(req: ChatCompletionRequest):
     input_ids = _normalize_token_list(input_ids)
 
     # Sample.
-    import tinker
     from tinker import types
 
     sampling_params = types.SamplingParams(
@@ -148,14 +151,9 @@ async def chat_completions(req: ChatCompletionRequest):
     output_tokens = list(result.sequences[0].tokens)
     text = _tokenizer.decode(output_tokens, skip_special_tokens=True)
 
-    content_text, tool_calls = _parse_tool_calls(text)
-    # Some OpenAI clients (tau2-bench) reject a message that has neither
-    # content nor tool_calls. If the parser strips everything (e.g. model
-    # emits only a </think> with no following prose and no valid tool-call
-    # section), fall back to the raw decoded text so the message is non-empty.
-    if not tool_calls and not (content_text and content_text.strip()):
-        content_text = text or " "
-    finish_reason = "tool_calls" if tool_calls else _finish_reason_from_result(result)
+    asst_turn = _count_assistant_turns(msgs)
+    message = _build_response_message(text, asst_turn)
+    finish_reason = "tool_calls" if message.get("tool_calls") else _finish_reason_from_result(result)
 
     completion_tokens = len(output_tokens)
     prompt_tokens = len(input_ids)
@@ -181,11 +179,7 @@ async def chat_completions(req: ChatCompletionRequest):
                 {
                     "index": 0,
                     "finish_reason": finish_reason,
-                    "message": {
-                        "role": "assistant",
-                        "content": content_text,
-                        **({"tool_calls": tool_calls} if tool_calls else {}),
-                    },
+                    "message": message,
                 }
             ],
             "usage": {
@@ -197,98 +191,100 @@ async def chat_completions(req: ChatCompletionRequest):
     )
 
 
-# ─── Tool-call parsing ───────────────────────────────────────────────────
+# ─── Tool-call: build response from sampled text via family adapter ──────
 
 
-# Hermes / Qwen3 convention.
-_HERMES_TOOL_CALL_RE = re.compile(
-    r"<tool_call>\s*(?P<body>.*?)\s*</tool_call>",
-    re.DOTALL,
-)
+def _build_response_message(text: str, asst_turn: int) -> dict:
+    """Parse sampled text into an OpenAI assistant message using the trainer's
+    family adapter. Falls back to a content-only message if no family is bound
+    (unknown base model)."""
+    if _family is None:
+        return {"role": "assistant", "content": _nonempty(text)}
 
-# Kimi-K2.x convention (observed live in Kimi-K2.6 sampling output):
-#   <|tool_calls_section_begin|>
-#     <|tool_call_begin|>functions.NAME:IDX <|tool_call_argument_begin|>{JSON}<|tool_call_end|>
-#     ...
-#   <|tool_calls_section_end|>
-_KIMI_SECTION_RE = re.compile(
-    r"<\|tool_calls_section_begin\|>(?P<body>.*?)<\|tool_calls_section_end\|>",
-    re.DOTALL,
-)
-_KIMI_CALL_RE = re.compile(
-    # MCP tool names use hyphens (eg `filesystem-read_file`); some servers
-    # use dots (eg `module.submodule.fn`). Allow both alongside word chars.
-    # The trailing `(?::\d+)?` matches Kimi's per-call index suffix `:0`.
-    r"<\|tool_call_begin\|>\s*functions\.(?P<name>[A-Za-z_][\w\-.]*)(?::\d+)?\s*"
-    r"<\|tool_call_argument_begin\|>\s*(?P<args>.*?)\s*<\|tool_call_end\|>",
-    re.DOTALL,
-)
+    parsed = parse_tool_call(text)
+    msg = _family.build_assistant_message(text, parsed, asst_turn)
 
-# Some chat templates surface only the closing reasoning tag; strip the prefix
-# up through it so reasoning doesn't leak as user-facing content.
-_THINK_CLOSE_RE = re.compile(r"^.*?</think>\s*", re.DOTALL)
+    # OpenAI clients (tau2-bench, BFCL) expect `content` to be either non-empty
+    # or null. The family adapter may leave `content` empty when the model
+    # emitted only a tool call. Promote empty content to a single space so
+    # the response is OpenAI-valid AND non-null.
+    if not msg.get("tool_calls") and not (msg.get("content") or "").strip():
+        msg["content"] = _nonempty(text)
+    return msg
 
 
-def _parse_tool_calls(text: str) -> tuple[Optional[str], Optional[list[dict]]]:
-    """Returns (remaining_content, tool_calls_or_None).
+def _nonempty(s: Optional[str]) -> str:
+    return s if (s and s.strip()) else " "
 
-    Recognises Kimi-K2 section/call delimiters first, then falls back to
-    Hermes-style <tool_call>{...}</tool_call>. Strips a leading reasoning
-    block ending in </think> so it isn't surfaced as content.
+
+# ─── History normalization: align incoming ids with trainer format ───────
+
+
+def _normalize_history_ids(msgs: list[dict], family: Family) -> list[dict]:
+    """Rewrite incoming OpenAI-style `call_<uuid>` tool_call ids to the
+    trainer's canonical format BEFORE apply_chat_template. The Kimi chat
+    template renders tool_calls[].id verbatim; the format the model sees in
+    history must match training (`functions.<NAME>:<turn>`) or the model
+    emits the wrong format on subsequent turns and the parser drops every
+    follow-up call.
+
+    Uses `family.build_assistant_message` as the SINGLE source of truth for
+    the id format — if the trainer's format ever changes, the shim follows
+    by import.
+
+    Idempotent: ids already produced by the family adapter pass through
+    unchanged. Tool-result messages have their `tool_call_id` remapped via
+    the same lookup so the OpenAI tool/result pairing stays consistent.
     """
-    # Drop the reasoning prefix (Kimi emits </think> without an opener — the
-    # opener was a special token that got stripped during decode).
-    text = _THINK_CLOSE_RE.sub("", text, count=1)
+    out: list[dict] = []
+    asst_turn = 0
+    remap: dict[str, str] = {}
+    for raw in msgs:
+        m = dict(raw)
+        role = m.get("role")
+        if role == "assistant":
+            calls = m.get("tool_calls") or []
+            if calls:
+                new_calls = []
+                for tc in calls:
+                    tc = dict(tc)
+                    fn = tc.get("function") or {}
+                    name = fn.get("name")
+                    old_id = tc.get("id", "") or ""
+                    if name:
+                        canonical_id = _canonical_id(family, name, asst_turn)
+                        if old_id != canonical_id:
+                            if old_id:
+                                remap[old_id] = canonical_id
+                            tc["id"] = canonical_id
+                    new_calls.append(tc)
+                m["tool_calls"] = new_calls
+            asst_turn += 1
+        elif role == "tool":
+            old_id = m.get("tool_call_id")
+            if old_id and old_id in remap:
+                m["tool_call_id"] = remap[old_id]
+        out.append(m)
+    return out
 
-    tool_calls: list[dict] = []
-    stripped = text
 
-    # Kimi format.
-    section = _KIMI_SECTION_RE.search(text)
-    if section is not None:
-        for cm in _KIMI_CALL_RE.finditer(section.group("body")):
-            name = cm.group("name")
-            args_raw = cm.group("args").strip()
-            try:
-                args_obj = json.loads(args_raw)
-                args_str = json.dumps(args_obj)
-            except json.JSONDecodeError:
-                # Pass through raw — OpenAI tool_calls.arguments is a string.
-                args_str = args_raw
-            tool_calls.append(
-                {
-                    "id": f"call_{uuid.uuid4().hex[:12]}",
-                    "type": "function",
-                    "function": {"name": name, "arguments": args_str},
-                }
-            )
-        stripped = _KIMI_SECTION_RE.sub("", stripped)
+def _canonical_id(family: Family, name: str, turn: int) -> str:
+    """Synthesize the trainer's canonical tool_call id for (name, turn) by
+    asking the family adapter to build a dummy assistant message and
+    extracting the id it generates. This keeps the id-format definition in
+    exactly ONE place (families.py)."""
+    synth = family.build_assistant_message(
+        "", {"name": name, "arguments": {}}, turn
+    )
+    calls = synth.get("tool_calls") or []
+    if not calls:
+        # Adapter didn't emit a tool_calls section — leave id unchanged.
+        return ""
+    return calls[0]["id"]
 
-    # Hermes fallback (additive — some templates mix both).
-    for m in _HERMES_TOOL_CALL_RE.finditer(text):
-        body = m.group("body").strip()
-        try:
-            parsed = json.loads(body)
-        except json.JSONDecodeError:
-            continue
-        name = parsed.get("name")
-        args = parsed.get("arguments")
-        if name is None:
-            continue
-        args_str = json.dumps(args) if not isinstance(args, str) else args
-        tool_calls.append(
-            {
-                "id": f"call_{uuid.uuid4().hex[:12]}",
-                "type": "function",
-                "function": {"name": name, "arguments": args_str},
-            }
-        )
-    stripped = _HERMES_TOOL_CALL_RE.sub("", stripped)
 
-    stripped = stripped.strip()
-    if not tool_calls:
-        return (stripped or text), None
-    return (stripped or None), tool_calls
+def _count_assistant_turns(msgs: list[dict]) -> int:
+    return sum(1 for m in msgs if m.get("role") == "assistant")
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────
@@ -333,7 +329,7 @@ def _finish_reason_from_result(result: Any) -> str:
 
 @app.on_event("startup")
 async def _on_startup() -> None:
-    global _service_client, _sampling_client, _tokenizer, _ready, _model_id
+    global _service_client, _sampling_client, _tokenizer, _family, _ready, _model_id
 
     checkpoint = os.environ.get("FLEET_TINKER_CHECKPOINT", "").strip()
     base_model = os.environ.get("FLEET_TINKER_BASE_MODEL", "").strip()
@@ -354,6 +350,12 @@ async def _on_startup() -> None:
     from transformers import AutoTokenizer  # type: ignore
 
     hf_model_name = base_model.split(":peft:")[0]
+
+    _family = get_family(family_for_model(hf_model_name))
+    print(
+        f"[tinker_shim] family={_family.name if _family else None} for base={hf_model_name}",
+        file=sys.stderr, flush=True,
+    )
 
     print(f"[tinker_shim] loading tokenizer for {hf_model_name} (cold cache may take 1–2 min)…",
           file=sys.stderr, flush=True)
