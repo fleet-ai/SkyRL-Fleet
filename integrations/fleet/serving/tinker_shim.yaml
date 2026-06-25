@@ -17,7 +17,11 @@ resources:
       memory: 16
       cloud: runpod
 
-workdir: /Users/deniz/repos/skyrl-fleet
+# workdir is set at sky-launch time via --workdir so this YAML works from
+# any host (local dev = /Users/<you>/repos/skyrl-fleet; Cloud Run container
+# = /opt/skyrl-fleet). A hardcoded absolute path here was breaking the
+# fleet-research-api's eval flow because the Cloud Run container has no
+# such path.
 
 envs:
   FLEET_TINKER_CHECKPOINT: ""
@@ -37,6 +41,12 @@ setup: |
   uv venv --python 3.12 --seed
   source .venv/bin/activate
   uv pip install -e ".[tinker]"
+  # skyrl-gym contains the trainer's family adapters + tool_call parser. The
+  # shim imports them directly to keep the chat-template rendering and
+  # tool_call id format byte-identical with training. Base install only —
+  # no [fleet] extra (env.py is lazy-loaded via __init__.__getattr__, so MCP
+  # and OpenEnv aren't pulled in).
+  uv pip install -e ./skyrl-gym
   # Kimi-K2.6 tokenizer requires tiktoken via trust_remote_code. Not pulled by
   # the [tinker] extra (training tokenization goes through HF datasets path).
   uv pip install tiktoken blobfile
