@@ -1,0 +1,76 @@
+# GSM8k baseline GRPO training via SkyPilot — Qwen3-8B (1 node / 8 GPUs)
+#
+# Plain GRPO RL baseline to bring up the pipeline: Qwen3-8B on the upstream
+# GSM8k env (skyrl_gym.envs.gsm8k). NO custom tool, NO Fleet task env, NO S3
+# task download — the dataset is prepared locally from HuggingFace by the run
+# script (examples/train/gsm8k/gsm8k_dataset.py).
+#
+# Job name AND wandb run name are both: neeraj-rewind-gsm8k-baseline
+#   (job name -> SkyPilot `name` below; wandb run/project -> set in the run script).
+#
+# Topology: 1 node x 8 GPUs, TP=1 -> 8 inference engines.
+#
+# Required secret: WANDB_API_KEY  (this baseline needs nothing else — no
+#   FLEET_API_KEY, no AWS, no OpenRouter. The GSM8k dataset comes from HF.)
+
+name: neeraj-rewind-gsm8k-baseline
+
+resources:
+  disk_size: 500
+  memory: 800+
+  ordered:
+    # RunPod Slurm cluster (reserved H200s, no preemption)
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    # RunPod on-demand (API provisioned)
+    - accelerators: H200-SXM:8
+      cloud: runpod
+      ports: 6479
+    # GKE fallback
+    - accelerators: H200:8
+      cloud: kubernetes
+      network_tier: best
+      use_spot: true
+      ports: 6479
+    # GCP fallback
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+    # Other providers
+    - accelerators: H200:8
+      cloud: lambda
+      ports: 6479
+
+num_nodes: 1
+
+workdir: .
+
+secrets:
+  WANDB_API_KEY: ""
+
+envs:
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3-8B"
+  NUM_EPOCHS: 5
+  MAX_PROMPT_LENGTH: 512
+  MAX_GENERATE_LENGTH: 1024
+  # 1 node x 8 GPUs; TP=1 -> 8 engines.
+  NUM_INFERENCE_ENGINES: 8
+
+# Self-contained setup: no Fleet S3 / MODALITY dataset download needed for a
+# plain GSM8k baseline. Just build the venv and install deps; the run script
+# prepares the GSM8k parquet files from HuggingFace.
+setup: |
+  if [ ! -d ".venv" ]; then
+    uv venv --python 3.12 --seed
+  fi
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  uv pip install wandb
+
+run: |
+  bash scripts/fleet-gsm8k-baseline-run.sh
