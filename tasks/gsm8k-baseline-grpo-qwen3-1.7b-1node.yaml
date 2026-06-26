@@ -1,6 +1,6 @@
-# GSM8k baseline GRPO training via SkyPilot — Qwen3-8B (1 node / 8 GPUs)
+# GSM8k baseline GRPO training via SkyPilot — Qwen3-1.7B (1 node / 8 GPUs)
 #
-# Plain GRPO RL baseline to bring up the pipeline: Qwen3-8B on the upstream
+# Plain GRPO RL baseline to bring up the pipeline: Qwen3-1.7B on the upstream
 # GSM8k env (skyrl_gym.envs.gsm8k). NO custom tool, NO Fleet task env, NO S3
 # task download — the dataset is prepared locally from HuggingFace by the run
 # script (examples/train/gsm8k/gsm8k_dataset.py).
@@ -54,7 +54,7 @@ secrets:
 envs:
   LOGGER: "wandb"
   INFERENCE_BACKEND: "vllm"
-  MODEL_PATH: "Qwen/Qwen3-8B"
+  MODEL_PATH: "Qwen/Qwen3-1.7B"
   NUM_EPOCHS: 5
   MAX_PROMPT_LENGTH: 512
   MAX_GENERATE_LENGTH: 1024

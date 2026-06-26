@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GSM8k baseline GRPO training for Qwen3-8B (text-only, single node).
+# GSM8k baseline GRPO training for Qwen3-1.7B (text-only, single node).
 #
 # This is a PLAIN BASELINE: standard GRPO on the upstream GSM8k env
 # (skyrl_gym.envs.gsm8k) — no custom tool, no Fleet task env, no S3 task
@@ -13,9 +13,9 @@
 #   number after "#### " and exact-matches it against the gold answer
 #   (1.0 correct / 0.0 otherwise). Always done after one step.
 #
-# Model: Qwen/Qwen3-8B  (Qwen3 8B post-trained chat model; "-Instruct" has no
+# Model: Qwen/Qwen3-1.7B  (Qwen3 1.7B post-trained chat model; "-Instruct" has no
 #   separate HF repo — Qwen3 ships the instruct variant under the bare id, with
-#   Qwen/Qwen3-8B-Base being the pretrained-only variant). Qwen3 is a hybrid
+#   Qwen/Qwen3-1.7B-Base being the pretrained-only variant). Qwen3 is a hybrid
 #   reasoning model; we DISABLE thinking for this short arithmetic task via
 #   enable_thinking=false so the model emits the "#### <answer>" directly
 #   instead of burning the response budget on a <think> block.
@@ -31,7 +31,7 @@ cd "$(dirname "$0")/.."  # cd to SkyRL root (scripts/ is directly under repo roo
 # --- Defaults (overridable via SkyPilot YAML envs / CLI) ---
 export LOGGER="${LOGGER:-wandb}"
 export INFERENCE_BACKEND="${INFERENCE_BACKEND:-vllm}"
-export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-8B}"
+export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-1.7B}"
 export NUM_EPOCHS="${NUM_EPOCHS:-5}"          # modest baseline; GSM8k train ~7.5k examples
 export MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-512}"
 export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-1024}"
