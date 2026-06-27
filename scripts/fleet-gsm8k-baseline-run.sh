@@ -65,6 +65,7 @@ fi
 bash scripts/fleet-common-run.sh \
   --use-python-direct --cuda-env "$HOME/.cuda_env" \
   --set-ulimit \
+  --no-pytorch-alloc-conf \
   --entrypoint skyrl.train.entrypoints.main_base \
   --env-class gsm8k \
   --data-dir-name gsm8k -- \
