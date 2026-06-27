@@ -62,6 +62,11 @@ envs:
   MAX_GENERATE_LENGTH: 1024
   # 1 node x 8 GPUs; TP=1 -> 8 engines.
   NUM_INFERENCE_ENGINES: 8
+  # fleet-common-run.sh references $MODALITY unconditionally under `set -u`
+  # (builds a tasks_${MODALITY}.json path). For the gsm8k env-class that path
+  # is unused (the run script overrides data.{train,val}_data), but the var
+  # must be SET or the run aborts with "MODALITY: unbound variable". Dummy.
+  MODALITY: "gsm8k"
 
 # Self-contained setup: no Fleet S3 / MODALITY dataset download needed for a
 # plain GSM8k baseline. Just build the venv and install deps; the run script
