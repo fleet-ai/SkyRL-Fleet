@@ -58,8 +58,10 @@ envs:
   INFERENCE_BACKEND: "vllm"
   MODEL_PATH: "Qwen/Qwen3-1.7B"
   NUM_EPOCHS: 5
-  MAX_PROMPT_LENGTH: 512
-  MAX_GENERATE_LENGTH: 1024
+  # Thinking enabled; context pushed to the model's max (Qwen3-1.7B
+  # max_position_embeddings = 40960). 2048 + 38912 = 40960 total.
+  MAX_PROMPT_LENGTH: 2048
+  MAX_GENERATE_LENGTH: 38912
   # 1 node x 8 GPUs; TP=1 -> 8 engines.
   NUM_INFERENCE_ENGINES: 8
   # fleet-common-run.sh references $MODALITY unconditionally under `set -u`

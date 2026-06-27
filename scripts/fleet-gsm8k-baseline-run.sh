@@ -73,7 +73,7 @@ bash scripts/fleet-common-run.sh \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.algorithm.use_kl_loss=true \
   trainer.policy.model.path="$MODEL_PATH" \
-  generator.chat_template_kwargs.enable_thinking=false \
+  generator.chat_template_kwargs.enable_thinking=true \
   generator.inference_engine_tensor_parallel_size=1 \
   trainer.epochs="$NUM_EPOCHS" \
   trainer.train_batch_size=1024 \
@@ -96,7 +96,9 @@ bash scripts/fleet-common-run.sh \
   generator.backend="$INFERENCE_BACKEND" \
   generator.run_engines_locally=true \
   generator.weight_sync_backend=nccl \
-  generator.async_engine=true \
+  generator.async_engine=false \
+  generator.inference_engine.async_engine=false \
+  generator.inference_engine.enforce_eager=true \
   generator.batched=true \
   generator.gpu_memory_utilization=0.8 \
   trainer.logger="$LOGGER" \
