@@ -30,7 +30,6 @@ class VllmServer:
     async def run_server(self, **uvicorn_kwargs) -> None:
         sock_addr = (self.server_args.host or "", self.server_args.port)
         sock = create_server_socket(sock_addr)
-
         set_ulimit()
 
         def signal_handler(*_) -> None:
@@ -39,7 +38,6 @@ class VllmServer:
 
         signal.signal(signal.SIGTERM, signal_handler)
 
-        # TODO(tgriggs): Move this elsewhere, make configurable.
         os.environ["VLLM_USE_V1"] = "1"
         engine_args = AsyncEngineArgs.from_cli_args(self.server_args)
         engine = AsyncLLMEngine.from_engine_args(
@@ -90,7 +88,12 @@ class VllmServer:
 
         @app.post("/reset_prefix_cache")
         async def _reset_prefix_cache(request: Request):
-            await engine.reset_prefix_cache()
+            try:
+                data = await request.json()
+            except Exception:
+                data = {}
+            reset_running_requests = data.get("reset_running_requests", False)
+            await engine.reset_prefix_cache(reset_running_requests=reset_running_requests)
             return {"status": "ok"}
 
         # NOTE (sumanthrh): We use the _skyrl suffix to differentiate this from the native /update_weights endpoint
@@ -147,7 +150,10 @@ class VllmServer:
 
         await shutdown_task
 
-        sock.close()
+        try:
+            sock.close()
+        except (AttributeError, OSError):
+            pass
 
     def run_server_uvloop(self, **uvicorn_kwargs) -> None:
         uvloop.run(self.run_server(**uvicorn_kwargs))

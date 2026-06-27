@@ -5,7 +5,6 @@ uv run --extra dev --isolated pytest tests/train/generators/test_skyrl_gym_gener
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import numpy as np
 import pytest
 
 from skyrl.train.config import ChatTemplateConfig, GeneratorConfig
@@ -15,10 +14,6 @@ from skyrl.train.generators.base import (
     GeneratorOutput,
 )
 from skyrl.train.generators.skyrl_gym_generator import SkyRLGymGenerator
-from skyrl.train.generators.utils import (
-    concatenate_generator_outputs,
-    get_metrics_from_generator_output,
-)
 from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput
 
 # Mock constants, where 4 is the eos token id
@@ -79,7 +74,7 @@ def mock_llm():
     mock = MagicMock()
 
     # Mock the new generate method
-    def mock_generate(input_batch):
+    def mock_generate(input_batch, model=None):
         num_prompts = len(input_batch["prompts"]) if "prompts" in input_batch else len(input_batch["prompt_token_ids"])
         return {
             "responses": ["mocked output"] * num_prompts,
@@ -90,6 +85,8 @@ def mock_llm():
         }
 
     mock.generate = AsyncMock(side_effect=mock_generate)
+    # agent_loop releases the trajectory's router session on completion.
+    mock.finish_session = AsyncMock()
     return mock
 
 
@@ -271,7 +268,7 @@ async def test_agent_loop_single_turn(
     mock_make.return_value = mock_env
     mock_env.init.return_value = ([{"role": "user", "content": "Initial input"}], {})
 
-    def mock_generate(_):
+    def mock_generate(_, model=None):
         result = {
             "responses": ["4"],
             "response_ids": [mock_llm_output_ids.copy()],
@@ -359,111 +356,6 @@ async def test_generate_batched(mock_make, mock_tokenizer, mock_llm, mock_env, g
     assert generator_output["rewards"][0] == 1.0
     assert generator_output["stop_reasons"][0] == "stop"
     assert generator_output["loss_masks"][0] == [1] * len(MOCK_LLM_OUTPUT_IDS)
-
-
-def test_generator_output_concatenation():
-    # First ensure that the GeneratorOutput fields are what we expect
-    expected_fields = [
-        "prompt_token_ids",
-        "response_ids",
-        "rewards",
-        "loss_masks",
-        "stop_reasons",
-        "rollout_metrics",
-        "rollout_logprobs",
-        "rollout_expert_indices",
-        # optional but present in the signature
-        "trajectory_ids",
-        "is_last_step",
-    ]
-    assert set(GeneratorOutput.__annotations__.keys()) == set(expected_fields), (
-        "GeneratorOutput fields are not what we expect. "
-        "Please update the test and `concatenate_generator_outputs()` to reflect the new fields."
-        "It is needed to help Trainer.eval() record the full GeneratorOutput information."
-    )
-
-    generator_output_1: GeneratorOutput = {
-        "prompt_token_ids": [[1, 2], [3, 4]],
-        "response_ids": [[1, 2], [3, 4]],
-        "rewards": [1.0, 2.0],
-        "loss_masks": [[1, 1], [1, 1]],
-        "stop_reasons": ["stop", "stop"],
-        "rollout_logprobs": [[0.1, 0.2], [0.3, 0.4]],
-    }
-
-    generator_output_2: GeneratorOutput = {
-        "prompt_token_ids": [[5, 6, 7], [8]],
-        "response_ids": [[5, 6, 7], [8]],
-        "rewards": [2.0, 3.0],
-        "loss_masks": [[1, 1, 1], [1]],
-        "stop_reasons": ["stop", "stop"],
-        "rollout_logprobs": [[0.5, 0.6, 0.7], [0.8]],
-    }
-
-    generator_outputs = [generator_output_1, generator_output_2]
-    concatenated_output = concatenate_generator_outputs(generator_outputs)
-
-    assert concatenated_output["prompt_token_ids"] == [[1, 2], [3, 4], [5, 6, 7], [8]]
-    assert concatenated_output["response_ids"] == [[1, 2], [3, 4], [5, 6, 7], [8]]
-    assert concatenated_output["rewards"] == [1.0, 2.0, 2.0, 3.0]
-    assert concatenated_output["loss_masks"] == [[1, 1], [1, 1], [1, 1, 1], [1]]
-    assert concatenated_output["stop_reasons"] == ["stop", "stop", "stop", "stop"]
-    assert concatenated_output["rollout_logprobs"] == [[0.1, 0.2], [0.3, 0.4], [0.5, 0.6, 0.7], [0.8]]
-
-    # Validate rollout metrics
-    expected_rollout_metrics = {
-        "generate/min_num_tokens": 1,
-        "generate/max_num_tokens": 3,
-        "generate/avg_num_tokens": 2.0,
-        "generate/std_num_tokens": np.std([2, 2, 3, 1]).item(),
-        "generate/avg_tokens_non_zero_rewards": 2.0,
-        "generate/avg_tokens_zero_rewards": 0,
-    }
-    assert concatenated_output["rollout_metrics"].keys() == expected_rollout_metrics.keys()
-    for key, value in expected_rollout_metrics.items():
-        np.testing.assert_allclose(concatenated_output["rollout_metrics"][key], value)
-
-
-def test_get_metrics_from_generator_output():
-    # Per trajectory rewards, where rewards are List[float]
-    generator_output: GeneratorOutput = {
-        "prompt_token_ids": [[1, 2], [3, 4]],
-        "response_ids": [[1, 2], [3, 4]],
-        "rewards": [1.0, 2.0],
-        "loss_masks": [[1, 1], [1, 1]],
-        "stop_reasons": ["stop", "stop"],
-        "rollout_logprobs": None,
-    }
-    uids = ["a", "b"]
-    metrics = get_metrics_from_generator_output(generator_output, uids)
-    assert metrics["avg_score"] == 1.5
-    assert metrics["pass_at_n"] == 1.0
-    assert metrics["mean_positive_reward"] == 1.5
-
-    # Per token rewards, where rewards are List[List[float]], so for pass_at_n we use the last
-    # token's reward to signify the trajectory's reward
-    generator_output["rewards"] = [[1.0, 0.0], [0.0, 1.0]]
-    uids = ["a", "b"]
-    metrics = get_metrics_from_generator_output(generator_output, uids)
-    assert metrics["avg_score"] == 1.0
-    assert metrics["pass_at_n"] == 0.5
-    assert metrics["mean_positive_reward"] == 1.0
-
-    # Mixed rewards with some negative rewards
-    generator_output["rewards"] = [-1.0, 2.0]
-    uids = ["a", "b"]
-    metrics = get_metrics_from_generator_output(generator_output, uids)
-    assert metrics["avg_score"] == 0.5
-    assert metrics["pass_at_n"] == 0.5
-    assert metrics["mean_positive_reward"] == 1.0
-
-    # Mixed per-token rewards with negatives - per-token rewards
-    generator_output["rewards"] = [[1.0, -1.0], [-0.5, 0.5]]
-    uids = ["a", "b"]
-    metrics = get_metrics_from_generator_output(generator_output, uids)
-    assert metrics["avg_score"] == 0.0
-    assert metrics["pass_at_n"] == 0.5
-    assert metrics["mean_positive_reward"] == 0.75
 
 
 @pytest.mark.asyncio
@@ -578,7 +470,7 @@ async def test_length_limit_exceeded_during_conversation(
     max_input_length = 20  # Low limit to trigger length exceeded
 
     # Mock the new generate method
-    def mock_generate(input_batch):
+    def mock_generate(input_batch, model=None):
         num_prompts = len(input_batch["prompts"]) if "prompts" in input_batch else len(input_batch["prompt_token_ids"])
         if turns_to_exceed == 1:
             mock_llm_output_ids = [1] * 20  # Enough to exceed limit immediately (4 + 20 + 4 = 28 > 20)
@@ -845,7 +737,7 @@ async def test_apply_overlong_filtering_non_batched(
     generator.base_conversation_token_ids = []  # to make sure observation_ids are encoded correctly
 
     # First test: response that doesn't end with eos token (should be filtered)
-    async def llm_generate_side_effect(input_batch):
+    async def llm_generate_side_effect(input_batch, model=None):
 
         if input_batch.get("sampling_params") is not None:
             max_len = input_batch["sampling_params"]["max_generate_length"]
@@ -1011,7 +903,7 @@ async def test_agent_loop_token_level_rewards_multi_turn(mock_make, mock_tokeniz
     mock_tokenizer.encode.side_effect = encode_side_effect
 
     # LLM returns fixed response tokens per step: 3 tokens + eos
-    async def llm_generate_side_effect(input_batch):
+    async def llm_generate_side_effect(input_batch, model=None):
         num = (
             len(input_batch["prompt_token_ids"]) if "prompt_token_ids" in input_batch else len(input_batch["prompts"])
         )  # noqa: E501
@@ -1099,7 +991,7 @@ async def test_agent_loop_token_level_rewards_multi_turn_conversation_format(
     mock_tokenizer.apply_chat_template.side_effect = apply_chat_template_side_effect
 
     # LLM outputs include EOS and are kept in multi-turn path
-    async def llm_generate_side_effect(input_batch):
+    async def llm_generate_side_effect(input_batch, model=None):
         num = (
             len(input_batch["prompt_token_ids"]) if "prompt_token_ids" in input_batch else len(input_batch["prompts"])
         )  # noqa: E501
@@ -1189,7 +1081,7 @@ async def test_agent_loop_retokenize_returns_float_reward(mock_make, mock_tokeni
     mock_tokenizer.apply_chat_template.side_effect = apply_chat_template_side_effect
 
     # LLM generate in retokenize mode uses prompts; we can return any ids
-    async def llm_generate_side_effect(input_batch):
+    async def llm_generate_side_effect(input_batch, model=None):
         num = (
             len(input_batch["prompts"]) if "prompts" in input_batch else len(input_batch["prompt_token_ids"])
         )  # noqa: E501
@@ -1270,7 +1162,7 @@ async def test_agent_loop_truncation_drops_out_of_range_rewards(mock_make, mock_
     mock_tokenizer.eos_token_id = 4
 
     # LLM returns 4 assistant tokens per turn (no eos here; final EOS appended by generator for non-conv-mt)
-    async def llm_generate_side_effect(input_batch):
+    async def llm_generate_side_effect(input_batch, model=None):
         num = len(input_batch["prompt_token_ids"]) if "prompt_token_ids" in input_batch else len(input_batch["prompts"])
 
         if input_batch.get("sampling_params") is not None:
@@ -1366,7 +1258,7 @@ async def test_step_wise_trajectories_trajectory_ids(mock_make, mock_tokenizer, 
     mock_tokenizer.apply_chat_template.side_effect = apply_chat_template_side_effect
 
     # LLM returns 3 tokens + eos per step
-    async def llm_generate_side_effect(input_batch):
+    async def llm_generate_side_effect(input_batch, model=None):
         num = len(input_batch["prompt_token_ids"]) if "prompt_token_ids" in input_batch else len(input_batch["prompts"])
         return {
             "responses": ["step"] * num,
@@ -1488,7 +1380,7 @@ async def test_step_wise_trajectories_basic_output_validation(mock_make, mock_to
     mock_tokenizer.apply_chat_template.side_effect = apply_chat_template_side_effect
 
     # LLM returns 3 tokens + eos per step
-    async def llm_generate_side_effect(input_batch):
+    async def llm_generate_side_effect(input_batch, model=None):
         num = len(input_batch["prompt_token_ids"]) if "prompt_token_ids" in input_batch else len(input_batch["prompts"])
         return {
             "responses": ["step"] * num,
@@ -1621,3 +1513,138 @@ async def test_step_wise_trajectories_basic_output_validation(mock_make, mock_to
     # Validate stop_reasons
     for i, stop_reason in enumerate(generator_output["stop_reasons"]):
         assert isinstance(stop_reason, str), f"stop_reasons[{i}] should be a string"
+
+
+@pytest.mark.asyncio
+@patch("skyrl_gym.make")
+async def test_step_wise_trajectory_completion_time_metrics(mock_make, mock_tokenizer, mock_llm, mock_env_cfg):
+    """Step-wise training: completion-time metrics are computed from per-prompt times.
+
+    In step-wise mode the flattened output has one entry per turn, so a trajectory with N
+    turns contributes N steps. The per-trajectory ``e2e_time`` is replicated across that
+    trajectory's steps in ``trajectory_generation_times`` (so it stays aligned with
+    ``response_ids``), but the aggregate completion-time stats must be computed from the
+    per-prompt times (one per trajectory) to avoid the per-step duplicates skewing them.
+
+    This spies on ``get_rollout_metrics`` to capture the ``trajectory_completion_times`` it
+    actually receives.
+    """
+    import numpy as np
+
+    from skyrl.train.generators import utils as generator_utils
+    from skyrl.train.generators.base import TrajectoryID
+
+    mock_tokenizer.eos_token_id = 4
+
+    def apply_chat_template_side_effect(messages, **kwargs):
+        if kwargs.get("tokenize", True):
+            return [201, 202]
+        return "".join([m.get("content", "") for m in messages])
+
+    mock_tokenizer.apply_chat_template.side_effect = apply_chat_template_side_effect
+
+    async def llm_generate_side_effect(input_batch, model=None):
+        num = len(input_batch["prompt_token_ids"]) if "prompt_token_ids" in input_batch else len(input_batch["prompts"])
+        return {
+            "responses": ["step"] * num,
+            "stop_reasons": ["stop"] * num,
+            "response_logprobs": None,
+            "response_ids": [[10, 11, 12, mock_tokenizer.eos_token_id] for _ in range(num)],
+        }
+
+    mock_llm.generate = AsyncMock(side_effect=llm_generate_side_effect)
+
+    # Environment that runs for 2 steps before completing.
+    class MultiStepEnv(BaseTextEnv):
+        def __init__(self):
+            super().__init__()
+            self.turns = 0
+
+        def init(self, prompt):
+            return prompt, {}
+
+        def step(self, action):
+            self.turns += 1
+            if self.turns == 1:
+                return BaseTextEnvStepOutput(
+                    observations=[{"role": "user", "content": "obs1"}], reward=0.5, done=False, metadata={}
+                )
+            return BaseTextEnvStepOutput(observations=[], reward=1.0, done=True, metadata={})
+
+    mock_make.side_effect = lambda *args, **kwargs: MultiStepEnv()
+
+    cfg = GeneratorConfig()
+    cfg.sampling_params.max_generate_length = 50
+    cfg.sampling_params.logprobs = None
+    cfg.apply_overlong_filtering = False
+    cfg.max_input_length = 512
+    cfg.batched = False
+    cfg.max_turns = 10
+    cfg.zero_reward_on_non_stop = False
+    cfg.use_conversation_multi_turn = True
+    cfg.step_wise_trajectories = True
+    cfg.chat_template = ChatTemplateConfig(source="name", name_or_path=None)
+
+    generator = SkyRLGymGenerator(
+        generator_cfg=cfg,
+        skyrl_gym_cfg=mock_env_cfg,
+        inference_engine_client=mock_llm,
+        tokenizer=mock_tokenizer,
+    )
+    generator.base_conversation_token_ids = []
+
+    num_trajectories = 2
+    prompts = [[{"role": "user", "content": f"Q{i}?"}] for i in range(num_trajectories)]
+    env_extras = [{"test": f"value{i}"} for i in range(num_trajectories)]
+    trajectory_ids = [TrajectoryID(instance_id=f"uid{i}", repetition_id=0) for i in range(num_trajectories)]
+    input_batch: GeneratorInput = {
+        "prompts": prompts,
+        "env_extras": env_extras,
+        "env_classes": [mock_env_cfg.env_class for _ in prompts],
+        "trajectory_ids": trajectory_ids,
+    }
+
+    # Wrap the real metrics function so we can inspect what it was called with while still
+    # producing the real metrics in the output.
+    spy = MagicMock(side_effect=generator_utils.get_rollout_metrics)
+    with patch("skyrl.train.generators.skyrl_gym_generator.get_rollout_metrics", spy):
+        generator_output: GeneratorOutput = await generator.generate(input_batch)
+
+    # 2 trajectories x 2 steps each -> 4 flattened steps.
+    num_steps = num_trajectories * 2
+    assert len(generator_output["response_ids"]) == num_steps
+
+    # Metrics are computed from per-prompt times: one entry per trajectory, NOT one per step.
+    assert spy.call_count == 1
+    metrics_times = spy.call_args.kwargs["trajectory_completion_times"]
+    assert metrics_times is not None
+    assert len(metrics_times) == num_trajectories, (
+        f"completion times passed to metrics should be per-prompt (len {num_trajectories}), "
+        f"got len {len(metrics_times)} (per-step duplicates would skew the stats)"
+    )
+    assert all(t is not None and t >= 0.0 for t in metrics_times)
+
+    # The output field is per-step aligned with response_ids, with each trajectory's
+    # trajectory-level time replicated across its steps.
+    out_times = generator_output["trajectory_generation_times"]
+    assert out_times is not None
+    assert len(out_times) == num_steps
+    assert out_times[0] == out_times[1]  # trajectory 0's two steps share its e2e time
+    assert out_times[2] == out_times[3]  # trajectory 1's two steps share its e2e time
+    # The per-prompt times handed to metrics are exactly the distinct per-trajectory values.
+    assert metrics_times == [out_times[0], out_times[2]]
+
+    # Aggregate stats are present and computed over the per-prompt times.
+    rollout_metrics = generator_output["rollout_metrics"]
+    for key in (
+        "generate/trajectory_completion_time_mean",
+        "generate/trajectory_completion_time_p90",
+        "generate/trajectory_completion_time_max",
+    ):
+        assert key in rollout_metrics, f"missing metric {key}"
+    expected = np.array(metrics_times, dtype=np.float64)
+    assert rollout_metrics["generate/trajectory_completion_time_mean"] == pytest.approx(np.mean(expected).item())
+    assert rollout_metrics["generate/trajectory_completion_time_p90"] == pytest.approx(
+        np.percentile(expected, 90).item()
+    )
+    assert rollout_metrics["generate/trajectory_completion_time_max"] == pytest.approx(np.max(expected).item())

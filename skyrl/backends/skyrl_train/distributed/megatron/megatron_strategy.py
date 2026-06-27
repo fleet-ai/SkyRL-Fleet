@@ -1,6 +1,9 @@
+import hashlib
 import os
 import random
-from datetime import timedelta
+import re
+import shutil
+import tempfile
 from typing import List, Optional, Union
 
 import megatron.core.parallel_state as mpu
@@ -128,6 +131,7 @@ class MegatronStrategy(DistributedStrategy):
         optimizer_config=None,
         seed: int = 42,
         is_lora: bool = False,
+        node_local_rank: int = 0,
     ) -> None:
         super().__init__()
         self.megatron_config = megatron_config
@@ -135,6 +139,7 @@ class MegatronStrategy(DistributedStrategy):
         self.seed = seed
         self.hf_config = None  # Set by the megatron worker once configs are initialized.
         self.is_lora = is_lora
+        self.node_local_rank = node_local_rank
 
         # NOTE: Set Megatron dist checkpoint async backend to persistent to avoid `os.fork()`-ing
         # short-lived background workers, which does not work well with Ray.
@@ -154,7 +159,7 @@ class MegatronStrategy(DistributedStrategy):
 
             tensor_parallel.model_parallel_cuda_manual_seed(seed)
 
-    def setup_distributed(self, timeout=timedelta(minutes=30)) -> None:
+    def setup_distributed(self) -> None:
         local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
         if local_rank != -1:
             torch.cuda.set_device(local_rank)
@@ -171,27 +176,35 @@ class MegatronStrategy(DistributedStrategy):
         self.set_seed(self.seed)
         self.world_size = dist.get_world_size()
 
-    def offload_to_cpu(
-        self, model, optimizer, pin_memory=True, non_blocking=True, offload_optimizer=True, offload_model=True
-    ):
+    def offload_to_cpu(self, model, optimizer, offload_optimizer=True, offload_model=True):
         """
         Offload model weights and optimizer to CPU memory.
+
+        The grad buffer belongs to the DDP-wrapped model, not the optimizer,
+        so it is offloaded whenever ``offload_optimizer`` is requested even if
+        ``optimizer is None`` (e.g. ``policy.inference_only_init=True`` flows).
         """
         if offload_model:
             offload_megatron_model_to_cpu(model)
-        if optimizer and offload_optimizer:
+        if offload_optimizer:
             offload_megatron_grads_to_cpu(model)
-            offload_megatron_optimizer(optimizer)
+            if optimizer is not None:
+                offload_megatron_optimizer(optimizer)
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
 
-    def backload_to_gpu(self, model, optimizer, non_blocking=True, backload_optimizer=True, backload_model=True):
-        """Reload model weights back to GPU."""
+    def backload_to_gpu(self, model, optimizer, backload_optimizer=True, backload_model=True):
+        """Reload model weights back to GPU.
+
+        See :meth:`offload_to_cpu` for why the grad-buffer half is decoupled
+        from optimizer existence.
+        """
         if backload_model:
             load_megatron_model_to_gpu(model)
-        if optimizer and backload_optimizer:
+        if backload_optimizer:
             load_megatron_grads_to_gpu(model)
-            load_megatron_optimizer(optimizer)
+            if optimizer is not None:
+                load_megatron_optimizer(optimizer)
         torch.cuda.synchronize()
 
     def backward(self, loss: torch.Tensor, model, optimizer: optim.Optimizer, **kwargs) -> None:
@@ -373,15 +386,18 @@ class MegatronStrategy(DistributedStrategy):
         if scheduler and load_lr_scheduler_states:
             sharded_state_dict["lr_scheduler"] = scheduler.state_dict()
 
-        with io.local_read_dir(ckpt_dir) as read_dir:
-            # Load the checkpoint in parallel.
-            load_strategy = get_default_load_sharded_strategy(read_dir)
+        if io.is_cloud_path(ckpt_dir):
+            state_dict = self._load_dist_checkpoint_from_cloud(ckpt_dir, sharded_state_dict)
+        else:
+            # Load from local filesystem with full parallel strategy.
+            load_strategy = get_default_load_sharded_strategy(ckpt_dir)
             load_strategy = FullyParallelLoadStrategyWrapper(
                 load_strategy, mpu.get_data_parallel_group(with_context_parallel=True)
             )
             state_dict = dist_checkpointing.load(
-                sharded_state_dict=sharded_state_dict, checkpoint_dir=read_dir, sharded_strategy=load_strategy
+                sharded_state_dict=sharded_state_dict, checkpoint_dir=ckpt_dir, sharded_strategy=load_strategy
             )
+
         if not self.is_lora:
             # Load the model, optimizer, and scheduler state dicts.
             assert (
@@ -412,6 +428,80 @@ class MegatronStrategy(DistributedStrategy):
 
         return ckpt_dir, {}
 
+    _SHARD_FILE_PATTERN = re.compile(r"__(\d+)_\d+\.distcp$")
+
+    def _load_dist_checkpoint_from_cloud(self, ckpt_dir: str, sharded_state_dict: dict) -> dict:
+        """Download checkpoint shards from cloud storage with per-rank parallelism.
+
+        All ranks on the same node share a single local directory. Each rank
+        downloads only its own shard file(s) into the shared dir, so the total
+        download per node equals one full copy of the checkpoint (instead of one
+        copy per rank).
+
+        Local rank 0 creates the directory and downloads common metadata files.
+        After a barrier, all shard files are present and every rank can load.
+
+        Does not currently support flexible trainer resharding.
+        """
+        global_rank = dist.get_rank()
+        node_local_rank = self.node_local_rank
+
+        dir_hash = hashlib.md5(ckpt_dir.encode()).hexdigest()[:12]
+        local_dir = os.path.join(tempfile.gettempdir(), f"skyrl_ckpt_load_{dir_hash}")
+
+        try:
+            all_entries = io.list_dir(ckpt_dir)
+
+            # Local rank 0: create dir and download common/metadata files.
+            if node_local_rank == 0:
+                if os.path.exists(local_dir):
+                    shutil.rmtree(local_dir)
+                os.makedirs(local_dir)
+
+                for entry in all_entries:
+                    name = entry.rstrip("/").split("/")[-1]
+                    if not name:
+                        continue
+                    if self._SHARD_FILE_PATTERN.search(name):
+                        continue
+                    cloud_entry = ckpt_dir.rstrip("/") + "/" + name
+                    if io.isdir(cloud_entry):
+                        continue
+                    io.download_file(cloud_entry, os.path.join(local_dir, name))
+
+            # Wait for the directory and common files to be ready.
+            dist.barrier()
+
+            # Each rank downloads its own shard file(s) into the shared dir.
+            for entry in all_entries:
+                name = entry.rstrip("/").split("/")[-1]
+                if not name:
+                    continue
+                match = self._SHARD_FILE_PATTERN.search(name)
+                if match and int(match.group(1)) == global_rank:
+                    cloud_path = ckpt_dir.rstrip("/") + "/" + name
+                    local_path = os.path.join(local_dir, name)
+                    io.download_file(cloud_path, local_path)
+
+            # Wait for all ranks to finish downloading their shards.
+            dist.barrier()
+
+            self.print(f"All ranks downloaded checkpoint shards from {ckpt_dir}")
+
+            load_strategy = get_default_load_sharded_strategy(local_dir)
+            load_strategy = FullyParallelLoadStrategyWrapper(
+                load_strategy, mpu.get_data_parallel_group(with_context_parallel=True)
+            )
+            return dist_checkpointing.load(
+                sharded_state_dict=sharded_state_dict,
+                checkpoint_dir=local_dir,
+                sharded_strategy=load_strategy,
+            )
+        finally:
+            dist.barrier()
+            if node_local_rank == 0:
+                shutil.rmtree(local_dir, ignore_errors=True)
+
     def _load_lora_adapters(self, model, ckpt_dir):
         """Load LoRA adapters from checkpoint."""
         # TODO (erictang000): Update this logic once LoRA checkpointing is upstreamed to Megatron-Bridge
@@ -436,11 +526,23 @@ class MegatronStrategy(DistributedStrategy):
 
         # All ranks call into bridge.
         with io.local_work_dir(output_dir) as work_dir:
-            bridge.save_hf_weights(model.actor_module, work_dir)
+            # strict=False is required for partial exports (e.g. language_model_only
+            # on a Qwen3.5 VL checkpoint, whose shards co-mingle vision and text
+            # weights): the bridge writes a shard only once all its keys are yielded,
+            # so strict=True silently writes zero weights. No-op for complete exports.
+            bridge.save_hf_weights(model.actor_module, work_dir, strict=False)
             self.print(f"Successfully saved HF safetensors model to {output_dir}")
 
             # Only rank 0 saves the Huggingface config and tokenizer.
             if self.is_rank_0():
+                # Preserve any custom modeling artifacts (e.g. modeling_*.py,
+                # special_tokens_map.json, auto_map-referenced files) that
+                # trust_remote_code models depend on. save_hf_configs below
+                # overwrites config.json/tokenizer files with the strategy's
+                # current view, but save_artifacts is required to copy the
+                # custom Python modules and other artifacts that
+                # save_pretrained() alone does not emit.
+                bridge.hf_pretrained.save_artifacts(work_dir)
                 self.save_hf_configs(self.hf_config, work_dir, tokenizer)
                 self.print(f"Successfully saved HF config and tokenizer to {output_dir}")
 

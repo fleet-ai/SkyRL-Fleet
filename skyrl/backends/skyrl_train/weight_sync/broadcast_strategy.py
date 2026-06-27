@@ -68,25 +68,34 @@ class BroadcastInitInfo(WeightSyncInitInfo):
     # Also we need a new method (for_servers) to update the rank_offset for the native weight
     # sync, since this is done automatically in the legacy weight sync.
 
-    def for_servers(self, world_size_per_server: int, num_servers: int) -> List["BroadcastInitInfo"]:
+    def for_servers(self, world_size_per_server: int, num_servers: int, dp_size: int = 1) -> List["BroadcastInitInfo"]:
         """Return one BroadcastInitInfo per server with rank_offset for each.
 
         Used when calling init_weight_update_communicator on the new inference path:
         expand the single init_info into a list (one per server), then pass
         [x.to_api_payload() for x in server_infos] to the client.
 
+        server_urls are ordered as [engine0_dp0, engine0_dp1, ..., engine1_dp0, ...].
+        All DP servers within one deployment share the same rank_offset because
+        vLLM's init_transfer_engine already accounts for dp_rank internally.
+        The offset only advances at deployment (num_engines) boundaries.
+
         Args:
             world_size_per_server: Number of workers per server (same for all servers).
-            num_servers: Number of servers.
+            num_servers: Total number of servers (num_engines * dp_size).
+            dp_size: Data parallel size. Servers are grouped into deployments
+                of dp_size servers each.
 
         Returns:
             List of BroadcastInitInfo, one per server, with cumulative rank_offset.
         """
         result: List[BroadcastInitInfo] = []
         rank_offset = self.rank_offset
-        for _ in range(num_servers):
+        for i in range(num_servers):
             result.append(replace(self, rank_offset=rank_offset))
-            rank_offset += world_size_per_server
+            # Advance rank_offset only at deployment boundaries (every dp_size servers)
+            if (i + 1) % dp_size == 0:
+                rank_offset += world_size_per_server
         return result
 
     def to_api_payload(self) -> Dict[str, Any]:
@@ -176,13 +185,22 @@ class BroadcastWeightTransferSender(WeightTransferSender):
             for chunk in chunks:
                 yield from zip(chunk.names, chunk.tensors)
 
+        # Route via the skyrl wrap (start_weight_update + update_weights_nccl
+        # + finish_weight_update) rather than vLLM's native /update_weights so
+        # the receive is wrapped with set_current_vllm_config. Matches how
+        # CUDA IPC already routes through skyrl's wrap.
+        # TODO: switch back to update_named_weights once the upstream vLLM
+        # patch lands (vllm-project/vllm weight-sync-fix).
+        # https://github.com/vllm-project/vllm/pull/42577
         if torch.distributed.get_rank() == 0:
             from vllm.distributed.weight_transfer.nccl_engine import (
                 NCCLWeightTransferEngine,
             )
 
+            await self._inference_client.start_weight_update(is_checkpoint_format=True)
+
             update_info = {**weight_metadata, "packed": True}
-            update_task = asyncio.create_task(self._inference_client.update_named_weights(update_info))
+            update_task = asyncio.create_task(self._inference_client.update_weights_nccl(update_info))
 
             # Run in thread so the HTTP update_task can progress concurrently
             await asyncio.to_thread(
@@ -191,6 +209,8 @@ class BroadcastWeightTransferSender(WeightTransferSender):
                 trainer_args={"group": self._model_update_group, "packed": True},
             )
             await update_task
+
+            await self._inference_client.finish_weight_update()
         else:
             # Non-rank-0 still needs to participate in the all-gather
             for _ in weight_iterator():
@@ -209,6 +229,12 @@ class BroadcastWeightTransferSender(WeightTransferSender):
         # Rank 0 must have a process group to broadcast to inference engines
         if rank == 0:
             assert self._model_update_group is not None, "Rank 0 must have model_update_group"
+
+        # Bracket the whole sync with one layerwise-reload initialize/finalize so
+        # per-chunk reloads don't restore non-chunk layers; see `vllm_worker.py.WorkerWrap` docs
+        if rank == 0:
+            await self._inference_client.start_weight_update(is_checkpoint_format=True)
+        torch.distributed.barrier()
 
         # All ranks iterate through chunks (weight extraction may involve collective ops)
         for chunk in chunks:
@@ -243,6 +269,10 @@ class BroadcastWeightTransferSender(WeightTransferSender):
                 await update_weight_task
 
             torch.distributed.barrier()
+
+        if rank == 0:
+            await self._inference_client.finish_weight_update()
+        torch.distributed.barrier()
 
     def teardown(self) -> None:
         """Destroy the process group used for weight transfer."""

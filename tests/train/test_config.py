@@ -4,18 +4,28 @@ uv run --isolated --extra dev pytest -s tests/train/test_config.py
 
 import typing
 from dataclasses import dataclass, field
-from typing import Annotated, List, Optional
+from enum import Enum
+from typing import Annotated, Optional
 
 import pytest
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 
 from skyrl.train.config.config import (
     BaseConfig,
     SkyRLTrainConfig,
-    _resolve_dataclass_type,
+    _resolve_class_type,
     build_nested_dataclass,
 )
-from skyrl.train.config.utils import get_legacy_config
+from skyrl.train.utils.utils import validate_cfg
+from tests.train.util import example_dummy_config
+
+
+def _make_validated_test_config():
+    """Return a small config that passes validate_batch_sizes()."""
+    cfg = example_dummy_config()
+    cfg.trainer.policy_mini_batch_size = cfg.trainer.train_batch_size
+    cfg.trainer.critic_mini_batch_size = cfg.trainer.train_batch_size
+    return cfg
 
 
 # Helper dataclasses for testing
@@ -24,11 +34,16 @@ class _SimpleConfig(BaseConfig):
     a: int = 0
 
 
+class SimpleEnum(Enum):
+    A = "a"
+
+
 @dataclass
 class _NestedConfig(BaseConfig):
     b: int = 1
     c: Annotated[_SimpleConfig, "test"] = field(default_factory=_SimpleConfig)
     d: Optional[_SimpleConfig] = None
+    e: Optional[SimpleEnum] = SimpleEnum.A
 
 
 def test_build_nested_dataclass():
@@ -68,6 +83,12 @@ def test_build_config_from_dict_config():
     assert cfg.b == 1
     assert cfg.c.a == 2
 
+    cfg = OmegaConf.create({"b": 1, "c": {"a": 2}, "e": "a"})
+    cfg = _NestedConfig.from_dict_config(cfg)
+    assert cfg.b == 1
+    assert cfg.c.a == 2
+    assert isinstance(cfg.e, SimpleEnum)
+
 
 def test_build_config_from_dict_config_invalid_config():
     cfg = OmegaConf.create({"path": "path/to/model"})
@@ -76,10 +97,11 @@ def test_build_config_from_dict_config_invalid_config():
 
 
 def test_dtype_resolution():
-    assert not _resolve_dataclass_type(typing.Optional[int])
-    assert _resolve_dataclass_type(typing.Optional[_SimpleConfig]) is _SimpleConfig
-    assert _resolve_dataclass_type(typing.Union[None, _SimpleConfig]) is _SimpleConfig
-    assert _resolve_dataclass_type(typing.Annotated[_SimpleConfig, "test"]) is _SimpleConfig
+    assert not _resolve_class_type(typing.Optional[int])
+    assert _resolve_class_type(typing.Optional[_SimpleConfig]) is _SimpleConfig
+    assert _resolve_class_type(typing.Union[None, _SimpleConfig]) is _SimpleConfig
+    assert _resolve_class_type(typing.Annotated[_SimpleConfig, "test"]) is _SimpleConfig
+    assert _resolve_class_type(Optional[SimpleEnum]) is SimpleEnum
 
 
 def test_cli_overrides():
@@ -123,57 +145,6 @@ def test_temperature_propagation():
     assert cfg.trainer.algorithm.temperature == 0.7
 
 
-def test_legacy_config_translation():
-    """Test that legacy config format is translated to new format."""
-    import warnings
-
-    # Use legacy-style paths (flat under generator instead of nested in inference_engine)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        cfg = SkyRLTrainConfig.from_cli_overrides(["generator.backend=vllm"])
-
-        # Should have issued a deprecation warning (filter for DeprecationWarning only)
-        deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
-        assert len(deprecation_warnings) == 1
-        assert "legacy" in str(deprecation_warnings[0].message).lower()
-
-    # Value should be translated to the new nested location
-    assert cfg.generator.inference_engine.backend == "vllm"
-
-    # test with full YAML
-    full_legacy_cfg = get_legacy_config()
-    # custom override
-    full_legacy_cfg.generator.backend = "vllm"
-
-    # convert to CLI overrides
-    def traverse_and_convert(cfg: DictConfig, parent_key: str = "") -> List[str]:
-        overrides = []
-        for key, value in cfg.items():
-            if isinstance(value, DictConfig):
-                overrides.extend(traverse_and_convert(value, f"{parent_key}.{key}" if parent_key else key))
-            else:
-                overrides.append(f"{parent_key}.{key}={value}" if parent_key else f"{key}={value}")
-        return overrides
-
-    full_legacy_cfg_as_overrides = traverse_and_convert(full_legacy_cfg)
-
-    # should pass without error
-    translated_cfg = SkyRLTrainConfig.from_cli_overrides(full_legacy_cfg_as_overrides)
-    assert translated_cfg.generator.inference_engine.backend == "vllm"
-
-
-def test_legacy_config_field_rename():
-    """Test that renamed fields are translated correctly."""
-    import warnings
-
-    with warnings.catch_warnings(record=True):
-        warnings.simplefilter("always")
-        # Old field name: num_inference_engines -> new: num_engines
-        cfg = SkyRLTrainConfig.from_cli_overrides(["generator.num_inference_engines=4"])
-
-    assert cfg.generator.inference_engine.num_engines == 4
-
-
 def test_cross_field_defaults():
     """Test that cross-field defaults are applied correctly."""
     cfg = SkyRLTrainConfig.from_cli_overrides(
@@ -194,21 +165,95 @@ def test_cross_field_defaults():
     assert cfg.generator.rope_theta == cfg.trainer.rope_theta
 
 
+class TestTrainerUseSamplePackingAlias:
+    """`trainer.use_sample_packing` is a deprecated alias for `trainer.remove_microbatch_padding`
+    on the RL entrypoint config (mirrors the ``fsdp2``->``fsdp`` alias)."""
+
+    def test_trainer_use_sample_packing_remapped_with_warning(self):
+        with pytest.warns(DeprecationWarning, match="trainer.use_sample_packing.*has been renamed"):
+            cfg = SkyRLTrainConfig.from_cli_overrides(["trainer.use_sample_packing=false"])
+        assert cfg.trainer.remove_microbatch_padding is False
+
+    def test_trainer_use_sample_packing_remapped_from_dict(self):
+        # The Tinker backend passes overrides as a dict of dotted keys.
+        with pytest.warns(DeprecationWarning, match="trainer.use_sample_packing.*has been renamed"):
+            cfg = SkyRLTrainConfig.from_cli_overrides({"trainer.use_sample_packing": True})
+        assert cfg.trainer.remove_microbatch_padding is True
+
+    def test_trainer_use_sample_packing_with_new_key_raises(self):
+        with pytest.raises(ValueError, match="only one of trainer.use_sample_packing"):
+            SkyRLTrainConfig.from_cli_overrides(
+                ["trainer.use_sample_packing=true", "trainer.remove_microbatch_padding=false"]
+            )
+
+
+class TestSkyRLTrainConfig:
+    @pytest.mark.parametrize(
+        ("overrides", "expected_num_workers", "expected_persistent"),
+        [
+            pytest.param([], 8, False, id="default-no-http"),
+            pytest.param(["generator.inference_engine.enable_http_endpoint=true"], 0, False, id="http-endpoint"),
+            pytest.param(
+                ["generator.inference_engine.enable_http_endpoint=true", "data.dataloader.num_workers=4"],
+                4,
+                False,
+                id="explicit-overrides-http",
+            ),
+            pytest.param(["data.dataloader.num_workers=0"], 0, False, id="explicit-zero"),
+            pytest.param(["data.dataloader.persistent_workers=true"], 8, True, id="persistent-keeps-default-workers"),
+        ],
+    )
+    def test_resolution(self, overrides: list[str], expected_num_workers: int, expected_persistent: bool) -> None:
+        cfg = SkyRLTrainConfig.from_cli_overrides(overrides)
+        assert cfg.data.dataloader.num_workers == expected_num_workers
+        assert cfg.data.dataloader.persistent_workers == expected_persistent
+
+    @pytest.mark.parametrize(
+        ("overrides", "match"),
+        [
+            pytest.param(
+                ["data.dataloader.num_workers=0", "data.dataloader.persistent_workers=true"],
+                "persistent_workers requires num_workers > 0",
+                id="persistent-without-workers",
+            ),
+            pytest.param(["data.dataloader.num_workers=-1"], "num_workers must be None or >= 0", id="negative-workers"),
+        ],
+    )
+    def test_invalid_raises(self, overrides: list[str], match: str) -> None:
+        with pytest.raises(ValueError, match=match):
+            SkyRLTrainConfig.from_cli_overrides(overrides)
+
+
 class TestMaxSeqLenValidation:
-    """Tests for the max_seq_len auto-calculation and explicit-override logic in __post_init__."""
+    """Tests for max_seq_len defaults and validation behavior."""
 
-    def test_max_seq_len_auto_calculated_when_none(self):
-        """When max_seq_len is None (default), __post_init__ should compute it as
-        max_input_length + max_generate_length."""
-        # implicitly set max_seq_len to None
+    def test_max_seq_len_defaults_to_none_when_not_set(self):
         cfg = SkyRLTrainConfig.from_cli_overrides([])
-
-        expected = cfg.generator.max_input_length + cfg.generator.sampling_params.max_generate_length
-        assert cfg.trainer.algorithm.max_seq_len == expected
+        assert cfg.trainer.algorithm.max_seq_len is None
 
     def test_max_seq_len_preserved_when_explicitly_set(self):
-        """When max_seq_len is explicitly set by the user, __post_init__ should NOT overwrite it."""
-        # explicitly set max_seq_len to 32768
         cfg = SkyRLTrainConfig.from_cli_overrides(["trainer.algorithm.max_seq_len=32768"])
-
         assert cfg.trainer.algorithm.max_seq_len == 32768
+
+    def test_validate_cfg_requires_explicit_max_seq_len_for_seq_mean_token_sum_norm(self):
+        cfg = _make_validated_test_config()
+        cfg.trainer.algorithm.loss_reduction = "seq_mean_token_sum_norm"
+        cfg.trainer.algorithm.max_seq_len = None
+
+        with pytest.raises(ValueError, match=r"trainer\.algorithm\.max_seq_len"):
+            validate_cfg(cfg)
+
+    @pytest.mark.parametrize("loss_reduction", ["token_mean", "sequence_mean"])
+    def test_validate_cfg_allows_missing_max_seq_len_for_other_reductions(self, loss_reduction):
+        cfg = _make_validated_test_config()
+        cfg.trainer.algorithm.loss_reduction = loss_reduction
+        cfg.trainer.algorithm.max_seq_len = None
+
+        validate_cfg(cfg)
+
+    def test_validate_cfg_allows_explicit_max_seq_len_for_seq_mean_token_sum_norm(self):
+        cfg = _make_validated_test_config()
+        cfg.trainer.algorithm.loss_reduction = "seq_mean_token_sum_norm"
+        cfg.trainer.algorithm.max_seq_len = 4096
+
+        validate_cfg(cfg)

@@ -15,7 +15,10 @@ from skyrl.backends.skyrl_train.inference_engines.base import (
     InferenceEngineInterface,
     InferenceEngineOutput,
 )
-from skyrl.backends.skyrl_train.inference_engines.utils import get_rendezvous_addr_port
+from skyrl.backends.skyrl_train.inference_engines.utils import (
+    build_engine_runtime_env,
+    get_rendezvous_addr_port,
+)
 from skyrl.backends.skyrl_train.weight_sync import WeightUpdateRequest
 
 
@@ -45,11 +48,13 @@ class RayWrappedInferenceEngine(InferenceEngineInterface):
         prompt_token_ids: List[int],
         num_samples: int,
         sampling_params: Dict[str, Any],
+        prompt_logprobs: bool = False,
     ) -> InferenceEngineOutput:
         return await self.inference_engine_actor.sample.remote(
             prompt_token_ids=prompt_token_ids,
             num_samples=num_samples,
             sampling_params=sampling_params,
+            prompt_logprobs=prompt_logprobs,
         )
 
     async def wake_up(self, *args: Any, **kwargs: Any):
@@ -64,11 +69,19 @@ class RayWrappedInferenceEngine(InferenceEngineInterface):
     async def update_named_weights(self, request: WeightUpdateRequest):
         return await self.inference_engine_actor.update_named_weights.remote(request)
 
+    async def start_weight_update(self, is_checkpoint_format: bool = True):
+        return await self.inference_engine_actor.start_weight_update.remote(is_checkpoint_format=is_checkpoint_format)
+
+    async def finish_weight_update(self):
+        return await self.inference_engine_actor.finish_weight_update.remote()
+
     async def teardown(self):
         return await self.inference_engine_actor.teardown.remote()
 
-    async def reset_prefix_cache(self):
-        return await self.inference_engine_actor.reset_prefix_cache.remote()
+    async def reset_prefix_cache(self, reset_running_requests: bool = False):
+        return await self.inference_engine_actor.reset_prefix_cache.remote(
+            reset_running_requests=reset_running_requests
+        )
 
     async def chat_completion(self, request_payload: Dict[str, Any]) -> Dict[str, Any]:
         return await self.inference_engine_actor.chat_completion.remote(request_payload)
@@ -108,13 +121,15 @@ def create_ray_wrapped_inference_engines(
     max_lora_rank=64,
     max_loras=1,
     fully_sharded_loras=False,
+    language_model_only=False,
     engine_init_kwargs: Dict[str, Any] = {},
     rope_scaling: Dict[str, Any] = {},
     rope_theta: float | None = None,
-    enable_ray_prometheus_stats: bool = False,
+    enable_ray_prometheus_stats: bool = True,
     enable_return_routed_experts: bool = False,
     served_model_name: str | None = None,
     distributed_executor_backend: str = "ray",
+    use_expandable_segments: bool = False,
 ) -> List[InferenceEngineInterface]:
     """
     Create a list of RayWrappedInferenceEngine instances wrapping Ray actor handles to InferenceEngineInterface
@@ -149,6 +164,11 @@ def create_ray_wrapped_inference_engines(
 
     inference_engine_actors = []
     noset_visible_devices = ray_noset_visible_devices(ray.get(get_all_env_variables.remote()))
+
+    # Engine-actor runtime_env (env vars are applied before CUDA init and inherited by the
+    # vLLM worker child tasks). Currently just the expandable_segments allocator, which is
+    # safe with sleep mode on vLLM >= 0.20.1.
+    engine_runtime_env = build_engine_runtime_env(use_expandable_segments=use_expandable_segments)
 
     resolved_executor_backend = (
         "uni" if (tensor_parallel_size == 1 and pipeline_parallel_size == 1) else distributed_executor_backend
@@ -232,7 +252,7 @@ def create_ray_wrapped_inference_engines(
             other_kwargs = {}
 
             # served_model_name allows using a different model name for HTTP endpoint validation
-            # than the actual model path. See generator.served_model_name in ppo_base_config.yaml.
+            # than the actual model path. See InferenceEngineConfig.served_model_name in skyrl/train/config/config.py.
             if served_model_name is not None:
                 other_kwargs["served_model_name"] = served_model_name
 
@@ -280,9 +300,11 @@ def create_ray_wrapped_inference_engines(
                     num_cpus=num_gpus_per_actor,
                     num_gpus=num_gpus_per_actor,
                     scheduling_strategy=dp_rank_sched,
+                    runtime_env=engine_runtime_env,
                 ).remote(
                     model=pretrain,
                     enforce_eager=enforce_eager,
+                    language_model_only=language_model_only,
                     worker_extension_cls="skyrl.backends.skyrl_train.inference_engines.vllm.vllm_engine.WorkerWrap",
                     tensor_parallel_size=tensor_parallel_size,
                     pipeline_parallel_size=pipeline_parallel_size,

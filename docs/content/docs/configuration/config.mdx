@@ -51,7 +51,7 @@ critic_mini_batch_size: 256
 micro_train_batch_size_per_gpu: 1
 micro_forward_batch_size_per_gpu: 1
 update_ref_every_epoch: false
-use_sample_packing: true
+remove_microbatch_padding: true
 max_prompt_length: 512
 gradient_checkpointing: true
 seed: 42
@@ -66,7 +66,7 @@ seed: 42
 - `micro_train_batch_size_per_gpu`: Micro batch size during training step. This is common for both policy and critic models. Each mini batch is split into micro batches of this size, gradients are computed and accumulated over these micro batches.
 - `micro_forward_batch_size_per_gpu`: Micro batch size during forward pass (i.e., for log probability or value computation). This is common for both policy and critic models. Each mini batch is split into micro batches of this size, model forward pass is performed over these micro batches.
 - `update_ref_every_epoch`: Whether to update the reference model every epoch.
-- `use_sample_packing`: Whether to use sample packing during model forward pass (common for all models).
+- `remove_microbatch_padding`: Whether to pack samples and strip intra-microbatch padding during the model forward pass (requires flash attention; common for all models).
 - `max_prompt_length`: Maximum prompt length during training. Longer prompts will be truncated.
 - `gradient_checkpointing`: Whether to use gradient checkpointing.
 - `seed`: Random seed for training.
@@ -118,6 +118,8 @@ run_name: "test_run"
 log_path: "/tmp/skyrl-logs"
 dump_data_batch: false
 dump_eval_results: true
+log_example_interval: 1
+tags: null
 
 ```
 
@@ -127,30 +129,30 @@ dump_eval_results: true
 - `log_path`: Path for infrastructure log files. Infrastructure logs (vLLM engine startup, model loading, worker initialization) are written to `{log_path}/infra-YYMMDD_HHMMSS.log`. For multi-node training, use a shared filesystem path to consolidate logs into a single file. See the [logging guide](../checkpointing-logging/logging) for details.
 - `dump_data_batch`: Whether to dump the data batch to a file. This is useful for debugging. When `true`, the data batch will be dumped to a file in the `export_path` directory. The training batch at global step `N` is saved to `self.cfg.trainer.export_path / "dumped_data" / global_step_N_training_input`
 - `dump_eval_results`: Whether to dump the evaluation results to a file. When `true`, the full evaluation results will be dumped to a file in the `export_path` directory. The evaluation results at global step `N` is saved to `self.cfg.trainer.export_path / "dumped_eval" / global_step_N_eval_results`
+- `log_example_interval`: Log an example prompt every N training steps, `0`/`-1` to disable.
+- `tags`: Optional list of tags to apply to the W&B run (e.g. `["sft", "experiment-1"]`). Has no effect on other backends.
 
 ## Training Backends
 
-We support three backends: FSDP1, FSDP2, and Megatron. The backend can be chosen with `trainer.strategy` field.
+We support two backends: FSDP (PyTorch's composable `fully_shard` API, formerly known as FSDP2) and Megatron. The backend can be chosen with the `trainer.strategy` field.
 
 ### FSDP Configuration
-
-We use the same configuration group for FSDP1 and FSDP2
 
 ```yaml
 fsdp_config:
     cpu_offload: false # offload params + optimizer state to cpu during fwd pass
-    reshard_after_forward: true # fsdp2 only, [True, False, int between 1 and fsdp_size]
+    reshard_after_forward: true # [True, False, int between 1 and fsdp_size]
     fsdp_size: -1
 
 ```
 
-- `cpu_offload`: Whether to train with CPU offloading (i.e., offload state during forward pass). This corresponds to [cpu_offload](https://docs.pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.FullyShardedDataParallel)  parameter in FSDP1 and [offload_policy](https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html#torch.distributed.fsdp.fully_shard) in FSDP2.
-- `reshard_after_forward`: Whether to re-shard FSDP model after forward pass. This is a FSDP2 specific configuration, please refer to the [FSDP2 docs](https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html#torch.distributed.fsdp.fully_shard) for more details. If set to `false`, this would retain the full model parameters on each worker (similar to DeepSpeed's ZeRO stage 2).
+- `cpu_offload`: Whether to train with CPU offloading (i.e., offload state during forward pass). This corresponds to [offload_policy](https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html#torch.distributed.fsdp.fully_shard) in FSDP.
+- `reshard_after_forward`: Whether to re-shard the FSDP model after the forward pass. See the [FSDP docs](https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html#torch.distributed.fsdp.fully_shard) for details. If set to `false`, this would retain the full model parameters on each worker (similar to DeepSpeed's ZeRO stage 2).
 - `fsdp_size`: The group size within which worker state is sharded with FSDP. This is a parameter to be used for hybrid sharding in multi-node settings. For example, if the number of workers in the actor group is 8, with 4 in each node, and `fsdp_size` is 4, then the training state will be fully sharded across 4 ranks in each node, but replicated (DP) across nodes.
 
     `cpu_offload` is different from worker state offloading with model colocation.
 
-    In FSDP, `cpu_offload` will offload parameter and optimizer state to CPU memory and only copy over model parameters to GPU during model forward pass.
+    With FSDP, `cpu_offload` will offload parameter and optimizer state to CPU memory and only copy over model parameters to GPU during model forward pass.
 
     In the SkyRL-Train backend, we offload worker state in certain colocation settings - however this happens only after the training step/ log probability computation - thus optimizer step and model forward pass happen as usual with sharded parameters on GPU. For more details, refer to the guide on [model placement and colocation](placement)
 
@@ -373,8 +375,8 @@ algorithm:
   # this adds training batch level normalization to advantages
   advantage_batch_normalize: false
   value_head_prefix: "value_head"
-  policy_loss_type: "regular" # "regular", "dual_clip", "gspo", "clip_cov", "kl_cov" or customizable with PolicyLossRegistry
-  loss_reduction: "token_mean" # "token_mean", "sequence_mean", "seq_mean_token_sum_norm"
+  policy_loss_type: "regular" # "regular", "dual_clip", "gspo", "clip_cov", "kl_cov", "cispo", "sapo", "rollout_is", "dppo", or customizable with PolicyLossRegistry
+  loss_reduction: "token_mean" # "token_mean", "sequence_mean", "seq_mean_token_sum_norm", "prompt_mean"
   grpo_norm_by_std: true # set to false to disable normalization by std in GRPO (used in Dr. GRPO)
   zero_variance_filter: false # set to true to loss mask out prompts with zero variance rewards. only applicable when rewards are response-level.
 
@@ -488,13 +490,17 @@ algorithm:
   - `clip_cov`: Clip-Cov combines standard PPO clipping with covariance-based correction masking for improved stability. Based on [this paper](https://arxiv.org/abs/2505.22617).
   - `kl_cov`: KL-Cov applies KL regularization to tokens selected based on covariance values. Based on [this paper](https://arxiv.org/abs/2505.22617).
   - `cispo`: Clipped Importance Sampling Weight Policy Optimization (CISPO) proposed in [MiniMax-M1](https://arxiv.org/abs/2506.13585).
+  - `sapo`: Soft Adaptive Policy Optimization ([SAPO](https://arxiv.org/html/2511.20347v1)) proposed by the Qwen team 
+  - `rollout_is`: The agentic loss from section 4.1.2 of the [GLM-5 tech report](https://arxiv.org/pdf/2602.15763). Uses rollout logprobs and Icepop style clipping with additional stop gradient for masked tokens.
+  - `dppo`: DPPO algorithm from [Rethinking the Trust Region in LLM Reinforcement Learning](https://arxiv.org/pdf/2602.04879). Uses rollout logprobs and absolute probability divergences rather than probability ratios to improve over PPO clipping behavior.
   - Custom policy losses can be registered with the `PolicyLossRegistry`
 
 - `algorithm.loss_reduction`: Type of loss reduction to use. Options include:
 
   - `token_mean`: computes average loss over all valid tokens in the batch. Used in [DAPO](https://dapo-sia.github.io/).
   - `sequence_mean`: computes per-sequence avg token loss, then averages over the batch.
-  - `seq_mean_token_sum_norm`: computes the sum of token losses for each sequence, normalizes by `max_seq_len`, and then averages over the batch. This is used in [Dr. GRPO](https://arxiv.org/abs/2503.20783). If `algorithm.max_seq_len` is not explicitly set, it defaults to `generator.max_input_length + generator.sampling_params.max_generate_length`.
+  - `seq_mean_token_sum_norm`: computes the sum of token losses for each sequence, normalizes by `max_seq_len`, and then averages over the batch. This is used in [Dr. GRPO](https://arxiv.org/abs/2503.20783). `algorithm.max_seq_len` must be set explicitly for this mode because multi-turn/token budgets are workload-dependent.
+  - `prompt_mean`: computes the average token loss within each prompt group (all `generator.n_samples_per_prompt` responses sampled for a prompt), then averages over prompts. Unlike `token_mean`, every prompt contributes equally regardless of how many tokens its responses contain.
 
 - `algorithm.grpo_norm_by_std`: Whether to normalize advantages by the standard deviation in GRPO. This is set to `false` in [Dr. GRPO](https://arxiv.org/abs/2503.20783).
 - `algorithm.zero_variance_filter`: Whether to loss mask out prompts with zero variance rewards. This is only applicable when rewards are response-level.
@@ -509,7 +515,7 @@ algorithm:
   - `algorithm.dynamic_sampling.max_sample_batches`: Maximum number of batches to sample before stopping. Set to `-1` to sample forever.
   - `algorithm.dynamic_sampling.min_replace_ratio`: Minimum proportion of good samples with which to replace bad samples for `replace` strategy.
 - `algorithm.use_tis`: Whether to use Truncated Importance Sampling (TIS) as proposed in [this blog](https://fengyao.notion.site/off-policy-rl). This flag is to be deprecated, use `off_policy_correction.tis_ratio_type = "token"` instead.
-- `max_seq_len`: Used for `seq_mean_token_sum_norm` `loss_reduction`. Users should set this value for multi-turn for that loss. If not set, will be calculated as generator.max_input_length + generator.sampling_params.max_generate_length, which is incorrect for multi-turn.
+- `max_seq_len`: Used for `seq_mean_token_sum_norm` `loss_reduction`. Required when using that reduction mode. Set it to the total sequence-length normalization constant for your setup; this often matches the model context window / vLLM `max_model_len` when that is the intended budget.
 - `algorithm.tis_imp_ratio_cap`: Cap parameter for the importance ratio in TIS. This flag is to be deprecated, use `off_policy_correction.token_tis_ratio_clip_high` instead.
 - `algorithm.clip_cov`: Clip-Cov parameters (only used when `policy_loss_type` is `clip_cov`):
 
@@ -600,11 +606,19 @@ def ppo_policy_loss(
 fully_async:
   max_staleness_steps: 4
   num_parallel_generation_workers: 768
+  clear_kv_cache_on_weight_sync: true
+  simulate_training: false
+  simulate_training_step_seconds: 30.0
+  simulate_weight_sync_seconds: 0.0
 
 ```
 
 - `fully_async.max_staleness_steps`: Maximum off-policy steps allowed. If a trajectory group is scheduled at step *i* and trained at step *j*, then `j - i <= max_staleness_steps`. Larger values increase throughput but also off-policy-ness.
 - `fully_async.num_parallel_generation_workers`: Number of generation workers to spawn. Should be \>= `policy_mini_batch_size` and \<= `policy_mini_batch_size * (max_staleness_steps + 1)`.
+- `fully_async.clear_kv_cache_on_weight_sync`: Whether to clear the inference engine KV cache on each weight sync. Defaults to `true`, matching synchronous RL. Set to `false` for fully async training to reuse KV cache from stale policies during generation (avoids recomputation at the cost of using slightly stale KV cache).
+- `fully_async.simulate_training`: If `true`, run fully-async generation against a *simulated* trainer (`FullyAsyncTrainerSim`): no policy/critic/ref models are built and no weight broadcast happens. Each step consumes a mini-batch, sleeps for `simulate_training_step_seconds`, then issues pause/resume generation (as a real weight sync would) but skips the broadcast. Useful for benchmarking the generation/inference side (e.g. router load-balancing) on large models without paying for trainer GPUs. This is typically pointed at already-served endpoints via `external_proxy_url` / `external_server_urls`. See `examples/train/fully_async/main_fully_async_sim.py`. Requires `eval_interval`, `ckpt_interval`, and `hf_save_interval` all `<= 0`.
+- `fully_async.simulate_training_step_seconds`: Wall-clock seconds the simulated training step sleeps (stands in for fwd/bwd/optim). Only used when `simulate_training=true`. Defaults to `30.0`.
+- `fully_async.simulate_weight_sync_seconds`: Wall-clock seconds generation stays paused to stand in for the (skipped) weight broadcast. `0.0` means pause then immediately resume. Only used when `simulate_training=true`.
 
 ## Generator Configuration
 
@@ -747,3 +761,29 @@ For more details on how different placement options work, please refer to the [p
 - `generator.zero_reward_on_non_stop`: Whether to set the reward to 0 if the `stop_reason` is not `stop`. Cases where this is useful: Often, we have format rewards for the LLM to follow, but in cases where the LLM didn't finish the response, we typically don't want to reward it. This is a general setting for all environments.
 - `generator.apply_overlong_filtering`: Whether to apply DAPO Overlong Filtering to the loss masks. For each trajectory that exceeds the max length (i.e., truncated and does not end with an EOS token), this masks out every token in the loss mask.
 - `generator.step_wise_trajectories`: Whether to return outputs in a step-wise fashion. If `true`, then the generator will return multi-turn generations with the (prompt, response) pair of each turn being a separate trajectory. Advantages are computed based on the last step of each trajectory and propagated to the previous steps.
+
+## Memory Optimization
+
+PyTorch's default CUDA allocator can fragment the address space over a long run: a worker may have plenty of free VRAM yet still fail to satisfy a single large *contiguous* allocation, which surfaces as a hard `Aborted`/SIGABRT rather than a catchable OOM. This happens whenever allocation sizes vary over time — for example forward/backward passes with variable sequence lengths or dynamic microbatch token counts leave differently-sized holes step to step. PyTorch's `expandable_segments` allocator avoids this by growing segments in place instead of requiring one contiguous block, so it is generally useful regardless of placement.
+
+`colocate_all=true` is the worst case for fragmentation, and the main motivation for defaulting this on. There, the trainer repeatedly offloads to CPU and backloads to GPU while the inference engine sleeps and wakes in the same address space; over many steps this churn — plus large reallocations like Megatron's `reload_from_cpu` resizing a param buffer — fragments memory badly enough to crash a run that has tens of GiB free. In non-colocated runs the models stay resident on GPU with no offload/backload churn, so the benefit is smaller (it only mitigates fwd/bwd activation fragmentation), but the flag still applies and has effectively no downside.
+
+Two **independent** flags control this, because the trainer and the inference engine are separate processes with different allocators:
+
+```yaml
+trainer:
+  # Trainer workers (policy/critic/ref). Enabled programmatically after model init
+  # and automatically turned OFF around CUDA-IPC weight sync, since IPC handles are
+  # incompatible with the VMM addresses expandable segments uses.
+  use_expandable_segments: true   # default
+
+generator:
+  inference_engine:
+    # vLLM engine processes. Sets PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True at
+    # actor launch. Safe with sleep mode on vLLM >= 0.20.1 (its CuMemAllocator
+    # auto-disables expandable segments around the sleep/wake pool). Opt-in.
+    use_expandable_segments: false  # default
+```
+
+- `trainer.use_expandable_segments` (default **on**) — most directly mitigates colocated backload fragmentation, but also helps fwd/bwd activation fragmentation in non-colocated runs. Under `colocate_all=false`, weight sync uses NCCL broadcast rather than CUDA-IPC, so it simply stays on continuously.
+- `generator.inference_engine.use_expandable_segments` (default **off**) — enable it to also defragment the engine side; on vLLM `< 0.20.1`, sleep mode plus expandable segments is a hard error, so leave it off there.

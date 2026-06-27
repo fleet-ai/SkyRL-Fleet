@@ -3,9 +3,9 @@ import logging
 import os
 import socket
 from collections import defaultdict
+from contextlib import contextmanager
 from ctypes import CDLL, POINTER, Structure, c_char_p, c_int, c_ulong, c_void_p
 from datetime import timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, Union
 
 import ray
@@ -29,6 +29,7 @@ from skyrl.backends.skyrl_train.distributed.dispatch import (
     Dispatch,
     DispatchRegistry,
     MeshRank,
+    WorkerOutput,
 )
 from skyrl.backends.skyrl_train.distributed.strategy import DistributedStrategy
 from skyrl.backends.skyrl_train.distributed.ulysses import (
@@ -50,8 +51,11 @@ from skyrl.backends.skyrl_train.utils.ppo_utils import (
 )
 from skyrl.backends.skyrl_train.utils.torch_utils import masked_mean
 from skyrl.backends.skyrl_train.workers.worker_utils import (
+    BaseBatchIterator,
     BatchIterator,
     all_reduce_metrics,
+    compute_minibatch_rollout_logprob_diff_metrics,
+    get_microbatch_iterator,
     reduce_metrics,
 )
 from skyrl.env_vars import (
@@ -124,7 +128,8 @@ class DistributedTorchRayActor:
 
         # setup device mesh
         # TODO: Support TP / PP for additional backends
-        # NOTE (sumanthrh): Device mesh and mesh rank are rank specific attributes. For the current way the strategy is defined, it is only meant to interact with worker state; not hold worker state. Thus, this should live outside the strategy object.
+        # NOTE (sumanthrh): Device mesh and mesh rank are rank specific attributes. For the current way the strategy is defined,
+        # it is only meant to interact with worker state; not hold worker state. Thus, this should live outside the strategy object.
         # This device mesh can be common across all the strategies we use
         dp_size = self._world_size // self.sequence_parallel_size
         device_mesh = torch.distributed.device_mesh.init_device_mesh(
@@ -244,24 +249,87 @@ class Worker(DistributedTorchRayActor):
         """Empty GPU memory cache on Worker's CUDA device"""
         torch.cuda.empty_cache()
 
-    def offload_to_cpu(self, pin_memory=True, non_blocking=True):
+    def _set_expandable_segments(self, enabled: bool) -> None:
+        """Toggle PyTorch's CUDA ``expandable_segments`` allocator at runtime.
+
+        No-op when disabled via ``trainer.use_expandable_segments`` or when CUDA is
+        unavailable. Expandable segments reduce fragmentation across the offload/backload
+        and forward/backward cycles, but are incompatible with ``cudaIpcGetMemHandle``,
+        so callers turn this OFF around CUDA-IPC weight sync (see
+        :meth:`_expandable_segments_disabled_for_sync`) and back ON afterward.
+
+        Enabling is done *after* model init so the model weights stay in standard CUDA
+        memory (IPC-compatible); only later allocations use expandable segments.
+        """
+        if not self.cfg.use_expandable_segments:
+            return
+        if not torch.cuda.is_available():
+            return
+        setting = f"expandable_segments:{enabled}"
+        try:
+            # PyTorch 2.7+ exposes the accelerator-generic API; fall back otherwise.
+            if hasattr(torch._C, "_accelerator_setAllocatorSettings"):
+                torch._C._accelerator_setAllocatorSettings(setting)
+            else:
+                torch.cuda.memory._set_allocator_settings(setting)
+        except Exception as e:
+            logger.warning(f"Failed to set {setting!r}: {e}")
+
+    @contextmanager
+    def _expandable_segments_disabled_for_sync(self):
+        """Disable expandable_segments for the duration of CUDA-IPC weight sync.
+
+        Only toggles under ``colocate_all`` (the IPC path); under non-colocated runs
+        weight sync uses NCCL broadcast, which has its own buffers and is unaffected.
+        :meth:`_set_expandable_segments` itself no-ops when the feature is disabled.
+        """
+        toggle = self.cfg.placement.colocate_all and self.cfg.use_expandable_segments
+        if toggle:
+            self._set_expandable_segments(False)
+        try:
+            yield
+        finally:
+            if toggle:
+                self._set_expandable_segments(True)
+
+    def set_algorithm_config(self, **kwargs) -> None:
+        for key, value in kwargs.items():
+            setattr(self.cfg.algorithm, key, value)
+
+    def _get_module_for_offload(self):
+        """Return the model module(s) to be offloaded/backloaded. Megatron offloads `self.actor_module`. FSDP workers use `self.model` directly."""
+        return self.model
+
+    def offload_to_cpu(self, offload_optimizer=True, offload_model=True):
         """Offload all worker state to CPU.
 
-        After this function runs, only temporary reserved memory and torch's pre-loaded cuda kernels (~ GB) will remain
+        After this function runs, only temporary reserved memory and torch's pre-loaded cuda kernels (~ GB) will remain.
 
         Args:
-            pin_memory: Whether to use pinned/ paged-locked memory on CPU
-            non_blocking: Whether the operation is non-blocking
+            offload_optimizer: Whether to offload optimizer state (no-op when there is no optimizer, e.g. Ref worker).
+            offload_model: Whether to offload model parameters.
         """
-        raise NotImplementedError()
+        self._set_numa_affinity(torch.distributed.get_rank() % torch.cuda.device_count())
+        self.strategy.offload_to_cpu(
+            self._get_module_for_offload(),
+            self.optimizer,
+            offload_optimizer=offload_optimizer,
+            offload_model=offload_model,
+        )
 
-    def backload_to_gpu(self, non_blocking=True):
-        """Backload worker state to GPU
+    def backload_to_gpu(self, backload_optimizer=True, backload_model=True):
+        """Backload worker state to GPU.
 
         Args:
-            non_blocking: Whether the operation is non-blocking
+            backload_optimizer: Whether to backload optimizer state (no-op when there is no optimizer).
+            backload_model: Whether to backload model parameters.
         """
-        raise NotImplementedError()
+        self.strategy.backload_to_gpu(
+            self._get_module_for_offload(),
+            self.optimizer,
+            backload_optimizer=backload_optimizer,
+            backload_model=backload_model,
+        )
 
     def get_cuda_memory(self) -> Dict[str, Any]:
         """Get CUDA memory usage on worker's CUDA device."""
@@ -370,28 +438,67 @@ class Worker(DistributedTorchRayActor):
 
         torch.distributed.barrier()
 
-    def forward(
-        self,
-        data: TrainingInputBatch,
-    ) -> TrainingOutputBatch:
-        """Run forward pass on the input batch in inference mode.
+    def forward(self, *args, **kwargs) -> WorkerOutput:
+        """Run forward pass on the input batch.
 
-        This is a wrapper around `_forward_micro_batch` that runs in micro batches of `cfg.micro_forward_batch_size_per_gpu`.
+        Each worker subclass declares its own concrete signature and returns a
+        :class:`WorkerOutput` so callers can program against a uniform API.
         """
-        # run in micro batches of cfg.micro_forward_batch_size_per_gpu
-        # TODO (sumanthrh): this can be in the policy/critic impl if the micro batch size can be specific to policy, critic, etc.
-        micro_batches = data.chunk(self.cfg.micro_forward_batch_size_per_gpu)
-
-        outputs = []
-        for micro_batch in micro_batches:
-            outputs.append(self._forward_micro_batch(micro_batch))
-        output = TrainingOutputBatch.cat(outputs)
-        if output.device is not None and output.device != torch.device("cpu"):
-            output = output.to("cpu")
-        return output
+        raise NotImplementedError()
 
     def _forward_micro_batch(self, micro_batch: TrainingInputBatch) -> TrainingOutputBatch:
         raise NotImplementedError()
+
+    def save_checkpoint(self, ckpt_dir: str, tokenizer=None):
+        self.strategy.save_checkpoint(
+            model=self.model,
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            ckpt_dir=ckpt_dir,
+            node_local_rank=self.get_node_local_rank(),
+            tokenizer=tokenizer,
+        )
+
+    def load_checkpoint(self, ckpt_dir: str, load_optimizer_states: bool = True, load_lr_scheduler_states: bool = True):
+        _, states = self.strategy.load_checkpoint(
+            model=self.model,
+            optimizer=self.optimizer if load_optimizer_states else None,
+            scheduler=self.scheduler if load_lr_scheduler_states else None,
+            ckpt_dir=ckpt_dir,
+            load_optimizer_states=load_optimizer_states,
+            load_lr_scheduler_states=load_lr_scheduler_states,
+        )
+        return states
+
+    def save_hf_model(self, export_dir: str, tokenizer):
+        # Save model in HuggingFace safetensors format
+        self.strategy.save_hf_model(
+            self.model,
+            export_dir,
+            tokenizer=tokenizer,
+        )
+
+    def get_lr(self) -> Optional[float]:
+        """
+        Get current learning rate from optimizer. Returns None when the worker was
+        initialized with ``policy.inference_only_init=True`` (no optimizer constructed).
+        """
+        if self.optimizer is None:
+            return None
+        return self.optimizer.param_groups[0]["lr"]
+
+    def set_lr(self, learning_rate: float) -> None:
+        """
+        Set learning rate for the optimizer.
+
+        This directly updates the optimizer's param_groups, bypassing the scheduler.
+        Useful for external learning rate schedules (e.g., from Tinker). No-op when
+        ``policy.inference_only_init=True`` (no optimizer constructed).
+        """
+        if self.optimizer is None:
+            return
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = learning_rate
 
 
 # adapted from OpenReasonerZero: https://github.com/Open-Reasoner-Zero/Open-Reasoner-Zero/blob/main/orz/ppo/actors.py
@@ -598,30 +705,6 @@ class PPORayActorGroup:
             return refs
         return ray.get(refs)
 
-    def run_method(self, dispatch_type: str, method_name: str, *args, **kwargs) -> Optional[TrainingOutputBatch]:
-        """Run a method on all actors using specified dispatch type synchronously.
-
-        The method should either return `None` or a `TrainingOutputBatch` object.
-
-        Args:
-            dispatch_type: Type of dispatch to use ("mesh" or "pass_through")
-            method_name: Name of the method to call on actors
-            *args: Positional arguments to pass to the method
-            **kwargs: Keyword arguments to pass to the method
-
-        Returns:
-            Collect results from all the actors.
-        """
-        dispatch_class: Dispatch = DispatchRegistry.get(dispatch_type)
-        # validate the dispatch args to be sent to `.dispatch`
-        args, kwargs = dispatch_class.validate_dispatch_args(*args, **kwargs)
-
-        # Dispatch the method call
-        object_refs = dispatch_class.dispatch(self.actor_infos, method_name, *args, **kwargs)
-        # Collect results from all the actors
-        ret = dispatch_class.sync_collect(self.actor_infos, object_refs)
-        return ret
-
     def async_run_ray_method(self, dispatch_type: str, method_name: str, *args, **kwargs) -> List[ObjectRef]:
         """Run a method on all actors using specified dispatch type asynchronously.
 
@@ -642,28 +725,6 @@ class PPORayActorGroup:
         object_refs = dispatch_class.dispatch(self.actor_infos, method_name, *args, **kwargs)
         return object_refs
 
-    async def async_run_method(
-        self, dispatch_type: str, method_name: str, *args, **kwargs
-    ) -> Optional[TrainingOutputBatch]:
-        """Run a method on all actors using specified dispatch type in an asyncio-compatible way.
-
-        Args:
-            dispatch_type: Type of dispatch to use ("mesh" or "pass_through")
-            method_name: Name of the method to call on actors
-            *args: Positional arguments to pass to the method
-            **kwargs: Keyword arguments to pass to the method
-
-        Returns:
-            TrainingOutputBatch: concatenated results from all actors
-        """
-        dispatch_class: Dispatch = DispatchRegistry.get(dispatch_type)
-        # validate the dispatch args to be sent to `.dispatch`
-        args, kwargs = dispatch_class.validate_dispatch_args(*args, **kwargs)
-
-        # Dispatch the method call
-        object_refs = dispatch_class.dispatch(self.actor_infos, method_name, *args, **kwargs)
-        return await dispatch_class.async_collect(self.actor_infos, object_refs)
-
 
 class PolicyWorkerBase(Worker):
     def __init__(self, **kwargs):
@@ -675,14 +736,13 @@ class PolicyWorkerBase(Worker):
         self.record_memory: bool = False
         self.mesh_rank: MeshRank = None
         self.policy_loss_fn: Callable = PolicyLossRegistry.get(self.cfg.algorithm.policy_loss_type)
-        self._micro_batches_accumulated = 0
 
     def forward_backward(
         self,
         data: TrainingInputBatch,
         loss_fn: Optional[str] = None,
         loss_fn_config: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, float]:
+    ) -> WorkerOutput:
         """
         Perform forward and backward passes for a batch, handling micro-batching internally.
 
@@ -697,15 +757,23 @@ class PolicyWorkerBase(Worker):
                            (e.g., {"clip_low_threshold": 0.9} for PPO)
 
         Returns:
-            Aggregated metrics dict across all micro batches
+            :class:`WorkerOutput` with per-sample ``loss_fn_outputs`` and scalar
+            ``metrics`` (all-reduced across DP).
         """
-        micro_batch_size = self.cfg.micro_train_batch_size_per_gpu
+        microbatch_iterator = get_microbatch_iterator(
+            data,
+            micro_batch_size=self.cfg.micro_train_batch_size_per_gpu,
+            max_tokens_per_microbatch=self.cfg.max_tokens_per_microbatch,
+        )
         all_metrics = defaultdict(list)
         all_loss_fn_outputs = []  # Handle separately from scalar metrics
 
-        for micro_batch in BatchIterator(data, micro_batch_size, drop_last=False):
-            metrics = self._forward_backward_micro(micro_batch, loss_fn=loss_fn, loss_fn_config=loss_fn_config)
-            self._micro_batches_accumulated += 1
+        for microbatch in microbatch_iterator:
+            experience = BaseBatchIterator.batch_to_experience(microbatch)
+            microbatch_weight = len(microbatch) / len(data)
+            metrics = self._forward_backward_micro(
+                experience, microbatch_weight, loss_fn=loss_fn, loss_fn_config=loss_fn_config
+            )
 
             # Extract loss_fn_outputs before reduce_metrics (it's not a scalar metric)
             if "loss_fn_outputs" in metrics:
@@ -714,32 +782,48 @@ class PolicyWorkerBase(Worker):
             for k, v in metrics.items():
                 all_metrics[k].append(v)
 
-        result = reduce_metrics(dict(all_metrics))
+        # TODO: SFT path still averages metrics across microbatches and workers.
+        # This needs to be unified with the RL path which sums.
+        resolved_loss_name = loss_fn or self.cfg.algorithm.policy_loss_type
+        sum_loss_metrics = resolved_loss_name != "cross_entropy"
 
-        # Add back loss_fn_outputs (concatenated across micro-batches)
-        if all_loss_fn_outputs:
-            result["loss_fn_outputs"] = all_loss_fn_outputs
+        # Reduce across microbatches and all-reduce metrics across DP ranks
+        # NOTE: Sum loss metrics because scaling is already applied at the advantage level
+        result = reduce_metrics(all_metrics, sum_loss_metrics=sum_loss_metrics)
 
-        return result
+        # Token-based batching diagnostics: total microbatches this rank ran and how many
+        # were purely-padding (added to equalize the microbatch count across DP ranks).
+        # Added before all-reduce so they are averaged across DP (num_microbatches is
+        # identical on every rank; num_padding_microbatches reports the per-rank average).
+        if self.cfg.max_tokens_per_microbatch > 0:
+            result["num_microbatches"] = float(len(microbatch_iterator))
+            result["num_padding_microbatches"] = float(getattr(microbatch_iterator, "num_padding_microbatches", 0))
+
+        dp_group = self.device_mesh.get_group("dp")
+        result = all_reduce_metrics(result, self.strategy, group=dp_group, sum_loss_metrics=sum_loss_metrics)
+
+        return WorkerOutput(loss_fn_outputs=all_loss_fn_outputs, metrics=result)
 
     def _forward_backward_micro(
         self,
         experience: Experience,
+        microbatch_weight: float,
         loss_fn: Optional[str] = None,
         loss_fn_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, float]:
         """
         Perform forward and backward pass for one micro batch.
 
-        Loss is not scaled here - gradient scaling happens at optim_step time.
-
         Args:
             experience: Experience object for one micro batch
-            loss_fn: Optional loss function name to use instead of config default
-            loss_fn_config: Optional config overrides for the loss function
+            microbatch_weight: Weight of the micro batch in the overall batch
+            loss_fn: Optional train loss function name to use instead of config default.
+                Public Tinker aliases such as ``ppo`` should be normalized by the backend
+                before reaching the worker.
+            loss_fn_config: Optional config overrides for the resolved train loss function
 
         Returns:
-            All-reduced metrics dict for this micro batch
+            Metrics dict for the worker's local micro batch
         """
         self.model.train()
 
@@ -804,7 +888,8 @@ class PolicyWorkerBase(Worker):
 
         # SFT path: skip KL/entropy terms, return per-token outputs for Tinker API
         if resolved_loss_name == "cross_entropy":
-            loss = policy_loss
+            unscaled_loss = policy_loss
+            loss = unscaled_loss * microbatch_weight
             torch.cuda.empty_cache()  # defrag before backward to prevent OOM on 35B
             self.strategy.backward(loss, self.model, self.optimizer)
 
@@ -816,24 +901,30 @@ class PolicyWorkerBase(Worker):
 
             # Build per-sequence loss_fn_outputs (matches Tinker's ForwardBackwardOutput structure)
             # Trim to actual response length per sample (Tinker expects variable-length arrays
-            # that align with the input weights, not padded to batch max)
+            # that align with the input weights, not padded to batch max).
+            # Compute valid_lens vectorized on GPU, then move tensors to CPU exactly
+            # once before iterating in Python — avoids ~3N GPU->CPU syncs per micro-batch.
             batch_size = action_log_probs.shape[0]
+            seq_len = action_log_probs.shape[1]
+            if action_mask is not None:
+                valid_lens_t = action_mask.sum(dim=-1).long()
+            elif loss_mask is not None:
+                valid_lens_t = loss_mask.sum(dim=-1).long()
+            else:
+                valid_lens_t = torch.full((batch_size,), seq_len, device=action_log_probs.device, dtype=torch.long)
+
+            # Bulk GPU->CPU sync: one transfer for logprobs, elementwise_loss, and valid_lens.
+            action_log_probs_cpu = action_log_probs.detach().cpu()
+            elementwise_loss_cpu = elementwise_loss.detach().cpu()
+            valid_lens = valid_lens_t.cpu().tolist()
+
             loss_fn_outputs = []
             for i in range(batch_size):
-                # Prefer a binary action mask for length; fall back to loss_mask.
-                if action_mask is not None:
-                    valid_len = int(action_mask[i].sum().item())
-                elif loss_mask is not None:
-                    valid_len = int(loss_mask[i].sum().item())
-                else:
-                    valid_len = action_log_probs.shape[1]
-
+                valid_len = valid_lens[i]
                 loss_fn_outputs.append(
                     {
-                        "logprobs": action_log_probs[i, -valid_len:].detach().cpu().tolist() if valid_len > 0 else [],
-                        "elementwise_loss": (
-                            elementwise_loss[i, -valid_len:].detach().cpu().tolist() if valid_len > 0 else []
-                        ),
+                        "logprobs": action_log_probs_cpu[i, -valid_len:].tolist() if valid_len > 0 else [],
+                        "elementwise_loss": (elementwise_loss_cpu[i, -valid_len:].tolist() if valid_len > 0 else []),
                     }
                 )
 
@@ -870,7 +961,15 @@ class PolicyWorkerBase(Worker):
                 kl_loss = torch.tensor(0.0)
             kl_loss_term = kl_loss * self.cfg.algorithm.kl_loss_coef
 
-            loss = policy_loss + kl_loss_term - entropy_loss_term
+            # DP all-reduce averages gradients, but policy losses are pre-scaled sums
+            # (see `apply_loss_reduction_to_advantages_minibatch`), so we multiply by
+            # dp_size to recover the correct sum reduction across workers.
+            grad_sum_correction_factor = self.mesh_rank.dp_size
+
+            # NOTE: The KL and entropy loss terms are not pre-scaled,
+            # so we just average them across microbatches and DP workers.
+            loss = policy_loss * grad_sum_correction_factor + (kl_loss_term - entropy_loss_term) * microbatch_weight
+            unscaled_loss = loss / grad_sum_correction_factor
             torch.cuda.empty_cache()  # defrag before backward to prevent OOM on 35B
             self.strategy.backward(loss, self.model, self.optimizer)
 
@@ -895,7 +994,7 @@ class PolicyWorkerBase(Worker):
                 )
 
             status = {
-                "final_loss": loss.item(),
+                "final_loss": unscaled_loss.item(),
                 "policy_loss": policy_loss.item(),
                 "policy_entropy": entropy.item(),
                 "response_length": num_actions,
@@ -906,94 +1005,174 @@ class PolicyWorkerBase(Worker):
                 status["loss_metrics/" + k] = v
             if self.cfg.algorithm.use_kl_loss:
                 status["policy_kl"] = kl_loss.item()
-
-        loss_fn_outputs = status.pop("loss_fn_outputs", None)
-
-        # All-reduce metrics across DP workers
-        status = all_reduce_metrics(status, self.strategy)
-
-        # Add back loss_fn_outputs after all_reduce
-        if loss_fn_outputs is not None:
-            status["loss_fn_outputs"] = loss_fn_outputs
+            status.update(
+                compute_minibatch_rollout_logprob_diff_metrics(action_log_probs, rollout_action_logprobs, loss_mask)
+            )
 
         return status
 
     def optim_step(self) -> float:
         """
-        Scale gradients by 1/micro_batches_accumulated, perform optimizer step, and reset counter.
+        Perform optimizer step.
 
         Returns:
             The gradient norm (before scaling, after clipping)
         """
-        # Scale accumulated gradients by 1/N to get correct average
-        if self._micro_batches_accumulated > 0:
-            scale = 1.0 / self._micro_batches_accumulated
-            for param in self.model.parameters():
-                if param.grad is not None:
-                    param.grad.mul_(scale)
-
         # Perform optimizer step (includes gradient clipping)
         grad_norm = self.strategy.optimizer_step(self.optimizer, self.model, self.scheduler, name="actor")
-
-        # Reset counter for next accumulation cycle
-        self._micro_batches_accumulated = 0
 
         if grad_norm is not None:
             grad_norm = grad_norm.detach().cpu().item()
         return grad_norm
 
-    def get_lr(self) -> float:
-        """
-        Get current learning rate from optimizer.
-        """
-        return self.optimizer.param_groups[0]["lr"]
+    def forward(
+        self,
+        data: TrainingInputBatch,
+        loss_fn: Optional[str] = None,
+        loss_fn_config: Optional[Dict[str, Any]] = None,
+    ) -> WorkerOutput:
+        """Run forward pass.
 
-    def set_lr(self, learning_rate: float) -> None:
+        - When ``loss_fn`` is None: runs inference in micro batches of
+          ``micro_forward_batch_size_per_gpu`` and returns a :class:`WorkerOutput`
+          with per-sample ``loss_fn_outputs`` (``logprobs`` key) and empty
+          ``metrics``.
+        - When ``loss_fn`` is set (e.g., ``"cross_entropy"``): runs the loss in ``no_grad`` mode
+          (no backward), iterating over micro-batches of ``micro_forward_batch_size_per_gpu``,
+          and returns a :class:`WorkerOutput` with per-sample ``loss_fn_outputs`` plus
+          ``metrics`` (e.g. ``"loss"``).  Metrics are all-reduced across the DP group
+          to mirror :meth:`forward_backward`.
         """
-        Set learning rate for the optimizer.
+        if loss_fn is None:
+            # Inference forward path: run in micro batches and emit per-sample logprobs.
+            # Uses token-based micro-batching when `max_tokens_per_microbatch > 0`, otherwise
+            # falls back to fixed sample-count chunking. `reorder_and_combine_batches` restores
+            # the original sample order (and strips padding) for the token-based iterator.
+            microbatch_iterator = get_microbatch_iterator(
+                data,
+                micro_batch_size=self.cfg.micro_forward_batch_size_per_gpu,
+                max_tokens_per_microbatch=self.cfg.max_tokens_per_microbatch,
+            )
+            outputs = [self._forward_micro_batch(micro_batch) for micro_batch in microbatch_iterator]
+            output = microbatch_iterator.reorder_and_combine_batches(outputs)
+            if output.device is not None and output.device != torch.device("cpu"):
+                output = output.to("cpu")
+            row_tensor = output["output"]
+            loss_fn_outputs = [{"logprobs": row_tensor[i].tolist()} for i in range(row_tensor.shape[0])]
+            return WorkerOutput(loss_fn_outputs=loss_fn_outputs, metrics={})
 
-        This directly updates the optimizer's param_groups, bypassing the scheduler.
-        Useful for external learning rate schedules (e.g., from Tinker).
+        micro_batch_size = self.cfg.micro_forward_batch_size_per_gpu
+        all_metrics = defaultdict(list)
+        all_loss_fn_outputs: List[Dict[str, Any]] = []
+
+        for micro_batch in BatchIterator(data, micro_batch_size, drop_last=False):
+            metrics = self._forward_micro_with_loss(micro_batch, loss_fn=loss_fn, loss_fn_config=loss_fn_config)
+            if "loss_fn_outputs" in metrics:
+                all_loss_fn_outputs.extend(metrics.pop("loss_fn_outputs"))
+            for k, v in metrics.items():
+                all_metrics[k].append(v)
+
+        # SFT path averages metrics across microbatches and DP ranks (mirror forward_backward).
+        resolved_loss_name = loss_fn or self.cfg.algorithm.policy_loss_type
+        sum_loss_metrics = resolved_loss_name != "cross_entropy"
+
+        result = reduce_metrics(all_metrics, sum_loss_metrics=sum_loss_metrics)
+        dp_group = self.device_mesh.get_group("dp")
+        result = all_reduce_metrics(result, self.strategy, group=dp_group, sum_loss_metrics=sum_loss_metrics)
+
+        return WorkerOutput(loss_fn_outputs=all_loss_fn_outputs, metrics=result)
+
+    def _forward_micro_with_loss(
+        self,
+        experience: Experience,
+        loss_fn: str,
+        loss_fn_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Forward-only counterpart of :meth:`_forward_backward_micro`'s SFT branch.
+
+        Runs the model + loss under ``torch.no_grad()`` (no backward, no KL/entropy terms),
+        and returns the same metrics shape as the SFT branch of ``_forward_backward_micro``,
+        minus ``lr`` (no optimizer state involved).
         """
-        for param_group in self.optimizer.param_groups:
-            param_group["lr"] = learning_rate
+        self.model.eval()
+        experience.to_device(torch.cuda.current_device())
 
-    def barrier(self) -> None:
-        """
-        Synchronization barrier across all workers.
-        """
-        torch.distributed.barrier()
+        sequences = experience.sequences
+        old_action_log_probs = experience.action_log_probs
+        advantages = experience.advantages
+        num_actions = experience.num_actions
+        attention_mask = experience.attention_mask
+        loss_mask = experience.loss_mask
+        action_mask = experience.action_mask
+        rollout_action_logprobs = experience.rollout_logprobs
 
-    def save_checkpoint(self, ckpt_dir: Path, tokenizer=None):
-        self.strategy.save_checkpoint(
-            model=self.model,
-            optimizer=self.optimizer,
-            scheduler=self.scheduler,
-            ckpt_dir=ckpt_dir,
-            node_local_rank=self.get_node_local_rank(),
-            tokenizer=tokenizer,
-        )
+        current_loss_fn = PolicyLossRegistry.get(loss_fn)
 
-    def load_checkpoint(
-        self, ckpt_dir: Path, load_optimizer_states: bool = True, load_lr_scheduler_states: bool = True
-    ):
-        _, states = self.strategy.load_checkpoint(
-            model=self.model,
-            optimizer=self.optimizer if load_optimizer_states else None,
-            scheduler=self.scheduler if load_lr_scheduler_states else None,
-            ckpt_dir=ckpt_dir,
-            load_optimizer_states=load_optimizer_states,
-            load_lr_scheduler_states=load_lr_scheduler_states,
-        )
-        return states
+        # Build config for loss function, applying any overrides
+        loss_config = self.cfg.algorithm
+        if loss_fn_config is not None:
+            from dataclasses import asdict
 
-    def save_hf_model(self, export_dir: str, tokenizer):
-        # Save model in HuggingFace safetensors format
-        self.strategy.save_hf_model(
-            self.model,
-            export_dir,
-            tokenizer=tokenizer,
-        )
+            new_loss_config = OmegaConf.merge(OmegaConf.create(asdict(loss_config)), OmegaConf.create(loss_fn_config))
+            loss_config = type(loss_config).from_dict_config(new_loss_config)
+
+        with torch.no_grad(), torch.autocast(dtype=torch.bfloat16, device_type="cuda"):
+            action_log_probs, _ = self.model(
+                sequences,
+                num_actions,
+                attention_mask=attention_mask,
+                temperature=self.cfg.algorithm.temperature,
+                return_output=True,
+                compute_entropy=False,
+                entropy_requires_grad=False,
+                pixel_values=experience.pixel_values,
+                image_grid_thw=experience.image_grid_thw,
+            )
+            policy_loss, _ = current_loss_fn(
+                action_log_probs,
+                old_action_log_probs,
+                advantages,
+                config=loss_config,
+                loss_mask=loss_mask,
+                rollout_logprobs=rollout_action_logprobs,
+            )
+
+            elementwise_loss = -action_log_probs
+            if loss_mask is not None:
+                elementwise_loss = elementwise_loss * loss_mask
+
+            # Compute valid_lens vectorized on GPU, then move tensors to CPU
+            # exactly once before iterating in Python. Avoids ~3N GPU->CPU syncs
+            # per micro-batch (item()/cpu()/tolist() inside the per-sample loop).
+            batch_size = action_log_probs.shape[0]
+            seq_len = action_log_probs.shape[1]
+            if action_mask is not None:
+                valid_lens_t = action_mask.sum(dim=-1).long()
+            elif loss_mask is not None:
+                valid_lens_t = loss_mask.sum(dim=-1).long()
+            else:
+                valid_lens_t = torch.full((batch_size,), seq_len, device=action_log_probs.device, dtype=torch.long)
+
+            # Bulk GPU->CPU sync: one transfer for logprobs, elementwise_loss, and valid_lens.
+            action_log_probs_cpu = action_log_probs.detach().cpu()
+            elementwise_loss_cpu = elementwise_loss.detach().cpu()
+            valid_lens = valid_lens_t.cpu().tolist()
+
+            loss_fn_outputs = []
+            for i in range(batch_size):
+                valid_len = valid_lens[i]
+                loss_fn_outputs.append(
+                    {
+                        "logprobs": action_log_probs_cpu[i, -valid_len:].tolist() if valid_len > 0 else [],
+                        "elementwise_loss": (elementwise_loss_cpu[i, -valid_len:].tolist() if valid_len > 0 else []),
+                    }
+                )
+
+        return {
+            "loss": policy_loss.item(),
+            "response_length": num_actions,
+            "loss_fn_outputs": loss_fn_outputs,
+        }
 
     def _forward_micro_batch(self, micro_batch: TrainingInputBatch) -> TrainingOutputBatch:
         device = torch.cuda.current_device()
@@ -1022,8 +1201,61 @@ class PolicyWorkerBase(Worker):
         output.metadata = micro_batch.metadata
         return output
 
-    def process_sequences(self, sequences, input_len, eos_token_id, pad_token_id):
-        return self.model.process_sequences(sequences, input_len, eos_token_id, pad_token_id)
+    # ------------------------------------------------------------------
+    # Multi-LoRA / adapter-store interface
+    # ------------------------------------------------------------------
+
+    def _resolve_lora_sync_target(self, model_id: Optional[str]) -> tuple[str, str]:
+        """Return ``(lora_name, lora_sync_path)`` for a given Tinker ``model_id``.
+
+        The single-tenant fallback (``model_id is None``) uses the default
+        shared adapter name + shared sync path. Multi-tenant routes through
+        ``os.path.basename`` on ``lora_sync_path`` so each adapter is written to
+        its own subdir and registered on the inference engine under that name.
+        """
+        from skyrl.backends.skyrl_train.inference_servers.remote_inference_client import (
+            SKYRL_LORA_ADAPTER_NAME,
+        )
+
+        base_sync_path = self.cfg.policy.model.lora.lora_sync_path
+        safe_model_id = os.path.basename(model_id) if model_id is not None else None
+        if safe_model_id:
+            return safe_model_id, os.path.join(base_sync_path, safe_model_id)
+        return SKYRL_LORA_ADAPTER_NAME, base_sync_path
+
+    def swap_to_adapter(self, model_id: str) -> None:
+        """Make ``model_id`` the live LoRA adapter on this worker."""
+        return None
+
+    def adapter_store_state(self) -> dict:
+        """Diagnostic snapshot of the adapter store. Backends without an
+        adapter store report it as disabled."""
+        return {"enabled": False}
+
+    def _adapter_store_unsupported(self, op: str) -> None:
+        raise NotImplementedError(
+            f"{type(self).__name__}.{op} is not implemented: multi-tenant LoRA "
+            "adapter management (the adapter store) is currently only supported "
+            "on the Megatron backend. The FSDP backend supports a single LoRA "
+            "adapter (or full fine-tuning) per worker group."
+        )
+
+    def prime_optimizer_state(self) -> None:
+        """Materialise optimizer state so it can be snapshotted into the
+        pristine adapter slot. Only meaningful for adapter-store backends."""
+        self._adapter_store_unsupported("prime_optimizer_state")
+
+    def register_pristine_adapter(self) -> None:
+        """Capture the freshly-initialised LoRA state as the pristine slot."""
+        self._adapter_store_unsupported("register_pristine_adapter")
+
+    def register_adapter(self, model_id: str) -> None:
+        """Register a new LoRA adapter slot keyed by ``model_id``."""
+        self._adapter_store_unsupported("register_adapter")
+
+    def delete_adapter(self, model_id: str) -> None:
+        """Remove the LoRA adapter slot keyed by ``model_id``."""
+        self._adapter_store_unsupported("delete_adapter")
 
 
 class CriticWorkerBase(Worker):
@@ -1038,38 +1270,63 @@ class CriticWorkerBase(Worker):
         self.critic_loss_fn: Callable = ppo_critic_loss
         self._micro_batches_accumulated = 0
 
-    def forward_backward(self, data: TrainingInputBatch) -> Dict[str, float]:
+    def forward_backward(self, data: TrainingInputBatch) -> WorkerOutput:
         """
         Perform forward and backward passes for a batch, handling micro-batching internally.
 
-        The batch is split into micro batches based on micro_train_batch_size_per_gpu.
+        The batch is split into micro batches based on micro_train_batch_size_per_gpu,
+        or by token count if max_tokens_per_microbatch is configured.
         Gradients accumulate across micro batches. Gradient scaling happens at optim_step.
 
         Args:
             data: TrainingInputBatch (already DP-sharded by WorkerDispatch/MeshDispatch)
 
         Returns:
-            Aggregated metrics dict across all micro batches
+            :class:`WorkerOutput` with empty ``loss_fn_outputs`` and scalar
+            ``metrics`` (all-reduced across DP).
         """
-        micro_batch_size = self.cfg.micro_train_batch_size_per_gpu
+        use_token_batching = self.cfg.max_tokens_per_microbatch > 0
+        microbatch_iterator = get_microbatch_iterator(
+            data,
+            micro_batch_size=self.cfg.micro_train_batch_size_per_gpu,
+            max_tokens_per_microbatch=self.cfg.max_tokens_per_microbatch,
+        )
         all_metrics = defaultdict(list)
 
-        for micro_batch in BatchIterator(data, micro_batch_size, drop_last=False):
-            metrics = self._forward_backward_micro(micro_batch)
-            self._micro_batches_accumulated += 1
+        for microbatch in microbatch_iterator:
+            experience = BaseBatchIterator.batch_to_experience(microbatch)
+
+            if use_token_batching:
+                # With token-based batching, microbatches may have different sizes.
+                # Scale loss by microbatch_weight so gradients are correctly weighted.
+                microbatch_weight = len(microbatch) / len(data)
+                metrics = self._forward_backward_micro(experience, microbatch_weight=microbatch_weight)
+            else:
+                metrics = self._forward_backward_micro(experience)
+                self._micro_batches_accumulated += 1
+
             for k, v in metrics.items():
                 all_metrics[k].append(v)
 
-        return reduce_metrics(dict(all_metrics))
+        # reduce metrics across micro batches
+        result = reduce_metrics(all_metrics)
 
-    def _forward_backward_micro(self, experience: Experience) -> Dict[str, float]:
+        # all reduce metrics across DP workers
+        result = all_reduce_metrics(result, self.strategy)
+
+        return WorkerOutput(metrics=result)
+
+    def _forward_backward_micro(
+        self, experience: Experience, microbatch_weight: Optional[float] = None
+    ) -> Dict[str, float]:
         """
         Perform forward and backward pass for one micro batch.
 
-        Loss is NOT scaled here - gradient scaling happens at optim_step time.
-
         Args:
             experience: Experience object for one micro batch
+            microbatch_weight: If provided, scale loss by this weight before backward.
+                Used with token-based batching where microbatches have variable sizes.
+                If None, loss is unscaled (gradient scaling happens at optim_step time).
 
         Returns:
             All-reduced metrics dict for this micro batch
@@ -1101,7 +1358,10 @@ class CriticWorkerBase(Worker):
                 config=self.cfg.algorithm,
                 loss_mask=loss_mask,
             )
-        # NO loss scaling here - gradient scaling happens at optim_step
+        if microbatch_weight is not None:
+            # Token-based batching: scale loss by weight so gradients are properly weighted
+            loss = loss * microbatch_weight
+        # else: NO loss scaling here - gradient scaling happens at optim_step
         torch.cuda.empty_cache()  # defrag before backward to prevent OOM on 35B
         self.strategy.backward(loss, self.model, self.optimizer)
 
@@ -1111,9 +1371,6 @@ class CriticWorkerBase(Worker):
             "values_clipfrac": clipfrac,
             "critic_lr": self.scheduler.get_last_lr()[0],
         }
-
-        # All-reduce metrics across DP workers
-        status = all_reduce_metrics(status, self.strategy)
 
         return status
 
@@ -1125,6 +1382,8 @@ class CriticWorkerBase(Worker):
             The gradient norm (before scaling, after clipping)
         """
         # Scale accumulated gradients by 1/N to get correct average
+        # NOTE: When using token-based batching, loss is pre-scaled by microbatch_weight
+        # in forward_backward, so _micro_batches_accumulated stays 0 and no scaling needed.
         if self._micro_batches_accumulated > 0:
             scale = 1.0 / self._micro_batches_accumulated
             for param in self.model.parameters():
@@ -1140,28 +1399,6 @@ class CriticWorkerBase(Worker):
         if grad_norm is not None:
             grad_norm = grad_norm.detach().cpu().item()
         return grad_norm
-
-    def get_lr(self) -> float:
-        """
-        Get current learning rate from optimizer.
-        """
-        return self.optimizer.param_groups[0]["lr"]
-
-    def set_lr(self, learning_rate: float) -> None:
-        """
-        Set learning rate for the optimizer.
-
-        This directly updates the optimizer's param_groups, bypassing the scheduler.
-        Useful for external learning rate schedules (e.g., from Tinker).
-        """
-        for param_group in self.optimizer.param_groups:
-            param_group["lr"] = learning_rate
-
-    def barrier(self) -> None:
-        """
-        Synchronization barrier across all workers.
-        """
-        torch.distributed.barrier()
 
     def _forward_micro_batch(
         self,
@@ -1188,40 +1425,58 @@ class CriticWorkerBase(Worker):
         output.metadata = micro_batch.metadata
         return output
 
-    def save_hf_model(self, export_dir: str, tokenizer):
-        # Save model in HuggingFace safetensors format
-        self.strategy.save_hf_model(
-            self.model,
-            export_dir,
-            tokenizer=tokenizer,
-        )
+    def forward(self, data: TrainingInputBatch) -> WorkerOutput:
+        """Run inference forward pass.
 
-    def save_checkpoint(self, ckpt_dir: str, tokenizer=None):
-        self.strategy.save_checkpoint(
-            model=self.model,
-            optimizer=self.optimizer,
-            scheduler=self.scheduler,
-            ckpt_dir=ckpt_dir,
-            node_local_rank=self.get_node_local_rank(),
-            tokenizer=tokenizer,
+        Returns a :class:`WorkerOutput` whose ``loss_fn_outputs`` carries one
+        per-sample dict with key ``"values"``.
+        """
+        # Run in micro batches and emit per-sample values.
+        # Uses token-based micro-batching when `max_tokens_per_microbatch > 0`; otherwise fixed
+        # sample-count chunking. `reorder_and_combine_batches` restores original sample order.
+        microbatch_iterator = get_microbatch_iterator(
+            data,
+            micro_batch_size=self.cfg.micro_forward_batch_size_per_gpu,
+            max_tokens_per_microbatch=self.cfg.max_tokens_per_microbatch,
         )
-
-    def load_checkpoint(self, ckpt_dir=None, load_optimizer_states=True, load_lr_scheduler_states=True):
-        _, states = self.strategy.load_checkpoint(
-            model=self.model,
-            optimizer=self.optimizer if load_optimizer_states else None,
-            scheduler=self.scheduler if load_lr_scheduler_states else None,
-            ckpt_dir=ckpt_dir,
-            load_optimizer_states=load_optimizer_states,
-            load_lr_scheduler_states=load_lr_scheduler_states,
-        )
-        return states
+        outputs = [self._forward_micro_batch(micro_batch) for micro_batch in microbatch_iterator]
+        output = microbatch_iterator.reorder_and_combine_batches(outputs)
+        if output.device is not None and output.device != torch.device("cpu"):
+            output = output.to("cpu")
+        row_tensor = output["output"]
+        loss_fn_outputs = [{"values": row_tensor[i].tolist()} for i in range(row_tensor.shape[0])]
+        return WorkerOutput(loss_fn_outputs=loss_fn_outputs, metrics={})
 
 
 class RefWorkerBase(Worker):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.model: nn.Module = None
+        # Ref does not train. Expose ``None`` defaults so inherited methods (e.g. offload_to_cpu) work.
+        self.optimizer = None
+        self.scheduler = None
+
+    def forward(self, data: TrainingInputBatch) -> WorkerOutput:
+        """Run inference forward pass.
+
+        Returns a :class:`WorkerOutput` whose ``loss_fn_outputs`` carries one
+        per-sample dict with key ``"logprobs"``.
+        """
+        # Run in micro batches and emit per-sample logprobs.
+        # Uses token-based micro-batching when `max_tokens_per_microbatch > 0`; otherwise fixed
+        # sample-count chunking. `reorder_and_combine_batches` restores original sample order.
+        microbatch_iterator = get_microbatch_iterator(
+            data,
+            micro_batch_size=self.cfg.micro_forward_batch_size_per_gpu,
+            max_tokens_per_microbatch=self.cfg.max_tokens_per_microbatch,
+        )
+        outputs = [self._forward_micro_batch(micro_batch) for micro_batch in microbatch_iterator]
+        output = microbatch_iterator.reorder_and_combine_batches(outputs)
+        if output.device is not None and output.device != torch.device("cpu"):
+            output = output.to("cpu")
+        row_tensor = output["output"]
+        loss_fn_outputs = [{"logprobs": row_tensor[i].tolist()} for i in range(row_tensor.shape[0])]
+        return WorkerOutput(loss_fn_outputs=loss_fn_outputs, metrics={})
 
     def _forward_micro_batch(self, micro_batch: TrainingInputBatch) -> TrainingOutputBatch:
         device = torch.cuda.current_device()

@@ -16,6 +16,7 @@ NUM_GPUS=8
 LOGGER="wandb"  # change to "console" to print to stdout
 
 INFERENCE_BACKEND="vllm"
+ENFORCE_EAGER=false
 
 uv run --isolated --extra fsdp -m skyrl.train.entrypoints.main_base \
   data.train_data="['$DATA_DIR/train.parquet']" \
@@ -23,14 +24,14 @@ uv run --isolated --extra fsdp -m skyrl.train.entrypoints.main_base \
   trainer.algorithm.advantage_estimator="grpo" \
   trainer.policy.model.path="unsloth/gpt-oss-20b-BF16" \
   trainer.placement.colocate_all=true \
-  trainer.strategy=fsdp2 \
+  trainer.strategy=fsdp \
   trainer.placement.policy_num_gpus_per_node=$NUM_GPUS \
   trainer.placement.ref_num_gpus_per_node=$NUM_GPUS \
   generator.inference_engine.num_engines=2 \
   trainer.flash_attn=false \
-  trainer.use_sample_packing=false \
+  trainer.remove_microbatch_padding=false \
   generator.inference_engine.tensor_parallel_size=4 \
-  generator.inference_engine.enforce_eager=true \
+  generator.inference_engine.enforce_eager=$ENFORCE_EAGER \
   trainer.epochs=20 \
   trainer.eval_batch_size=32 \
   trainer.eval_before_train=false \

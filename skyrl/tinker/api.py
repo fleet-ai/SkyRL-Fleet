@@ -40,7 +40,10 @@ from skyrl.tinker.db_models import (
     enable_sqlite_wal,
     get_async_database_url,
 )
-from skyrl.tinker.extra import ExternalInferenceClient
+from skyrl.tinker.extra import (
+    ExternalInferenceClient,
+    SkyRLTrainInferenceForwardingClient,
+)
 from skyrl.utils.log import get_uvicorn_log_config, logger
 from skyrl.utils.storage import download_file
 
@@ -111,10 +114,36 @@ async def lifespan(app: FastAPI):
     async with app.state.db_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-    # Setup external inference client if configured
+    # Setup external inference client if configured.
+    #
+    # Three cases:
+    #   1. external_inference_url set: forward sample requests to a fully
+    #      external vLLM (existing behavior).
+    #   2. backend in (megatron, fsdp) and colocate_all=False: install
+    #      SkyRLTrainInferenceForwardingClient so sample requests go directly
+    #      to the SkyRL-Train-managed vLLM, bypassing the engine's serial loop.
+    #   3. otherwise (JAX, colocated SkyRL-Train, etc.): route everything
+    #      through the engine subprocess.
+    #
+    # The colocated path stays on the engine because vLLM is asleep during
+    # training and only the engine's synchronous sample path knows how to
+    # wake it (save_weights_for_sampler → broadcast → sample).
+    backend_name = app.state.engine_config.backend
+    backend_cfg = app.state.engine_config.backend_config or {}
+    # SkyRL-Train default is colocate_all=True; only opt into forwarding
+    # when the operator explicitly sets it to False.
+    is_colocated = bool(backend_cfg.get("trainer.placement.colocate_all", True))
     if app.state.engine_config.external_inference_url:
         app.state.external_inference_client = ExternalInferenceClient(app.state.engine_config, app.state.db_engine)
         logger.info(f"External engine configured: {app.state.engine_config.external_inference_url}")
+    elif backend_name in ("megatron", "fsdp") and not is_colocated:
+        app.state.external_inference_client = SkyRLTrainInferenceForwardingClient(
+            app.state.engine_config, app.state.db_engine
+        )
+        logger.info(
+            "SkyRL-Train inference forwarding client enabled for non-colocated backend=%s",
+            backend_name,
+        )
     else:
         app.state.external_inference_client = None
         logger.info("Using internal engine for inference")
@@ -157,6 +186,15 @@ async def lifespan(app: FastAPI):
 
     shutting_down = True
     monitor_task.cancel()
+
+    # Close the forwarding client's persistent httpx connection pool if we
+    # installed one. Cheap no-op when external_inference_client doesn't own
+    # an httpx client (ExternalInferenceClient creates one per call).
+    inference_client = getattr(app.state, "external_inference_client", None)
+    aclose = getattr(inference_client, "aclose", None)
+    if aclose is not None:
+        with suppress(Exception):
+            await aclose()
 
     logger.info(f"Stopping background engine (PID {app.state.background_engine.pid})")
     with suppress(ProcessLookupError):
@@ -250,6 +288,7 @@ class CreateModelRequest(BaseModel):
     session_id: str
     base_model: str
     lora_config: LoRAConfig
+    model_role: str = "policy"
 
 
 class CreateModelResponse(BaseModel):
@@ -399,6 +438,8 @@ class Datum(BaseModel):
                 weights=weights,
                 advantages=inp["advantages"].to_types() if "advantages" in inp else types.TensorData(data=[]),
                 logprobs=inp["logprobs"].to_types() if "logprobs" in inp else types.TensorData(data=[]),
+                values=inp["values"].to_types() if "values" in inp else types.TensorData(data=[]),
+                returns=inp["returns"].to_types() if "returns" in inp else types.TensorData(data=[]),
             ),
             model_input=self.model_input.to_types(),
         )
@@ -408,12 +449,13 @@ class ForwardBackwardInput(BaseModel):
     _ALLOWED_KEYS_BY_LOSS_FN: ClassVar[dict[str, set[str]]] = {
         "cross_entropy": set(),
         "importance_sampling": set(),
-        "ppo": {"clip_low_threshold", "clip_high_threshold"},
+        "ppo": {"clip_low_threshold", "clip_high_threshold", "value_clip"},
         "cispo": {"clip_low_threshold", "clip_high_threshold"},
+        "ppo_critic": {"value_clip"},
     }
 
     data: list[Datum]
-    loss_fn: Literal["cross_entropy", "importance_sampling", "ppo", "cispo"]
+    loss_fn: Literal["cross_entropy", "importance_sampling", "ppo", "cispo", "ppo_critic"]
     loss_fn_config: dict[str, float] | None = None
 
     @model_validator(mode="after")
@@ -639,6 +681,12 @@ class CreateSamplingSessionResponse(BaseModel):
     sampling_session_id: str
 
 
+class GetSamplerResponse(BaseModel):
+    sampler_id: str
+    base_model: str
+    model_path: str | None = None
+
+
 class SupportedModel(BaseModel):
     model_name: str
 
@@ -673,6 +721,16 @@ class WeightsInfoResponse(BaseModel):
     base_model: str
     is_lora: bool
     lora_rank: int | None = None
+
+
+class ClientConfigResponse(BaseModel):
+    pjwt_auth_enabled: bool = False
+
+
+@app.post("/api/v1/client/config", response_model=ClientConfigResponse)
+async def client_config():
+    """Stub for tinker SDK client_config handshake."""
+    return ClientConfigResponse()
 
 
 @app.get("/api/v1/healthz", response_model=HealthResponse)
@@ -731,6 +789,28 @@ async def create_sampling_session(request: CreateSamplingSessionRequest, session
     return CreateSamplingSessionResponse(sampling_session_id=sampling_session_id)
 
 
+@app.get("/api/v1/samplers/{sampler_id}", response_model=GetSamplerResponse)
+async def get_sampler(sampler_id: str, session: AsyncSession = Depends(get_session)):
+    """Get sampler (sampling session) information."""
+    sampling_db = await session.get(SamplingSessionDB, sampler_id)
+    if sampling_db is None:
+        raise HTTPException(status_code=404, detail="Sampler not found")
+    if sampling_db.base_model is not None:
+        base_model = sampling_db.base_model
+    else:
+        # Sampling session was created from a model_path — resolve the
+        # underlying base model from the source training run so the SDK can
+        # load the matching tokenizer.
+        path = types.TinkerPath.parse(sampling_db.model_path)
+        model = await get_model(session, path.primary_id)
+        base_model = model.base_model
+    return GetSamplerResponse(
+        sampler_id=sampling_db.sampling_session_id,
+        base_model=base_model,
+        model_path=sampling_db.model_path,
+    )
+
+
 @app.post("/api/v1/create_model", response_model=CreateModelResponse)
 async def create_model(request: CreateModelRequest, session: AsyncSession = Depends(get_session)):
     """Create a new model, optionally with a LoRA adapter."""
@@ -749,7 +829,7 @@ async def create_model(request: CreateModelRequest, session: AsyncSession = Depe
         session=session,
         request_type=types.RequestType.CREATE_MODEL,
         model_id=model_id,
-        request_data=types.CreateModelInput(lora_config=lora_config),
+        request_data=types.CreateModelInput(lora_config=lora_config, model_role=request.model_role),
     )
 
     model_db = ModelDB(
@@ -1000,6 +1080,12 @@ async def get_sampling_model(request: SampleRequest, session: AsyncSession) -> (
 @app.post("/api/v1/asample", response_model=FutureResponse)
 async def asample(request: SampleRequest, req: Request, session: AsyncSession = Depends(get_session)):
     """Generates samples from the model (async version)."""
+    if request.sampling_session_id is not None and ":" in request.sampling_session_id:
+        raise HTTPException(
+            status_code=400,
+            detail="sampling_session_id must not contain ':' (the routing-key delimiter)",
+        )
+
     base_model, model_path = await get_sampling_model(request, session)
 
     if base_model:
@@ -1035,6 +1121,8 @@ async def asample(request: SampleRequest, req: Request, session: AsyncSession = 
             num_samples=request.num_samples,
             checkpoint_id=checkpoint_id,
             prompt_logprobs=request.prompt_logprobs if request.prompt_logprobs is not None else False,
+            seq_id=request.seq_id,
+            sampling_session_id=request.sampling_session_id,
         ),
     )
 

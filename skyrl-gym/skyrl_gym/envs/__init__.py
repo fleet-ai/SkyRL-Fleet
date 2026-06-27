@@ -1,6 +1,6 @@
 """Registers the internal gym envs."""
 
-from skyrl_gym.envs.registration import register
+from skyrl_gym.envs.registration import deregister, register
 
 register(
     id="aime",
@@ -51,3 +51,8 @@ register(
     id="negotiation",
     entry_point="skyrl_gym.envs.negotiation.env:NegotiationEnv",
 )
+
+__all__ = [
+    "deregister",
+    "register",
+]

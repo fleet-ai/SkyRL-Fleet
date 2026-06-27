@@ -1,4 +1,3 @@
-import copy
 import math
 import os
 import shutil
@@ -12,7 +11,6 @@ import ray
 import torch
 from jaxtyping import Float
 from loguru import logger
-from ray import ObjectRef
 from ray.util.placement_group import placement_group
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -20,6 +18,7 @@ from transformers import AutoTokenizer
 from skyrl.backends.skyrl_train.distributed.dispatch import (
     ActorInfo,
     MeshRank,
+    loss_fn_outputs_to_tensor,
 )
 from skyrl.backends.skyrl_train.inference_engines.inference_engine_client import (
     InferenceEngineClient,
@@ -27,15 +26,23 @@ from skyrl.backends.skyrl_train.inference_engines.inference_engine_client import
 from skyrl.backends.skyrl_train.inference_engines.utils import (
     get_sampling_params_for_backend,
 )
-from skyrl.backends.skyrl_train.training_batch import TrainingInputBatch
+from skyrl.backends.skyrl_train.training_batch import (
+    TensorList,
+    TrainingInputBatch,
+    pad_training_input_batch,
+)
 from skyrl.backends.skyrl_train.utils import ppo_utils
 from skyrl.backends.skyrl_train.utils.io import io
+from skyrl.backends.skyrl_train.utils.off_policy_correction_utils import (
+    off_policy_correction_enabled,
+)
 from skyrl.backends.skyrl_train.utils.ppo_utils import (
+    LOSSES_WITHOUT_OLD_LOGPROBS,
     AdaptiveKLController,
     FixedKLController,
+    apply_loss_reduction_to_advantages_minibatch,
     compute_approx_kl,
     get_kl_controller,
-    normalize_advantages_dict,
 )
 from skyrl.backends.skyrl_train.utils.torch_utils import masked_mean
 from skyrl.backends.skyrl_train.workers.worker import PPORayActorGroup
@@ -45,6 +52,8 @@ from skyrl.env_vars import SKYRL_RAY_PG_TIMEOUT_IN_S
 from skyrl.train.config import SkyRLTrainConfig
 from skyrl.train.dataset import PromptDataset
 from skyrl.train.dataset.preprocess import (
+    compute_prompt_boundaries,
+    compute_prompt_mini_batch_boundaries,
     convert_prompts_responses_to_batch_tensors,
 )
 from skyrl.train.evaluate import evaluate, evaluate_step_wise
@@ -55,6 +64,7 @@ from skyrl.train.generators.base import (
 )
 from skyrl.train.generators.utils import (
     get_metrics_from_generator_output,
+    merge_stepwise_output,
     prepare_generator_input,
 )
 from skyrl.train.utils import (
@@ -62,7 +72,14 @@ from skyrl.train.utils import (
     get_ray_pg_ready_with_timeout,
     trainer_utils,
 )
+from skyrl.train.utils.callbacks import (
+    CallbackHandler,
+    CallbackInput,
+    TrainingCallback,
+    TrainingControl,
+)
 from skyrl.train.utils.logging_utils import log_example
+from skyrl.train.utils.ray_gpu_monitor import RayGpuMonitor
 from skyrl.train.utils.tracking import Tracking
 from skyrl.train.utils.trainer_utils import (
     GLOBAL_STEP_PREFIX,
@@ -72,12 +89,14 @@ from skyrl.train.utils.trainer_utils import (
     cleanup_old_checkpoints,
     dump_training_trajectories,
     extract_step_from_path,
+    finalize_minibatch_rollout_logprob_diff_std,
     run_on_each_node,
     validate_consistency_for_latest_checkpoint,
     validate_generator_output,
     zero_variance_filter,
 )
 from skyrl.train.utils.utils import ResolvedPlacementGroup, configure_ray_worker_logging
+from skyrl.train.utils.vllm_metrics_scraper import VLLMMetricsScraper
 
 
 class RayPPOTrainer:
@@ -91,6 +110,7 @@ class RayPPOTrainer:
         generator: GeneratorInterface,
         colocate_pg: Optional[ResolvedPlacementGroup] = None,
         eval_dataset: Optional[PromptDataset] = None,
+        callbacks: Optional[List[TrainingCallback]] = None,
     ):
         self.cfg = cfg
         self.colocate_all = cfg.trainer.placement.colocate_all
@@ -115,6 +135,12 @@ class RayPPOTrainer:
         self.all_timings = {}
         self.global_step = 0
 
+        self._vllm_metrics_scraper: Optional[VLLMMetricsScraper] = (
+            VLLMMetricsScraper() if cfg.generator.inference_engine.enable_ray_prometheus_stats else None
+        )
+
+        self._ray_gpu_monitor = RayGpuMonitor() if cfg.trainer.enable_ray_gpu_monitor else None
+
         # initialized in `build_models`
         self.policy_model: PPORayActorGroup = None
         self.critic_model: Optional[PPORayActorGroup] = None
@@ -126,7 +152,37 @@ class RayPPOTrainer:
 
         self.reward_kl_controller: Optional[Union[FixedKLController, AdaptiveKLController]] = None
         self.dispatch: WorkerDispatch = None
+
+        self._callback_handler = CallbackHandler(callbacks)
+        self._training_control = TrainingControl()
+        self._current_epoch: int = 0
+
         configure_ray_worker_logging()
+
+        self._num_training_gpus = (
+            cfg.trainer.placement.policy_num_gpus_per_node * cfg.trainer.placement.policy_num_nodes
+        )
+
+    def add_callback(self, callback: TrainingCallback) -> None:
+        """Register a callback. Events fired after this call reach the new callback."""
+        self._callback_handler.add(callback)
+
+    def _build_callback_input(self, **fields) -> CallbackInput:
+        """Snapshot loop counters + per-event fields into a CallbackInput."""
+        steps_per_epoch = len(self.train_dataloader) if self.train_dataloader is not None else 0
+        total_steps = self.total_training_steps or 0
+        return CallbackInput(
+            global_step=self.global_step,
+            epoch=self._current_epoch,
+            total_steps=total_steps,
+            steps_per_epoch=steps_per_epoch,
+            **fields,
+        )
+
+    def _fire(self, event_name: str, **fields) -> None:
+        """Build a CallbackInput and dispatch the given event to all callbacks."""
+        cb_input = self._build_callback_input(**fields)
+        getattr(self._callback_handler, event_name)(self, cb_input, self._training_control)
 
     @property
     def has_critic(self) -> bool:
@@ -145,14 +201,21 @@ class RayPPOTrainer:
         if self.train_dataset is not None:
             self.train_dataloader = build_dataloader(self.cfg, self.train_dataset, is_train=True)
             self.total_training_steps = len(self.train_dataloader) * self.cfg.trainer.epochs
+            if self.cfg.trainer.max_training_steps is not None:
+                self.total_training_steps = min(self.total_training_steps, self.cfg.trainer.max_training_steps)
 
     @torch.no_grad()
-    async def eval(self) -> Dict[str, float]:
+    async def eval(self, vllm_metrics_scraper: Optional[VLLMMetricsScraper] = None) -> Dict[str, float]:
         """
         Run generation and scoring on the evaluation dataset.
 
         The eval metrics are recorded after having finished training `self.global_step` steps.
         Metrics recorded in global_step 0 corresponds to evaluations before training.
+
+        Args:
+            vllm_metrics_scraper: when provided, the eval loop calls
+                ``resume()``/``pause()`` around each generation so the scraper
+                attributes only generation time to the open ``vllm/eval`` window.
 
         Returns:
             A dictionary of evaluation metrics.
@@ -164,6 +227,7 @@ class RayPPOTrainer:
                 cfg=self.cfg,
                 global_step=self.global_step,
                 tokenizer=self.tokenizer,
+                vllm_metrics_scraper=vllm_metrics_scraper,
             )
         else:
             eval_metrics = await evaluate(
@@ -172,6 +236,7 @@ class RayPPOTrainer:
                 cfg=self.cfg,
                 global_step=self.global_step,
                 tokenizer=self.tokenizer,
+                vllm_metrics_scraper=vllm_metrics_scraper,
             )
 
         # Upload eval results to S3
@@ -195,6 +260,9 @@ class RayPPOTrainer:
         """
         Main training loop for PPO
         """
+        if self._ray_gpu_monitor is not None:
+            self._ray_gpu_monitor.start()
+
         # Initialize weight sync state between policy model and inference engines.
         with Timer("init_weight_sync_state"):
             self.init_weight_sync_state()
@@ -208,11 +276,23 @@ class RayPPOTrainer:
         with Timer("sync_weights"):
             await self.dispatch.save_weights_for_sampler()
 
-        # Eval before training
+        # Compute start_epoch up-front so callback metadata is ready before
+        # any event fires (including the baseline eval below).
+        start_epoch = self.global_step // len(self.train_dataloader)
+        self._current_epoch = start_epoch
+        self._training_control.reset()
+
+        self._fire("on_train_start")
+
+        # Eval before training. Wrapped in eval callbacks + on_log so that e.g.
+        # a best-checkpoint callback sees the baseline reading.
         if self.cfg.trainer.eval_interval > 0 and self.cfg.trainer.eval_before_train:
+            self._fire("on_eval_start")
             with Timer("eval", self.all_timings):
                 eval_metrics = await self.eval()
-                self.tracker.log(eval_metrics, step=self.global_step, commit=True)
+            self._fire("on_eval_end", metrics=eval_metrics)
+            self._fire("on_log", logs=eval_metrics)
+            self.tracker.log(eval_metrics, step=self.global_step, commit=True)
 
         # initialize kl controller
         if self.cfg.trainer.algorithm.use_kl_in_reward:
@@ -220,10 +300,31 @@ class RayPPOTrainer:
 
         # main training loop
         pbar = tqdm(total=self.total_training_steps, initial=self.global_step, desc="Training Batches Processed")
-        start_epoch = self.global_step // len(self.train_dataloader)
         self.global_step += 1  # start training at global_step 1
+        stop_training = False
+
+        # booleans tracking whether we save ckpts
+        # as well as hf model at step end
+        will_save_ckpts = False
+        hf_model_save = False
         for epoch in range(start_epoch, self.cfg.trainer.epochs):
-            for iter, rand_prompts in enumerate(self.train_dataloader):
+            self._current_epoch = epoch
+            self._fire("on_epoch_start")
+            # ``step_started`` tracks the on_step_start/on_step_end pairing taking
+            # dynamic-sampling into account (which span multiple inner iterations
+            # before completing a logical step).
+            step_started = False
+            for _, rand_prompts in enumerate(self.train_dataloader):
+                if not step_started:
+                    self._fire("on_step_start")
+                    step_started = True
+                    # Open the train-rollout metrics window once per logical
+                    # step; paused so only the generation spans count toward the
+                    # throughput denominator (dynamic sampling may generate more
+                    # than once before the step completes).
+                    if self._vllm_metrics_scraper is not None:
+                        await self._vllm_metrics_scraper.start("vllm/train")
+                        self._vllm_metrics_scraper.pause()
                 with Timer("step", self.all_timings):
                     # for colocate_all=true, inference engine is always on GPU when starting the training step
 
@@ -241,8 +342,12 @@ class RayPPOTrainer:
                     )
 
                     # 1.1. generation phase
+                    if self._vllm_metrics_scraper is not None:
+                        self._vllm_metrics_scraper.resume()
                     with Timer("generate", self.all_timings):
                         generator_output: GeneratorOutput = await self.generate(generator_input)
+                    if self._vllm_metrics_scraper is not None:
+                        self._vllm_metrics_scraper.pause()
 
                     if self.cfg.generator.step_wise_trajectories:
                         # NOTE: We use instance_ids from `trajectory_ids` here instead of re-using `uids`
@@ -287,18 +392,27 @@ class RayPPOTrainer:
                             except Exception as e:
                                 logger.warning(f"Failed to upload training trajectories to S3: {e}")
 
-                    # 1.2 postprocess rewards
+                    # The train rollout for this step is done generating; close
+                    # its metrics window. ``vllm/eval/*`` is collected separately
+                    # around eval below.
+                    vllm_metrics: Dict[str, float] = {}
+                    if self._vllm_metrics_scraper is not None:
+                        vllm_metrics = await self._vllm_metrics_scraper.stop()
+
+                    # 1.2 postprocess rewards (and merge step-wise turns if enabled)
                     with Timer("postprocess_generator_output", self.all_timings):
-                        generator_output = self.postprocess_generator_output(generator_output, uids)
+                        generator_output, uids = self.postprocess_generator_output(generator_output, uids)
 
                     # 2. print example just for debugging
-                    vis = self.tokenizer.decode(generator_output["response_ids"][0])
-                    log_example(
-                        logger,
-                        prompt=generator_input["prompts"][0],
-                        response=vis,
-                        reward=generator_output["rewards"][0],
-                    )
+                    log_interval = self.cfg.trainer.log_example_interval
+                    if log_interval > 0 and self.global_step % log_interval == 0:
+                        vis = self.tokenizer.decode(generator_output["response_ids"][0])
+                        log_example(
+                            logger,
+                            prompt=generator_input["prompts"][0],
+                            response=vis,
+                            reward=generator_output["rewards"][0],
+                        )
 
                     # 3. Convert GeneratorOutput to TrainingInputBatch
                     with Timer("convert_to_training_input", self.all_timings):
@@ -320,9 +434,7 @@ class RayPPOTrainer:
                         for key in ["rewards"]:
                             training_input.pop(key)
                         training_input.metadata.pop("uids")
-
-                        if self.cfg.trainer.algorithm.advantage_batch_normalize:
-                            training_input = normalize_advantages_dict(training_input)
+                        training_input.metadata.pop("is_last_step", None)
 
                     if self.cfg.trainer.dump_data_batch:
                         # dump data to file
@@ -334,10 +446,28 @@ class RayPPOTrainer:
                     with Timer("train_critic_and_policy", self.all_timings):
                         status = self.train_critic_and_policy(training_input)
 
+                    self._fire("on_step_end", batch=training_input, metrics=status)
+                    step_started = False
+
+                    # Capture callback-driven triggers, then reset.
+                    force_save = self._training_control.should_save
+                    force_eval = self._training_control.should_evaluate
+                    self._training_control.should_save = False
+                    self._training_control.should_evaluate = False
+
                     # 8. conditionally save checkpoints and hf model
-                    if self.cfg.trainer.ckpt_interval > 0 and self.global_step % self.cfg.trainer.ckpt_interval == 0:
+                    is_epoch_end = self.global_step % len(self.train_dataloader) == 0
+                    hf_model_save = self.cfg.trainer.hf_save_interval > 0 and (
+                        is_epoch_end or self.global_step % self.cfg.trainer.hf_save_interval == 0
+                    )
+                    ckpt_interval_save = self.cfg.trainer.ckpt_interval > 0 and (
+                        is_epoch_end or self.global_step % self.cfg.trainer.ckpt_interval == 0
+                    )
+                    will_save_ckpts = force_save or ckpt_interval_save
+                    if will_save_ckpts:
                         with Timer("save_checkpoints", self.all_timings):
-                            self.save_checkpoints()
+                            ckpt_path = self.save_checkpoints()
+                        self._fire("on_save", ckpt_path=ckpt_path)
                         if self.cfg.trainer.dump_training_trajectories:
                             try:
                                 from integrations.fleet.s3_checkpoints import (
@@ -350,10 +480,7 @@ class RayPPOTrainer:
                                 )
                             except Exception as e:
                                 logger.warning(f"Failed to upload reward rollouts to S3: {e}")
-                    if (
-                        self.cfg.trainer.hf_save_interval > 0
-                        and self.global_step % self.cfg.trainer.hf_save_interval == 0
-                    ):
+                    if hf_model_save:
                         with Timer("save_hf_model", self.all_timings):
                             self.save_models()
 
@@ -361,7 +488,7 @@ class RayPPOTrainer:
                     if (
                         self.cfg.trainer.update_ref_every_epoch
                         and self.ref_model is not None
-                        and iter == len(self.train_dataloader) - 1
+                        and is_epoch_end
                         and epoch != self.cfg.trainer.epochs - 1  # skip updating ref at the end of the last epoch
                     ):
                         with Timer("update_ref_with_policy", self.all_timings):
@@ -373,20 +500,46 @@ class RayPPOTrainer:
 
                 # 11. set logs
                 logger.info(status)
+                # Throughput metrics
+                train_time = self.all_timings.get("train_critic_and_policy", 0.0)
+                if train_time > 0 and training_input.get("attention_mask") is not None:
+                    total_tokens = int(training_input["attention_mask"].sum().item())
+                    self.all_metrics["trainer/tokens_per_second_per_gpu"] = total_tokens / (
+                        train_time * self._num_training_gpus
+                    )
                 # log epoch info
                 self.all_metrics.update({"trainer/epoch": epoch, "trainer/global_step": self.global_step})
-                if self.cfg.trainer.eval_interval > 0 and (
+                interval_eval = self.cfg.trainer.eval_interval > 0 and (
                     self.global_step % self.cfg.trainer.eval_interval == 0
                     or self.global_step == self.total_training_steps
-                ):
+                )
+                if force_eval or interval_eval:
+                    # Open the eval-rollout window; the scraper itself measures
+                    # the generation spans via resume()/pause() inside eval().
+                    if self._vllm_metrics_scraper is not None:
+                        await self._vllm_metrics_scraper.start("vllm/eval")
+                        self._vllm_metrics_scraper.pause()
+                    self._fire("on_eval_start")
                     with Timer("eval", self.all_timings):
-                        eval_metrics = await self.eval()
+                        eval_metrics = await self.eval(vllm_metrics_scraper=self._vllm_metrics_scraper)
                         self.all_metrics.update(eval_metrics)
+                    self._fire("on_eval_end", metrics=eval_metrics)
+                    if self._vllm_metrics_scraper is not None:
+                        vllm_metrics.update(await self._vllm_metrics_scraper.stop())
 
                 log_payload = {
                     **self.all_metrics,
                     **{f"timing/{k}": v for k, v in self.all_timings.items()},
+                    # vllm/train/* = train rollout, vllm/eval/* = eval rollout,
+                    # each over its own generation time (owned by the scraper).
+                    **vllm_metrics,
                 }
+
+                if self._ray_gpu_monitor is not None:
+                    log_payload.update(self._ray_gpu_monitor.flush())
+
+                self._fire("on_log", logs=log_payload)
+
                 self.tracker.log(log_payload, step=self.global_step, commit=True)
                 self.all_metrics = {}
                 self.all_timings = {}
@@ -396,21 +549,69 @@ class RayPPOTrainer:
 
                 self.global_step += 1
 
+                if (
+                    self.cfg.trainer.max_training_steps is not None
+                    and self.global_step > self.cfg.trainer.max_training_steps
+                ):
+                    logger.info(f"Reached max_training_steps={self.cfg.trainer.max_training_steps}, stopping early.")
+                    stop_training = True
+                    break
+
                 del training_input, generator_output
+
+            self._fire("on_epoch_end")
+
+            if stop_training:
+                break
 
         pbar.close()
         if self.colocate_all:
             await self.inference_engine_client.sleep()
-        if self.cfg.trainer.ckpt_interval > 0:
+
+        # Decrement global step by 1 to stop at the last global step
+        # We use the global step value in callbacks when training finishes,
+        # as well as for a final checkpoint save
+        self.global_step -= 1
+
+        # Safety net: always save final checkpoint at end of training.
+        # Skip if we already saved at the last step
+        if self.cfg.trainer.ckpt_interval > 0 and not will_save_ckpts:
             with Timer("save_checkpoints", self.all_timings):
-                self.save_checkpoints()
+                ckpt_path = self.save_checkpoints()
                 logger.info("Saved final checkpoint.")
-        if self.cfg.trainer.hf_save_interval > 0:
+            self._fire("on_save", ckpt_path=ckpt_path)
+        if self.cfg.trainer.hf_save_interval > 0 and not hf_model_save:
             with Timer("save_hf_model", self.all_timings):
                 self.save_models()
                 logger.info("Saved final model.")
+        if self._vllm_metrics_scraper is not None:
+            await self._vllm_metrics_scraper.aclose()
+
+        if self._ray_gpu_monitor is not None:
+            self._ray_gpu_monitor.stop()
+
+        self._fire("on_train_end")
         self.tracker.finish()
         logger.info("Training done!")
+
+    def flush_pending_metrics(self):
+        """Best-effort flush of metrics accumulated for the in-flight step.
+
+        Idempotent: the accumulators are cleared after the flush attempt, so a
+        second call is a no-op. Never raises.
+        """
+        if not self.all_metrics and not self.all_timings:
+            return
+        log_payload = {
+            **self.all_metrics,
+            **{f"timing/{k}": v for k, v in self.all_timings.items()},
+        }
+        try:
+            self.tracker.log(log_payload, step=self.global_step, commit=True)
+        except Exception as e:
+            logger.warning(f"Failed to flush pending metrics at step {self.global_step}: {e}")
+        self.all_metrics = {}
+        self.all_timings = {}
 
     def _remove_tail_data(self, entries: List[Any]) -> List[Any]:
         """Remove tail data to have even shards in terms of *effective* samples.
@@ -545,6 +746,12 @@ class RayPPOTrainer:
                     colocate_all=False,
                     sequence_parallel_size=cfg.trainer.ref.sequence_parallel_size,
                 )
+                if pg is not None:
+                    # The shared policy/ref placement group `pg` is set only when colocate_policy_ref is enabled
+                    logger.info(
+                        "Colocating policy and ref on the same GPUs across "
+                        f"{cfg.trainer.placement.policy_num_nodes} node(s)."
+                    )
             else:
                 ref_model = None
 
@@ -641,23 +848,18 @@ class RayPPOTrainer:
         self.dispatch.init_weight_sync_state(self.inference_engine_client)
         logger.info("Initialized weight sync state for policy model and inference engines.")
 
-    def sync_policy_weights_to_inference_engines(self) -> List[ObjectRef]:
-        """Broadcast policy weights to inference engines.
-
-        Note: For new code, prefer using dispatch.save_weights_for_sampler() which
-        handles the full weight sync protocol including offload/backload.
-        This method is kept for backward compatibility with subclasses.
-        TODO(tgriggs): Remove this method when migration is complete.
-        """
-        return self.policy_model.async_run_ray_method(
-            "pass_through",
-            "broadcast_to_inference_engines",
-            self.inference_engine_client,
-            self.cfg.generator.inference_engine,
-        )
-
     def convert_to_training_input(self, generator_output: GeneratorOutput, uids: List[str]) -> TrainingInputBatch:
-        """Converts lists to a padded batch of tensors for training"""
+        """Converts lists to a padded batch of tensors for training
+
+        Args:
+            generator_output (GeneratorOutput): Generated rollouts and associated data.
+            uids (List[str]): List of prompt-unique identifiers for each generator ouput in the same
+                order as `generator_output`. Used to identify which prompt each generated rollout belongs to.
+        Returns:
+            training_input (TrainingInputBatch): Padded batch of tensors for training. It preserves the
+                order of `generator_output` and hence `uids`.
+        """
+        # 1. Extract generator output fields.
         prompt_ids: List[List[int]] = generator_output["prompt_token_ids"]
         response_ids: List[List[int]] = generator_output["response_ids"]
         rewards: List[List[float]] = generator_output["rewards"]
@@ -668,6 +870,19 @@ class RayPPOTrainer:
             "rollout_expert_indices", None
         )
 
+        pixel_values = generator_output.get("pixel_values", None)
+        image_grid_thw = generator_output.get("image_grid_thw", None)
+        if pixel_values is not None:
+            assert (
+                pixel_values is not None and image_grid_thw is not None
+            ), "Both pixel_values and image_grid_thw must exist for multi-modal inputs"
+            assert len(pixel_values) == len(
+                image_grid_thw
+            ), "Number of pixel values should match number of image grid thw"
+            pixel_values = TensorList(pixel_values)
+            image_grid_thw = TensorList(image_grid_thw)
+
+        # 2. Convert to tensors.
         (
             sequences_tensor,
             attention_masks_tensor,
@@ -697,6 +912,7 @@ class RayPPOTrainer:
             ), "expected non-null rollout logprobs tensor when off_policy_correction is enabled"
             assert rollout_logprobs_tensor.shape == loss_masks_tensor.shape, "Logprobs should look like responses"
 
+        # 3. Create training input batch.
         training_input = TrainingInputBatch(
             {
                 "sequences": sequences_tensor,  # Full trajectories (padded and concatenated prompts and responses)
@@ -706,18 +922,34 @@ class RayPPOTrainer:
                 "loss_mask": loss_masks_tensor,
                 "rollout_logprobs": rollout_logprobs_tensor,
                 "rollout_expert_indices": rollout_expert_indices_tensor,
-                "is_last_step": (
-                    torch.tensor(generator_output["is_last_step"], dtype=torch.bool)
-                    if generator_output.get("is_last_step", None) is not None
-                    else None
-                ),
+                "pixel_values": pixel_values,
+                "image_grid_thw": image_grid_thw,
             },
         )
         training_input.metadata = {"uids": uids}
         # Track which samples are hint-augmented for first-turn baseline
         if generator_output.get("is_hinted") is not None:
             training_input.metadata["is_hinted"] = generator_output["is_hinted"]
-        # padded response length
+        if generator_output.get("is_last_step", None) is not None:
+            training_input.metadata["is_last_step"] = generator_output["is_last_step"]
+
+        # 4. Compute mini-batch boundaries for train_critic_and_policy(). It excludes the ones
+        # we will add in pad_training_input_batch().
+        train_batch_size = self.cfg.trainer.train_batch_size
+        n_samples_per_prompt = self.cfg.generator.n_samples_per_prompt
+        is_stepwise = self.cfg.generator.step_wise_trajectories
+        training_input.metadata["policy_mini_batch_boundaries"] = compute_prompt_mini_batch_boundaries(
+            uids, self.cfg.trainer.policy_mini_batch_size, train_batch_size, is_stepwise, n_samples_per_prompt
+        )
+        # Per-prompt boundaries (used by the `prompt_mean` loss reduction). Policy-only,
+        # since advantage normalization only applies to the policy.
+        training_input.metadata["policy_prompt_boundaries"] = compute_prompt_boundaries(uids)
+        if self.cfg.trainer.critic.model.path is not None:
+            training_input.metadata["critic_mini_batch_boundaries"] = compute_prompt_mini_batch_boundaries(
+                uids, self.cfg.trainer.critic_mini_batch_size, train_batch_size, is_stepwise, n_samples_per_prompt
+            )
+
+        # 5. Record metadata and metrics.
         training_input.metadata["response_length"] = response_masks_tensor.shape[1]
         batch_num_seq, batch_padded_seq_len = sequences_tensor.shape
         logger.info(f"batch_num_seq: {batch_num_seq}, batch_padded_seq_len: {batch_padded_seq_len}")
@@ -727,19 +959,15 @@ class RayPPOTrainer:
                 "generate/batch_padded_seq_len": batch_padded_seq_len,
             }
         )
-        if self.cfg.generator.step_wise_trajectories:
-            assert (
-                "trajectory_ids" in generator_output
-            ), "Expected `trajectory_ids` in generator output for step wise training"
-            training_input.metadata["trajectory_ids"] = [
-                trajectory_id.to_string() for trajectory_id in generator_output["trajectory_ids"]
-            ]
         training_input.metadata["avg_response_length"] = sum(
             len(sample_response_ids) for sample_response_ids in response_ids
         ) / len(response_ids)
 
+        # 6. Pad the batch, only needed for step-wise training's `fwd_logprobs_values_reward()`.
         logger.info(f"Number of sequences before padding: {len(training_input['sequences'])}")
-        training_input = self.pad_batch(training_input)
+        dp_size = self.dispatch.get_lcm_dp_size()
+        pad_size = math.ceil(training_input.batch_size / dp_size) * dp_size - training_input.batch_size
+        training_input = pad_training_input_batch(training_input, pad_size)
         logger.info(f"Number of sequences after padding: {len(training_input['sequences'])}")
 
         return training_input
@@ -763,6 +991,7 @@ class RayPPOTrainer:
         # add rollout metrics to self.all_metrics
         if generator_output["rollout_metrics"] is not None:
             self.all_metrics.update(generator_output["rollout_metrics"])
+        generator_output.pop("rollout_metrics", None)
 
         validate_generator_output(
             len(input_batch["prompts"]),
@@ -773,25 +1002,45 @@ class RayPPOTrainer:
         return generator_output
 
     @torch.no_grad()
-    def postprocess_generator_output(self, generator_output: GeneratorOutput, uids: List[str]) -> GeneratorOutput:
+    def postprocess_generator_output(
+        self,
+        generator_output: GeneratorOutput,
+        uids: List[str],
+        metrics_generator_output: Optional[GeneratorOutput] = None,
+        metrics_uids: Optional[List[str]] = None,
+    ) -> Tuple[GeneratorOutput, List[str]]:
         """
         Converts to per token rewards and computes pass@N.
 
+        For step-wise training with ``merge_stepwise_output=true``, also collapses
+        consecutive turns sharing a common prefix into a single sequence; ``uids``
+        is shortened to match.
+
         In the future algorithm specific reward or loss mask post processing should be done here.
+
+        Reward metrics are computed over ``metrics_generator_output`` / ``metrics_uids`` when provided
+        (a superset of the trained output -- e.g. sample_full_batch passes the dropped groups so metrics
+        stay comparable), otherwise over ``generator_output`` / ``uids``. The per-token / loss-mask
+        conversion always applies to ``generator_output`` only.
+
+        Returns:
+            (generator_output, uids) — uids may be shorter than the input when merging.
         """
-        generator_output_for_metrics = generator_output
-        uids_for_metrics = uids
+        metrics_output = metrics_generator_output if metrics_generator_output is not None else generator_output
+        metrics_output_uids = metrics_uids if metrics_uids is not None else uids
+        generator_output_for_metrics = metrics_output
+        uids_for_metrics = metrics_output_uids
         if self.cfg.generator.step_wise_trajectories:
             generator_output_for_metrics = defaultdict(list)
-            for key in generator_output:
-                if isinstance(generator_output[key], list):
+            for key in metrics_output:
+                if isinstance(metrics_output[key], list):
                     generator_output_for_metrics[key] = [
-                        generator_output[key][i]
-                        for i in range(len(generator_output[key]))
-                        if generator_output["is_last_step"][i]
+                        metrics_output[key][i]
+                        for i in range(len(metrics_output[key]))
+                        if metrics_output["is_last_step"][i]
                     ]
             uids_for_metrics = [
-                uid for uid, is_last_step in zip(uids, generator_output["is_last_step"]) if is_last_step
+                uid for uid, is_last_step in zip(metrics_output_uids, metrics_output["is_last_step"]) if is_last_step
             ]
 
         # only use `generator_output_for_metrics` for metrics calculation
@@ -800,6 +1049,21 @@ class RayPPOTrainer:
             generator_output_for_metrics,
             uids_for_metrics,
         )
+
+        # Prefix-aware merging of step-wise turns.
+        if self.cfg.generator.merge_stepwise_output:
+            assert self.cfg.generator.step_wise_trajectories, "merge_stepwise_output requires step-wise training"
+            num_seq_before_merge = len(generator_output["response_ids"])
+            generator_output = merge_stepwise_output(generator_output)
+            num_seq_after_merge = len(generator_output["response_ids"])
+            logger.info(f"Merged step wise: {num_seq_before_merge} sequences -> {num_seq_after_merge} sequences")
+            self.all_metrics.update(
+                {
+                    "generate/num_seq_before_merge": num_seq_before_merge,
+                    "generate/num_seq_after_merge": num_seq_after_merge,
+                }
+            )
+            uids = [tid.instance_id for tid in generator_output["trajectory_ids"]]
 
         # these use the full generator output
         rewards: Union[List[float], List[List[float]]] = generator_output["rewards"]
@@ -812,7 +1076,17 @@ class RayPPOTrainer:
             per_token_rewards = rewards
         else:
             if self.cfg.trainer.algorithm.zero_variance_filter:
-                kept_indices_set = set(zero_variance_filter(rewards, uids))
+                kept_indices_set = set(
+                    zero_variance_filter(
+                        rewards,
+                        uids,
+                        loss_masks=generator_output["loss_masks"],
+                        tol=self.cfg.trainer.algorithm.zero_variance_filter_tol,
+                    )
+                )
+                num_groups = len(set(uids))
+                num_kept_groups = len({uids[i] for i in kept_indices_set})
+                self.all_metrics["reward/num_zero_variance_filtered"] = num_groups - num_kept_groups
                 generator_output["loss_masks"] = [
                     [0] * len(mask) if i not in kept_indices_set else mask
                     for i, mask in enumerate(generator_output["loss_masks"])
@@ -856,7 +1130,7 @@ class RayPPOTrainer:
         )
         # re-assign reward but now it's per token rewards
         generator_output["rewards"] = per_token_rewards
-        return generator_output
+        return generator_output, uids
 
     @torch.no_grad()
     def compute_advantages_and_returns(self, data: TrainingInputBatch) -> TrainingInputBatch:
@@ -869,6 +1143,7 @@ class RayPPOTrainer:
             - `["values"]`: Float[torch.Tensor, "batch_size seqlen"]
             - `["rewards"]`: Float[torch.Tensor, "batch_size seqlen"]
             - `.metadata["uids"]`: List[str]
+            - `.metadata["is_last_step"]`: List[bool] for step-wise training
 
         Adds:
             - `["advantages"]`: Float[torch.Tensor, "batch_size seqlen"]
@@ -881,15 +1156,27 @@ class RayPPOTrainer:
         is_hinted = np.array(is_hinted_list) if is_hinted_list is not None else None
 
         if self.cfg.generator.step_wise_trajectories:
-            is_last_step = data["is_last_step"].bool()
+            is_last_step = torch.tensor(data.metadata["is_last_step"], dtype=torch.bool)
             index = np.array(data.metadata["uids"])
             values = data["values"]
             last_step_is_hinted = is_hinted[is_last_step.cpu().numpy()] if is_hinted is not None else None
-            # Use the last step of each trajectory to compute advantages. Compatible with any advantage estimator
-            # NOTE(Charlie): so we ignore per-step rewards in step-wise training.
+            # Step-wise only supports outcome-based estimators (GRPO, RLOO, MAXRL); ensured by `validate_cfg`.
+            # We use the last step of each trajectory to compute advantages and broadcast them to
+            # all steps of that trajectory, so we ignore per-step rewards in step-wise training.
+            # We pass an all-ones mask here so the estimator returns the scalar advantage at every
+            # position. The real per-step `response_mask` is re-applied on broadcast below.
+            # Shapes:
+            #   traj_ids, (batch_size,):         trajectory id per step (cumsum of shifted is_last_step)
+            #   last_step_advantages/returns,
+            #       (num_traj, seqlen):          scalar advantage/return per trajectory at every position
+            #   last_step_advantages/returns[traj_ids],
+            #       (batch_size, seqlen):        broadcast to every step of the owning trajectory
+            #   response_mask_float,
+            #       (batch_size, seqlen):        per-step response mask
+            last_step_response_mask = data["response_mask"][is_last_step]
             last_step_advantages, last_step_returns = ppo_utils.compute_advantages_and_returns(
                 token_level_rewards=token_level_rewards[is_last_step],
-                response_mask=data["response_mask"][is_last_step],
+                response_mask=torch.ones_like(last_step_response_mask, dtype=torch.float),
                 index=index[is_last_step.cpu().numpy()],
                 adv_estimator=self.cfg.trainer.algorithm.advantage_estimator,
                 values=values[is_last_step] if values is not None else None,
@@ -899,16 +1186,16 @@ class RayPPOTrainer:
                 grpo_norm_by_std=self.cfg.trainer.algorithm.grpo_norm_by_std,
                 is_hinted=last_step_is_hinted,
             )
-            # Broadcast each trajectory's advantage and return to all steps of each trajectory.
             traj_ids = (
                 torch.cat([torch.tensor([False], device=is_last_step.device), is_last_step[:-1]]).int().cumsum(dim=0)
             )
-            num_groups = traj_ids[-1].item() + 1
-            assert num_groups == len(
+            num_traj = traj_ids[-1].item() + 1
+            assert num_traj == len(
                 last_step_advantages
-            ), f"number of groups {num_groups} doesn't match the number of trajectories as given by `is_last_step` {len(last_step_advantages)}. The `is_last_step` tensor is likely malformed"
-            advantages = last_step_advantages[traj_ids]
-            returns = last_step_returns[traj_ids]
+            ), f"num_traj {num_traj} doesn't match the number of trajectories as given by `is_last_step` {len(last_step_advantages)}. The `is_last_step` tensor is likely malformed"
+            response_mask_float = data["response_mask"].to(last_step_advantages.dtype)
+            advantages = last_step_advantages[traj_ids] * response_mask_float
+            returns = last_step_returns[traj_ids] * response_mask_float
         else:
             advantages, returns = ppo_utils.compute_advantages_and_returns(
                 token_level_rewards=token_level_rewards,
@@ -931,7 +1218,7 @@ class RayPPOTrainer:
 
         return_sums = token_level_rewards.sum(dim=-1)[: num_samples - pad_size]
         if self.cfg.generator.step_wise_trajectories:
-            avg_rewards: float = return_sums[data["is_last_step"][: num_samples - pad_size]].mean().item()
+            avg_rewards: float = return_sums[is_last_step[: num_samples - pad_size]].mean().item()
         else:
             avg_rewards: float = return_sums.mean().item()
 
@@ -973,44 +1260,55 @@ class RayPPOTrainer:
         data_save_dir.mkdir(parents=True, exist_ok=True)
         data.save(data_save_dir / f"{file_name}.pkl")
 
-    def pad_batch(self, training_input: TrainingInputBatch) -> TrainingInputBatch:
-        """Pad the batch to be divisible by dp size"""
-        import math
+    def _execute_forward_pass(
+        self,
+        model: str,
+        data_fwd_pass: TrainingInputBatch,
+        key: str,
+        mini_batch_boundaries: Optional[List[Tuple[int, int]]],
+    ) -> torch.Tensor:
+        """Executes forward pass that produces to produce the "old" logprobs/values.
 
-        dp_size = self.dispatch.get_lcm_dp_size()
-        pad_size = math.ceil(training_input.batch_size / dp_size) * dp_size - training_input.batch_size
-        new_tensors = {}
-        training_input.metadata["pad_size"] = pad_size
-        if pad_size == 0:
-            return training_input
-        for key, tensor in training_input.items():
-            if tensor is not None:
-                additional_dims = tuple(tensor.shape[1:]) if len(tensor.shape) > 1 else ()
+        With ``trainer.recompute_old_logprobs_per_minibatch`` set (and mini-batch boundaries
+        available), the forward is run per mini-batch — matching the mini-batch + DP partition
+        that the training step (``_execute_training_step`` / ``stage_data``) will use — so the
+        microbatch packing, and therefore the resulting logprobs/values, are identical to what
+        ``forward_backward`` recomputes. This makes the PPO ratio (and critic value clipping)
+        exact at the first inner step. Otherwise a single full-batch forward is run.
 
-                if key == "is_last_step":
-                    padding_tensor = torch.ones(pad_size, *additional_dims, dtype=tensor.dtype, device=tensor.device)
-                elif key == "loss_mask":
-                    # ensures that padding tensors don't count towards the loss
-                    padding_tensor = torch.zeros(pad_size, *additional_dims, dtype=tensor.dtype, device=tensor.device)
-                else:
-                    # ensures all padding tensors are in a valid format by cloning `pad_size` from the original input
-                    # `pad_size` is guaranteed to be smaller than batch_size
-                    padding_tensor = tensor[:pad_size].clone()
-                new_tensors[key] = torch.cat([tensor, padding_tensor], dim=0)
+        Per-sample outputs are concatenated in mini-batch order, which matches the global sample
+        order (mini-batches are contiguous and in order), so the result aligns with the full-batch
+        forward's ordering. Tensorizing the combined ``loss_fn_outputs`` once pads uniformly.
+        """
+        if self.cfg.trainer.recompute_old_logprobs_per_minibatch and mini_batch_boundaries:
+            # Pre-stage all per-DP mini-batch chunks once (same as the training step), so chunk
+            # serialization is amortized off the dispatch critical path across mini-batches. The
+            # staged chunks use the same partition as `_execute_training_step`'s `stage_data`, so
+            # the packing — and resulting logprobs/values — match what forward_backward recomputes.
+            all_chunk_refs = self.dispatch.stage_data(model, data_fwd_pass, mini_batch_boundaries)
+            combined_outputs: List[Dict[str, Any]] = []
+            for chunk_refs in all_chunk_refs:
+                mb_output = self.dispatch.forward_from_staged(model, chunk_refs)
+                combined_outputs.extend(mb_output.loss_fn_outputs)
+            return loss_fn_outputs_to_tensor(combined_outputs, key=key)
 
-        new_training_input = TrainingInputBatch(new_tensors)
-        new_training_input.metadata = {}
-        new_training_input.metadata["uids"] = training_input.metadata["uids"] + [f"pad{i}" for i in range(pad_size)]
-        if "trajectory_ids" in training_input.metadata:
-            new_training_input.metadata["trajectory_ids"] = training_input.metadata["trajectory_ids"] + [
-                f"pad{i}" for i in range(pad_size)
-            ]
-        if "is_hinted" in training_input.metadata:
-            new_training_input.metadata["is_hinted"] = training_input.metadata["is_hinted"] + [False] * pad_size
-        for key, value in training_input.metadata.items():
-            if key not in ["uids", "trajectory_ids", "is_hinted"]:
-                new_training_input.metadata[key] = copy.deepcopy(value)
-        return new_training_input
+        output = self.dispatch.forward(model, data_fwd_pass)
+        return loss_fn_outputs_to_tensor(output.loss_fn_outputs, key=key)
+
+    def _skip_policy_forward(self, training_input: TrainingInputBatch) -> bool:
+        """Whether the policy forward pass producing the "old" logprobs can be skipped.
+
+        Safe only when the loss optimizes against rollout logprobs and nothing else reads the
+        old logprobs: rollout logprobs are present (these losses fall back to old logprobs
+        without them), the KL reward penalty is off, and off-policy correction is disabled.
+        """
+        algorithm = self.cfg.trainer.algorithm
+        return (
+            algorithm.policy_loss_type in LOSSES_WITHOUT_OLD_LOGPROBS
+            and training_input.get("rollout_logprobs", None) is not None
+            and not algorithm.use_kl_in_reward
+            and not off_policy_correction_enabled(algorithm.off_policy_correction)
+        )
 
     @torch.no_grad()
     def fwd_logprobs_values_reward(
@@ -1035,6 +1333,10 @@ class RayPPOTrainer:
         fwd_keys = ["sequences", "attention_mask"]
         if training_input.get("rollout_expert_indices") is not None:
             fwd_keys.append("rollout_expert_indices")
+        if training_input.get("pixel_values") is not None:
+            fwd_keys.append("pixel_values")
+        if training_input.get("image_grid_thw") is not None:
+            fwd_keys.append("image_grid_thw")
         data_fwd_pass = training_input.select(keys=fwd_keys, metadata_keys=["response_length"])
 
         values = None
@@ -1043,18 +1345,32 @@ class RayPPOTrainer:
 
         # Critic forward (dispatch handles offload/backload automatically)
         if self.has_critic:
-            critic_output = self.dispatch.forward("critic", data_fwd_pass)
-            values = critic_output["output"]
+            values = self._execute_forward_pass(
+                "critic",
+                data_fwd_pass,
+                key="values",
+                mini_batch_boundaries=training_input.metadata.get("critic_mini_batch_boundaries"),
+            )
 
-        # Ref forward
+        # Ref forward. The ref model is not trained, so there is no forward_backward to match
+        # its packing against -> always a single full-batch forward (boundaries=None).
         if self.ref_model is not None:
-            ref_output = self.dispatch.forward("ref", data_fwd_pass)
-            base_log_probs = ref_output["output"]
+            base_log_probs = self._execute_forward_pass(
+                "ref", data_fwd_pass, key="logprobs", mini_batch_boundaries=None
+            )
             self.dispatch.empty_cache("ref")
 
-        # Policy forward
-        policy_output = self.dispatch.forward("policy", data_fwd_pass)
-        action_log_probs = policy_output["output"]
+        # Policy forward. Skipped for losses that optimize against rollout logprobs (see
+        # `_skip_policy_forward`), where the resulting logprobs are never read.
+        if self._skip_policy_forward(training_input):
+            action_log_probs = None
+        else:
+            action_log_probs = self._execute_forward_pass(
+                "policy",
+                data_fwd_pass,
+                key="logprobs",
+                mini_batch_boundaries=training_input.metadata.get("policy_mini_batch_boundaries"),
+            )
 
         # Empty cache after all forward passes
         self.dispatch.empty_cache()
@@ -1062,25 +1378,29 @@ class RayPPOTrainer:
         sequences_all: torch.Tensor = training_input["sequences"]
         # NOTE (sumanthrh): The slicing is needed to make sure that the batch dimension doesn't change for the tensordict.
         base_log_probs = base_log_probs[: len(sequences_all)] if base_log_probs is not None else None
-        action_log_probs = action_log_probs[: len(sequences_all)]
+        action_log_probs = action_log_probs[: len(sequences_all)] if action_log_probs is not None else None
         values = values[: len(sequences_all)] if values is not None else None
 
         training_input["base_action_log_probs"] = base_log_probs
         training_input["action_log_probs"] = action_log_probs
         training_input["values"] = values
 
-        if training_input.get("rollout_logprobs", None) is not None:
-            # calculates the difference in probs between inference and trainer components
-            # only consider response tokens
+        if training_input.get("rollout_logprobs", None) is not None and action_log_probs is not None:
+            # Abs diff between rollout and forward-pass logprobs, over response tokens. When the
+            # forward pass is skipped, the worker's `minibatch_rollout_logprobs_abs_diff_*` is used.
             logprobs_diff = (
                 training_input["rollout_logprobs"][training_input["loss_mask"] > 0]
                 - action_log_probs[training_input["loss_mask"] > 0]
             ).abs()
 
+            logprobs_diff_max = logprobs_diff.max().item()
+            logprobs_diff_min = logprobs_diff.min().item()
             logprobs_diff_mean = logprobs_diff.mean().item()
             logprobs_diff_std = logprobs_diff.std().item()
             self.all_metrics.update(
                 {
+                    "policy/rollout_train_logprobs_abs_diff_max": logprobs_diff_max,
+                    "policy/rollout_train_logprobs_abs_diff_min": logprobs_diff_min,
                     "policy/rollout_train_logprobs_abs_diff_mean": logprobs_diff_mean,
                     "policy/rollout_train_logprobs_abs_diff_std": logprobs_diff_std,
                 }
@@ -1144,6 +1464,49 @@ class RayPPOTrainer:
 
         return data
 
+    @torch.no_grad()
+    def _normalize_advantages(
+        self,
+        data: TrainingInputBatch,
+        mini_batch_boundaries: List[Tuple[int, int]],
+        prompt_boundaries: Optional[List[Tuple[int, int]]] = None,
+    ) -> TrainingInputBatch:
+        advantages = data["advantages"]
+        response_mask = data["response_mask"]
+
+        # Step 1: Z-score normalization (if enabled)
+        if self.cfg.trainer.algorithm.advantage_batch_normalize:
+            num_actions = response_mask.sum()
+            mean = advantages.mean()
+            std = ((advantages - mean).pow(2) * response_mask).sum()
+            rstd = (std / num_actions).clamp(min=1e-8).rsqrt()
+            data["advantages"] = (advantages - mean) * rstd
+
+        # Step 2: Loss reduction normalization per mini-batch
+        normalized_advantages = torch.zeros_like(advantages)
+        for start_idx, end_idx in mini_batch_boundaries:
+            mini_batch = data[start_idx:end_idx]
+            # For prompt_mean, select the prompt boundaries falling within this mini-batch
+            # and rebase them to mini-batch-relative indices.
+            mb_prompt_boundaries = None
+            if prompt_boundaries is not None:
+                mb_prompt_boundaries = [
+                    (p_start - start_idx, p_end - start_idx)
+                    for p_start, p_end in prompt_boundaries
+                    if start_idx <= p_start < end_idx
+                ]
+            normalized_advantages[start_idx:end_idx] = apply_loss_reduction_to_advantages_minibatch(
+                advantages=mini_batch["advantages"],
+                loss_mask=mini_batch["loss_mask"],
+                loss_reduction=self.cfg.trainer.algorithm.loss_reduction,
+                micro_batch_size=self.cfg.trainer.micro_train_batch_size_per_gpu,
+                max_seq_len=self.cfg.trainer.algorithm.max_seq_len,
+                prompt_boundaries=mb_prompt_boundaries,
+            )
+
+        data["advantages"] = normalized_advantages
+        return data
+
     def _execute_training_step(self, model: str, data: TrainingInputBatch) -> Dict[str, float]:
         """
         Execute training step using forward_backward + optim_step.
@@ -1161,24 +1524,24 @@ class RayPPOTrainer:
         Returns:
             Dict of reduced metrics from training
         """
-        # Compute mini batch size from config (algorithm-level concept)
-        n_samples = self.cfg.generator.n_samples_per_prompt
+        boundaries = data.metadata[f"{model}_mini_batch_boundaries"]
+
         if model == "policy":
-            mini_batch_size = self.cfg.trainer.policy_mini_batch_size * n_samples
-        else:
-            mini_batch_size = self.cfg.trainer.critic_mini_batch_size * n_samples
+            # Normalize advantages for policy training; critic training does not need this
+            prompt_boundaries = data.metadata.get("policy_prompt_boundaries")
+            data = self._normalize_advantages(data, boundaries, prompt_boundaries)
 
         all_metrics: Dict[str, List[float]] = defaultdict(list)
 
         # Pre-stage all per-DP mini-batch chunks in the object store so that
         # serialization is fully off the critical path during training.
-        all_chunk_refs = self.dispatch.stage_data(model, data, mini_batch_size)
+        all_chunk_refs = self.dispatch.stage_data(model, data, boundaries)
 
         # Training loop over epochs and mini-batches
         for _epoch in range(self.cfg.trainer.update_epochs_per_batch):
             for chunk_refs in all_chunk_refs:
                 status = self.dispatch.forward_backward_from_staged(model, chunk_refs)
-                for k, v in status.items():
+                for k, v in status.metrics.items():
                     all_metrics[k].append(v)
 
                 # Optimizer step after each mini batch
@@ -1187,9 +1550,8 @@ class RayPPOTrainer:
                     all_metrics["grad_norm"].append(grad_norm)
 
         # Reduce metrics across all mini-batches and epochs
-        # pop out loss_fn_outputs since it's not a scalar metric and to avoid logging it
-        all_metrics.pop("loss_fn_outputs", None)
-        reduced_metrics = reduce_metrics(all_metrics)
+        reduced_metrics = reduce_metrics(all_metrics, sum_loss_metrics=False)
+        finalize_minibatch_rollout_logprob_diff_std(reduced_metrics)
         return reduced_metrics
 
     def train_critic_and_policy(self, data: TrainingInputBatch):
@@ -1291,9 +1653,10 @@ class RayPPOTrainer:
         actor_info: ActorInfo = model.actor_infos[rank]
         return actor_info.rank
 
-    def save_checkpoints(self):
+    def save_checkpoints(self) -> str:
         """
-        Save the model, optimizer, and training states to disk.
+        Save the model, optimizer, and training states to disk. Returns the
+        checkpoint folder path.
 
         Dispatch handles offload/backload automatically for all colocation configurations.
         """
@@ -1341,6 +1704,8 @@ class RayPPOTrainer:
         # Clean up old checkpoints after successful save
         with Timer("cleanup_old_checkpoints", self.all_timings):
             self._cleanup_old_checkpoints()
+
+        return global_step_folder
 
     def _cleanup_old_checkpoints(self):
         if not self._node_ids:

@@ -11,7 +11,7 @@ import os
 import typing
 from abc import ABC
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from enum import Enum
 from typing import Annotated, Any, Dict, List, Optional, Type, TypeVar, Union
 
 import yaml
@@ -39,11 +39,39 @@ class BaseConfig(ABC):
 
 
 @dataclass
+class DataLoaderConfig(BaseConfig):
+    num_workers: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Prompt DataLoader worker processes. Default of None auto-derives the value "
+                "(0 with the inference HTTP endpoint, else 8). Set 0 for in-process loading "
+                "that never respawns workers at epoch boundaries."
+            )
+        },
+    )
+    persistent_workers: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Keep DataLoader workers alive across epochs instead of respawning them at "
+                "every epoch boundary. Setting this requires `num_workers > 0`"
+            )
+        },
+    )
+
+    def __post_init__(self) -> None:
+        if self.num_workers is not None and self.num_workers < 0:
+            raise ValueError(f"data.dataloader.num_workers must be None or >= 0, got {self.num_workers}.")
+
+
+@dataclass
 class DataConfig(BaseConfig):
     train_data: List[str] = field(default_factory=lambda: [os.path.expanduser("~/data/gsm8k/train.parquet")])
     val_data: List[str] = field(default_factory=lambda: [os.path.expanduser("~/data/gsm8k/validation.parquet")])
     env_filter: Optional[str] = None
     """Comma-separated list of data_source values to include (e.g. 'outlook,github'). None = no filtering."""
+    dataloader: DataLoaderConfig = field(default_factory=DataLoaderConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +91,16 @@ class SkyRLLoraConfig(BaseConfig):
     init_method: str = "kaiming"
     """For FSDP, corresponds to ``init_lora_weights`` in PEFT.
     For Megatron, used for ``lora_A_init_method``; supports "xavier", "normal", "kaiming", "zero"."""
+
+    max_loras: int = 1
+    """Maximum number of LoRA adapters that can be active concurrently in a
+    single GPU batch. Maps to vLLM's ``max_loras``. Increase past 1 to enable
+    multi-tenant LoRA serving via ``RemoteInferenceClient.load_lora_adapter``."""
+
+    max_cpu_loras: Optional[int] = None
+    """Total LoRA adapter capacity in vLLM's CPU LRU cache. Maps to vLLM's
+    ``max_cpu_loras``; when None, vLLM defaults it to ``max_loras``. Must be
+    >= ``max_loras`` if explicitly set."""
 
 
 @dataclass
@@ -131,6 +169,7 @@ class MegatronTorchProfilerConfig(BaseConfig):
 @dataclass
 class MegatronLoraConfig(BaseConfig):
     lora_type: str = "lora"
+    merge_lora: bool = True
 
 
 DEFAULT_MEGATRON_OPTIMIZER_KWARGS = {
@@ -145,6 +184,7 @@ DEFAULT_TRANSFORMER_CONFIG_KWARGS = {
     "recompute_modules": ["core_attn"],
     "recompute_method": "uniform",
     "recompute_num_layers": 1,
+    "gradient_accumulation_fusion": False,
 }
 
 
@@ -158,10 +198,17 @@ class MegatronConfig(BaseConfig):
     # MoE runtime configuration flags
     moe_token_dispatcher_type: str = "alltoall"
     moe_router_load_balancing_type: str = "none"
+    """Set to "aux_loss", "seq_aux_loss", or "global_aux_loss" to enable aux loss-based load balancing and logging."""
+    moe_aux_loss_coeff: float = 0.0
+    """Scaling coefficient for the moe load balancing loss if moe_router_load_balancing_type is not 'none'. Will disable aux loss in megatron-core if set to 0."""
     moe_grouped_gemm: bool = True
     moe_router_score_function: Optional[str] = None
     moe_router_enable_expert_bias: Optional[bool] = None
     moe_enable_routing_replay: bool = False
+    moe_per_layer_logging: bool = False
+    """Enable per-layer logging of MoE metrics (i.e. per layer aux losses)."""
+    moe_router_dtype: str = "fp32"
+    """Pass through to Megatron-Bridge - can be set to 'fp64' for additional numerical stability."""
     ddp_config: MegatronDDPConfig = field(default_factory=MegatronDDPConfig)
     torch_profiler_config: MegatronTorchProfilerConfig = field(default_factory=MegatronTorchProfilerConfig)
     lora_config: MegatronLoraConfig = field(default_factory=MegatronLoraConfig)
@@ -171,9 +218,24 @@ class MegatronConfig(BaseConfig):
     transformer_config_kwargs: Dict[str, Any] = field(
         default_factory=lambda: copy.deepcopy(DEFAULT_TRANSFORMER_CONFIG_KWARGS)
     )
-    empty_cuda_cache: Optional[bool] = None
+    empty_cuda_cache: Optional[bool] = True
     model_config_kwargs: dict = field(default_factory=dict)
     dist_ckpt_optim_fully_reshardable: bool = False
+    freeze_moe_router: bool = False
+    """If True, freeze MoE router parameters so they are not updated during training. No-op on
+    non-MoE models."""
+
+    def __post_init__(self):
+        # Backfill defaults for any keys the user didn't override so an override dict
+        # doesn't have to repeat every default just to set one value.
+        if self.transformer_config_kwargs is None:
+            self.transformer_config_kwargs = {}
+        for k, v in DEFAULT_TRANSFORMER_CONFIG_KWARGS.items():
+            self.transformer_config_kwargs.setdefault(k, copy.deepcopy(v))
+        if self.optimizer_config_kwargs is None:
+            self.optimizer_config_kwargs = {}
+        for k, v in DEFAULT_MEGATRON_OPTIMIZER_KWARGS.items():
+            self.optimizer_config_kwargs.setdefault(k, copy.deepcopy(v))
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +248,10 @@ class PlacementConfig(BaseConfig):
     colocate_all: bool = True
     """When True, training and inference share the same GPUs."""
     colocate_policy_ref: bool = True
+    """When colocate_all is False, True (default) still colocates policy and ref
+    on the same GPUs (one shared placement group). Set this item to False to place
+    policy and ref on separate GPUs (their own placement groups); needed when
+    a large model's policy and ref shards can't both fit on one GPU."""
     policy_num_nodes: int = 1
     policy_num_gpus_per_node: int = 1
     critic_num_nodes: int = 1
@@ -214,6 +280,18 @@ class PolicyConfig(BaseConfig):
     model_config_kwargs: dict = field(default_factory=dict)
     """Pass-through kwargs for the HuggingFace model config (FSDP backends).
     For Megatron, use ``policy.megatron_config.transformer_config_kwargs`` instead."""
+    language_model_only: bool = False
+    """When True, skip vision encoder initialization for multimodal models (e.g. Qwen3.5).
+    Loads only the language model backbone using AutoModelForCausalLM."""
+    inference_only_init: bool = False
+    """When True, set up the policy worker for inference-only flows (forward + weight
+    sync, no train_step), skipping the training-only state that would otherwise OOM
+    memory-constrained nodes (e.g. large MoE on 4xH100). NOT valid for actual training.
+    Backend-specific behavior:
+    - FSDP: initialize weights in bf16 instead of fp32 (skipping the fp32 master weights
+      that mixed-precision training requires) and skip optimizer/LR-scheduler construction.
+    - Megatron: skip optimizer/LR-scheduler construction (DistributedOptimizer eagerly
+      materializes fp32 master + AdamW state on GPU)."""
 
 
 @dataclass
@@ -233,6 +311,9 @@ class RefConfig(BaseConfig):
     fsdp_config: FSDPConfig = field(default_factory=FSDPConfig)
     megatron_config: MegatronConfig = field(default_factory=MegatronConfig)
     model_config_kwargs: dict = field(default_factory=dict)
+    language_model_only: bool = False
+    """When True, skip vision encoder initialization for multimodal models (e.g. Qwen3.5).
+    Loads only the language model backbone using AutoModelForCausalLM."""
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +374,22 @@ class CISPOConfig(BaseConfig):
     """Offset for upper bound of importance sampling ratio clipping (as opposed to PPO token update clipping)."""
 
 
+# DPPO parameters (only used when policy_loss_type="dppo")
+# See: https://arxiv.org/abs/2602.04879
+@dataclass
+class DPPOConfig(BaseConfig):
+    dppo_type: str = "binary_tv"
+    """DPPO divergence variant: ``"binary_tv"`` or ``"binary_kl"``. Used if ``policy_loss_type="dppo"``."""
+    delta_low: float = 0.2
+    """Divergence threshold for negative advantages (0.2 for TV, 0.05 for KL recommended)."""
+    delta_high: float = 0.2
+    """Divergence threshold for positive advantages (0.2 for TV, 0.05 for KL recommended)."""
+
+    def __post_init__(self):
+        if self.dppo_type not in ["binary_tv", "binary_kl"]:
+            raise ValueError("Invalid DPPO type")
+
+
 # see https://docs.skyrl.ai/docs/algorithms/off_policy_correction for more details
 @dataclass
 class OffPolicyCorrectionConfig(BaseConfig):
@@ -348,12 +445,17 @@ class AlgorithmConfig(BaseConfig):
     advantage_batch_normalize: bool = False
     value_head_prefix: str = "value_head"
     policy_loss_type: str = "regular"
-    """``"regular"``, ``"dual_clip"``, ``"gspo"``, ``"clip_cov"``, ``"kl_cov"``, or custom via ``PolicyLossRegistry``."""
+    """``"regular"``, ``"dual_clip"``, ``"gspo"``, ``"clip_cov"``, ``"kl_cov"``, ``cispo``, ``sapo``, ``"rollout_is"``, ``"dppo"``, or custom via ``PolicyLossRegistry``."""
     loss_reduction: str = "token_mean"
-    """``"token_mean"``, ``"sequence_mean"``, or ``"seq_mean_token_sum_norm"``."""
+    """``"token_mean"``, ``"sequence_mean"``, ``"prompt_mean"``, or ``"seq_mean_token_sum_norm"``. ``max_seq_len`` must be set explicitly for ``"seq_mean_token_sum_norm"``."""
     grpo_norm_by_std: bool = True
     zero_variance_filter: bool = False
     """Loss-mask prompts with zero-variance rewards. Only applicable when rewards are response-level."""
+    zero_variance_filter_tol: float = 1e-6
+    """Two rewards within this absolute tolerance count as equal when detecting zero-variance groups.
+    Only used when ``zero_variance_filter=True``. Defaults to 1e-6 so float (LLM-judge) rewards that are
+    effectively identical are still treated as zero-variance; this is a no-op for integer rewards (e.g.
+    0/1) where the spread is either 0 or >= 1. Set to 0.0 for exact equality."""
     lambd: float = 1.0
     gamma: float = 1.0
     eps_clip_low: float = 0.2
@@ -374,9 +476,11 @@ class AlgorithmConfig(BaseConfig):
     """Only used when ``policy_loss_type="kl_cov"``."""
     cispo: CISPOConfig = field(default_factory=CISPOConfig)
     """Only used when ``policy_loss_type="cispo"``."""
+    dppo: DPPOConfig = field(default_factory=DPPOConfig)
+    """Only used when ``policy_loss_type="dppo"``."""
     max_seq_len: Optional[int] = None
-    """Used for ``seq_mean_token_sum_norm`` loss reduction; set explicitly for multi-turn.
-    If ``None``, calculated as ``generator.max_input_length + generator.sampling_params.max_generate_length``."""
+    """Used for ``seq_mean_token_sum_norm`` loss reduction.
+    Must be set explicitly for that reduction mode; otherwise can remain ``None``."""
 
 
 # ---------------------------------------------------------------------------
@@ -389,12 +493,42 @@ class FullyAsyncConfig(BaseConfig):
     """Knobs for fully async training.
     See https://docs.skyrl.ai/docs/tutorials/fully_async#step-2-config-knobs-to-tune-for-fully-async-training."""
 
+    enabled: bool = False
+    """Indicates whether fully async training is enabled"""
     max_staleness_steps: int = 4
     """Maximum off-policy steps allowed. If a trajectory group is scheduled at step *i* and trained at step *j*,
     then ``j - i <= max_staleness_steps``. Larger values increase throughput but also off-policy-ness."""
     num_parallel_generation_workers: int = 768
     """Number of generation workers to spawn. Should be >= ``policy_mini_batch_size`` and
     <= ``policy_mini_batch_size * (max_staleness_steps + 1)``."""
+    sample_full_batch: bool = False
+    """Requires ``zero_variance_filter=True``. Drop zero-variance groups and keep pulling until the
+    mini-batch is full of non-zero-variance groups (async-native DAPO ``dynamic_sampling="filter"``).
+    Dropped groups are marked consumed (not regenerated on resume), so the per-epoch step count becomes
+    an upper bound: if the epoch's prompts run out mid mini-batch, the partial batch is discarded and
+    the epoch ends."""
+    clear_kv_cache_on_weight_sync: bool = False
+    """Whether or not to clear the KV cache on weight sync. Defaults to False.
+    If False, we reuse KV cache from stale policies during generation
+    (avoids recomputation at the cost of using slightly stale KV cache).
+    """
+
+    # --- Trainer simulation (no real trainer components) ---
+    simulate_training: bool = False
+    """If True, run fully-async generation with a SIMULATED trainer (see
+    ``FullyAsyncTrainerSim``): no policy/critic/ref models are instantiated and no weight
+    broadcast happens. Each step consumes a mini-batch from the generation buffer, sleeps for
+    ``simulate_training_step_seconds``, then issues pause/resume generation (as a real weight
+    sync would) but skips ``broadcast_to_inference_engines``. Used to benchmark the
+    generation/inference side (e.g. router load-balancing policies) on large models without
+    paying for trainer GPUs — typically pointed at already-served endpoints via
+    ``external_proxy_url`` / ``external_server_urls``. The generation-side dynamics (staleness
+    control, rate limiting, pause/resume) remain faithful."""
+    simulate_training_step_seconds: float = 30.0
+    """Wall-clock seconds the simulated dummy training step sleeps (stands in for fwd/bwd/optim)."""
+    simulate_weight_sync_seconds: float = 0.0
+    """Wall-clock seconds generation stays paused to stand in for the (skipped) weight broadcast.
+    0.0 = pause then immediately resume."""
 
 
 # ---------------------------------------------------------------------------
@@ -451,13 +585,20 @@ class InferenceEngineConfig(BaseConfig):
     enable_chunked_prefill: bool = True
     enable_return_routed_experts: bool = False
     max_num_batched_tokens: int = 8192
-    enforce_eager: bool = True
+    enforce_eager: bool = False
     """Disable CUDA graphs for stability. Set to ``False`` for higher performance,
     but this may affect convergence for long-running or long-context training jobs."""
     fully_sharded_loras: bool = False
-    enable_ray_prometheus_stats: bool = False
+    enable_ray_prometheus_stats: bool = True
     """Enable Ray Prometheus stats logger for inference engine metrics (vLLM v1 only)."""
     gpu_memory_utilization: float = 0.8
+    use_expandable_segments: bool = False
+    """Set ``PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`` on the inference-engine
+    processes to reduce fragmentation. Independent of the trainer-side
+    ``TrainerConfig.use_expandable_segments``. Default ``False``: it is a safe opt-in
+    on vLLM >= 0.20.1, where the CuMemAllocator auto-disables expandable segments around
+    its sleep/wake memory pool. On older vLLM, sleep mode + expandable segments is a hard
+    error, so leave this off."""
     max_num_seqs: int = 1024
     remote_urls: List[str] = field(default_factory=lambda: [])
     enable_http_endpoint: bool = False
@@ -474,6 +615,9 @@ class InferenceEngineConfig(BaseConfig):
     """Distributed executor backend for vLLM. Set to ``"ray"`` to use the Ray backend
     or ``"mp"`` to use the multiprocessing backend (single-node serving only). Per-engine 
     placement groups are created when ``"mp"`` is used."""
+    language_model_only: bool = False
+    """When True, pass ``language_model_only=True`` to the vLLM engine so that
+    multimodal models (e.g. Qwen3.5) skip vision encoder initialization."""
     engine_init_kwargs: Dict[str, Any] = field(default_factory=dict)
     """Pass-through kwargs for the vLLM engine. Names must match the engine's args."""
     override_existing_update_group: str = "auto"
@@ -482,6 +626,15 @@ class InferenceEngineConfig(BaseConfig):
     """Data-plane URL (load-balanced router) for the new inference layer."""
     external_server_urls: Optional[List[str]] = None
     """Control-plane URLs (direct backend access) for the new inference layer."""
+    enable_pd: bool = False
+    """Enable prefill-decode disaggregation. Requires ``num_prefill > 0`` and ``num_engines >= 2``."""
+    num_prefill: int = 0
+    """Number of prefill engines when ``enable_pd=True``. Decode engines = ``num_engines - num_prefill``
+
+    NOTE: SkyRL counts data parallel workers separately, so the total number of prefill workers will be ``data_parallel_size * num_prefill``."""
+    router_init_kwargs: Dict[str, Any] = field(default_factory=dict)
+    """Pass-through kwargs applied to ``RouterArgs`` for the vllm-router.
+    Names must match ``vllm_router.RouterArgs`` fields (e.g. ``policy``, ``request_timeout_secs``)."""
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +701,11 @@ class GeneratorConfig(BaseConfig):
     """Threshold for context length warning (fraction of max_input_length)."""
     trajectory_timeout_seconds: Optional[int] = None
     """Timeout in seconds for each trajectory rollout."""
+    vision_language_generator: bool = False
+    """If True, use SkyRLVLMGymGenerator (multi-modal text+image rollouts)"""
+    merge_stepwise_output: bool = False
+    """When True (and step_wise_trajectories is True), apply prefix-aware merging
+    to collapse multi-turn step-wise sequences into single sequences before training."""
 
     def __post_init__(self):
 
@@ -594,8 +752,13 @@ class EnvironmentConfig(BaseConfig):
 @dataclass
 class TrainerConfig(BaseConfig):
     placement: PlacementConfig = field(default_factory=PlacementConfig)
+    use_expandable_segments: bool = True
+    """Enable PyTorch's CUDA ``expandable_segments`` allocator on the training
+    workers to reduce GPU memory fragmentation across the offload/backload and
+    forward/backward cycles. See ``InferenceEngineConfig`` for the
+    equivalent inference-engine knob."""
     sequence_parallel_backend: str = "ulysses"
-    strategy: str = "fsdp2"
+    strategy: str = "fsdp"
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     ref: RefConfig = field(default_factory=RefConfig)
     critic: CriticConfig = field(default_factory=CriticConfig)
@@ -619,6 +782,9 @@ class TrainerConfig(BaseConfig):
     """Path for exported artifacts (HF models, debug dumps, etc.)."""
     bf16: bool = True
     epochs: int = 1
+    max_training_steps: Optional[int] = None
+    """If set, stop training after this many steps regardless of epochs or dataset size.
+    Useful for CI smoke tests and quick validation runs."""
     update_epochs_per_batch: int = 1
     """Number of gradient update passes over each training batch."""
     train_batch_size: int = 1024
@@ -627,8 +793,26 @@ class TrainerConfig(BaseConfig):
     critic_mini_batch_size: int = 256
     micro_train_batch_size_per_gpu: int = 1
     micro_forward_batch_size_per_gpu: int = 1
+    max_tokens_per_microbatch: int = -1
+    """Maximum number of tokens per microbatch for both forward and training steps. When > 0, microbatches 
+    are formed by bin-packing samples based on their token counts (from attention_mask) instead of using a 
+    fixed sample count, and micro_train_batch_size_per_gpu / micro_forward_batch_size_per_gpu are ignored.
+    -1 means disabled (use sample-based micro_train_batch_size_per_gpu / micro_forward_batch_size_per_gpu).
+    Applies to both forward and training micro-batching.
+
+    NOTE: this is a *soft* cap. Sequences are never split across microbatches, so a single sequence
+    longer than ``max_tokens_per_microbatch`` is placed alone in its own microbatch that exceeds the
+    cap (no error, no truncation). The true peak microbatch size is therefore
+    ``max(max_tokens_per_microbatch, longest_sequence_in_batch)``."""
+    recompute_old_logprobs_per_minibatch: bool = True
+    """When True, recomputes policy/ref model logprobs (and critic values) per mini-batch using
+    the same mini-batch + DP partition as the training step. When False, a single full-batch forward is run.
+    This makes the microbatch packing — and therefore the resulting logprobs/values — identical to
+    what forward_backward recomputes, so the PPO ratio (and critic value clipping) is exact at the
+    first inner step."""
     update_ref_every_epoch: bool = False
-    use_sample_packing: bool = True
+    remove_microbatch_padding: bool = True
+    """Pack samples into the THD layout and strip intra-microbatch padding (requires flash attention)."""
     eval_batch_size: int = 1024
     eval_before_train: bool = True
     eval_interval: int = 5
@@ -639,6 +823,10 @@ class TrainerConfig(BaseConfig):
     project_name: str = "skyrl"
     run_name: str = "test_run"
     logger: str = "wandb"
+    enable_ray_gpu_monitor: bool = True
+    """Enable background Ray GPU/RAM metrics collection and logging to wandb."""
+    tags: Optional[List[str]] = None
+    """Optional list of tags to apply to the W&B run. Has no effect on other backends."""
     dump_data_batch: bool = False
     dump_eval_results: bool = True
     dump_training_trajectories: bool = False
@@ -650,11 +838,30 @@ class TrainerConfig(BaseConfig):
     """Enable hybrid environment sampling for multi-env training."""
     min_samples_per_env: int = 1
     """Minimum number of samples per environment in each batch."""
+    log_example_interval: int = 1
+    """Log an example prompt every N training steps, ``0``/``-1`` to disable"""
+    logprobs_chunk_size: Optional[int] = 1024
+    """Chunk size along the sequence dimension when computing log-probs from logits.
+    This lowers peak GPU memory at the cost of ~2x wall-clock time.
+    ``None`` disables chunking (Megatron backend only; FSDP requires a positive int).
+    See https://github.com/NovaSky-AI/SkyRL/pull/1610 for more details."""
 
     def __post_init__(self):
         # ref model defaults to the policy model
         if self.ref.model.path is None:
             self.ref.model.path = self.policy.model.path
+
+        if self.logprobs_chunk_size is not None and (
+            not isinstance(self.logprobs_chunk_size, int) or self.logprobs_chunk_size <= 0
+        ):
+            raise ValueError(
+                f"logprobs_chunk_size must be a positive integer or None, got {self.logprobs_chunk_size!r}."
+            )
+        if self.logprobs_chunk_size is None and self.strategy != "megatron":
+            raise ValueError(
+                "logprobs_chunk_size=None (no chunking) is only supported with the Megatron backend. "
+                f"Set a positive integer for strategy={self.strategy!r}."
+            )
 
 
 def validate_dict_keys_against_dataclass(datacls: Type[Any], d: dict):
@@ -669,11 +876,11 @@ def validate_dict_keys_against_dataclass(datacls: Type[Any], d: dict):
         raise ValueError(f"Invalid fields {invalid_keys} for {datacls.__name__}. Valid fields are {valid_fields}.")
 
 
-def _resolve_dataclass_type(type_annotation: Any) -> Optional[Type]:
-    """Extract the concrete dataclass type from a type annotation.
+def _resolve_class_type(type_annotation: Any) -> Optional[Type]:
+    """Extract the concrete non-plain class type from a type annotation.
 
     Handles plain types, Optional[T], Union[T, None], and Annotated[T, ...].
-    Returns None if no dataclass type can be resolved.
+    Returns None if no dataclass or Enum type can be resolved.
     """
     origin = typing.get_origin(type_annotation)
 
@@ -682,16 +889,18 @@ def _resolve_dataclass_type(type_annotation: Any) -> Optional[Type]:
         for arg in typing.get_args(type_annotation):
             if arg is type(None):
                 continue
-            resolved = _resolve_dataclass_type(arg)
+            resolved = _resolve_class_type(arg)
             if resolved is not None:
                 return resolved
         return None
 
     if origin is Annotated:
-        return _resolve_dataclass_type(typing.get_args(type_annotation)[0])
+        return _resolve_class_type(typing.get_args(type_annotation)[0])
 
     # Plain class check
-    if isinstance(type_annotation, type) and dataclasses.is_dataclass(type_annotation):
+    if isinstance(type_annotation, type) and (
+        dataclasses.is_dataclass(type_annotation) or issubclass(type_annotation, Enum)
+    ):
         return type_annotation
 
     return None
@@ -720,9 +929,14 @@ def build_nested_dataclass(datacls: Type[T], d: dict) -> T:
         if f.name not in d:
             continue
         value = d[f.name]
-        nested_cls = _resolve_dataclass_type(f.type)
-        if nested_cls is not None and isinstance(value, dict):
-            kwargs[f.name] = build_nested_dataclass(nested_cls, value)
+        nested_cls = _resolve_class_type(f.type)
+        if nested_cls is not None:
+            if isinstance(value, dict) and dataclasses.is_dataclass(nested_cls):
+                kwargs[f.name] = build_nested_dataclass(nested_cls, value)
+            elif issubclass(nested_cls, Enum):
+                kwargs[f.name] = nested_cls(value)
+            else:
+                kwargs[f.name] = value
         else:
             # Primitives, None, lists, raw dicts, already-constructed objects
             kwargs[f.name] = value
@@ -757,26 +971,23 @@ class SkyRLTrainConfig(BaseConfig):
         if self.trainer.algorithm.temperature is None:
             self.trainer.algorithm.temperature = self.generator.sampling_params.temperature
 
-        if self.trainer.algorithm.max_seq_len is None:
-            # NOTE (erictang000): this is the max sequence length including the prompt, since max response length
-            # per batch can be variable based on the prompt length. This is used to normalize the loss for
-            # seq_mean_token_sum_norm loss reduction.
-            # TODO(Charlie): This calculation is not correct for multi-turn and users should use `max_seq_len` instead.
-            # Should we just force users to set max_seq_len if loss reduction is seq_mean_token_sum_norm, regardless of
-            # multi-turn or not?
-            self.trainer.algorithm.max_seq_len = (
-                self.generator.max_input_length + self.generator.sampling_params.max_generate_length
+        if self.data.dataloader.num_workers is None:
+            # TODO(Charlie): debug why inference http endpoint is slow when num_workers is 8
+            self.data.dataloader.num_workers = 0 if self.generator.inference_engine.enable_http_endpoint else 8
+        if self.data.dataloader.persistent_workers and self.data.dataloader.num_workers == 0:
+            raise ValueError(
+                "data.dataloader.persistent_workers requires num_workers > 0, but it was either"
+                " set explicitly to 0 or forced to 0 by the inference HTTP endpoint."
             )
 
         # TODO(devpatel): Bandaid solution, replace this once we have a better
         # solution for LoRA performance degradation on the vLLM side
+        from skyrl.backends.skyrl_train.inference_servers.utils import (
+            _uses_lora_weight_sync,
+        )
+
         ie_cfg = self.generator.inference_engine
-        if (
-            self.trainer.policy.model.lora.rank > 0
-            and self.trainer.strategy != "megatron"
-            and ie_cfg.enforce_eager
-            and ie_cfg.backend == "vllm"
-        ):
+        if _uses_lora_weight_sync(self) and ie_cfg.enforce_eager and ie_cfg.backend == "vllm":
             import warnings
 
             warnings.warn(
@@ -793,9 +1004,6 @@ class SkyRLTrainConfig(BaseConfig):
         Parses CLI arguments and builds a typed config. Dataclass field defaults
         are used for any values not specified on the command line.
 
-        Supports both new-style config paths (e.g., generator.inference_engine.backend)
-        and legacy YAML-style paths (e.g., generator.backend) for backward compatibility.
-
         Args:
             args: Either a list of CLI arguments in 'key.path=value' format, or a dict
                   mapping dot-notation keys to values.
@@ -809,14 +1017,11 @@ class SkyRLTrainConfig(BaseConfig):
             ValueError: If an argument uses the unsupported '+' prefix.
         """
         if isinstance(args, dict):
-            args = [f"{k}={v}" for k, v in args.items()]
-
-        from skyrl.train.config.legacy import (
-            is_legacy_config,
-            translate_legacy_config,
-            warn_legacy_config,
-        )
-        from skyrl.train.config.utils import get_legacy_config
+            # OmegaConf's CLI parser only treats "null" as None; Python's
+            # None stringifies to "None" which is parsed as the literal
+            # string. Map None -> "null" so JSON-style overrides survive
+            # the round-trip through OmegaConf.from_cli below.
+            args = [f"{k}=null" if v is None else f"{k}={v}" for k, v in args.items()]
 
         # Check for unsupported '+' prefix
         for arg in args:
@@ -826,31 +1031,41 @@ class SkyRLTrainConfig(BaseConfig):
                     "To add custom config fields, subclass the relevant config dataclass."
                 )
         overrides = OmegaConf.from_cli(args)
+        # Accept the deprecated ``trainer.use_sample_packing`` key as an alias
+        # for ``trainer.remove_microbatch_padding``. Remap it before
+        # construction so the strict key validation does not reject the old
+        # name.
+        if "trainer" in overrides and "use_sample_packing" in overrides.trainer:
+            if "remove_microbatch_padding" in overrides.trainer:
+                raise ValueError(
+                    "Specify only one of trainer.use_sample_packing (deprecated) and "
+                    "trainer.remove_microbatch_padding, not both."
+                )
+            import warnings
 
-        # Always load base config and merge overrides.
-        # Our run scripts use legacy flat keys (e.g. generator.backend) that
-        # need translation to the new nested format (generator.inference_engine.backend).
-        # The direct from_dict_config path only works for fully-qualified new-format keys.
-        try:
-            base_cfg = get_legacy_config()
-        except Exception:
-            # Hydra compose can fail (e.g., GlobalHydra already initialized).
-            # Fall back to loading YAML directly without Hydra defaults resolution.
-            import yaml
-            config_yaml = Path(__file__).parent / "ppo_base_config.yaml"
-            with open(config_yaml) as f:
-                raw_yaml = yaml.safe_load(f)
-            # Remove Hydra defaults key (not needed for direct loading)
-            raw_yaml.pop("defaults", None)
-            base_cfg = OmegaConf.create(raw_yaml)
+            warnings.warn(
+                "trainer.use_sample_packing has been renamed to "
+                "trainer.remove_microbatch_padding; use "
+                "trainer.remove_microbatch_padding instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            overrides.trainer["remove_microbatch_padding"] = overrides.trainer["use_sample_packing"]
+            del overrides.trainer["use_sample_packing"]
 
-        # Disable struct flag so overrides can add new keys to dict-typed fields
-        # (e.g., chat_template_kwargs={enable_thinking:true}).
-        # OmegaConf loads empty dicts from YAML as closed structs by default.
-        OmegaConf.set_struct(base_cfg, False)
+        # Defaults come from the dataclass field defaults (the single source of truth):
+        # build_nested_dataclass fills every field not present in the overrides. The legacy
+        # base YAMLs (ppo_base_config.yaml, skyrl_gym_config/default.yaml) were removed
+        # upstream (#1684) once defaults moved into the dataclasses. We still translate the
+        # legacy flat keys our run scripts use (e.g. generator.backend ->
+        # generator.inference_engine.backend) before constructing the typed config.
+        from skyrl.train.config.legacy import (
+            is_legacy_config,
+            translate_legacy_config,
+            warn_legacy_config,
+        )
 
-        merged = OmegaConf.merge(base_cfg, overrides)
-        merged_dict = OmegaConf.to_container(merged, resolve=True)
+        merged_dict = OmegaConf.to_container(overrides, resolve=True) or {}
 
         if is_legacy_config(merged_dict):
             warn_legacy_config()

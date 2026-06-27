@@ -61,7 +61,7 @@ class InferenceEngineClient(InferenceEngineInterface):
         self.inference_engine_cfg = inference_engine_cfg
         # Use served_model_name if provided, otherwise fall back to model path.
         # served_model_name allows using a different model name for HTTP endpoint validation
-        # than the actual model path. See ppo_base_config.yaml for details.
+        # than the actual model path. See InferenceEngineConfig.served_model_name in skyrl/train/config/config.py.
         served_model_name = inference_engine_cfg.served_model_name
         if served_model_name is not None:
             self.model_name = served_model_name
@@ -89,7 +89,12 @@ class InferenceEngineClient(InferenceEngineInterface):
         awaitables = [getattr(engine, method_name)(*args, **kwargs) for engine in self.engines]
         return await asyncio.gather(*awaitables)
 
-    async def generate(self, input_batch: InferenceEngineInput) -> InferenceEngineOutput:
+    async def generate(
+        self,
+        input_batch: InferenceEngineInput,
+        model: Optional[str] = None,
+    ) -> InferenceEngineOutput:
+
         # 0. Extract input
         prompts = input_batch.get("prompts")
         prompt_token_ids = input_batch.get("prompt_token_ids")
@@ -157,11 +162,14 @@ class InferenceEngineClient(InferenceEngineInterface):
                     add_rollout_expert_indices = True
                     rollout_expert_indices[original_idx] = result["rollout_expert_indices"][local_idx]
 
+        # TODO: Should we support prompt_logprobs in the training/rollout generate() path?
+        # Currently only the sample() path supports prompt_logprobs.
         return InferenceEngineOutput(
             responses=responses,
             stop_reasons=stop_reasons,
             response_ids=response_ids,
             response_logprobs=response_logprobs if add_resp_logprobs else None,
+            prompt_logprobs=None,
             rollout_expert_indices=rollout_expert_indices if add_rollout_expert_indices else None,
         )
 
@@ -186,6 +194,7 @@ class InferenceEngineClient(InferenceEngineInterface):
         num_samples: int,
         sampling_params: Dict[str, Any],
         session_id: Optional[Union[str, int]] = None,
+        prompt_logprobs: bool = False,
     ) -> InferenceEngineOutput:
         """Generate multiple independent samples from a single prompt.
 
@@ -199,6 +208,7 @@ class InferenceEngineClient(InferenceEngineInterface):
             session_id: Optional session ID for consistent engine routing (e.g., conversation ID).
                        If None, uses random load-balancing. Tinker API should pass None since
                        each sample() call is independent.
+            prompt_logprobs: If True, return per-token logprobs over the prompt.
 
         Returns:
             InferenceEngineOutput containing num_samples results.
@@ -211,6 +221,7 @@ class InferenceEngineClient(InferenceEngineInterface):
             prompt_token_ids=prompt_token_ids,
             num_samples=num_samples,
             sampling_params=sampling_params,
+            prompt_logprobs=prompt_logprobs,
         )
 
     async def chat_completion(self, request_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -346,8 +357,14 @@ class InferenceEngineClient(InferenceEngineInterface):
     async def update_named_weights(self, request: WeightUpdateRequest):
         return await self._run_on_all_engines("update_named_weights", request=request)
 
-    async def reset_prefix_cache(self):
-        return await self._run_on_all_engines("reset_prefix_cache")
+    async def start_weight_update(self, is_checkpoint_format: bool = True):
+        return await self._run_on_all_engines("start_weight_update", is_checkpoint_format=is_checkpoint_format)
+
+    async def finish_weight_update(self):
+        return await self._run_on_all_engines("finish_weight_update")
+
+    async def reset_prefix_cache(self, reset_running_requests: bool = False):
+        return await self._run_on_all_engines("reset_prefix_cache", reset_running_requests=reset_running_requests)
 
     async def teardown(self):
         return await self._run_on_all_engines("teardown")

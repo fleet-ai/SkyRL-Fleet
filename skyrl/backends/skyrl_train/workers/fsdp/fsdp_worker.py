@@ -1,13 +1,10 @@
 import io
-from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Optional
 
 import ray
 import torch
 import torch.distributed
-from torch.distributed.fsdp.api import ShardedStateDictConfig, StateDictType
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel as FSDP,
-)
 from transformers import AutoConfig
 
 from skyrl.train.utils.trainer_utils import (
@@ -21,14 +18,16 @@ try:
 except ImportError:
     from torch.distributed._tensor import DTensor
 
+from skyrl.backends.skyrl_train.distributed.dispatch import WorkerOutput
 from skyrl.backends.skyrl_train.distributed.fsdp_strategy import FSDPStrategy
 from skyrl.backends.skyrl_train.distributed.fsdp_utils import (
-    fsdp_version,
-    get_init_weight_context_manager,
+    should_use_meta_init,
+)
+from skyrl.backends.skyrl_train.inference_servers.remote_inference_client import (
+    SKYRL_LORA_ADAPTER_NAME,
 )
 from skyrl.backends.skyrl_train.training_batch import (
     TrainingInputBatch,
-    TrainingOutputBatch,
 )
 from skyrl.backends.skyrl_train.weight_sync import (
     LoraLoadRequest,
@@ -60,12 +59,22 @@ class FSDPWeightExtractor(WeightExtractor):
         model: FSDP model to extract weights from
         group_by_module: If True, group parameters by module (e.g., for FlashRL QKV fusion)
         batch_size_threshold_gb: If > 0, batch complete modules together until threshold is reached
+        weight_prefix: Prefix to prepend to all weight names (e.g., ``"language_model."``
+            when syncing a CausalLM backbone to a vLLM instance which always uses the namespace of the
+            multimodal model, even if vision encoder weights are not initialized).
     """
 
-    def __init__(self, model: torch.nn.Module, group_by_module: bool = False, batch_size_threshold_gb: float = 0.0):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        group_by_module: bool = False,
+        batch_size_threshold_gb: float = 0.0,
+        weight_prefix: str = "",
+    ):
         self.model = model
         self.group_by_module = group_by_module
         self.batch_size_threshold_gb = batch_size_threshold_gb
+        self.weight_prefix = weight_prefix
 
     def extract_weights(self, dtype: torch.dtype):
         """Extract weights from FSDP model.
@@ -76,16 +85,11 @@ class FSDPWeightExtractor(WeightExtractor):
         Yields:
             WeightChunk objects (one per parameter, or grouped by module)
         """
-        # Configure state_dict type for FSDP v1
-        if fsdp_version(self.model) == 1:
-            FSDP.set_state_dict_type(
-                self.model,
-                state_dict_type=StateDictType.SHARDED_STATE_DICT,
-                state_dict_config=ShardedStateDictConfig(),
-            )
-
-        # Get state dict (handles FSDP sharding)
+        # FSDP2 state_dict returns DTensors directly; no state_dict_type configuration needed.
         params = self.model.state_dict()
+
+        if self.weight_prefix:
+            params = {f"{self.weight_prefix}{k}": v for k, v in params.items()}
 
         if not self.group_by_module:
             # Simple path: yield one chunk per parameter
@@ -110,24 +114,14 @@ class FSDPWeightExtractor(WeightExtractor):
     def get_weight_metadata(self, dtype: torch.dtype) -> dict:
         """Return weight metadata without materializing full tensors.
 
-        Uses state_dict() to get clean parameter names (FSDP strips the
-        _fsdp_wrapped_module prefix), matching extract_weights behavior.
-        The sharded tensors returned by state_dict() are not gathered;
-        we only read their shape.
+        Reads state_dict() shapes; sharded DTensors are not gathered.
         """
-        if fsdp_version(self.model) == 1:
-            FSDP.set_state_dict_type(
-                self.model,
-                state_dict_type=StateDictType.SHARDED_STATE_DICT,
-                state_dict_config=ShardedStateDictConfig(),
-            )
-
         names = []
         dtype_names = []
         shapes = []
         dtype_name = str(dtype).split(".")[-1]
         for name, param in self.model.state_dict().items():
-            names.append(name)
+            names.append(f"{self.weight_prefix}{name}" if self.weight_prefix else name)
             dtype_names.append(dtype_name)
             shapes.append(list(param.shape))
         return {"names": names, "dtype_names": dtype_names, "shapes": shapes}
@@ -139,20 +133,14 @@ class FSDPWeightExtractor(WeightExtractor):
 
 
 class FSDPPolicyWorkerBase(PolicyWorkerBase):
-    def offload_to_cpu(self, pin_memory=True, non_blocking=True, offload_optimizer=True, offload_model=True):
-        self._set_numa_affinity(torch.distributed.get_rank() % torch.cuda.device_count())
-        self.strategy.offload_to_cpu(
-            self.model, self.optimizer, pin_memory, non_blocking, offload_optimizer, offload_model
-        )
-
-    def backload_to_gpu(self, non_blocking=True, backload_optimizer=True, backload_model=True):
-        self.strategy.backload_to_gpu(self.model, self.optimizer, non_blocking, backload_optimizer, backload_model)
-
     def init_model(self, model_path, num_training_steps: int = None):
-        assert self.cfg.strategy in ("fsdp", "fsdp2")
+        assert self.cfg.strategy == "fsdp"
         strategy = FSDPStrategy(
             fsdp_config=self.cfg.policy.fsdp_config,
-            optimizer_config=self.cfg.policy.optimizer_config,
+            # Inference-only workers skip the optimizer entirely: passing None makes
+            # FSDPStrategy.prepare return (model, None, None), avoiding the fp32 master
+            # weights + AdamW state that would OOM memory-constrained nodes.
+            optimizer_config=None if self.cfg.policy.inference_only_init else self.cfg.policy.optimizer_config,
             model_config=self.cfg.policy.model,
             fsdp_strategy=self.cfg.strategy,
             seed=self.cfg.seed,
@@ -165,45 +153,55 @@ class FSDPPolicyWorkerBase(PolicyWorkerBase):
         self._is_lora = self.cfg.policy.model.lora.rank > 0
 
         model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-        init_context = get_init_weight_context_manager(
+        is_multimodal = hasattr(model_config, "vision_config") and model_config.vision_config is not None
+        self._is_multimodal_lm_only = self.cfg.policy.language_model_only and is_multimodal
+        use_meta = should_use_meta_init(
             use_meta_tensor=not model_config.tie_word_embeddings, mesh=self.strategy.device_mesh
         )
-        with init_context():
 
-            wrapped_model = HFModelWrapper(
-                model_path,
-                use_flash_attention_2=self.cfg.flash_attn,
-                # NOTE (sumanthrh): Model initialization should always be in fp32
-                # during training
-                bf16=False,
-                lora_rank=self.cfg.policy.model.lora.rank,
-                lora_alpha=self.cfg.policy.model.lora.alpha,
-                lora_dropout=self.cfg.policy.model.lora.dropout,
-                lora_init_method=self.cfg.policy.model.lora.init_method,
-                target_modules=self.cfg.policy.model.lora.target_modules,
-                exclude_modules=self.cfg.policy.model.lora.exclude_modules,
-                sequence_parallel_size=self.cfg.policy.sequence_parallel_size,
-                use_sample_packing=self.cfg.use_sample_packing,
-                use_torch_compile=self.cfg.policy.use_torch_compile,
-                rope_scaling=get_rope_scaling_config(self.cfg),
-                rope_theta=get_rope_theta_config(self.cfg),
-                model_config_kwargs=self.cfg.policy.model_config_kwargs,
-                loss_chunk_size=self.cfg.loss_chunk_size,
+        wrapped_model = HFModelWrapper(
+            model_path,
+            use_flash_attention_2=self.cfg.flash_attn,
+            bf16=self.cfg.policy.inference_only_init,
+            lora_rank=self.cfg.policy.model.lora.rank,
+            lora_alpha=self.cfg.policy.model.lora.alpha,
+            lora_dropout=self.cfg.policy.model.lora.dropout,
+            lora_init_method=self.cfg.policy.model.lora.init_method,
+            target_modules=self.cfg.policy.model.lora.target_modules,
+            exclude_modules=self.cfg.policy.model.lora.exclude_modules,
+            sequence_parallel_size=self.cfg.policy.sequence_parallel_size,
+            remove_microbatch_padding=self.cfg.remove_microbatch_padding,
+            use_torch_compile=self.cfg.policy.use_torch_compile,
+            rope_scaling=get_rope_scaling_config(self.cfg),
+            rope_theta=get_rope_theta_config(self.cfg),
+            model_config_kwargs=self.cfg.policy.model_config_kwargs,
+            meta_init=use_meta,
+            language_model_only=self.cfg.policy.language_model_only,
+            logprobs_chunk_size=self.cfg.logprobs_chunk_size,
+            loss_chunk_size=self.cfg.loss_chunk_size,
+        )
+        self._seq_parallel_monkey_patch(model=wrapped_model.model)
+
+        if self.cfg.gradient_checkpointing:
+            wrapped_model.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": self.cfg.gradient_checkpointing_use_reentrant}
             )
-            # in-place patch
-            self._seq_parallel_monkey_patch(model=wrapped_model.model)
-
-            if self.cfg.gradient_checkpointing:
-                wrapped_model.gradient_checkpointing_enable(
-                    gradient_checkpointing_kwargs={"use_reentrant": self.cfg.gradient_checkpointing_use_reentrant}
-                )
 
         self.model, self.optimizer, self.scheduler = strategy.prepare(
             (wrapped_model, None, None),
         )
-        assert (
-            self.optimizer is not None and self.scheduler is not None
-        ), "FSDP preparation should create optimizer and scheduler"
+        if self.cfg.policy.inference_only_init:
+            assert (
+                self.optimizer is None and self.scheduler is None
+            ), "inference_only_init should skip optimizer and scheduler construction"
+        else:
+            assert (
+                self.optimizer is not None and self.scheduler is not None
+            ), "FSDP preparation should create optimizer and scheduler"
+
+        # Enable expandable_segments after init so model weights stay in IPC-compatible
+        # standard CUDA memory; only subsequent activations use expandable segments.
+        self._set_expandable_segments(True)
 
     async def init_weight_sync_state(self, inference_engine_client, inference_engine_cfg: "InferenceEngineConfig"):
         # Call super first to set _transfer_strategy_cls and create sender/receivers
@@ -215,18 +213,25 @@ class FSDPPolicyWorkerBase(PolicyWorkerBase):
         from skyrl.backends.skyrl_train.weight_sync import CudaIpcTransferStrategy
 
         group_by_module = self._transfer_strategy_cls is CudaIpcTransferStrategy
+        weight_prefix = "language_model." if self._is_multimodal_lm_only else ""
         self.weight_extractor = FSDPWeightExtractor(
             self.model.model,
             group_by_module=group_by_module,
             batch_size_threshold_gb=(
                 inference_engine_cfg.weight_transfer_threshold_cuda_ipc_GB if group_by_module else 0.0
             ),
+            weight_prefix=weight_prefix,
         )
 
-    async def _save_lora_adapters_and_sync(self, peft_model, lora_sync_path, inference_engine_client):
+    async def _save_lora_adapters_and_sync(
+        self,
+        peft_model,
+        lora_sync_path,
+        inference_engine_client,
+        lora_name: str = SKYRL_LORA_ADAPTER_NAME,
+    ):
         """Collect LoRA parameters, save and call inference engine to load."""
         import json
-        import os
         from dataclasses import asdict
 
         from safetensors.torch import save_file
@@ -256,20 +261,31 @@ class FSDPPolicyWorkerBase(PolicyWorkerBase):
             )
 
             if isinstance(inference_engine_client, RemoteInferenceClient):
-                await inference_engine_client.update_lora_from_disk(lora_sync_path)
+                await inference_engine_client.load_lora_adapter(lora_name, lora_sync_path)
             else:
-                lora_request = LoraLoadRequest(lora_path=lora_sync_path)
+                lora_request = LoraLoadRequest(lora_path=lora_sync_path, lora_name=lora_name)
                 await inference_engine_client.update_named_weights(lora_request)
 
         torch.distributed.barrier()
 
-    async def broadcast_to_inference_engines(self, inference_engine_client, inference_engine_cfg):
+    async def broadcast_to_inference_engines(
+        self,
+        inference_engine_client,
+        inference_engine_cfg,
+        model_id: Optional[str] = None,
+    ):
         use_prefix_cache = inference_engine_cfg.enable_prefix_caching
         generator_dtype = str_to_torch_dtype(inference_engine_cfg.model_dtype)
         cache_reset_task = None
-        if use_prefix_cache and torch.distributed.get_rank() == 0:
+
+        # Clear prefix cache for synchronous training or for async training if `clear_kv_cache_on_weight_sync` is set
+        if (
+            use_prefix_cache
+            and torch.distributed.get_rank() == 0
+            and (not self.cfg.fully_async.enabled or self.cfg.fully_async.clear_kv_cache_on_weight_sync)
+        ):
             # clear prefix cache
-            cache_reset_task = inference_engine_client.reset_prefix_cache()
+            cache_reset_task = inference_engine_client.reset_prefix_cache(reset_running_requests=True)
 
         torch.cuda.empty_cache()
 
@@ -279,26 +295,32 @@ class FSDPPolicyWorkerBase(PolicyWorkerBase):
         if self._is_lora:
             assert hasattr(peft_model, "peft_config"), "LoRA model should have peft_config"
 
-            # assume base model is already synced, sync LoRA adapters
-            lora_sync_path = self.cfg.policy.model.lora.lora_sync_path
-            await self._save_lora_adapters_and_sync(peft_model, lora_sync_path, inference_engine_client)
-        else:
-            # Extract and send weights using the sender created at init time
-            weight_iterator = self.weight_extractor.extract_weights(generator_dtype)
-            weight_metadata = self.weight_extractor.get_weight_metadata(generator_dtype)
-            await self._weight_transfer_sender.send_chunks(
-                weight_iterator,
-                weight_metadata=weight_metadata,
+            # Multi-tenant: per-adapter subdir + per-adapter vLLM name.
+            # Single-tenant (model_id=None) keeps the legacy shared path +
+            # name. _resolve_lora_sync_target (shared with Megatron, defined on
+            # PolicyWorkerBase) basename-guards against a malformed model_id
+            # escaping lora_sync_path even though api.py already validates IDs.
+            lora_name, lora_sync_path = self._resolve_lora_sync_target(model_id)
+            await self._save_lora_adapters_and_sync(
+                peft_model, lora_sync_path, inference_engine_client, lora_name=lora_name
             )
+        else:
+            # Extract and send weights using the sender created at init time.
+            # Disable expandable_segments around the send: under colocate_all the
+            # CUDA-IPC path calls cudaIpcGetMemHandle, which is incompatible with the
+            # VMM addresses expandable segments uses.
+            with self._expandable_segments_disabled_for_sync():
+                weight_iterator = self.weight_extractor.extract_weights(generator_dtype)
+                weight_metadata = self.weight_extractor.get_weight_metadata(generator_dtype)
+                await self._weight_transfer_sender.send_chunks(
+                    weight_iterator,
+                    weight_metadata=weight_metadata,
+                )
 
         if cache_reset_task is not None:
             await cache_reset_task
         torch.cuda.empty_cache()
         torch.distributed.barrier()
-
-    def get_weight_statistics(self):
-        """Compute lightweight statistics for model weights"""
-        raise NotImplementedError()
 
     def _set_pad_token_id(self, pad_token_id):
         # NOTE (sumanthrh): self.model -> HFModelWrapper; self.model.model -> AutoModelForCausalLM
@@ -307,30 +329,21 @@ class FSDPPolicyWorkerBase(PolicyWorkerBase):
     def forward(
         self,
         data: TrainingInputBatch,
-    ) -> TrainingOutputBatch:
+        loss_fn=None,
+        loss_fn_config=None,
+    ) -> WorkerOutput:
         """Run forward pass on data in inference mode.
 
         Reshard the model after forward pass to redistribute memory and allow for offloading to cpu.
         """
-        output = super().forward(data)
+        output = super().forward(data, loss_fn=loss_fn, loss_fn_config=loss_fn_config)
         # unshard the root FSDP module (https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes)
-        if self._world_size > 1 and fsdp_version(self.model.model) == 1:
-            self.model.model._handle.reshard(True)
         return output
 
 
 class FSDPCriticWorkerBase(CriticWorkerBase):
-    def offload_to_cpu(self, pin_memory=True, non_blocking=True, offload_optimizer=True, offload_model=True):
-        self._set_numa_affinity(torch.distributed.get_rank() % torch.cuda.device_count())
-        self.strategy.offload_to_cpu(
-            self.model, self.optimizer, pin_memory, non_blocking, offload_optimizer, offload_model
-        )
-
-    def backload_to_gpu(self, non_blocking=True, backload_optimizer=True, backload_model=True):
-        self.strategy.backload_to_gpu(self.model, self.optimizer, non_blocking, backload_optimizer, backload_model)
-
     def init_model(self, model_path, num_training_steps: int = None):
-        assert self.cfg.strategy in ("fsdp", "fsdp2")
+        assert self.cfg.strategy == "fsdp"
         strategy = FSDPStrategy(
             fsdp_config=self.cfg.critic.fsdp_config,
             optimizer_config=self.cfg.critic.optimizer_config,
@@ -343,34 +356,33 @@ class FSDPCriticWorkerBase(CriticWorkerBase):
         self.strategy = strategy
 
         model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-        init_context = get_init_weight_context_manager(
+        use_meta = should_use_meta_init(
             use_meta_tensor=not model_config.tie_word_embeddings, mesh=self.strategy.device_mesh
         )
-        with init_context():
-            critic = get_llm_for_sequence_regression(
-                model_path,
-                "critic",
-                use_flash_attention_2=self.cfg.flash_attn,
-                # NOTE (sumanthrh): Model initialization should always be in fp32
-                # during training
-                bf16=False,
-                lora_rank=self.cfg.critic.model.lora.rank,
-                lora_alpha=self.cfg.critic.model.lora.alpha,
-                lora_dropout=self.cfg.critic.model.lora.dropout,
-                target_modules=self.cfg.critic.model.lora.target_modules,
-                exclude_modules=self.cfg.critic.model.lora.exclude_modules,
-                value_head_prefix=self.cfg.algorithm.value_head_prefix,
-                init_value_head=self.cfg.policy.model.path == self.cfg.critic.model.path,
-                sequence_parallel_size=self.cfg.critic.sequence_parallel_size,
-                use_sample_packing=self.cfg.use_sample_packing,
-                model_config_kwargs=self.cfg.critic.model_config_kwargs,
-            )
-            self._seq_parallel_monkey_patch(model=critic, use_parent_class=True)
 
-            if self.cfg.gradient_checkpointing:
-                critic.gradient_checkpointing_enable(
-                    gradient_checkpointing_kwargs={"use_reentrant": self.cfg.gradient_checkpointing_use_reentrant}
-                )
+        critic = get_llm_for_sequence_regression(
+            model_path,
+            "critic",
+            use_flash_attention_2=self.cfg.flash_attn,
+            bf16=False,
+            lora_rank=self.cfg.critic.model.lora.rank,
+            lora_alpha=self.cfg.critic.model.lora.alpha,
+            lora_dropout=self.cfg.critic.model.lora.dropout,
+            target_modules=self.cfg.critic.model.lora.target_modules,
+            exclude_modules=self.cfg.critic.model.lora.exclude_modules,
+            value_head_prefix=self.cfg.algorithm.value_head_prefix,
+            init_value_head=self.cfg.policy.model.path == self.cfg.critic.model.path,
+            sequence_parallel_size=self.cfg.critic.sequence_parallel_size,
+            remove_microbatch_padding=self.cfg.remove_microbatch_padding,
+            model_config_kwargs=self.cfg.critic.model_config_kwargs,
+            meta_init=use_meta,
+        )
+        self._seq_parallel_monkey_patch(model=critic, use_parent_class=True)
+
+        if self.cfg.gradient_checkpointing:
+            critic.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": self.cfg.gradient_checkpointing_use_reentrant}
+            )
 
         # prepare models/optimizers...
         self.model, self.optimizer, self.scheduler = strategy.prepare(
@@ -378,38 +390,41 @@ class FSDPCriticWorkerBase(CriticWorkerBase):
         )
         assert self.optimizer is not None
 
+        self._set_expandable_segments(True)
+
+    def _set_pad_token_id(self, pad_token_id):
+        self.model.config.pad_token_id = pad_token_id
+
     def forward(
         self,
         data: TrainingInputBatch,
-    ) -> TrainingOutputBatch:
+    ) -> WorkerOutput:
         """Run forward pass on data in inference mode.
 
         Reshard the model after forward pass to redistribute memory and allow for offloading to cpu.
         """
         output = super().forward(data)
         # unshard the root FSDP module (https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes)
-        if self._world_size > 1 and fsdp_version(self.model.model) == 1:
-            self.model.model._handle.reshard(True)
         return output
 
 
 class FSDPRefWorkerBase(RefWorkerBase):
-    def offload_to_cpu(self, pin_memory=True, non_blocking=True, **kwargs):
-        self._set_numa_affinity(torch.distributed.get_rank() % torch.cuda.device_count())
-        # Force synchronous transfers + barrier to prevent cudaErrorIllegalAddress
-        # when policy workers access GPU memory that ref workers are still offloading
-        # across nodes (no shared CUDA context in multi-node).
-        self.strategy.offload_to_cpu(self.model, None, pin_memory, non_blocking=False)
+    def offload_to_cpu(self, *args, **kwargs):
+        # Fleet multi-node fix (integrations/fleet/CHANGELOG.md §1): the base offload now does
+        # torch.cuda.synchronize() (local-device only). Multi-node colocated training also needs
+        # a cross-rank barrier so no rank starts backloading/touching GPU memory before *every*
+        # rank has finished offloading — otherwise cudaErrorIllegalAddress across nodes.
+        super().offload_to_cpu(*args, **kwargs)
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
 
-    def backload_to_gpu(self, non_blocking=True, **kwargs):
-        self.strategy.backload_to_gpu(self.model, None, non_blocking=False)
+    def backload_to_gpu(self, *args, **kwargs):
+        super().backload_to_gpu(*args, **kwargs)
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
 
     def init_model(self, model_path):
-        assert self.cfg.strategy in ("fsdp", "fsdp2")
+        assert self.cfg.strategy == "fsdp"
         strategy = FSDPStrategy(
             fsdp_config=self.cfg.ref.fsdp_config,
             fsdp_strategy=self.cfg.strategy,
@@ -420,39 +435,41 @@ class FSDPRefWorkerBase(RefWorkerBase):
         self.strategy = strategy
 
         model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-        init_context = get_init_weight_context_manager(
+        use_meta = should_use_meta_init(
             use_meta_tensor=not model_config.tie_word_embeddings, mesh=self.strategy.device_mesh
         )
 
-        with init_context():
-            wrapped_model = HFModelWrapper(
-                model_path,
-                use_flash_attention_2=self.cfg.flash_attn,
-                bf16=self.cfg.bf16,
-                sequence_parallel_size=self.cfg.ref.sequence_parallel_size,
-                use_sample_packing=self.cfg.use_sample_packing,
-                rope_scaling=get_rope_scaling_config(self.cfg),
-                rope_theta=get_rope_theta_config(self.cfg),
-                model_config_kwargs=self.cfg.ref.model_config_kwargs,
-                loss_chunk_size=self.cfg.loss_chunk_size,
-            )
-            self._seq_parallel_monkey_patch(model=wrapped_model.model)
+        wrapped_model = HFModelWrapper(
+            model_path,
+            use_flash_attention_2=self.cfg.flash_attn,
+            bf16=self.cfg.bf16,
+            sequence_parallel_size=self.cfg.ref.sequence_parallel_size,
+            remove_microbatch_padding=self.cfg.remove_microbatch_padding,
+            rope_scaling=get_rope_scaling_config(self.cfg),
+            rope_theta=get_rope_theta_config(self.cfg),
+            model_config_kwargs=self.cfg.ref.model_config_kwargs,
+            meta_init=use_meta,
+            language_model_only=self.cfg.ref.language_model_only,
+            logprobs_chunk_size=self.cfg.logprobs_chunk_size,
+            loss_chunk_size=self.cfg.loss_chunk_size,
+        )
+        self._seq_parallel_monkey_patch(model=wrapped_model.model)
 
         self.model = strategy.prepare(wrapped_model)
         self.model.eval()
 
+        self._set_expandable_segments(True)
+
     def forward(
         self,
         data: TrainingInputBatch,
-    ) -> TrainingOutputBatch:
+    ) -> WorkerOutput:
         """Run forward pass on data in inference mode.
 
         Reshard the model after forward pass to redistribute memory and allow for offloading to cpu.
         """
         output = super().forward(data)
         # unshard the root FSDP module (https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes)
-        if self._world_size > 1 and fsdp_version(self.model.model) == 1:
-            self.model.model._handle.reshard(True)
         return output
 
 

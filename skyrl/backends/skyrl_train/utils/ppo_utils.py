@@ -19,7 +19,7 @@
 from collections import defaultdict
 from enum import StrEnum
 from functools import wraps
-from typing import Callable, List, Literal, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import ray
@@ -27,7 +27,6 @@ import torch
 from jaxtyping import Float
 from loguru import logger
 
-from skyrl.backends.skyrl_train.training_batch import TrainingInputBatch
 from skyrl.backends.skyrl_train.utils.off_policy_correction_utils import (
     apply_off_policy_correction,
 )
@@ -120,29 +119,10 @@ def compute_approx_kl(
         raise ValueError(f"Invalid KL estimator type: {kl_estimator_type}")
 
     if loss_mask is not None:
-        kld = kld * loss_mask
+        # Multiplying by `loss_mask` can leak `nan` from masked positions,
+        # so route masked positions to 0.0 directly while keeping mask scaling elsewhere
+        kld = torch.where(loss_mask.bool(), kld * loss_mask, 0.0)
     return kld
-
-
-@torch.no_grad()
-def normalize_advantages_dict(data: TrainingInputBatch) -> TrainingInputBatch:
-    """Normalizes the advantages in the data batch.
-
-    Expects:
-        - `["advantages"]`: Float[torch.Tensor, "batch_size seqlen"]
-        - `["response_mask"]`: Float[torch.Tensor, "batch_size seqlen"]
-    """
-    advantages: Float[torch.Tensor, "batch_size seqlen"] = data["advantages"]
-    response_masks: Float[torch.Tensor, "batch_size seqlen"] = data["response_mask"]
-    num_actions: float = response_masks.sum()
-    # mean
-    mean: float = advantages.mean()
-    # std
-    std: float = ((advantages - mean).pow(2) * response_masks).sum()
-    rstd: float = (std / num_actions).clamp(min=1e-8).rsqrt()
-
-    data["advantages"] = (advantages - mean) * rstd
-    return data
 
 
 def masked_var(values, mask, unbiased=True):
@@ -427,6 +407,7 @@ class AdvantageEstimator(StrEnum):
     GRPO = "grpo"
     RLOO = "rloo"
     REINFORCE_PP = "reinforce++"
+    MAXRL = "maxrl"
 
 
 class AdvantageEstimatorRegistry(BaseFunctionRegistry):
@@ -453,6 +434,7 @@ class AdvantageEstimatorRegistry(BaseFunctionRegistry):
             "gae": [AdvantageEstimator.GAE, compute_gae_advantage_return],
             "rloo": [AdvantageEstimator.RLOO, compute_rloo_outcome_advantage],
             "reinforce++": [AdvantageEstimator.REINFORCE_PP, compute_reinforce_plus_plus_outcome_advantage],
+            "maxrl": [AdvantageEstimator.MAXRL, compute_maxrl_advantage],
         }
 
         for ae_name, (ae_type, ae_func) in ae_types.items():
@@ -471,6 +453,12 @@ class PolicyLossType(StrEnum):
     SAPO = "sapo"
     CROSS_ENTROPY = "cross_entropy"
     IMPORTANCE_SAMPLING = "importance_sampling"
+    DPPO = "dppo"
+
+
+# Losses that optimize against rollout logprobs, so the "old" logprobs forward pass can be
+# skipped when nothing else needs them (see `RayPPOTrainer._skip_policy_forward`).
+LOSSES_WITHOUT_OLD_LOGPROBS = frozenset({PolicyLossType.ROLLOUT_IS, PolicyLossType.DPPO})
 
 
 class PolicyLossRegistry(BaseFunctionRegistry):
@@ -502,6 +490,7 @@ class PolicyLossRegistry(BaseFunctionRegistry):
             "sapo": [PolicyLossType.SAPO, sapo_policy_loss],
             "cross_entropy": [PolicyLossType.CROSS_ENTROPY, cross_entropy_loss],
             "importance_sampling": [PolicyLossType.IMPORTANCE_SAMPLING, importance_sampling_loss],
+            "dppo": [PolicyLossType.DPPO, dppo_policy_loss],
             "rollout_is": [PolicyLossType.ROLLOUT_IS, rollout_is_policy_loss],
         }
 
@@ -558,12 +547,6 @@ def ppo_policy_loss(
     rollout_logprobs: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, dict[str, float]]:
     assert config.policy_loss_type in ["regular", "dual_clip"], "loss_type must be either 'regular' or 'dual_clip'"
-    loss_reduction = config.loss_reduction
-    assert loss_reduction in [
-        "token_mean",
-        "sequence_mean",
-        "seq_mean_token_sum_norm",
-    ], "loss_reduction must be either 'token_mean', 'sequence_mean', or 'seq_mean_token_sum_norm'"
 
     ratio = safe_exp_delta(log_probs - old_log_probs, clip=20.0, out_dtype=log_probs.dtype)
     surr1 = ratio * advantages
@@ -584,7 +567,7 @@ def ppo_policy_loss(
     )
     loss_metrics.update(off_policy_metrics)
 
-    loss = reduce_loss(loss, loss_mask, loss_reduction, config.max_seq_len)
+    loss = reduce_loss(loss, loss_mask)
     return loss, loss_metrics
 
 
@@ -656,8 +639,7 @@ def sapo_policy_loss(
     )
     loss_metrics.update(off_policy_metrics)
 
-    # for SAPO, we need to aggregate the loss at the sequence level (seq-mean-token-mean)
-    loss = reduce_loss(loss, loss_mask, loss_reduction, config.max_seq_len)
+    loss = reduce_loss(loss, loss_mask)
 
     return loss, loss_metrics
 
@@ -726,7 +708,7 @@ def gspo_policy_loss(
     )
     loss_metrics.update(off_policy_metrics)
 
-    loss = reduce_loss(loss, loss_mask, loss_reduction, config.max_seq_len)
+    loss = reduce_loss(loss, loss_mask)
 
     return loss, loss_metrics
 
@@ -763,7 +745,7 @@ def compute_policy_loss_cispo(
     )
     loss_metrics.update(off_policy_metrics)
 
-    loss = reduce_loss(loss, loss_mask, config.loss_reduction, config.max_seq_len)
+    loss = reduce_loss(loss, loss_mask)
     return loss, loss_metrics
 
 
@@ -791,13 +773,6 @@ def rollout_is_policy_loss(
     """
     assert rollout_logprobs is not None, "rollout_logprobs are required for rollout_is"
 
-    loss_reduction = config.loss_reduction
-    assert loss_reduction in [
-        "token_mean",
-        "sequence_mean",
-        "seq_mean_token_sum_norm",
-    ], "loss_reduction must be either 'token_mean', 'sequence_mean', or 'seq_mean_token_sum_norm'"
-
     ratio = safe_exp_delta(log_probs - rollout_logprobs, clip=20.0, out_dtype=log_probs.dtype)
 
     in_range = (ratio > 1 - config.eps_clip_low) & (ratio < 1 + config.eps_clip_high)
@@ -812,7 +787,79 @@ def rollout_is_policy_loss(
     )
     loss_metrics.update(off_policy_metrics)
 
-    loss = reduce_loss(loss, loss_mask, loss_reduction, config.max_seq_len)
+    loss = reduce_loss(loss, loss_mask)
+    return loss, loss_metrics
+
+
+@register_policy_loss(PolicyLossType.DPPO)
+def dppo_policy_loss(
+    log_probs: torch.Tensor,
+    old_log_probs: torch.Tensor,
+    advantages: torch.Tensor,
+    config: AlgorithmConfig,
+    loss_mask: Optional[torch.Tensor] = None,
+    rollout_logprobs: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, dict[str, float]]:
+    """
+    Divergence Proximal Policy Optimization (DPPO) policy loss.
+
+    Replaces PPO's ratio-based clipping with a divergence-based binary mask.
+    Supports Binary-TV and Binary-KL variants.
+    The paper also proposes Top-K TV/KL variants (Equations 15-16), but in
+    Section G.2 the authors find Top-K masking provides no significant benefit
+    over the simpler binary approximation, so we only implement binary here.
+
+    See: https://arxiv.org/abs/2602.04879
+    Reference impl: https://github.com/sail-sg/Stable-RL/blob/main/verl/trainer/ppo/core_algos.py#L1241
+    """
+    # Use rollout logprobs as behavior policy for both ratio and mask
+    # See Section 5.2 of paper
+    mu_log_probs = rollout_logprobs if rollout_logprobs is not None else old_log_probs
+    ratio = safe_exp_delta(log_probs - mu_log_probs, clip=20.0, out_dtype=log_probs.dtype)
+
+    dppo_type = config.dppo.dppo_type
+    delta_low = config.dppo.delta_low
+    delta_high = config.dppo.delta_high
+
+    # Compute DPPO mask
+    with torch.no_grad():
+        current_probs = torch.exp(log_probs)
+        mu_probs = torch.exp(mu_log_probs)
+        prob_diff = current_probs - mu_probs  # Use actual probabilities
+
+        if dppo_type == "binary_tv":
+            # Binary Total Variation (Equation 13)
+            mask = torch.ones_like(advantages)
+            mask[(advantages > 0) & (prob_diff > delta_high)] = 0.0
+            mask[(advantages < 0) & (-prob_diff > delta_low)] = 0.0
+
+        elif dppo_type == "binary_kl":
+            # Binary KL (Equation 14)
+            eps = 1e-8
+            binary_kl = mu_probs * (mu_log_probs - log_probs) + (1 - mu_probs) * torch.log(
+                (1 - mu_probs + eps) / (1 - current_probs + eps)
+            )
+
+            mask = torch.ones_like(advantages)
+            mask[(advantages > 0) & (prob_diff > 0) & (binary_kl > delta_high)] = 0.0
+            mask[(advantages < 0) & (prob_diff < 0) & (binary_kl > delta_low)] = 0.0
+
+        else:
+            raise ValueError(f"Unknown DPPO type: {dppo_type}. Must be 'binary_tv' or 'binary_kl'.")
+
+    # Surrogate loss with divergence-based mask
+    loss = -(ratio * advantages * mask)
+
+    clip_ratio = masked_mean((mask == 0).float(), loss_mask).mean().detach().item()
+    loss_metrics = {"clip_ratio": clip_ratio}
+
+    # Apply off-policy correction
+    loss, loss_mask, off_policy_metrics = apply_off_policy_correction(
+        loss, old_log_probs, rollout_logprobs, loss_mask, config.off_policy_correction
+    )
+    loss_metrics.update(off_policy_metrics)
+
+    loss = reduce_loss(loss, loss_mask)
     return loss, loss_metrics
 
 
@@ -874,12 +921,7 @@ def compute_policy_loss_clip_cov(
     # Apply correction mask to losses
     pg_losses = torch.maximum(pg_losses1, pg_losses2) * corr
 
-    pg_loss = reduce_loss(
-        loss=pg_losses,
-        loss_mask=loss_mask,
-        loss_reduction=config.loss_reduction,
-        max_seq_len=config.max_seq_len,
-    )
+    pg_loss = reduce_loss(loss=pg_losses, loss_mask=loss_mask)
 
     return pg_loss, {"clip_ratio": clip_frac.item()}
 
@@ -933,12 +975,7 @@ def compute_policy_loss_kl_cov(
                     large_cov_idxs % advantages.shape[1],
                 ]
 
-    pg_loss = reduce_loss(
-        loss=pg_losses,
-        loss_mask=loss_mask,
-        loss_reduction=config.loss_reduction,
-        max_seq_len=config.max_seq_len,
-    )
+    pg_loss = reduce_loss(loss=pg_losses, loss_mask=loss_mask)
 
     # NOTE (sumanthrh): Since the pg clip ratio is not applicable for KL-COV so we just use 0.0
     return pg_loss, {"clip_ratio": 0.0}
@@ -977,10 +1014,7 @@ def cross_entropy_loss(
     elementwise_loss = -log_probs
 
     # Apply loss mask and sum (matching Tinker's SUM reduction semantics)
-    if loss_mask is not None:
-        loss = (elementwise_loss * loss_mask).sum()
-    else:
-        loss = elementwise_loss.sum()
+    loss = reduce_loss(elementwise_loss, loss_mask)
 
     # No clipping in cross-entropy loss
     return loss, {"clip_ratio": 0.0}
@@ -1039,30 +1073,79 @@ def importance_sampling_loss(
 def reduce_loss(
     loss: torch.Tensor,
     loss_mask: Optional[torch.Tensor],
-    loss_reduction: Literal["token_mean", "sequence_mean", "seq_mean_token_sum_norm"],
-    max_seq_len: Optional[int] = None,
 ) -> torch.Tensor:
+    return (loss * loss_mask).sum() if loss_mask is not None else loss.sum()
+
+
+def apply_loss_reduction_to_advantages_minibatch(
+    advantages: torch.Tensor,
+    loss_mask: torch.Tensor,
+    loss_reduction: str,
+    micro_batch_size: int,
+    max_seq_len: int,
+    prompt_boundaries: Optional[List[Tuple[int, int]]] = None,
+) -> torch.Tensor:
+    """Scale advantages so that summing produces the desired loss reduction.
+
+    Args:
+        advantages: Advantage tensor of shape (minibatch_size, seq_len).
+            For step-wise training, minibatch_size can be variable.
+        loss_mask: Mask of shape (minibatch_size, seq_len) indicating valid loss tokens.
+        loss_reduction: One of "token_mean", "token_mean_legacy", "sequence_mean",
+            "seq_mean_token_sum_norm", "prompt_mean".
+        micro_batch_size: Number of sequences per micro-batch
+        max_seq_len: Maximum sequence length.
+        prompt_boundaries: Mini-batch-relative (start, end) slices grouping the sequences of
+            each prompt. Required for "prompt_mean"; ignored otherwise.
+
+    Returns:
+        Scaled advantages tensor.
+    """
+    batch_size = advantages.shape[0]
+    normalized_advantages = torch.zeros_like(advantages)
+
+    # Option 1: token mean
     if loss_reduction == "token_mean":
-        # sum over *all* valid tokens, divide by total valid-token count
-        loss = masked_mean(loss, loss_mask)
+        normalized_advantages = advantages / loss_mask.sum().clamp(min=1)
+
+    # Option 1b: legacy token-mean that normalizes per-microbatch then averages across microbatches.
+    elif loss_reduction == "token_mean_legacy":
+        # FIXME(Charlie): For step-wise training, mini_batch_size can be variable, so the number of
+        # microbatches depends on how we pad.
+        num_micro_batches = batch_size // micro_batch_size
+        for i in range(num_micro_batches):
+            start_idx = i * micro_batch_size
+            end_idx = (i + 1) * micro_batch_size
+            mb_advantages = advantages[start_idx:end_idx]
+            mb_loss_mask = loss_mask[start_idx:end_idx]
+            mb_advantages = mb_advantages / mb_loss_mask.sum().clamp(min=1)
+            mb_advantages /= num_micro_batches
+            normalized_advantages[start_idx:end_idx] = mb_advantages
+
+    # Option 2: sequence mean
     elif loss_reduction == "sequence_mean":
-        # per-sequence token-mean (dim=-1), then batch-mean
-        loss = masked_mean(loss, loss_mask, dim=-1).mean()
+        normalized_advantages = advantages / (batch_size * loss_mask.sum(dim=-1, keepdim=True).clamp(min=1))
+
+    # Option 3: Dr. GRPO style loss reduction to avoid length bias by normalizing by a constant
     elif loss_reduction == "seq_mean_token_sum_norm":
-        # per-sequence token-sum, normalized by the max sequence length, then batch mean
-        # this is the Dr. GRPO loss reduction to avoid length bias by normalizing by a constant
-        assert max_seq_len is not None, "max_seq_len must be provided for seq_mean_token_sum_norm loss reduction"
-        # NOTE: max_seq_len can be set explicitly via algorithm.max_seq_len, otherwise defaults to
-        # cfg.generator.max_input_length + cfg.generator.sampling_params.max_generate_length
-        if loss_mask is not None:
-            seq_losses = torch.sum(loss * loss_mask, dim=-1) / max_seq_len
-        else:
-            # If no mask, assume all tokens are valid
-            seq_losses = torch.sum(loss, dim=-1) / max_seq_len
-        loss = torch.mean(seq_losses)
+        normalized_advantages = advantages / (batch_size * max_seq_len)
+
+    # Option 4: Prompt level mean - token mean within each prompt, then average over all prompts.
+    # A "prompt" is a group of sequences sharing the same prompt (e.g. the n_samples_per_prompt
+    # GRPO responses). Scale token [i, t] in prompt p by 1 / (num_prompts * tokens_in_prompt_p)
+    # so that summing the per-token policy loss yields mean_p(token_mean within prompt p).
+    elif loss_reduction == "prompt_mean":
+        if prompt_boundaries is None:
+            raise ValueError("`prompt_mean` loss reduction requires `prompt_boundaries`")
+        num_prompts = len(prompt_boundaries)
+        for p_start, p_end in prompt_boundaries:
+            prompt_tokens = loss_mask[p_start:p_end].sum().clamp(min=1)
+            normalized_advantages[p_start:p_end] = advantages[p_start:p_end] / (num_prompts * prompt_tokens)
+
     else:
         raise ValueError(f"Invalid loss reduction type: {loss_reduction}")
-    return loss
+
+    return normalized_advantages
 
 
 # NOTE (erictang000): below ported from verl
@@ -1265,6 +1348,41 @@ def compute_grpo_outcome_advantage(
         for i in range(bsz):
             if grpo_norm_by_std:
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
+            else:
+                scores[i] = scores[i] - id2mean[index[i]]
+        scores = scores.unsqueeze(-1) * response_mask
+
+    return scores, scores
+
+
+@register_advantage_estimator(AdvantageEstimator.MAXRL)
+def compute_maxrl_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    epsilon: float = 1e-6,
+    **kwargs,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute advantage for MAXRL using mean-normalized group-relative rewards."""
+    scores = token_level_rewards.sum(dim=-1)
+
+    id2score = defaultdict(list)
+    id2mean = {}
+
+    with torch.no_grad():
+        bsz = scores.shape[0]
+        for i in range(bsz):
+            id2score[index[i]].append(scores[i])
+        for idx in id2score:
+            if len(id2score[idx]) == 1:
+                id2mean[idx] = torch.tensor(0.0)
+            elif len(id2score[idx]) > 1:
+                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
+            else:
+                raise ValueError(f"no score in prompt index: {idx}")
+        for i in range(bsz):
+            if len(id2score[index[i]]) > 1:
+                scores[i] = (scores[i] - id2mean[index[i]]) / (id2mean[index[i]] + epsilon)
             else:
                 scores[i] = scores[i] - id2mean[index[i]]
         scores = scores.unsqueeze(-1) * response_mask

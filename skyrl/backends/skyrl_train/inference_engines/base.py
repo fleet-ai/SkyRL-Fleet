@@ -34,15 +34,32 @@ class MessageType(TypedDict):
 ConversationType = List[MessageType]
 
 
+class MMPlaceholderRangeInfo(TypedDict):
+    offset: int
+    length: int
+
+
+class MultiModalFeatures(TypedDict):
+    mm_hashes: dict[str, list[str]]
+    mm_placeholders: dict[str, list[MMPlaceholderRangeInfo]]
+    kwargs_data: Optional[dict[str, list[str | None]]]
+
+
 class InferenceEngineInput(TypedDict):
     # Either prompts or prompt_token_ids must be provided, but not both.
     prompts: Optional[List[ConversationType]]
     prompt_token_ids: Optional[List[List[int]]]
     sampling_params: Optional[Dict[str, Any]]
     session_ids: Optional[List[Hashable]]
-    # Multimodal data for VL models. Each element corresponds to a prompt.
+    # Multimodal data for VL models, consumed by the colocated in-process vLLM engine
+    # (inference_engines/). Carries the raw images per prompt; vLLM runs the vision
+    # encoder locally. Each element corresponds to a prompt.
     # Format: {"image": [PIL.Image, ...]} or {"image": ["base64_string", ...]}
     multi_modal_data: Optional[List[Optional[Dict[str, Any]]]]
+    # Precomputed multimodal feature references (hashes + placeholder ranges), consumed by
+    # the remote inference servers (inference_servers/) where rendering happens server-side.
+    # Distinct from multi_modal_data above: the two serve different inference paths.
+    mm_features: Optional[List[MultiModalFeatures]]
 
 
 class InferenceEngineOutput(TypedDict):
@@ -57,13 +74,18 @@ class InferenceEngineOutput(TypedDict):
     response_ids: List[List[int]]
     stop_reasons: List[str]
     response_logprobs: Optional[List[List[float]]]
+    prompt_logprobs: Optional[List[List[float]]]  # per-prompt-token logprobs under the current model
     rollout_expert_indices: Optional[List[List[List[int]]]]  # [seq_len, layer_num, topk]
 
 
 class InferenceEngineInterface(ABC):
 
     @abstractmethod
-    async def generate(self, input_batch: InferenceEngineInput) -> InferenceEngineOutput:
+    async def generate(
+        self,
+        input_batch: InferenceEngineInput,
+        model: Optional[str] = None,
+    ) -> InferenceEngineOutput:
         raise NotImplementedError
 
     async def sample(
@@ -71,6 +93,7 @@ class InferenceEngineInterface(ABC):
         prompt_token_ids: List[int],
         num_samples: int,
         sampling_params: Dict[str, Any],
+        prompt_logprobs: bool = False,
     ) -> InferenceEngineOutput:
         """Generate multiple independent samples from a single prompt.
 
@@ -80,6 +103,7 @@ class InferenceEngineInterface(ABC):
             prompt_token_ids: Token IDs for a single prompt.
             num_samples: Number of independent samples to generate.
             sampling_params: Sampling parameters.
+            prompt_logprobs: If True, return per-token logprobs over the prompt.
 
         Returns:
             InferenceEngineOutput containing num_samples results:
@@ -87,11 +111,16 @@ class InferenceEngineInterface(ABC):
                 - responses: List of num_samples decoded strings
                 - stop_reasons: List of num_samples stop reasons
                 - response_logprobs: Optional list of num_samples logprob lists
+                - prompt_logprobs: Optional list of num_samples prompt logprob lists
         """
+        if prompt_logprobs:
+            sampling_params = {**sampling_params, "prompt_logprobs": 1}
+
         all_response_ids = []
         all_responses = []
         all_stop_reasons = []
         all_response_logprobs = []
+        all_prompt_logprobs = []
         all_rollout_expert_indices = []
 
         for _ in range(num_samples):
@@ -109,6 +138,8 @@ class InferenceEngineInterface(ABC):
             all_stop_reasons.append(output["stop_reasons"][0])
             if output.get("response_logprobs") is not None:
                 all_response_logprobs.append(output["response_logprobs"][0])
+            if output.get("prompt_logprobs") is not None:
+                all_prompt_logprobs.append(output["prompt_logprobs"][0])
             if output.get("rollout_expert_indices") is not None:
                 all_rollout_expert_indices.append(output["rollout_expert_indices"][0])
 
@@ -117,6 +148,7 @@ class InferenceEngineInterface(ABC):
             "responses": all_responses,
             "stop_reasons": all_stop_reasons,
             "response_logprobs": all_response_logprobs if all_response_logprobs else None,
+            "prompt_logprobs": all_prompt_logprobs if all_prompt_logprobs else None,
             "rollout_expert_indices": all_rollout_expert_indices if all_rollout_expert_indices else None,
         }
 
@@ -171,7 +203,7 @@ class InferenceEngineInterface(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def reset_prefix_cache(self):
+    async def reset_prefix_cache(self, reset_running_requests: bool = False):
         raise NotImplementedError
 
     @abstractmethod

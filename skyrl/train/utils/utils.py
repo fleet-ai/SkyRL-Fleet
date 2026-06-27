@@ -6,6 +6,7 @@ import os
 import socket
 import sys
 import time
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -97,6 +98,9 @@ def validate_batch_sizes(cfg: SkyRLTrainConfig):
         f"train_batch_size {cfg.trainer.train_batch_size} should be divisible by "
         f"policy_mini_batch_size {cfg.trainer.policy_mini_batch_size}"
     )
+
+    # TODO(Charlie): For step-wise training, the number of sequences per prompt is variable, and
+    # padded mini-batch may not be divisible by dp_size. Should check if we need these assertions.
     policy_mini_batch_size_per_gpu = (
         cfg.trainer.policy_mini_batch_size * cfg.generator.n_samples_per_prompt // policy_dp_size
     )
@@ -195,13 +199,6 @@ def validate_megatron_cfg(cfg: SkyRLTrainConfig):
     assert ie_cfg.backend == "vllm", "only vllm is supported for with megatron"
     assert cfg.trainer.critic.model.path is None, "only GRPO training is currently supported for megatron"
 
-    if cfg.trainer.flash_attn:
-        import flash_attn
-
-        version = flash_attn.__version__
-        if version > "2.8.1":
-            logger.warning("flash_attn > 2.8.1 is not supported for using the megatron backend with flash_attn")
-
     if cfg.trainer.policy.megatron_config.moe_enable_routing_replay:
         assert (
             cfg.generator.inference_engine.enable_return_routed_experts
@@ -211,7 +208,9 @@ def validate_megatron_cfg(cfg: SkyRLTrainConfig):
     for config, worker_type in worker_configs:
         # context, expert, and expert tensor parallel are not yet supported for megatron
         if config.megatron_config.context_parallel_size > 1:
-            assert cfg.trainer.use_sample_packing, "context parallel is only supported with sample packing"
+            assert (
+                cfg.trainer.remove_microbatch_padding
+            ), "context parallel is only supported with remove_microbatch_padding"
         # check that sequence parallel is not configured outside of megatron
         assert config.sequence_parallel_size == 1, (
             f"found {worker_type}.sequence_parallel_size={config.sequence_parallel_size}, ulysses style sequence "
@@ -221,6 +220,20 @@ def validate_megatron_cfg(cfg: SkyRLTrainConfig):
 
 # TODO (sumanthrh): Most of this should be moved to  __post_init__ for the dataclasses
 def validate_cfg(cfg: SkyRLTrainConfig):
+    if cfg.trainer.strategy == "fsdp2":
+        import warnings
+
+        warnings.warn(
+            "trainer.strategy='fsdp2' has been renamed to 'fsdp'; use 'fsdp' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        cfg.trainer.strategy = "fsdp"
+
+    if cfg.trainer.max_training_steps is not None:
+        if cfg.trainer.max_training_steps <= 0:
+            raise ValueError(f"max_training_steps must be > 0, got {cfg.trainer.max_training_steps}")
+
     # Validate generation config separately
     validate_generator_cfg(cfg)
     from skyrl.backends.skyrl_train.utils.ppo_utils import (
@@ -242,15 +255,14 @@ def validate_cfg(cfg: SkyRLTrainConfig):
     assert not (
         cfg.trainer.algorithm.use_kl_in_reward and cfg.trainer.algorithm.use_kl_loss
     ), "use_kl_in_reward and use_kl_loss should be mutually exclusive"
+    use_ref_model = cfg.trainer.algorithm.use_kl_loss or cfg.trainer.algorithm.use_kl_in_reward
 
-    if cfg.trainer.strategy in ("fsdp", "fsdp2"):
-        assert not (
-            cfg.trainer.policy.fsdp_config.cpu_offload and cfg.trainer.strategy == "fsdp"
-        ), "fwd pass cpu offloading is not supported for FSDP1 policy worker, use FSDP2 instead"
-        assert not (
-            cfg.trainer.critic.fsdp_config.cpu_offload and cfg.trainer.strategy == "fsdp"
-        ), "fwd pass cpu offloading is not supported for FSDP1 critic worker, use FSDP2 instead"
-
+    if cfg.trainer.policy.language_model_only:
+        assert (
+            cfg.generator.inference_engine.language_model_only
+        ), f"language_model_only should be set consistently between inference engine and policy but got {cfg.generator.inference_engine.language_model_only} for generator and {cfg.trainer.policy.language_model_only} for policy"
+        if use_ref_model:
+            assert cfg.trainer.ref.language_model_only
     validate_batch_sizes(cfg)
 
     if cfg.trainer.max_ckpts_to_keep == 0:
@@ -274,14 +286,51 @@ def validate_cfg(cfg: SkyRLTrainConfig):
         f"Must be one of {available_advantage_estimators}"
     )
 
+    # Step-wise training collapses each trajectory to a single scalar advantage that is broadcast
+    # uniformly to every step's response tokens. This only makes sense for outcome-based estimators.
+    # Temporal estimators (GAE, REINFORCE++) produce per-token advantages, which the broadcast
+    # discards. Reject the combination explicitly.
+    if cfg.generator.step_wise_trajectories and cfg.trainer.algorithm.advantage_estimator in ("gae", "reinforce++"):
+        raise ValueError(
+            f"advantage_estimator={cfg.trainer.algorithm.advantage_estimator!r} is not supported with "
+            f"step_wise_trajectories=True. The step-wise branch collapses each trajectory to a single "
+            f"scalar advantage, which discards the per-token temporal structure these estimators produce, "
+            f"and the estimator only sees the last step's slice — there is no cross-step temporal "
+            f"connection. Use an outcome-based estimator (grpo, rloo, maxrl) or disable "
+            f"step_wise_trajectories."
+        )
+    if cfg.generator.step_wise_trajectories and cfg.trainer.algorithm.loss_reduction == "token_mean_legacy":
+        # TODO(Charlie): this can be fixed, can revisit later.
+        raise ValueError(
+            "`token_mean_legacy` loss reduction is not supported with step-wise training. Use `token_mean` instead."
+        )
+
+    if cfg.generator.merge_stepwise_output and not cfg.generator.step_wise_trajectories:
+        raise ValueError(
+            "`generator.merge_stepwise_output=True` requires `generator.step_wise_trajectories=True`. "
+            "Prefix-aware merging operates on step-wise GeneratorOutput entries (trajectory_ids + "
+            "is_last_step), which only exist when step-wise training is enabled."
+        )
+
     assert cfg.trainer.algorithm.loss_reduction in (
         "token_mean",
+        "token_mean_legacy",
         "sequence_mean",
         "seq_mean_token_sum_norm",
+        "prompt_mean",
     ), (
         f"invalid loss_reduction: {cfg.trainer.algorithm.loss_reduction}. "
-        f"Must be one of `['token_mean', 'sequence_mean', 'seq_mean_token_sum_norm']`"
+        f"Must be one of `['token_mean', 'token_mean_legacy', 'sequence_mean', "
+        f"'seq_mean_token_sum_norm', 'prompt_mean']`"
     )
+    if cfg.trainer.algorithm.loss_reduction == "seq_mean_token_sum_norm":
+        if cfg.trainer.algorithm.max_seq_len is None:
+            raise ValueError(
+                "`trainer.algorithm.max_seq_len` must be set explicitly when "
+                "`trainer.algorithm.loss_reduction='seq_mean_token_sum_norm'`. "
+                "Choose the total sequence-length normalization constant for your setup; "
+                "this often matches the model context window / vLLM `max_model_len` when appropriate."
+            )
 
     # TODO (erictang000): remove this after deprecation period
     if cfg.trainer.algorithm.use_tis:
@@ -328,14 +377,8 @@ def validate_cfg(cfg: SkyRLTrainConfig):
             )
 
     if cfg.trainer.policy.model.lora.rank > 0:
-        # LoRA enabled
-        # Right now: assert generator backend must be vllm, training backend must be fsdp/fsdp2
+        # LoRA enabled: generator backend must be vllm, training backend must be fsdp or megatron
         assert cfg.generator.inference_engine.backend == "vllm", "LoRA enabled requires vLLM backend"
-        assert cfg.trainer.strategy in (
-            "fsdp",
-            "fsdp2",
-            "megatron",
-        ), "LoRA enabled requires fsdp/fsdp2/megatron training backend"
 
     # Validate placement
     if cfg.trainer.placement.colocate_all:
@@ -349,7 +392,6 @@ def validate_cfg(cfg: SkyRLTrainConfig):
             "must be the same when colocating all models"
         )
     else:
-        use_ref_model = cfg.trainer.algorithm.use_kl_loss or cfg.trainer.algorithm.use_kl_in_reward
         if cfg.trainer.placement.colocate_policy_ref and use_ref_model:
             assert cfg.trainer.placement.policy_num_nodes == cfg.trainer.placement.ref_num_nodes, (
                 f"policy_num_nodes ({cfg.trainer.placement.policy_num_nodes}) and ref_num_nodes "
@@ -384,9 +426,6 @@ def validate_generator_cfg(cfg: SkyRLTrainConfig):
             "for multi-turn generation"
         )
 
-    if not ie_cfg.run_engines_locally:
-        assert ie_cfg.num_engines == len(ie_cfg.remote_urls), "num_engines should be equal to the number of remote_urls"
-
     if not ie_cfg.async_engine and ie_cfg.backend == "vllm":
         assert (
             cfg.generator.batched
@@ -396,14 +435,6 @@ def validate_generator_cfg(cfg: SkyRLTrainConfig):
     if cfg.trainer.logger == "wandb":
         assert os.environ.get("WANDB_API_KEY"), "`WANDB_API_KEY` is required for `wandb` logger"
 
-    if ie_cfg.override_existing_update_group == "auto":
-        if ie_cfg.backend == "vllm" and not ie_cfg.run_engines_locally:
-            # remote engines can be launched separately so we `enable` by default
-            ie_cfg.override_existing_update_group = "enable"
-        else:
-            # for local engines, we disable
-            ie_cfg.override_existing_update_group = "disable"
-
     if cfg.generator.sampling_params.logprobs is not None:
         assert isinstance(cfg.generator.sampling_params.logprobs, int)
         if cfg.generator.sampling_params.logprobs > 1:
@@ -411,8 +442,8 @@ def validate_generator_cfg(cfg: SkyRLTrainConfig):
                 f"`logprobs` if set should be 0 or 1 (both return only the chosen token's logprob), "
                 f"got {cfg.generator.sampling_params.logprobs}"
             )
-        if not ie_cfg.run_engines_locally:
-            raise NotImplementedError("Remote inference mode doesn't support `sampling_params.logprobs`")
+        if not _SKYRL_USE_NEW_INFERENCE and not ie_cfg.run_engines_locally:
+            raise NotImplementedError("Legacy remote inference mode doesn't support `sampling_params.logprobs`")
 
     if cfg.trainer.strategy == "megatron":
         validate_megatron_cfg(cfg)
@@ -426,6 +457,48 @@ def validate_generator_cfg(cfg: SkyRLTrainConfig):
                 " to `True` to append tokenizer.eos_token_id to the assistant-generated response "
                 "to match the chat template."
             )
+
+    # Validate inference-engine instantiation / serving topology (shared with
+    # the inference-only serve entrypoint).
+    validate_inference_engine_cfg(cfg)
+
+
+def validate_inference_engine_cfg(cfg: SkyRLTrainConfig):
+    """Validates inference-engine config independent of generator/training semantics.
+
+    Covers engine instantiation and serving topology
+
+    Shared between the training path (via :func:`validate_generator_cfg`) and the
+    inference-only serve entrypoint (``skyrl.train.entrypoints.serve``).
+
+    NOTE: this also resolves ``inference_engine.override_existing_update_group="auto"``
+    in place.
+
+    Args:
+        cfg (SkyRLTrainConfig): config to validate
+
+    Raises:
+        ValueError / NotImplementedError / AssertionError: on invalid combinations.
+    """
+    ie_cfg = cfg.generator.inference_engine
+
+    if ie_cfg.enable_pd:
+        assert ie_cfg.num_prefill > 0, "num_prefill must be > 0 when enable_pd=True"
+        assert (
+            ie_cfg.num_prefill < ie_cfg.num_engines
+        ), "num_prefill must be < num_engines (need at least one decode worker)"
+        assert ie_cfg.num_engines >= 2, "num_engines must be >= 2 for PD disaggregation"
+
+    if not _SKYRL_USE_NEW_INFERENCE and not ie_cfg.run_engines_locally:
+        assert ie_cfg.num_engines == len(ie_cfg.remote_urls), "num_engines should be equal to the number of remote_urls"
+
+    if ie_cfg.override_existing_update_group == "auto":
+        if ie_cfg.backend == "vllm" and not ie_cfg.run_engines_locally:
+            # remote engines can be launched separately so we `enable` by default
+            ie_cfg.override_existing_update_group = "enable"
+        else:
+            # for local engines, we disable
+            ie_cfg.override_existing_update_group = "disable"
 
     if ie_cfg.enable_http_endpoint:
         if not ie_cfg.async_engine:
@@ -509,11 +582,6 @@ def _validate_new_inference_cfg(cfg: SkyRLTrainConfig):
             "  2. Remove external_proxy_url and external_server_urls to build servers internally."
         )
 
-    if cfg.generator.inference_engine.enable_return_routed_experts:
-        raise ValueError(
-            "rollout router replay (r3) is not yet fully supported for the new inference backend. See https://github.com/NovaSky-AI/SkyRL/issues/815."
-        )
-
 
 @ray.remote
 def get_all_env_variables():
@@ -566,8 +634,9 @@ def prepare_runtime_environment(cfg: SkyRLTrainConfig) -> dict[str, str]:
     # TODO(sumanthrh): introduce a debug mode and add debugging flags like `CUDA_LAUNCH_BLOCKING` here
     env_vars = {}
 
-    # NOTE (charlie): See https://github.com/vllm-project/vllm/blob/c6b0a7d3ba03ca414be1174e9bd86a97191b7090/vllm/worker/worker_base.py#L445
-    # and https://docs.vllm.ai/en/v0.9.2/usage/troubleshooting.html?h=nccl_cumem_enable#known-issues
+    # NOTE (erictang000): This should no longer be required since this has been removed in vllm
+    # and fixed in NCCL (https://github.com/vllm-project/vllm/pull/24141, https://github.com/NVIDIA/nccl/issues/1234), but empirically seeing OOMs for
+    # that previously ran successfully, so keeping this to maintain backwards compatibility.
     if cfg.generator.inference_engine.weight_sync_backend == "nccl":
         env_vars["NCCL_CUMEM_ENABLE"] = "0"
 
@@ -577,6 +646,10 @@ def prepare_runtime_environment(cfg: SkyRLTrainConfig) -> dict[str, str]:
         # useful when tp > 1 (and thus megatron sequence_parallel is enabled)
         # see: https://github.com/NVIDIA/Megatron-LM/issues/533#issuecomment-1760193239
         env_vars["CUDA_DEVICE_MAX_CONNECTIONS"] = "1"
+        # Propagate fla's GDN backend choice to Ray workers. Default 1 keeps fla's
+        # TileLang default (works on Hopper); export FLA_TILELANG=0 on Blackwell (B200),
+        # where the TileLang packed backward aborts, to fall back to the Triton kernels.
+        env_vars["FLA_TILELANG"] = os.environ.get("FLA_TILELANG", "1")
         if cfg.trainer.flash_attn:
             # disable fused attention for megatron with flash_attn
             # (otherwise flash_attn choice is overridden in TransformerEngine for Hopper+ devices)
@@ -604,6 +677,18 @@ def prepare_runtime_environment(cfg: SkyRLTrainConfig) -> dict[str, str]:
             )
             env_vars["VLLM_USE_V1"] = "1"
             env_vars["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
+
+        if os.environ.get("VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS"):
+            logger.info(
+                f"Exporting `VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS` to ray runtime env: {os.environ['VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS']}"
+            )
+            env_vars["VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS"] = os.environ["VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS"]
+
+        if os.environ.get("RAY_CGRAPH_get_timeout"):
+            logger.info(
+                f"Exporting `RAY_CGRAPH_get_timeout` to ray runtime env: {os.environ['RAY_CGRAPH_get_timeout']}"
+            )
+            env_vars["RAY_CGRAPH_get_timeout"] = os.environ["RAY_CGRAPH_get_timeout"]
 
     # Use max of available GPU counts, defaulting to 1 if none found
     gpu_counts = []
@@ -649,8 +734,7 @@ def prepare_runtime_environment(cfg: SkyRLTrainConfig) -> dict[str, str]:
             logger.info(f"Exporting {var_name} to ray runtime env")
             env_vars[var_name] = value
 
-    if _SKYRL_USE_NEW_INFERENCE:
-        env_vars["_SKYRL_USE_NEW_INFERENCE"] = "1"
+    env_vars["_SKYRL_USE_NEW_INFERENCE"] = "1" if _SKYRL_USE_NEW_INFERENCE else "0"
 
     if SKYRL_LD_LIBRARY_PATH_EXPORT:
         # export `LD_LIBRARY_PATH` to ray runtime env.
@@ -664,6 +748,18 @@ def prepare_runtime_environment(cfg: SkyRLTrainConfig) -> dict[str, str]:
         # but keeping for backwards compatibility
         logger.info(f"Exporting `PYTHONPATH` to ray runtime env: {os.environ['PYTHONPATH']}")
         env_vars["PYTHONPATH"] = os.environ["PYTHONPATH"]
+
+    if pg_timeout := os.environ.get("SKYRL_RAY_PG_TIMEOUT_IN_S"):
+        logger.info(f"Exporting `SKYRL_RAY_PG_TIMEOUT_IN_S` to ray runtime env: {pg_timeout}")
+        env_vars["SKYRL_RAY_PG_TIMEOUT_IN_S"] = pg_timeout
+
+    # Health-check timeout for the inference server actor. Forwarded so `VLLMServerActor.start`
+    # sees the override.
+    if health_timeout := os.environ.get("SKYRL_WAIT_UNTIL_INFERENCE_SERVER_HEALTHY_TIMEOUT_S"):
+        logger.info(
+            f"Exporting `SKYRL_WAIT_UNTIL_INFERENCE_SERVER_HEALTHY_TIMEOUT_S` to ray runtime env: {health_timeout}"
+        )
+        env_vars["SKYRL_WAIT_UNTIL_INFERENCE_SERVER_HEALTHY_TIMEOUT_S"] = health_timeout
 
     return env_vars
 
@@ -939,15 +1035,30 @@ def peer_access_supported(max_num_gpus_per_node: int):
 
 
 def update_model_config(module_config, override_config_kwargs):
-    """Update the module config with the override_config_kwargs.
+    """Return a copy of ``module_config`` with ``override_config_kwargs`` applied.
+
+    The returned config is a deep copy, so the caller's input is left
+    unmodified. Nested dict values in ``override_config_kwargs`` recurse into
+    the corresponding sub-config attribute (which is already part of the deep
+    copy, so the recursion mutates the copy in place).
 
     Args:
         module_config: The module config from Huggingface Transformers.
         override_config_kwargs: The kwargs to override the module config.
+
+    Returns:
+        A new module config with the overrides applied.
     """
+    new_config = deepcopy(module_config)
+    _apply_overrides_in_place(new_config, override_config_kwargs)
+    return new_config
+
+
+def _apply_overrides_in_place(module_config, override_config_kwargs):
+    """Apply override kwargs to ``module_config`` in place (used for sub-configs)."""
     for key, val in override_config_kwargs.items():
         if isinstance(val, dict):
-            update_model_config(getattr(module_config, key), val)
+            _apply_overrides_in_place(getattr(module_config, key), val)
         else:
             setattr(module_config, key, val)
 

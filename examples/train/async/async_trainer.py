@@ -5,7 +5,6 @@ from loguru import logger
 from skyrl.train.trainer import RayPPOTrainer
 from tqdm import tqdm
 from skyrl.train.utils import Timer
-from skyrl.backends.skyrl_train.utils.ppo_utils import normalize_advantages_dict
 from skyrl.backends.skyrl_train.training_batch import TrainingInputBatch
 from skyrl.train.generators.base import GeneratorOutput
 from skyrl.train.utils.trainer_utils import ResumeMode
@@ -35,7 +34,7 @@ class AsyncRayPPOTrainer(RayPPOTrainer):
 
         # sync weights to inference engines
         with Timer("sync_weights_to_inference_engines"):
-            await self.async_sync_policy_weights_to_inference_engines()
+            await self.dispatch.save_weights_for_sampler()
 
         # Eval before training
         if self.cfg.trainer.eval_interval > 0 and self.cfg.trainer.eval_before_train:
@@ -69,7 +68,7 @@ class AsyncRayPPOTrainer(RayPPOTrainer):
 
                     # sync weights
                     async with Timer("sync_weights", self.all_timings):
-                        await self.async_sync_policy_weights_to_inference_engines()
+                        await self.dispatch.save_weights_for_sampler()
 
                     self.sync_finished.set()
                     self.generation_ack.clear()
@@ -146,9 +145,6 @@ class AsyncRayPPOTrainer(RayPPOTrainer):
                 training_input.pop(key)
             training_input.metadata.pop("uids")
 
-            if self.cfg.trainer.algorithm.advantage_batch_normalize:
-                training_input = normalize_advantages_dict(training_input)
-
         if self.cfg.trainer.dump_data_batch:
             # dump data to file
             with Timer("dump_data_batch"):
@@ -179,7 +175,7 @@ class AsyncRayPPOTrainer(RayPPOTrainer):
                 # generation phase
                 async with Timer("generate", self.all_timings):
                     generator_output: GeneratorOutput = await self.generate(generator_input)
-                    generator_output = self.postprocess_generator_output(generator_output, uids)
+                    generator_output, uids = self.postprocess_generator_output(generator_output, uids)
 
                 # Add to generation buffer
                 await generation_buffer.put((generator_output, uids))
@@ -197,11 +193,3 @@ class AsyncRayPPOTrainer(RayPPOTrainer):
             logger.error(f"Generator errored out with exception: {e}")
             logger.error(f"Traceback: \n{traceback.format_exc()}")
             sys.exit(1)
-
-    async def async_sync_policy_weights_to_inference_engines(self):
-        return await self.policy_model.async_run_method(
-            "pass_through",
-            "broadcast_to_inference_engines",
-            self.inference_engine_client,
-            self.cfg.generator.inference_engine,
-        )

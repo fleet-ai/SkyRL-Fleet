@@ -15,7 +15,7 @@ from transformers import AutoTokenizer
 
 from skyrl.tinker.api import _build_uv_run_cmd_engine
 from skyrl.tinker.config import EngineConfig
-from tests.tinker.conftest import wait_for_condition
+from tests.tinker.conftest import api_server_is_up, wait_for_condition
 
 BASE_MODEL = "trl-internal-testing/tiny-Qwen3ForCausalLM"
 
@@ -48,11 +48,21 @@ def create_service_and_training_client(base_url: str, skip_verify: bool = False)
 
 
 @contextmanager
-def start_api_server(overrides: dict[str, str] | None = None):
-    """Start the FastAPI server with optional config overrides. Prints log on failure."""
+def start_api_server(
+    overrides: dict[str, str] | None = None,
+    extras: tuple[str, ...] = ("tinker",),
+    db_path: str | None = None,
+    wait_for_up: bool = False,
+    teardown_timeout: float = 5.0,
+):
+    """Start the FastAPI server with optional config overrides. Prints log on failure.
+
+    Pass ``db_path`` to keep the SQLite file alive past the context (e.g. for tests
+    that inspect persisted state after server shutdown).
+    """
     with tempfile.TemporaryDirectory() as tmp_dir:
         log_path = os.path.join(tmp_dir, "server.log")
-        db_path = os.path.join(tmp_dir, "server.db")
+        resolved_db_path = db_path if db_path is not None else os.path.join(tmp_dir, "server.db")
 
         with open(log_path, "w") as log_file:
             defaults = {
@@ -60,16 +70,25 @@ def start_api_server(overrides: dict[str, str] | None = None):
                 "port": str(TEST_SERVER_PORT),
                 "base-model": BASE_MODEL,
                 "backend-config": '{"max_lora_adapters": 4}',
-                "database-url": f"sqlite:///{db_path}",
+                "database-url": f"sqlite:///{resolved_db_path}",
             }
             if overrides:
                 defaults.update(overrides)
-            cmd = ["uv", "run", "--extra", "tinker", "-m", "skyrl.tinker.api"]
+            cmd = ["uv", "run"]
+            for extra in extras:
+                cmd.extend(["--extra", extra])
+            cmd.extend(["-m", "skyrl.tinker.api"])
             for key, value in defaults.items():
                 cmd.extend([f"--{key}", value])
             process = subprocess.Popen(cmd, stdout=log_file, stderr=log_file)
             print(f"Starting API server: {' '.join(cmd)}")
             try:
+                if wait_for_up:
+                    port = int(defaults["port"])
+                    if not wait_for_condition(lambda: api_server_is_up(port), timeout_sec=180, poll_interval_sec=2):
+                        with open(log_path) as f:
+                            print(f"=== Server failed to start ===\n{f.read()}")
+                        pytest.fail("Tinker API server did not come up in time")
                 yield process, log_path
             except Exception:
                 with open(log_path) as f:
@@ -77,13 +96,27 @@ def start_api_server(overrides: dict[str, str] | None = None):
                 raise
             finally:
                 process.terminate()
-                process.wait(timeout=5)
+                try:
+                    process.wait(timeout=teardown_timeout)
+                except subprocess.TimeoutExpired:
+                    process.kill()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def api_server():
-    """Start the FastAPI server for testing."""
-    with start_api_server() as server:
+    """Start a fresh FastAPI server for each test.
+
+    Function-scoped rather than module-scoped: the backend only reclaims a
+    model's LoRA-adapter slot on explicit unload or stale-session cleanup
+    (session_timeout), and tinker>=0.17 keeps a per-client background heartbeat
+    thread alive so earlier tests' sessions never go stale within a run. A shared
+    server therefore accumulates adapters across the module and exhausts the
+    (memory-bounded) pool. A fresh server per test keeps each test within its own
+    handful of adapters. wait_for_up ensures the engine is ready before the test;
+    the longer teardown timeout lets the lifespan shutdown reap the engine
+    subprocess so it isn't orphaned across restarts.
+    """
+    with start_api_server(wait_for_up=True, teardown_timeout=20.0) as server:
         yield server
 
 
@@ -126,6 +159,24 @@ def custom_cross_entropy_loss(data, model_logprobs):
         weights = weights.to_torch() if weights else 1.0
         total_loss += -(log_p * weights).sum()
     return total_loss, {}
+
+
+def assert_loss_fn_outputs_equal(actual, expected):
+    """Compare two ``loss_fn_outputs`` (list[dict[str, TensorData]]) by value.
+
+    tinker>=0.17 makes ``TensorData`` a ``@dataclass(eq=False)``, so ``==`` on
+    ``TensorData`` (and therefore on the lists/dicts containing them) falls back
+    to identity and is never true across separate responses. Compare the tensor
+    contents (dtype/shape/data) explicitly instead.
+    """
+    assert len(actual) == len(expected)
+    for a_datum, e_datum in zip(actual, expected):
+        assert a_datum.keys() == e_datum.keys()
+        for key in e_datum:
+            a, e = a_datum[key], e_datum[key]
+            assert a.dtype == e.dtype
+            assert a.shape == e.shape
+            assert a.data == e.data
 
 
 def test_training_workflow(service_client):
@@ -174,18 +225,18 @@ def test_training_workflow(service_client):
     # Load the optimizer state and verify another forward_backward pass has the same loss
     training_client.load_state(resume_path)
     fwdbwd_result2 = training_client.forward_backward(processed_examples, "cross_entropy").result()
-    assert fwdbwd_result2.loss_fn_outputs == fwdbwd_result.loss_fn_outputs
+    assert_loss_fn_outputs_equal(fwdbwd_result2.loss_fn_outputs, fwdbwd_result.loss_fn_outputs)
     # Also check that custom loss function produces the same loss
     fwdbwd_result_custom = training_client.forward_backward_custom(
         processed_examples, loss_fn=custom_cross_entropy_loss
     ).result()
-    assert fwdbwd_result_custom.loss_fn_outputs == fwdbwd_result.loss_fn_outputs
+    assert_loss_fn_outputs_equal(fwdbwd_result_custom.loss_fn_outputs, fwdbwd_result.loss_fn_outputs)
 
     # Test that we can restore the training run
     training_client = service_client.create_training_client_from_state(resume_path)
     # Verify the restored client has the same state by running forward_backward again
     fwdbwd_result3 = training_client.forward_backward(processed_examples, "cross_entropy").result()
-    assert fwdbwd_result3.loss_fn_outputs == fwdbwd_result.loss_fn_outputs
+    assert_loss_fn_outputs_equal(fwdbwd_result3.loss_fn_outputs, fwdbwd_result.loss_fn_outputs)
 
     sampling_path = training_client.save_weights_for_sampler(name="final").result().path
     parsed = urlparse(sampling_path)
@@ -226,6 +277,10 @@ def test_sample(service_client, use_lora):
         sampling_client = training_client.save_weights_and_get_sampling_client(name="test_sample")
     else:
         sampling_client = service_client.create_sampling_client(base_model=BASE_MODEL)
+
+    # The sampling client should be able to fetch its tokenizer via /api/v1/samplers/{id}.
+    sampler_tokenizer = sampling_client.get_tokenizer()
+    assert sampler_tokenizer.encode("hello") == tokenizer.encode("hello")
 
     # Sample from the model (base or LoRA)
     prompt = types.ModelInput.from_ints(tokenizer.encode("Hello, how are you doing today? ", add_special_tokens=True))
@@ -389,14 +444,26 @@ def test_unload_model(api_server):
         ) as client:
             future = await client.models.unload(request=types.UnloadModelRequest(model_id=training_client.model_id))
             while True:
-                result = await client.futures.retrieve(
+                # NOTE: ``futures.retrieve`` casts to the ``FutureRetrieveResponse``
+                # union, which has no discriminator. tinker>=0.17 resolves such a
+                # union to its first member (``TryAgainResponse``) regardless of the
+                # payload, so ``isinstance(result, UnloadModelResponse)`` is never
+                # true and this loop spins forever. Read the raw body instead and
+                # dispatch on the server's ``type`` field. (The high-level
+                # ``APIFuture.result()`` path is unaffected; it deserializes into a
+                # concrete type rather than the union.)
+                response = await client.futures.with_raw_response.retrieve(
                     request=types.FutureRetrieveRequest(request_id=future.request_id)
                 )
-                if isinstance(result, types.UnloadModelResponse):
-                    return result
-                await asyncio.sleep(0.1)
+                body = await response.json()
+                if body.get("type") == "try_again":
+                    await asyncio.sleep(0.1)
+                    continue
+                return body
 
-    assert isinstance(asyncio.run(unload_model()), types.UnloadModelResponse)
+    result = asyncio.run(unload_model())
+    assert result["type"] == "unload_model"
+    assert result["model_id"] == training_client.model_id
 
     # Verify model no longer works after unload
     with pytest.raises(Exception):

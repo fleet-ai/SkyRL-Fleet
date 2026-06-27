@@ -153,6 +153,7 @@ class BaseVLLMInferenceEngine(InferenceEngineInterface):
         stop_reasons: List[str] = []
         response_ids: List[List[int]] = []
         response_logprobs: Optional[List[List[float]]] = []
+        prompt_logprobs_list: List[Optional[List[float]]] = []
         rollout_expert_indices: Optional[List[List[List[List[int]]]]] = []
 
         for output in outputs:
@@ -175,6 +176,29 @@ class BaseVLLMInferenceEngine(InferenceEngineInterface):
                     del token_logprobs
             response_logprobs.append(_logprobs)
 
+            # Extract per-prompt-token logprobs (from RequestOutput, not CompletionOutput).
+            # Returns logprob of each prompt token given prior context, skipping position 0
+            # (which has no prior context). This matches the JAX backend which computes
+            # logits_to_logprobs(all_logits[:, :-1, :], input_ids[:, 1:]) → length prompt_len - 1.
+            _prompt_logprobs = None
+            if output.prompt_logprobs is not None:
+                _prompt_logprobs = []
+                for i, pos_logprobs in enumerate(output.prompt_logprobs):
+                    if pos_logprobs is None:
+                        # First position has no prior context; skip it (matching JAX backend).
+                        # Only first position can be None
+                        continue
+                    else:
+                        token_id = output.prompt_token_ids[i]
+                        if token_id not in pos_logprobs:
+                            raise RuntimeError(
+                                f"vLLM prompt_logprobs missing actual token at position {i} "
+                                f"(token_id={token_id}). This violates vLLM's contract that "
+                                f"the actual prompt token is always returned regardless of rank."
+                            )
+                        _prompt_logprobs.append(pos_logprobs[token_id].logprob)
+            prompt_logprobs_list.append(_prompt_logprobs)
+
             _routed_experts = None
             if resp.routed_experts is not None:
                 if hasattr(resp.routed_experts, "tolist"):
@@ -186,6 +210,9 @@ class BaseVLLMInferenceEngine(InferenceEngineInterface):
         if len(response_logprobs) and response_logprobs[0] is None:
             response_logprobs = None  # hack: assume uniform sampling params
 
+        if len(prompt_logprobs_list) and prompt_logprobs_list[0] is None:
+            prompt_logprobs_list = None  # hack: assume uniform sampling params
+
         if len(rollout_expert_indices) > 0 and rollout_expert_indices[0] is None:
             rollout_expert_indices = None  # hack: assume uniform sampling params
 
@@ -194,6 +221,7 @@ class BaseVLLMInferenceEngine(InferenceEngineInterface):
             stop_reasons=stop_reasons,
             response_ids=response_ids,
             response_logprobs=response_logprobs,
+            prompt_logprobs=prompt_logprobs_list,
             rollout_expert_indices=rollout_expert_indices,
         )
 
@@ -213,9 +241,9 @@ class BaseVLLMInferenceEngine(InferenceEngineInterface):
             return list(output_processor.external_req_ids.keys())
         return list(output_processor.request_states.keys())
 
-    def reset_prefix_cache(self):
+    def reset_prefix_cache(self, reset_running_requests: bool = False):
         """Reset the prefix cache. Subclasses override for async version."""
-        return self.llm.llm_engine.reset_prefix_cache()
+        return self.llm.llm_engine.reset_prefix_cache(reset_running_requests=reset_running_requests)
 
     async def pause_generation(self, clear_cache: bool = False) -> None:
         raise NotImplementedError("pause_generation is only supported for AsyncVLLMInferenceEngine.")
@@ -236,14 +264,14 @@ class VLLMInferenceEngine(BaseVLLMInferenceEngine):
         if kwargs.get("pipeline_parallel_size", 1) > 1:
             raise ValueError(
                 "Pipeline parallelism is only supported with AsyncVLLMInferenceEngine. "
-                "Please set `generator.async_engine=true` in your config."
+                "Please set `generator.inference_engine.async_engine=true` in your config."
             )
         # Pop enable_ray_prometheus_stats - only supported for async engine
         enable_ray_prometheus_stats = kwargs.pop("enable_ray_prometheus_stats", False)
         if enable_ray_prometheus_stats:
             logger.warning(
                 "enable_ray_prometheus_stats is only supported with AsyncVLLMInferenceEngine. "
-                "Set `generator.async_engine=true` to enable Ray Prometheus stats logging."
+                "Set `generator.inference_engine.async_engine=true` to enable Ray Prometheus stats logging."
             )
         return vllm.LLM(*args, **kwargs)
 
@@ -318,10 +346,16 @@ class VLLMInferenceEngine(BaseVLLMInferenceEngine):
             args=(pickled_init_info,),
         )
 
-    async def _load_lora_from_disk(self, lora_path: str):
-        """Load LoRA adapters from disk using vLLM's native add_lora method."""
+    async def _load_lora_from_disk(self, lora_path: str, lora_name: str = ""):
+        """Load LoRA adapters from disk using vLLM's native add_lora method.
+
+        When ``lora_name`` is empty (legacy single-tenant), a numeric name is
+        generated. Multi-tenant callers pass ``lora_name`` so subsequent
+        ``model=<lora_name>`` sampling routes to the right adapter.
+        """
         lora_id = int(time.time_ns() % 0x7FFFFFFF)
-        lora_request = LoRARequest(lora_name=f"{lora_id}", lora_int_id=lora_id, lora_path=lora_path)
+        name = lora_name or f"{lora_id}"
+        lora_request = LoRARequest(lora_name=name, lora_int_id=lora_id, lora_path=lora_path)
         result = self.llm.llm_engine.add_lora(lora_request)
         return result
 
@@ -330,7 +364,7 @@ class VLLMInferenceEngine(BaseVLLMInferenceEngine):
 
         # Handle LoRA disk loading request
         if isinstance(request, LoraLoadRequest):
-            return await self._load_lora_from_disk(request.lora_path)
+            return await self._load_lora_from_disk(request.lora_path, lora_name=request.lora_name)
 
         if not len(request):
             raise ValueError("Weight update request must not be empty")
@@ -341,12 +375,26 @@ class VLLMInferenceEngine(BaseVLLMInferenceEngine):
     async def teardown(self):
         await self._teardown_weight_receiver()
 
-    async def reset_prefix_cache(self):
-        return await asyncio.to_thread(self.llm.llm_engine.reset_prefix_cache)
+    async def reset_prefix_cache(self, reset_running_requests: bool = False):
+        return await asyncio.to_thread(
+            self.llm.llm_engine.reset_prefix_cache, reset_running_requests=reset_running_requests
+        )
 
     async def _teardown_weight_receiver(self):
         engine = self._get_engine()
         return await asyncio.to_thread(engine.collective_rpc, "teardown_weight_receiver")
+
+    async def start_weight_update(self, is_checkpoint_format: bool = True):
+        engine = self._get_engine()
+        return await asyncio.to_thread(
+            engine.collective_rpc,
+            "skyrl_start_weight_update",
+            args=(is_checkpoint_format,),
+        )
+
+    async def finish_weight_update(self):
+        engine = self._get_engine()
+        return await asyncio.to_thread(engine.collective_rpc, "skyrl_finish_weight_update")
 
 
 class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
@@ -364,7 +412,7 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
         enable_log_requests = kwargs.pop("enable_log_requests", False)
         max_log_len = kwargs.pop("max_log_len", None)
 
-        engine_args = vllm.AsyncEngineArgs(enable_log_requests=enable_log_requests, **kwargs)
+        engine_args = vllm.AsyncEngineArgs(enable_log_requests=enable_log_requests, kv_cache_metrics=True, **kwargs)
 
         # Setup stat loggers for vLLM v1 if Ray Prometheus stats are enabled
         stat_loggers = None
@@ -374,7 +422,7 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
         engine = vllm.AsyncLLMEngine.from_engine_args(engine_args, stat_loggers=stat_loggers)
 
         model_path = kwargs.get("model")
-        # Use served_model_name if provided (from generator.served_model_name config),
+        # Use served_model_name if provided (from generator.inference_engine.served_model_name config),
         # otherwise fall back to model_path. This allows using a different model name
         # in HTTP endpoint requests than the actual model path.
         # See: https://github.com/NovaSky-AI/SkyRL/pull/238#discussion_r2326561295
@@ -385,8 +433,8 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
         models = OpenAIServingModels(engine, base_model_paths)
 
         # Build request logger for debugging (off by default).
-        # Enable via: generator.engine_init_kwargs.enable_log_requests=true
-        # Optionally limit logged chars: generator.engine_init_kwargs.max_log_len=256
+        # Enable via: generator.inference_engine.engine_init_kwargs.enable_log_requests=true
+        # Optionally limit logged chars: generator.inference_engine.engine_init_kwargs.max_log_len=256
         request_logger = None
         if enable_log_requests:
             from vllm.entrypoints.logger import RequestLogger
@@ -395,7 +443,6 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
 
         chat_template = openai_kwargs.pop("chat_template", None)
 
-        from vllm.plugins.io_processors import get_io_processor
         from vllm.renderers import renderer_from_config
 
         model_registry = OpenAIModelRegistry(
@@ -403,15 +450,9 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
             base_model_paths=base_model_paths,
         )
         renderer = renderer_from_config(engine.vllm_config)
-        io_processor = get_io_processor(
-            engine.vllm_config,
-            renderer,
-            engine.model_config.io_processor_plugin,
-        )
         openai_serving_render = OpenAIServingRender(
             model_config=engine.model_config,
             renderer=renderer,
-            io_processor=io_processor,
             model_registry=model_registry,
             request_logger=request_logger,
             chat_template=chat_template,
@@ -463,10 +504,16 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
             )
             return None
 
-    async def _load_lora_from_disk(self, lora_path: str):
-        """Load LoRA adapters from disk using vLLM's native add_lora method."""
+    async def _load_lora_from_disk(self, lora_path: str, lora_name: str = ""):
+        """Load LoRA adapters from disk using vLLM's native add_lora method.
+
+        When ``lora_name`` is empty (legacy single-tenant), a numeric name is
+        generated. Multi-tenant callers pass ``lora_name`` so subsequent
+        ``model=<lora_name>`` sampling routes to the right adapter.
+        """
         lora_id = int(time.time_ns() % 0x7FFFFFFF)
-        lora_request = LoRARequest(lora_name=f"{lora_id}", lora_int_id=lora_id, lora_path=lora_path)
+        name = lora_name or f"{lora_id}"
+        lora_request = LoRARequest(lora_name=name, lora_int_id=lora_id, lora_path=lora_path)
         result = await self.llm.add_lora(lora_request)
         return result
 
@@ -564,7 +611,7 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
 
         # Check for LoRA disk loading request
         if isinstance(request, LoraLoadRequest):
-            return await self._load_lora_from_disk(request.lora_path)
+            return await self._load_lora_from_disk(request.lora_path, lora_name=request.lora_name)
 
         if not len(request):
             raise ValueError("Weight update request must not be empty")
@@ -575,13 +622,24 @@ class AsyncVLLMInferenceEngine(BaseVLLMInferenceEngine):
     async def teardown(self):
         await self._teardown_weight_receiver()
 
-    async def reset_prefix_cache(self):
+    async def reset_prefix_cache(self, reset_running_requests: bool = False):
         engine = self._get_engine()
-        await engine.reset_prefix_cache()
+        await engine.reset_prefix_cache(reset_running_requests=reset_running_requests)
 
     async def _teardown_weight_receiver(self):
         engine = self._get_engine()
         return await engine.collective_rpc("teardown_weight_receiver")
+
+    async def start_weight_update(self, is_checkpoint_format: bool = True):
+        engine = self._get_engine()
+        return await engine.collective_rpc(
+            "skyrl_start_weight_update",
+            args=(is_checkpoint_format,),
+        )
+
+    async def finish_weight_update(self):
+        engine = self._get_engine()
+        return await engine.collective_rpc("skyrl_finish_weight_update")
 
     # ----------------------------------------
     # Methods for handling OpenAI API requests
