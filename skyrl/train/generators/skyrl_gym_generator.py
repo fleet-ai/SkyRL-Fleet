@@ -68,6 +68,7 @@ def _inject_fleet_model_family(
     if family is not None:
         env_extras["model_family"] = family
 
+
 # Closed <think>...</think> reasoning spans, used to split response tokens into thinking vs visible
 # for the log_thinking_token_metrics breakdown. Non-greedy + DOTALL so each block is matched
 # independently. NOTE: with the qwen3_without_thinking template only the LAST assistant turn's
@@ -749,9 +750,9 @@ class SkyRLGymGenerator(GeneratorInterface):
                     rollout_logprobs=rollout_logprobs,
                     env_metrics=env_metrics,
                     rollout_expert_indices=rollout_expert_indices_out,
-                    multi_modal_data={"images": agent_loop_state.accumulated_images}
-                    if agent_loop_state.accumulated_images
-                    else None,
+                    multi_modal_data=(
+                        {"images": agent_loop_state.accumulated_images} if agent_loop_state.accumulated_images else None
+                    ),
                 )
 
             agent_loop_output = self._post_process_agent_loop_output(
@@ -914,8 +915,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                 content = msg.get("content", "")
                 if isinstance(content, list):
                     return " ".join(
-                        b.get("text", "") for b in content
-                        if isinstance(b, dict) and b.get("type") == "text"
+                        b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
                     )
                 return str(content)
         return ""
@@ -947,7 +947,11 @@ class SkyRLGymGenerator(GeneratorInterface):
         from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
 
         use_llm_hints = hint_cfg.get("use_llm_hints", False) if hasattr(hint_cfg, "get") else False
-        hint_model = hint_cfg.get("hint_model", "openrouter/anthropic/claude-sonnet-4-20250514") if hasattr(hint_cfg, "get") else "openrouter/anthropic/claude-sonnet-4-20250514"
+        hint_model = (
+            hint_cfg.get("hint_model", "openrouter/anthropic/claude-sonnet-4-20250514")
+            if hasattr(hint_cfg, "get")
+            else "openrouter/anthropic/claude-sonnet-4-20250514"
+        )
         hint_timeout = hint_cfg.get("hint_llm_timeout", 30.0) if hasattr(hint_cfg, "get") else 30.0
 
         # 1. Group outputs by instance_id
@@ -986,14 +990,16 @@ class SkyRLGymGenerator(GeneratorInterface):
             hint_requests = []
             for iid, best_orig_idx, best_output, _ in failed_groups:
                 metrics = best_output.env_metrics
-                hint_requests.append({
-                    "task_prompt": self._extract_task_prompt(prompts[best_orig_idx]),
-                    "chat_history": metrics.get("chat_history", []),
-                    "verifier_stdout": metrics.get("verifier_stdout"),
-                    "verifier_error": metrics.get("verifier_error"),
-                    "tool_error_messages": metrics.get("tool_error_messages"),
-                    "instance_id": iid,
-                })
+                hint_requests.append(
+                    {
+                        "task_prompt": self._extract_task_prompt(prompts[best_orig_idx]),
+                        "chat_history": metrics.get("chat_history", []),
+                        "verifier_stdout": metrics.get("verifier_stdout"),
+                        "verifier_error": metrics.get("verifier_error"),
+                        "tool_error_messages": metrics.get("tool_error_messages"),
+                        "instance_id": iid,
+                    }
+                )
 
             hint_results = await synthesize_hints_batch(
                 hint_requests=hint_requests,
@@ -1026,8 +1032,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                 continue
 
             logger.info(
-                f"Hint [{hint_category}] for instance {iid} "
-                f"(best_reward={best_reward:.3f}):\n{hint_text[:500]}"
+                f"Hint [{hint_category}] for instance {iid} " f"(best_reward={best_reward:.3f}):\n{hint_text[:500]}"
             )
             prompts_hinted += 1
 
@@ -1268,7 +1273,9 @@ class SkyRLGymGenerator(GeneratorInterface):
         batch_metadata = input_batch.get("batch_metadata")
         is_training = batch_metadata is not None and batch_metadata.training_phase == "train"
         hint_cfg = getattr(self.skyrl_gym_cfg, "fleet_task", None)
-        enable_hints = hint_cfg is not None and (hint_cfg.get("enable_hints", False) if hasattr(hint_cfg, "get") else False)
+        enable_hints = hint_cfg is not None and (
+            hint_cfg.get("enable_hints", False) if hasattr(hint_cfg, "get") else False
+        )
         if (
             enable_hints
             and not self.generator_cfg.step_wise_trajectories
@@ -1422,6 +1429,7 @@ class SkyRLGymGenerator(GeneratorInterface):
 
             # Category-level metrics (LLM-synthesized vs static)
             from skyrl_gym.envs.fleet_task.hint_synthesizer import CATEGORY_LLM
+
             llm_metrics = [m for m in hinted_metrics if m.get("hint_category") == CATEGORY_LLM]
             n_llm = len(llm_metrics)
             if n_llm > 0:

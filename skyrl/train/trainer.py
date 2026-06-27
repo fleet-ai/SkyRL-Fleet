@@ -384,6 +384,7 @@ class RayPPOTrainer:
                                 from integrations.fleet.s3_checkpoints import (
                                     upload_training_trajectories_to_s3,
                                 )
+
                                 upload_training_trajectories_to_s3(
                                     local_path=traj_file,
                                     run_name=self.cfg.trainer.run_name,
@@ -473,6 +474,7 @@ class RayPPOTrainer:
                                 from integrations.fleet.s3_checkpoints import (
                                     upload_reward_rollouts_to_s3,
                                 )
+
                                 reward_rollout_dir = os.environ.get("REWARD_ROLLOUT_DIR", "/workspace/reward_rollouts")
                                 upload_reward_rollouts_to_s3(
                                     rollout_dir=reward_rollout_dir,
@@ -1099,9 +1101,7 @@ class RayPPOTrainer:
                 num_filtered_groups = num_groups - num_kept_groups
                 self.all_metrics.update(
                     {
-                        "reward/zero_variance_filtered_frac": (
-                            num_filtered_groups / num_groups if num_groups else 0.0
-                        ),
+                        "reward/zero_variance_filtered_frac": (num_filtered_groups / num_groups if num_groups else 0.0),
                         "reward/zero_variance_filtered_groups": float(num_filtered_groups),
                         "reward/num_groups": float(num_groups),
                     }

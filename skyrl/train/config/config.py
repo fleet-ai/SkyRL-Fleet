@@ -1150,6 +1150,7 @@ def get_config_as_yaml_str(cfg) -> str:
     # Handle OmegaConf DictConfig (from Hydra entrypoints)
     try:
         from omegaconf import OmegaConf
+
         if OmegaConf.is_config(cfg):
             return OmegaConf.to_yaml(cfg, resolve=True)
     except ImportError:

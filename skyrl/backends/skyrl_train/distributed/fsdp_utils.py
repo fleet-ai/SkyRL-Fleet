@@ -40,13 +40,6 @@ from packaging import version  # noqa: E402
 from peft.utils.save_and_load import get_peft_model_state_dict  # noqa: E402
 from torch.distributed import DeviceMesh  # noqa: E402
 from torch.distributed.device_mesh import init_device_mesh  # noqa: E402
-from torch.distributed.fsdp import FullyShardedDataParallel as FSDP  # noqa: E402
-from torch.distributed.fsdp._runtime_utils import _lazy_init  # noqa: E402
-from torch.distributed.fsdp.wrap import (  # noqa: E402
-    size_based_auto_wrap_policy,
-    transformer_auto_wrap_policy,
-)
-from transformers.trainer_pt_utils import get_module_class_from_name  # noqa: E402
 
 from skyrl.train.config import FSDPConfig  # noqa: E402
 

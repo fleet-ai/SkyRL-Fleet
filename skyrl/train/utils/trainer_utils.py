@@ -375,9 +375,7 @@ def dump_per_dataset_eval_results(
 
     # Save screenshots if any trajectories have images
     images_dir = dump_dir_path / "images"
-    has_any_images = any(
-        mm and mm.get("images") for mm in multi_modal_data_list if isinstance(mm, dict)
-    )
+    has_any_images = any(mm and mm.get("images") for mm in multi_modal_data_list if isinstance(mm, dict))
     if has_any_images:
         images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -471,9 +469,7 @@ def dump_training_trajectories(
 
     # Save screenshots alongside JSONL if any trajectories have images
     images_dir = traj_dir / f"global_step_{global_step}_images"
-    has_any_images = any(
-        mm and mm.get("images") for mm in multi_modal_data_list if isinstance(mm, dict)
-    )
+    has_any_images = any(mm and mm.get("images") for mm in multi_modal_data_list if isinstance(mm, dict))
     if has_any_images:
         images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -550,10 +546,7 @@ def dump_training_trajectories(
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     n_images = sum(
-        len(entry.get("images", []))
-        for mm in multi_modal_data_list
-        if isinstance(mm, dict)
-        for entry in [mm]
+        len(entry.get("images", [])) for mm in multi_modal_data_list if isinstance(mm, dict) for entry in [mm]
     )
     logger.info(
         f"Dumped {len(generator_output['response_ids'])} training trajectories to {filename}"
@@ -836,9 +829,7 @@ def filter_generator_output(output: GeneratorOutput, kept_indices: List[int]) ->
     if output.get("stop_reasons"):
         filtered["stop_reasons"] = [output["stop_reasons"][i] for i in kept_indices]
 
-    filtered["env_metrics"] = (
-        [output["env_metrics"][i] for i in kept_indices] if output.get("env_metrics") else None
-    )
+    filtered["env_metrics"] = [output["env_metrics"][i] for i in kept_indices] if output.get("env_metrics") else None
 
     return filtered
 
@@ -1080,7 +1071,9 @@ class HybridEnvSampler(torch.utils.data.Sampler):
         total_samples = len(dataset)
         self.env_weights = {env: len(indices) / total_samples for env, indices in self.env_to_indices.items()}
 
-        logger.info(f"HybridEnvSampler: {self.num_envs} envs, batch_size={batch_size}, min_per_env={self.min_samples_per_env}")
+        logger.info(
+            f"HybridEnvSampler: {self.num_envs} envs, batch_size={batch_size}, min_per_env={self.min_samples_per_env}"
+        )
         for env, indices in sorted(self.env_to_indices.items()):
             logger.info(f"  {env}: {len(indices)} samples ({self.env_weights[env]*100:.1f}%)")
 
@@ -1110,7 +1103,7 @@ class HybridEnvSampler(torch.utils.data.Sampler):
 
             remaining = self.batch_size - len(batch_indices)
             if remaining > 0:
-                available_by_env = {env: env_indices_shuffled[env][env_positions[env]:] for env in self.env_classes}
+                available_by_env = {env: env_indices_shuffled[env][env_positions[env] :] for env in self.env_classes}
                 for _ in range(remaining):
                     envs_with_samples = [env for env, avail in available_by_env.items() if avail]
                     if not envs_with_samples:

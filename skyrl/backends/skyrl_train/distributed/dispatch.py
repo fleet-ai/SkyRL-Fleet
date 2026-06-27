@@ -1,6 +1,5 @@
 """Defines dispatch and collect logic for distributed training"""
 
-import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
