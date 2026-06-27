@@ -38,6 +38,16 @@ export SKYPILOT_NUM_GPUS_PER_NODE=8
 export SKYPILOT_NUM_NODES=1
 export SKYPILOT_NODE_RANK=0
 
+# Run each vLLM v1 EngineCore IN-PROCESS inside its Ray actor instead of as a
+# nested subprocess. The async-engine path has each AsyncVLLMInferenceEngine
+# Ray actor (which has already initialized CUDA) spawn a v1 EngineCore
+# subprocess; on this bare-metal node that nested spawn dies during init with
+# "Engine core initialization failed / Failed core proc(s): {}" before the
+# GPUs are ever touched. vLLM 0.18.0 + Qwen3-1.7B init+generate fine standalone
+# both with mp on and off, so the failure is specific to the Ray-actor nested
+# spawn; disabling v1 multiprocessing avoids the fragile nested subprocess.
+export VLLM_ENABLE_V1_MULTIPROCESSING=0
+
 # Ray head IP: pick node-9's routable 10.66.x interface, NOT docker-internal
 # 172.19.x.x (which `hostname -I` lists first) and NOT loopback. Fall back to
 # the known-good ens1 address if detection turns up nothing.
