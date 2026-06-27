@@ -74,7 +74,6 @@ bash scripts/fleet-common-run.sh \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.algorithm.use_kl_loss=true \
   trainer.policy.model.path="$MODEL_PATH" \
-  generator.chat_template_kwargs.enable_thinking=true \
   generator.inference_engine_tensor_parallel_size=1 \
   trainer.epochs="$NUM_EPOCHS" \
   trainer.train_batch_size=1024 \
