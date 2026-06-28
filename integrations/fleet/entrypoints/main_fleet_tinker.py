@@ -1074,7 +1074,7 @@ async def main(
     loss_fn: str = "ppo",
     eval_before_train: bool = False,
     results_out: str = None,
-    save_state_every: int = 10,
+    save_state_every: int = 5,
     max_concurrent: int = 8,
 ):
     """
@@ -1533,8 +1533,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save-state-every",
         type=int,
-        default=10,
-        help="Save a full training state checkpoint every N steps (default 10). 0 disables.",
+        default=5,
+        help="Save a full training state checkpoint every N steps (default 5). 0 disables.",
     )
 
     args = parser.parse_args()
