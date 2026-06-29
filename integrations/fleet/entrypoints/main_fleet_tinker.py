@@ -1076,9 +1076,18 @@ async def main(
     results_out: str = None,
     save_state_every: int = 5,
     max_concurrent: int = 8,
+    eval_only: bool = False,
+    from_checkpoint: str = None,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
+
+    When `eval_only=True`, skip the training loop entirely. Bind a sampling_client
+    to `from_checkpoint` (Tinker URI like `tinker://<run-id>/sampler_weights/step_X`),
+    run the same _run_eval routine the training path uses for its periodic eval,
+    write a results JSON. No `forward_backward`, no `optim_step`, no checkpoint
+    writes. Reuses the trainer's chat_template + tools rendering + rollout +
+    reward path byte-for-byte so eval metrics match what training reports.
     """
     set_seed(seed)
     eval_entries: list[dict] = []  # populated by _run_eval below; sourced for results_out
@@ -1161,11 +1170,15 @@ async def main(
         },
     )
 
-    # Load datasets
-    train_dataset = load_dataset("parquet", data_files=dataset_file)["train"]
+    # Load datasets. Eval-only mode skips the training parquet entirely; only
+    # eval_dataset_file is required to drive the held-out rollouts.
+    train_dataset = (
+        load_dataset("parquet", data_files=dataset_file)["train"] if dataset_file else None
+    )
     eval_dataset = load_dataset("parquet", data_files=eval_dataset_file)["train"] if eval_dataset_file else None
 
-    logger.info(f"Loaded {len(train_dataset)} training samples")
+    if train_dataset is not None:
+        logger.info(f"Loaded {len(train_dataset)} training samples")
     if eval_dataset:
         logger.info(f"Loaded {len(eval_dataset)} eval samples")
 
@@ -1205,9 +1218,15 @@ async def main(
         service_client_kwargs["api_key"] = tinker_api_key
 
     service_client = tinker.ServiceClient(**service_client_kwargs)
-    training_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
-
-    adam_params = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
+    # In eval-only mode there's no training_client — we just bind a
+    # sampling_client to the supplied checkpoint and run rollouts. Avoids the
+    # wasted side-effect of provisioning a LoRA training shard for a path we
+    # never call forward_backward on.
+    training_client = None
+    adam_params = None
+    if not eval_only:
+        training_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
+        adam_params = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     # trust_remote_code is required for models like moonshotai/Kimi-K2.6 whose
     # tokenizer config references a custom processor class on the HF Hub.
     # Tinker exposes long-context PEFT variants with a `:peft:<context>` suffix
@@ -1215,6 +1234,44 @@ async def main(
     # since only the base repo name is a valid HF identifier.
     hf_model_name = model_name.split(":peft:")[0]
     tokenizer = AutoTokenizer.from_pretrained(hf_model_name, trust_remote_code=True)
+
+    # ─── Eval-only short-circuit ──────────────────────────────────────────
+    # Skip the entire training loop; just bind a sampling_client to the
+    # supplied checkpoint and run _run_eval once.
+    if eval_only:
+        if not from_checkpoint:
+            raise SystemExit("--eval-only requires --from-checkpoint <tinker://...>")
+        if eval_dataset is None:
+            raise SystemExit("--eval-only requires --eval-dataset-file <parquet>")
+        logger.info(f"eval-only: binding sampling_client to {from_checkpoint}")
+        sampling_client = service_client.create_sampling_client(model_path=from_checkpoint)
+        await _rotate_trace_job("eval_only")
+        eval_pass_rate = await _run_eval(sampling_client, step_index=0)
+        logger.info(
+            f"eval-only complete: pass_at_{eval_n_samples_per_prompt}={eval_pass_rate}"
+        )
+        if results_out:
+            import json as _json
+            try:
+                wandb_url = wandb.run.get_url() if wandb.run else None
+            except Exception:
+                wandb_url = None
+            payload = {
+                "model_name": model_name,
+                "from_checkpoint": from_checkpoint,
+                "eval_only": True,
+                "n_holdout": len(eval_dataset),
+                "pass_at_1": eval_pass_rate,
+                "entries": eval_entries,
+                "wandb_url": wandb_url,
+                "wandb_run_name": wandb_name,
+            }
+            os.makedirs(os.path.dirname(results_out) or ".", exist_ok=True)
+            with open(results_out, "w") as fh:
+                _json.dump(payload, fh, indent=2)
+            logger.info(f"Wrote eval-only results to {results_out}")
+        wandb.finish()
+        return
 
     # Create dataloader
     def create_dataloader(epoch: int):
@@ -1468,8 +1525,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fleet Task Training with Tinker")
     parser.add_argument("--model-name", type=str, default="Qwen/Qwen3-VL-30B-A3B-Instruct")
     parser.add_argument("--tasks-file", type=str, required=True, help="Path to tasks JSON file")
-    parser.add_argument("--dataset-file", type=str, required=True, help="Path to training parquet")
-    parser.add_argument("--eval-dataset-file", type=str, default=None, help="Path to eval parquet")
+    # --dataset-file is required for training; in --eval-only mode it's unused
+    # and may be omitted. The post-parse validation below enforces this.
+    parser.add_argument("--dataset-file", type=str, default=None, help="Path to training parquet (required unless --eval-only)")
+    parser.add_argument("--eval-dataset-file", type=str, default=None, help="Path to eval parquet (required for --eval-only)")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--eval-batch-size", type=int, default=32)
     parser.add_argument(
@@ -1536,8 +1595,37 @@ if __name__ == "__main__":
         default=5,
         help="Save a full training state checkpoint every N steps (default 5). 0 disables.",
     )
+    parser.add_argument(
+        "--eval-only",
+        action="store_true",
+        help=(
+            "Run held-out eval against --from-checkpoint and exit. Skips the "
+            "training loop, training_client creation, optim_step, and "
+            "forward_backward entirely. Reuses the same rollout/reward path "
+            "the training loop's periodic eval uses, so eval metrics match."
+        ),
+    )
+    parser.add_argument(
+        "--from-checkpoint",
+        type=str,
+        default=None,
+        help=(
+            "Tinker checkpoint URI to load weights from (e.g. "
+            "tinker://<run-id>/sampler_weights/step_pretrain). Required with --eval-only."
+        ),
+    )
 
     args = parser.parse_args()
+
+    # CLI-level validation. Argparse can't express "X required iff Y set",
+    # so we enforce here before kicking off any Tinker calls.
+    if args.eval_only:
+        if not args.from_checkpoint:
+            parser.error("--eval-only requires --from-checkpoint")
+        if not args.eval_dataset_file:
+            parser.error("--eval-only requires --eval-dataset-file")
+    elif not args.dataset_file:
+        parser.error("--dataset-file is required (unless --eval-only)")
 
     import json as _json
 
@@ -1572,5 +1660,7 @@ if __name__ == "__main__":
             results_out=args.results_out,
             save_state_every=args.save_state_every,
             max_concurrent=args.max_concurrent,
+            eval_only=args.eval_only,
+            from_checkpoint=args.from_checkpoint,
         )
     )
