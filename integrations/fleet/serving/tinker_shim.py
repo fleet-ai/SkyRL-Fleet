@@ -33,8 +33,9 @@ import uuid
 from typing import Any, Iterable, Optional
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+import json
 
 from skyrl_gym.envs.fleet_task.families import Family, get_family, family_for_model
 from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
@@ -105,8 +106,6 @@ async def list_models():
 async def chat_completions(req: ChatCompletionRequest):
     if not _ready:
         raise HTTPException(503, "shim not ready")
-    if req.stream:
-        raise HTTPException(400, "streaming not supported (v0)")
 
     # Coerce incoming OpenAI-style ids to the trainer's canonical format BEFORE
     # rendering through apply_chat_template. Kimi's chat template emits
@@ -169,11 +168,51 @@ async def chat_completions(req: ChatCompletionRequest):
             flush=True,
         )
 
+    response_id = f"tinker-{uuid.uuid4().hex[:12]}"
+    created = int(time.time())
+
+    if req.stream:
+        # Tinker SDK returns one-shot completions; emit it as a single SSE
+        # chunk + a final delta with finish_reason + [DONE]. Strictly
+        # OpenAI-compatible SSE format so clients like claw-eval that send
+        # stream=true get back a valid stream instead of a 400 error and
+        # fail every task with the API error in their results.
+        delta = {"role": "assistant"}
+        if message.get("content") is not None:
+            delta["content"] = message["content"]
+        if message.get("tool_calls"):
+            delta["tool_calls"] = message["tool_calls"]
+
+        async def event_stream():
+            content_chunk = {
+                "id": response_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": _model_id,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+            }
+            yield f"data: {json.dumps(content_chunk)}\n\n"
+            final_chunk = {
+                "id": response_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": _model_id,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                },
+            }
+            yield f"data: {json.dumps(final_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
     return JSONResponse(
         {
-            "id": f"tinker-{uuid.uuid4().hex[:12]}",
+            "id": response_id,
             "object": "chat.completion",
-            "created": int(time.time()),
+            "created": created,
             "model": _model_id,
             "choices": [
                 {
