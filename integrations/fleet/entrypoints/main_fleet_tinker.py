@@ -45,7 +45,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import tinker
@@ -160,6 +160,14 @@ class RolloutOutput(BaseModel):
     verifier_stdout: Optional[str] = None  # Truncated; full output is in env log
     verifier_error: Optional[str] = None
     error: Optional[str] = None
+    # Full conversation transcript (role/content per turn, including tool_calls
+    # and tool results). Populated only when collect_fleet_rollout is invoked
+    # with capture_messages=True — opt-in because copying chat_history into
+    # every training rollout is gigabytes of unnecessary RAM (200 steps ×
+    # 16 batch × 8 samples). The eval-only / periodic-eval paths set it
+    # True so per-rollout JSON dumps include the full trace for offline diff.
+    sample: Optional[int] = None
+    messages: Optional[List[Dict[str, Any]]] = None
 
     class Config:
         frozen = True
@@ -687,6 +695,7 @@ async def collect_fleet_rollout(
     temperature: float = 1.0,
     top_p: float = 1.0,
     stop_sequences: List[str] = None,
+    capture_messages: bool = False,
 ) -> Dict[str, Any]:
     """
     Collect a single trajectory using Fleet environment and Tinker inference.
@@ -915,6 +924,19 @@ async def collect_fleet_rollout(
         except Exception:
             pass
 
+        # Snapshot the env's full chat history for offline analysis when the
+        # caller opted in. Copy here (not by reference) because env.close()
+        # may mutate or invalidate the underlying list. Skipped by default so
+        # training rollouts don't pay the memory cost.
+        messages_snapshot: Optional[List[Dict[str, Any]]] = None
+        if capture_messages:
+            try:
+                ch = getattr(env, "chat_history", None)
+                if ch is not None:
+                    messages_snapshot = [dict(m) for m in ch]
+            except Exception as e:
+                logger.warning(f"capture_messages snapshot failed for {task_key}: {e}")
+
         return RolloutOutput(
             prompt_ids=prompt_ids,
             response_ids=all_response_ids,
@@ -933,6 +955,7 @@ async def collect_fleet_rollout(
             total_tokens=total_tokens,
             verifier_stdout=(env._verifier_stdout or None),
             verifier_error=(env._verifier_error or None),
+            messages=messages_snapshot,
         )
 
     finally:
@@ -955,17 +978,29 @@ async def collect_batch_rollouts(
     temperature: float = 1.0,
     top_p: float = 1.0,
     stop_sequences: List[str] = None,
+    capture_messages: bool = False,
+    on_rollout_complete: Optional[Callable[[RolloutOutput], None]] = None,
 ) -> List[Dict[str, Any]]:
     """Collect rollouts for a batch of tasks with limited concurrency.
 
     Args:
         max_concurrent: Maximum number of concurrent Fleet environment connections.
             Now safe to increase since ThreadPoolExecutor isolates connections.
+        capture_messages: Forwarded to ``collect_fleet_rollout``. When True,
+            every returned ``RolloutOutput.messages`` carries the full chat
+            transcript. Off by default to keep training rollouts cheap.
+        on_rollout_complete: Optional callback fired exactly once per rollout,
+            immediately after it lands (inside the ``asyncio.as_completed``
+            loop). Use this to stream rollouts to disk as they finish so a
+            mid-batch crash doesn't lose hours of Fleet env time. The callback
+            receives the populated ``RolloutOutput`` and any exception it
+            raises is logged and swallowed — never lets a dumper failure
+            abort an in-flight eval.
     """
     # Semaphore to limit concurrent Fleet environment connections
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def collect_single_rollout(task_config: Dict[str, Any], index: int) -> tuple:
+    async def collect_single_rollout(task_config: Dict[str, Any], index: int, sample_idx: int) -> tuple:
         """Wrapper to collect a single rollout with error handling and concurrency limit."""
         async with semaphore:
             rollout_start = time.time()
@@ -981,7 +1016,12 @@ async def collect_batch_rollouts(
                     temperature=temperature,
                     top_p=top_p,
                     stop_sequences=stop_sequences,
+                    capture_messages=capture_messages,
                 )
+                # Stamp the sample index so downstream dumpers can produce
+                # deterministic per-rollout filenames without tracking
+                # per-task counters themselves.
+                rollout = rollout.model_copy(update={"sample": sample_idx})
                 # Per-rollout completion marker so operators can see in-flight
                 # success rate before the step-end pass@k flush.
                 verifier_tail = ""
@@ -1012,14 +1052,17 @@ async def collect_batch_rollouts(
                     stop_reason="error",
                     error=str(e),
                     duration=time.time() - rollout_start,
+                    sample=sample_idx,
                 )
 
-    # Create all rollout tasks (batch_size * n_samples_per_prompt)
+    # Create all rollout tasks (batch_size * n_samples_per_prompt). sample_idx
+    # is 0..n_samples_per_prompt-1 within each task so the dumper can write
+    # deterministic per-rollout filenames (task_key__sN.json).
     tasks = []
     index = 0
     for task_config in batch:
-        for _ in range(n_samples_per_prompt):
-            tasks.append(collect_single_rollout(task_config, index))
+        for sample_idx in range(n_samples_per_prompt):
+            tasks.append(collect_single_rollout(task_config, index, sample_idx))
             index += 1
 
     total = len(tasks)
@@ -1034,6 +1077,17 @@ async def collect_batch_rollouts(
         idx, rollout = await coro
         rollouts[idx] = rollout
         completed += 1
+
+        # Fire the per-rollout callback BEFORE the periodic progress log so
+        # dumpers see the rollout the moment it lands. Wrap in try/except so
+        # a misbehaving dumper (disk full, permissions, etc.) never aborts
+        # an in-flight eval — the rollout still ends up in the return list,
+        # we just skipped its disk dump.
+        if on_rollout_complete is not None:
+            try:
+                on_rollout_complete(rollout)
+            except Exception as e:
+                logger.warning(f"on_rollout_complete callback failed: {e}")
 
         # Log progress at intervals
         if completed - last_logged >= log_interval or completed == total:
@@ -1078,6 +1132,7 @@ async def main(
     max_concurrent: int = 8,
     eval_only: bool = False,
     from_checkpoint: str = None,
+    rollout_dump_dir: str = None,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1088,16 +1143,56 @@ async def main(
     write a results JSON. No `forward_backward`, no `optim_step`, no checkpoint
     writes. Reuses the trainer's chat_template + tools rendering + rollout +
     reward path byte-for-byte so eval metrics match what training reports.
+
+    When `rollout_dump_dir` is set, every EVAL-phase rollout (pre-train baseline,
+    periodic eval at each `eval_every` step, final eval, and eval-only mode) is
+    streamed to `{rollout_dump_dir}/{phase}/{task_key}__s{sample}.json` as it
+    completes. Training-loop rollouts (the gradient-producing ones) are NOT
+    dumped — too much disk for a 200-step run. Per-rollout JSON includes the
+    full chat transcript via `RolloutOutput.messages`.
     """
     set_seed(seed)
     eval_entries: list[dict] = []  # populated by _run_eval below; sourced for results_out
     state_checkpoints: list[dict] = []  # path + step of every save_state call
 
-    async def _run_eval(eval_sampling_client, step_index: int) -> float | None:
+    def _make_rollout_dumper(label: str) -> Optional[Callable[[RolloutOutput], None]]:
+        """Build a streaming dumper for one eval phase, or None to disable.
+
+        Each rollout is written to its own JSON file on completion. Files
+        are independent — a mid-eval crash never loses already-completed
+        rollouts (the failure mode that wiped mcpbench at 71/104 was the
+        impetus for this).
+        """
+        if not rollout_dump_dir:
+            return None
+        import json as _json
+        phase_dir = os.path.join(rollout_dump_dir, label)
+        os.makedirs(phase_dir, exist_ok=True)
+
+        def _dump(r: RolloutOutput) -> None:
+            sample = r.sample if r.sample is not None else 0
+            # Sanitize task_key for filesystem (only [A-Za-z0-9._-]).
+            safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in (r.task_key or "unknown"))
+            path = os.path.join(phase_dir, f"{safe}__s{sample}.json")
+            try:
+                with open(path, "w") as fh:
+                    _json.dump(r.model_dump(), fh, indent=2, default=str)
+            except Exception as e:
+                logger.warning(f"rollout dump failed for {r.task_key} s{sample}: {e}")
+        return _dump
+
+    async def _run_eval(
+        eval_sampling_client,
+        step_index: int,
+        dump_label: Optional[str] = None,
+    ) -> float | None:
         if not eval_dataset:
             return None
         logger.info(f"Running held-out eval at step={step_index}...")
         eval_dataloader = DataLoader(eval_dataset, batch_size=eval_batch_size, shuffle=False, collate_fn=collate_fn)
+        # Per-rollout dumper for this phase. None when --rollout-dump-dir not
+        # set; otherwise writes JSON the moment each rollout completes.
+        dumper = _make_rollout_dumper(dump_label) if dump_label else None
         all_eval_rollouts = []
         for eval_batch in eval_dataloader:
             eval_rollouts = await collect_batch_rollouts(
@@ -1113,6 +1208,10 @@ async def main(
                 top_p=top_p,
                 stop_sequences=stop_sequences,
                 max_concurrent=max_concurrent,
+                # Capture chat transcript ONLY when we're going to write it
+                # to disk. Saves memory on eval phases without a dump dir.
+                capture_messages=dumper is not None,
+                on_rollout_complete=dumper,
             )
             all_eval_rollouts.extend([r for r in eval_rollouts if not r.error])
         if not all_eval_rollouts:
@@ -1246,7 +1345,7 @@ async def main(
         logger.info(f"eval-only: binding sampling_client to {from_checkpoint}")
         sampling_client = service_client.create_sampling_client(model_path=from_checkpoint)
         await _rotate_trace_job("eval_only")
-        eval_pass_rate = await _run_eval(sampling_client, step_index=0)
+        eval_pass_rate = await _run_eval(sampling_client, step_index=0, dump_label="eval_only")
         logger.info(
             f"eval-only complete: pass_at_{eval_n_samples_per_prompt}={eval_pass_rate}"
         )
@@ -1296,7 +1395,7 @@ async def main(
         pre_sampling_path = training_client.save_weights_for_sampler(name="step_pretrain").result().path
         pre_sampling_client = service_client.create_sampling_client(model_path=pre_sampling_path)
         await _rotate_trace_job("eval_pre")
-        await _run_eval(pre_sampling_client, step_index=-1)
+        await _run_eval(pre_sampling_client, step_index=-1, dump_label="pre")
 
     # Training loop
     pbar = tqdm(range(max_steps), desc="Training", unit="step")
@@ -1472,10 +1571,10 @@ async def main(
                 final_sampling_path = training_client.save_weights_for_sampler(name="step_final").result().path
                 eval_client = service_client.create_sampling_client(model_path=final_sampling_path)
                 await _rotate_trace_job("eval_final")
-                await _run_eval(eval_client, step_index=max_steps)
+                await _run_eval(eval_client, step_index=max_steps, dump_label="final")
             else:
                 await _rotate_trace_job(f"eval_step_{step}")
-                await _run_eval(sampling_client, step_index=step)
+                await _run_eval(sampling_client, step_index=step, dump_label=f"step_{step}")
 
     # Surface pre/post pass rates to disk for the launcher to read. The first
     # entry (pre-train if requested, otherwise step 0) is the baseline; the
@@ -1614,6 +1713,19 @@ if __name__ == "__main__":
             "tinker://<run-id>/sampler_weights/step_pretrain). Required with --eval-only."
         ),
     )
+    parser.add_argument(
+        "--rollout-dump-dir",
+        type=str,
+        default=None,
+        help=(
+            "If set, stream every EVAL-phase rollout to "
+            "<dir>/<phase>/<task_key>__s<sample>.json the moment it completes. "
+            "Phases: pre, step_N, final, eval_only. Training-loop rollouts are NOT "
+            "dumped (would be huge). Includes the full chat transcript so consumers "
+            "can grep tool_calls / errors / verifier output offline. Survives "
+            "mid-eval crashes — each rollout's file is independent."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1662,5 +1774,6 @@ if __name__ == "__main__":
             max_concurrent=args.max_concurrent,
             eval_only=args.eval_only,
             from_checkpoint=args.from_checkpoint,
+            rollout_dump_dir=args.rollout_dump_dir,
         )
     )

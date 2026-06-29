@@ -34,6 +34,9 @@
 #   TEMPERATURE                 (default: 0.6  — Kimi K2.6 recommended)
 #   TOP_P                       (default: 0.95 — Kimi K2.6 recommended)
 #   STOP_SEQUENCES              (default: [])
+#   ROLLOUT_DUMP_DIR            (default: unset → no per-rollout JSON dumps;
+#                                when set, every rollout streams to
+#                                <dir>/eval_only/<task>__s<N>.json on completion)
 #
 # Pass-through: extra positional args go to the python entrypoint verbatim.
 set -euo pipefail
@@ -69,6 +72,9 @@ STOP_SEQUENCES="${STOP_SEQUENCES:-[]}"
 EXTRA_ARGS=()
 if [ -n "${WANDB_NAME:-}" ]; then
     EXTRA_ARGS+=(--wandb-name "$WANDB_NAME")
+fi
+if [ -n "${ROLLOUT_DUMP_DIR:-}" ]; then
+    EXTRA_ARGS+=(--rollout-dump-dir "$ROLLOUT_DUMP_DIR")
 fi
 
 # --max-steps is unused in eval-only but the parser still accepts it; set to 0
