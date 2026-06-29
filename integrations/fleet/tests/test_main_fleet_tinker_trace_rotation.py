@@ -60,22 +60,26 @@ def _collect_rotate_calls() -> list[str]:
 
 
 class TestPhaseBoundaryRotation:
-    def test_all_four_phase_labels_present(self):
-        """The trainer must rotate at four kinds of phase boundary:
-        pre-train eval, per-step training, per-step eval (periodic), and
-        final eval. Dropping any of these silently collapses sessions
-        from that phase into the prior phase's trace job."""
+    def test_all_phase_labels_present(self):
+        """The trainer must rotate at five kinds of phase boundary:
+        pre-train eval, per-step training, per-step eval (periodic), final
+        eval, and standalone eval-only mode. Dropping any of these silently
+        collapses sessions from that phase into the prior phase's trace job."""
         labels = _collect_rotate_calls()
         assert "eval_pre" in labels, f"missing eval_pre in {labels}"
         assert "train_step_{step}" in labels, f"missing per-step train rotation in {labels}"
         assert "eval_step_{step}" in labels, f"missing periodic eval rotation in {labels}"
         assert "eval_final" in labels, f"missing eval_final in {labels}"
+        # Eval-only mode (no training loop) has its own rotation so its
+        # rollouts land in a distinct trace job from any training rotation.
+        assert "eval_only" in labels, f"missing eval_only rotation in {labels}"
 
-    def test_exactly_four_rotation_sites(self):
+    def test_exactly_five_rotation_sites(self):
         """If the count drifts (e.g. someone adds a rotation we didn't
-        plan for, or copy-pastes a duplicate), surface it loudly."""
+        plan for, or copy-pastes a duplicate), surface it loudly. Five
+        sites = eval_pre, train_step, eval_step, eval_final, eval_only."""
         labels = _collect_rotate_calls()
-        assert len(labels) == 4, f"expected 4 rotation sites, got {len(labels)}: {labels}"
+        assert len(labels) == 5, f"expected 5 rotation sites, got {len(labels)}: {labels}"
 
     def test_rotation_helper_is_defined(self):
         """Sanity: the helper itself exists in the source — defends
