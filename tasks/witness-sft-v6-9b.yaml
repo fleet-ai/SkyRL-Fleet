@@ -1,0 +1,358 @@
+# ARC-AGI-3: SFT on Qwen3.5-9B using mechanism-true pairs (cycle-2, v6mt).
+#
+# 9B variant of witness-sft-v6-35b.yaml (same 402-pair cold-start data, same
+# slurm-hardened harness + DTensor merge + multimodal patch). Deltas vs the 35B:
+#   - MODEL: Qwen/Qwen3.5-35B-A3B → Qwen/Qwen3.5-9B
+#   - disk_size: 2000 → 1000 (9B HF ~18GB + FSDP ckpt ~150GB + merged on /tmp; keeps the >500GB /tmp gate)
+#   - LR: 5e-6 → 1e-5 (9B value, from the empirically-successful v5 9B SFT)
+#   - MAX_LENGTH: 8192 → 4096 (9B value, from v5)
+#   - RUN_NAME / WANDB_RUN_NAME → witness_sft_v6mt_9b
+#   - Keeps fleet-qwen35-extra-setup.sh (9B is also Qwen3.5: needs transformers 5.3 + causal-conv1d)
+#   - Keeps merge_fsdp_dtensor.py (NOT v5's merge_fsdp_checkpoint.py): the fsdp2+torch-2.10
+#     shards are DTensor-format; the dtensor merge + Finding-K multimodal patch produce a
+#     vLLM-loadable merged/ that the RL warm-start needs (v5's merge omitted the MM config).
+#
+# Topology: 1 node × 8× H200. Memory math (FSDP sharded across 8 GPUs):
+#   - params bf16:   70 GB ÷ 8  =  8.75 GB/GPU
+#   - grad bf16:     70 GB ÷ 8  =  8.75 GB/GPU
+#   - AdamW state:  420 GB ÷ 8  = 52.5 GB/GPU (master fp32 + m + v)
+#   - activations (micro_batch=1, max_len=8K, gradient ckpt): ~15-25 GB/GPU
+#   Total ~85-95 GB/GPU vs 141 GB H200 → fits with margin.
+#
+# Data: wp_mt_combined sft_pairs_judged.jsonl — 402 mechanism-true pairs
+#   (witness Set A 213 + public Set B 189; fable-5 teacher, fixed-ASCII harness,
+#   每条机制声明已对 31 张 per-game GT 真值卡裁决；judge_score all ≥2).
+#   Held-out games tw01/09/10/12 + tw04 + sp80 are excluded by construction.
+#   Pairs are model-agnostic (ChatML triples), usable for 35B as-is.
+#
+# Background:
+#   - 35B-instruct (no task SFT) + Sonnet eval@step0 = 5.54 > 9B-instruct +
+#     v5 task SFT + Sonnet's 3.28 (see 2026-05-11_35b_instruct_outperforms_9b_sft_discovery.md).
+#     NOTE: "Qwen/Qwen3.5-35B-A3B" IS the instruct (chat-aligned) variant;
+#     "-Base" suffix would be the pretrained model. The 35B already has
+#     general instruct-tuning, just not witness-task-specific tuning.
+#   - So this task SFT is no longer critical path. Built as:
+#       (1) anchor / fallback if R5 35B-instruct (no task SFT) RL doesn't hold
+#       (2) ablation: R5_35b_v6sft vs R5_35b_base — measure SFT marginal value
+#       (3) compliance with team leader's "after your sft is done" prescriptive
+#
+# Usage (keys read from the local shell env; detach, then `sky down` after S3 lands):
+#   sky launch tasks/witness-sft-v6-35b.yaml -c witness-sft-v6mt \
+#     --env WANDB_API_KEY --env AWS_ACCESS_KEY_ID --env AWS_SECRET_ACCESS_KEY \
+#     -y --detach-run
+#
+# Outputs (synced to S3 before teardown):
+#   s3://${S3_BUCKET}/${RUN_NAME}/fsdp/global_step_*_final/policy/   FSDP shards
+#   s3://${S3_BUCKET}/${RUN_NAME}/merged/                            HF-format model
+#   s3://${S3_BUCKET}/${RUN_NAME}/run.log                            stdout
+#
+# Use as RL warm-start (9B RL yaml; both 8-game and 8+24-game read this checkpoint):
+#   sky launch tasks/witness-grpo-v5b7-phase2-r4-v6mt-9b.yaml \
+#     --env POLICY_CHECKPOINT_S3=s3://${S3_BUCKET}/${RUN_NAME}/merged/ ...
+
+resources:
+  # Reserved slurm cluster (the path every previous witness 35B run used).
+  # Flat slurm-only resource — NO `ports:` (Slurm open_ports → NotSupportedError),
+  # NO any_of/ordered (image_id gets dragged onto Slurm → get_image_size
+  # NotImplementedError). Big artifacts (HF cache ~75 GB, FSDP shards ~210 GB,
+  # merged ~70 GB) all live on node-local /tmp, NOT NFS — see run section.
+  # 9B: HF ~18GB + FSDP ckpt ~150GB + merged ~18GB; 1000 keeps /tmp above the >500GB gate.
+  disk_size: 1000
+  accelerators: H200:8
+  cloud: slurm
+  region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 1
+
+# Local checkout rsynced to ~/sky_workdir — yaml/script edits take effect on the
+# next launch with no git push (same dev-loop form as witness-grpo-...-r5-35b.yaml).
+workdir: ~/Documents/obsidian/research-repos/SkyRL-Fleet
+
+# Mount the mechanism-true (cold-start purity, 2026-06-12 doctrine) SFT pairs:
+# Set A (witness, 213) ∪ Set B (public, 189) = 402 pairs, all judge_score≥2
+# AND all mechanism claims verified against per-game GT truth cards.
+# Also mount the 35B-validated DTensor merge script (lives outside the repo,
+# p6 tools — the only merge path proven on 35B FSDP shards, see the
+# 2026-06-03 step-40 runbook; merge_fsdp_checkpoint.py is 9B-only).
+# Destinations are ~/ (on this cluster $HOME = /workspace NFS under .sky_clusters);
+# /home/sky/... is a RunPod-VM-ism that does not exist on slurm.
+file_mounts:
+  ~/data/sft_pairs_judged.jsonl: ~/Documents/obsidian/research-artifacts/arc-witness-runs/sft_data/wp_mt_combined/sft_pairs_judged.jsonl
+  ~/tools/merge_fsdp_dtensor.py: ~/Documents/obsidian/tasks/allrounder/arc-agi-3-feasibility/06-submission-scripts/p6-35b-rl-fp8/tools/merge_fsdp_dtensor.py
+
+envs:
+  LOGGER: "wandb"
+  MODEL: "Qwen/Qwen3.5-9B"
+  # SFT hyperparameters — 9B values (from the empirically-successful v5 9B SFT)
+  EPOCHS: "3"
+  BATCH_SIZE: "8"             # grad-accum target across micro batches
+  MICRO_BATCH_SIZE: "1"
+  LR: "1e-5"                  # 9B value (v3/v5 baseline: -90% train CE, 100% format validity)
+  MAX_LENGTH: "4096"          # 9B value (v5)
+  JUDGE_SCORE_MIN: "2"        # all 402 mt pairs are already ≥2 (no-op filter)
+  WANDB_PROJECT: "arc-agi-3"
+  WANDB_RUN_NAME: "witness_sft_v6mt_9b"
+  S3_BUCKET: "fleet-guanghan"
+  RUN_NAME: "witness_sft_v6mt_9b"
+
+  # Credentials (REQUIRED at launch — never commit values here)
+  WANDB_API_KEY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+
+setup: |
+  set -euo pipefail
+
+  # --- Credentials non-empty BEFORE the ~15-min venv build (eval-yaml pattern) ---
+  for v in WANDB_API_KEY AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+    [ -n "${!v:-}" ] || { echo "ERROR: $v is empty — pass --env $v at launch" >&2; exit 1; }
+  done
+
+  # --- Kill stale Ray from previous SkyPilot jobs (SLURM containers persist) ---
+  # Same block as task-gen-grpo-qwen3_5-35b-slurm.yaml — patterns that won't
+  # match this setup script itself.
+  pkill -9 -f gcs_server 2>/dev/null || true
+  pkill -9 -f 'raylet ' 2>/dev/null || true
+  pkill -9 -f 'ray::' 2>/dev/null || true
+  pkill -9 -f 'ray.dashboard' 2>/dev/null || true
+  pkill -9 -f 'log_monitor' 2>/dev/null || true
+  fuser -k 6479/tcp 2>/dev/null || true
+  sleep 5
+  rm -rf /tmp/ray 2>/dev/null || true
+
+  # --- Toolchain (cluster image ships build tools; apt is best-effort only) ---
+  if ! command -v c++ &>/dev/null; then
+    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends build-essential || true
+  fi
+  command -v c++ &>/dev/null || { echo "ERROR: no C++ toolchain (causal-conv1d needs it)"; exit 1; }
+
+  # --- NFS-safe venv at workdir root (proven fleet-witness-setup.sh pattern) ---
+  # ~/sky_workdir is on /workspace NFS: a reused venv breaks `uv sync` pruning
+  # (silly-rename → ENOTEMPTY). mv-aside works despite NFS; clean rebuild each launch.
+  rm -rf .venv.broken.* 2>/dev/null || true
+  if [ -d .venv ]; then mv .venv ".venv.broken.${SLURM_JOB_ID:-${SLURM_JOBID:-old}}" 2>/dev/null || rm -rf .venv; fi
+  uv venv --python 3.12 --seed
+  source .venv/bin/activate
+  uv sync --extra fsdp
+  for f in .venv/bin/ray .venv/lib/python*/site-packages/ray/core/src/ray/raylet/raylet; do
+    [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true
+  done
+  uv pip install wandb boto3 awscli
+
+  # --- 35B-specific deps: transformers 5.3.0, flash-attn 2.8.3, CUDA toolkit, causal-conv1d ---
+  source scripts/fleet-qwen35-extra-setup.sh
+
+  # Quick mount sanity check
+  test -f "$HOME/data/sft_pairs_judged.jsonl" || { echo "ERROR: sft_pairs_judged.jsonl mount missing"; exit 1; }
+  test -f "$HOME/tools/merge_fsdp_dtensor.py" || { echo "ERROR: merge_fsdp_dtensor.py mount missing"; exit 1; }
+  PAIR_COUNT=$(wc -l < "$HOME/data/sft_pairs_judged.jsonl")
+  echo "[ok] mechanism-true SFT pairs mounted: $PAIR_COUNT total (expect 402; ≥${JUDGE_SCORE_MIN} filter is a no-op)"
+
+run: |
+  set -euo pipefail
+
+  source .venv/bin/activate
+  [ -f "$HOME/.cuda_env" ] && source "$HOME/.cuda_env"
+
+  # --- Node-local caches: $HOME is /workspace NFS on this cluster; big/IO-hot
+  # dirs go to /tmp (persists setup→run within a job, reclaimed on sky down) ---
+  export TMPDIR=/tmp
+  export HF_HOME="/tmp/hf_cache-$(id -u)"
+  export TRITON_CACHE_DIR="/tmp/triton_cache-$(id -u)"
+  mkdir -p "$HF_HOME" "$TRITON_CACHE_DIR"
+  export HYDRA_FULL_ERROR=1
+
+  # --- NCCL: single-node 8×H200 over NVLink. IB stack on this cluster is
+  # unreliable (node-9/10 cross-node breakage) — keep it out of the picture. ---
+  export NCCL_IB_DISABLE=1
+  export NCCL_DEBUG=WARN
+
+  # --- /dev/shm headroom for NCCL IPC (fleet-common-run.sh pattern) ---
+  SHM_SIZE=$(df --output=size /dev/shm 2>/dev/null | tail -1 | tr -d ' ')
+  if [ -n "$SHM_SIZE" ] && [ "$SHM_SIZE" -lt 16777216 ]; then
+    echo "WARNING: /dev/shm is only ${SHM_SIZE}K — remounting to 16G for NCCL"
+    sudo mount -o remount,size=16G /dev/shm 2>&1 || echo "Failed to remount /dev/shm"
+  fi
+
+  # --- Fabric Manager: NVSwitch H200 needs it or dist init SIGKILLs
+  # (fleet-common-run.sh pattern, best-effort restart) ---
+  FM_STATUS=$(systemctl is-active nvidia-fabricmanager 2>/dev/null || echo "unknown")
+  if [ "$FM_STATUS" != "active" ]; then
+    echo "WARNING: Fabric Manager status=$FM_STATUS. Attempting restart..."
+    sudo systemctl stop nvidia-fabricmanager 2>&1 || true
+    sleep 1
+    sudo systemctl start nvidia-fabricmanager 2>&1 || true
+    sleep 5
+    FM_STATUS=$(systemctl is-active nvidia-fabricmanager 2>/dev/null || echo "unknown")
+    echo "Fabric Manager status after restart: $FM_STATUS (if not active, FSDP init may fail)"
+  fi
+
+  # --- Reap OUR OWN orphan GPU procs from a prior crashed run (they survive
+  # `sky down` on this cluster and hold ~115 GB/GPU; fleet-witness-run.sh block) ---
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    ( set +e
+      _me=$(id -u)
+      for _pid in $(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | tr -d ' '); do
+        [ -n "$_pid" ] || continue
+        _owner=$(stat -c '%u' "/proc/$_pid" 2>/dev/null) || continue
+        if [ "$_owner" = "$_me" ]; then
+          echo "[gpu-cleanup] $(hostname): killing own orphan GPU pid $_pid ($(cat /proc/$_pid/comm 2>/dev/null))"
+          kill -9 "$_pid" 2>/dev/null || true
+        fi
+      done
+      sleep 2
+      echo "[gpu-cleanup] $(hostname) free MiB/GPU: $(nvidia-smi --query-gpu=memory.free --format=csv,noheader 2>/dev/null | tr '\n' ' ')"
+    ) || true
+  fi
+
+  sudo sysctl -w kernel.yama.ptrace_scope=0 2>/dev/null || true
+  ulimit -n 1048576 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+
+  # --- Ray setup (single node, head only) ---
+  export RAY_RUNTIME_ENV_HOOK=ray._private.runtime_env.uv_runtime_env_hook.hook
+  export RAY_object_store_memory=10000000000
+  export RAY_DISABLE_MEMORY_MONITOR=1
+
+  if ! ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then
+    ray start --head --disable-usage-stats --port 6479 --object-store-memory=10000000000
+  fi
+  for _ in $(seq 1 24); do
+    if ray status --address 127.0.0.1:6479 >/dev/null 2>&1; then break; fi
+    sleep 5
+  done
+
+  # --- wandb login ---
+  python3 -c "import wandb; wandb.login(relogin=True, key='$WANDB_API_KEY')"
+
+  # --- AWS creds actually valid, BEFORE 3h of training (empty/typo'd keys would
+  # otherwise surface as a silently-empty S3 at the very end) ---
+  aws sts get-caller-identity >/dev/null 2>&1 || { echo "ERROR: AWS creds missing/invalid — artifacts could never reach S3" >&2; exit 1; }
+
+  # Node-local ckpts preferred. True /tmp peak (review-audited): HF cache ~75 +
+  # final ckpt incl optimizer shards ~250 + trainer's unconditional merged_hf
+  # export ~70 (+70 bash merge after we rm merged_hf) ≈ ~395-465 GB — and the
+  # final save_checkpoint runs BEFORE the eager S3 sync, so ENOSPC = total loss.
+  # Gate it; fall back to NFS ckpts (proven GRPO location) on small /tmp.
+  CKPT_DIR="/tmp/ckpts/${RUN_NAME}"
+  AVAIL_GB=$(( $(df --output=avail /tmp | tail -1) / 1048576 ))
+  if [ "$AVAIL_GB" -lt 500 ]; then
+    [ "$AVAIL_GB" -ge 100 ] || { echo "ERROR: /tmp has only ${AVAIL_GB}GB free — not even the 75GB HF cache fits" >&2; exit 1; }
+    echo "WARNING: /tmp ${AVAIL_GB}GB < 500GB — checkpoints fall back to NFS at \$HOME/ckpts (slower, proven)"
+    CKPT_DIR="$HOME/ckpts/${RUN_NAME}"
+  fi
+  rm -rf "$CKPT_DIR" 2>/dev/null || true
+  mkdir -p "$CKPT_DIR"
+  df -h /tmp || true
+
+  RUN_LOG="$CKPT_DIR/run.log"
+  S3_BASE="s3://${S3_BUCKET}/${RUN_NAME}"
+
+  # --- Pre-train diagnostics ---
+  {
+    echo "=== Pre-SFT diagnostics $(date -u +%FT%TZ) ==="
+    echo "MODEL: $MODEL"
+    echo "EPOCHS=$EPOCHS BATCH_SIZE=$BATCH_SIZE MICRO=$MICRO_BATCH_SIZE LR=$LR MAX_LENGTH=$MAX_LENGTH"
+    echo "PAIRS: $(wc -l < "$HOME/data/sft_pairs_judged.jsonl") total, ≥${JUDGE_SCORE_MIN} after filter"
+    nvidia-smi || echo "nvidia-smi failed"
+    free -h
+    # NOT `df -h | head`: SIGPIPE(141) under pipefail killed a previous job
+    df -h /tmp / "$HOME" 2>/dev/null || true
+    python -c "import torch, transformers; print(f'torch={torch.__version__} transformers={transformers.__version__} ngpu={torch.cuda.device_count()}')"
+    python -c "import causal_conv1d; print(f'causal_conv1d={causal_conv1d.__version__}')" || echo "causal_conv1d MISSING — 35B GatedDeltaNet may crash"
+  } | tee "$CKPT_DIR/diagnostics.log"
+
+  set +e
+
+  python -m examples.train_integrations.witness.sft_trainer_v3 \
+    --data "$HOME/data/sft_pairs_judged.jsonl" \
+    --model "$MODEL" \
+    --epochs "$EPOCHS" \
+    --batch_size "$BATCH_SIZE" \
+    --micro_batch_size "$MICRO_BATCH_SIZE" \
+    --lr "$LR" \
+    --max_length "$MAX_LENGTH" \
+    --judge_score_min "$JUDGE_SCORE_MIN" \
+    --num_gpus "$SKYPILOT_NUM_GPUS_PER_NODE" \
+    --strategy fsdp2 \
+    --output_dir "$CKPT_DIR" \
+    --s3_raw_sync_dest "${S3_BASE}/fsdp/" \
+    --logger "$LOGGER" \
+    --wandb_project "$WANDB_PROJECT" \
+    --wandb_run_name "$WANDB_RUN_NAME" 2>&1 | tee "$RUN_LOG"
+  PY_RC=${PIPESTATUS[0]}
+  if [ "$PY_RC" -ne 0 ]; then
+    echo "[ERROR] trainer exited with code $PY_RC"
+    aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log" 2>&1 | tail -3
+    exit "$PY_RC"
+  fi
+
+  echo "[done] SFT complete."
+
+  # Reclaim ~70 GB: the trainer unconditionally exports <output_dir>/merged_hf
+  # (save_hf_model path, not the 35B-validated merge); raw shards are already
+  # mirrored to S3, so the validated offline-merge recovery path stays intact.
+  rm -rf "$CKPT_DIR/merged_hf" 2>/dev/null || true
+
+  # --- Locate FSDP checkpoint dir ---
+  FSDP_DIR=$(ls -d "$CKPT_DIR"/global_step_*_final 2>/dev/null | tail -1)
+  if [ -z "$FSDP_DIR" ]; then
+    echo "[ERROR] No global_step_*_final/ in $CKPT_DIR. Contents:"
+    ls -la "$CKPT_DIR" 2>&1 | tail -10
+    aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log"
+    exit 1
+  fi
+  echo "[merge] discovered FSDP dir: $FSDP_DIR"
+
+  POLICY_DIR="$FSDP_DIR/policy"
+  if [ ! -d "$POLICY_DIR" ]; then
+    echo "[ERROR] $POLICY_DIR not found. Listing parent:"
+    ls -la "$FSDP_DIR"
+    aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log"
+    echo "[fallback] Raw FSDP shards already at ${S3_BASE}/fsdp/ — merge offline."
+    exit 1
+  fi
+
+  MERGED_DIR="$CKPT_DIR/merged"
+  echo "[merge] $POLICY_DIR -> $MERGED_DIR (DTensor-aware, 35B-validated)"
+  python "$HOME/tools/merge_fsdp_dtensor.py" \
+    --checkpoint_dir "$POLICY_DIR" \
+    --output_dir "$MERGED_DIR" \
+    --model_name "$MODEL" 2>&1 | tee -a "$RUN_LOG"
+  MERGE_RC=${PIPESTATUS[0]}
+
+  # --- Patch multimodal config (Finding K: SkyRL save_hf_model omits these) ---
+  if [ -d "$MERGED_DIR" ]; then
+    echo "[patch] downloading multimodal config from $MODEL → $MERGED_DIR"
+    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='$MODEL', allow_patterns=['preprocessor_config.json','processor_config.json','chat_template.json','chat_template.jinja','video_preprocessor_config.json'], local_dir='$MERGED_DIR', local_dir_use_symlinks=False)" 2>&1 | tail -5
+  fi
+
+  # --- Upload to S3 ---
+  echo "[s3] uploading run log -> ${S3_BASE}/run.log"
+  aws s3 cp "$RUN_LOG" "${S3_BASE}/run.log"
+  aws s3 cp "$CKPT_DIR/diagnostics.log" "${S3_BASE}/diagnostics.log" 2>/dev/null || true
+
+  if [ "$MERGE_RC" -eq 0 ] && [ -d "$MERGED_DIR" ]; then
+    # Finding-K gate: without preprocessor_config.json this model crashes vLLM
+    # downstream — fail loudly instead of uploading a poisoned checkpoint.
+    if [ ! -f "$MERGED_DIR/preprocessor_config.json" ]; then
+      echo "[ERROR] multimodal-config patch failed — merged/ lacks preprocessor_config.json (Finding K)"
+      exit 1
+    fi
+    echo "[s3] uploading merged HF model -> ${S3_BASE}/merged/"
+    if ! aws s3 sync "$MERGED_DIR" "${S3_BASE}/merged/"; then
+      echo "[ERROR] merged upload FAILED — do NOT sky down; re-run: aws s3 sync $MERGED_DIR ${S3_BASE}/merged/"
+      exit 1
+    fi
+  else
+    echo "[ERROR] merge failed (rc=$MERGE_RC). Raw FSDP shards already at ${S3_BASE}/fsdp/."
+    echo "[recovery] run merge offline:"
+    echo "  aws s3 sync ${S3_BASE}/fsdp/ ./fsdp_local/"
+    echo "  python merge_fsdp_dtensor.py --checkpoint_dir ./fsdp_local/global_step_<N>_final/policy --output_dir ./merged --model_name $MODEL"
+    exit 1
+  fi
+
+  echo "[done] All artifacts at ${S3_BASE}/"
+  echo "[next] RL warm-start:"
+  echo "  sky launch tasks/witness-grpo-v5b7-phase2-r5-35b.yaml \\"
+  echo "    --env POLICY_CHECKPOINT_S3=${S3_BASE}/merged/ ..."
