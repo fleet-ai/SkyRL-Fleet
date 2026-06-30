@@ -425,7 +425,12 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
     echo "--- cgroup memory events ---"
     cat /sys/fs/cgroup/memory.events 2>/dev/null || cat /sys/fs/cgroup/memory/memory.oom_control 2>/dev/null || true
     echo "--- Ray worker logs (last errors) ---"
-    grep -r "SIGKILL\|SIGABRT\|SIGSEGV\|SYSTEM_ERROR\|RuntimeError\|NCCL" "$RAY_TMPDIR/session_latest/logs/" 2>/dev/null | tail -30 || true
+    # SECURITY: exclude runtime_env_agent.log — it logs the full env dict (incl AWS/WANDB keys),
+    # and "NCCL_CUMEM_ENABLE" in it matches the NCCL pattern → leaked creds in plaintext (2026-06-14).
+    # Belt-and-suspenders: redact any key-shaped values that slip through from other logs.
+    grep -rI --exclude="runtime_env_agent.log" "SIGKILL\|SIGABRT\|SIGSEGV\|SYSTEM_ERROR\|RuntimeError\|NCCL" "$RAY_TMPDIR/session_latest/logs/" 2>/dev/null \
+      | sed -E 's/AKIA[0-9A-Z]{16}/***REDACTED-AWS-ID***/g; s/wandb_v1_[A-Za-z0-9_]+/***REDACTED-WANDB***/g; s/((SECRET_ACCESS_KEY|API_KEY)["'"'"': =]+)[^",}[:space:]]+/\1***REDACTED***/g' \
+      | tail -30 || true
     exit $EXIT_CODE
   fi
 
