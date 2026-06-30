@@ -384,7 +384,7 @@ class WitnessAgentEnv(BaseTextEnv):
         work but won't have full agent behavior (skill_bank etc. won't load).
         """
         agent_dir = os.environ.get("ARC_WITNESS_AGENT_DIR", os.path.expanduser("~/arc-witness-agent"))
-        cfg_path = os.path.join(agent_dir, "config.yaml")
+        cfg_path = os.path.join(agent_dir, "configs", "witness_canonical.yaml")
         if os.path.exists(cfg_path):
             try:
                 import yaml

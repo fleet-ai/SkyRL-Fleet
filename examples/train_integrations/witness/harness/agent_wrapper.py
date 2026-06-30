@@ -197,10 +197,13 @@ class AgentRolloutWrapper:
         cfg["llm"]["provider"] = "vllm"
         cfg["llm"]["base_url"] = vllm_base_url
         cfg["llm"].setdefault("temperature", 0.7)  # policy sampling temp
-        # Soften the LLM-cost circuit breaker: in RL the policy is ours,
-        # cost is meaningless. See design doc §1.4 detail #1.
+        # Disable the LLM-cost budget gate: in RL the policy is ours, cost is
+        # meaningless. (The ORAI interceptor injects policy completions without
+        # billing tokens, so the gate never bites in practice; we set the real
+        # CostTracker keys to 1e9 too, for consistency with gen/eval.)
         cfg.setdefault("llm_cost", {})
-        cfg["llm_cost"]["max_total_usd"] = 1e9
+        cfg["llm_cost"]["max_cost_per_level"] = 1e9
+        cfg["llm_cost"]["max_cost_per_game"] = 1e9
 
         # Per-rollout ephemeral memory dir. Auto-cleaned at process exit.
         memory_dir, cleanup = setup_memory_dir(
@@ -255,7 +258,7 @@ class AgentRolloutWrapper:
                 # Pre-call snapshot — state the agent reasons over.
                 game = wrapper_self.game
                 pre_path = list(getattr(game, "_path", [])) if game else []
-                pre_level = getattr(wrapper_self.agent, "_level_index", 0)
+                pre_level = getattr(wrapper_self.agent, "_levels_genuine", 0)  # genuine env wins only (skip-path excluded; fix 2026-06-17)
 
                 # Bridged mode: hand prompt to trainer (main thread), block
                 # for response. Standalone mode: forward to real vLLM directly.
@@ -321,7 +324,7 @@ class AgentRolloutWrapper:
 
         # Tail snapshot from final game state.
         final_path = list(getattr(self.game, "_path", []))
-        final_level = getattr(self.agent, "_level_index", 0)
+        final_level = getattr(self.agent, "_levels_genuine", 0)  # genuine env wins only (skip-path excluded; fix 2026-06-17)
 
         # Get a corresponding ReflectionTrace for level/step metadata if order matches.
         # ReflectionTrace records appear in same order as ORAI calls (1:1).
@@ -380,11 +383,16 @@ class AgentRolloutWrapper:
 
     # ── Bridged-mode (step-by-step driven by trainer) API ───────────────
 
-    def start_bridged_rollout(self) -> Tuple[str, list]:
+    def start_bridged_rollout(self, start_snapshot=None) -> Tuple[str, list]:
         """Bridged mode: spawn agent in background thread; return first ORAI prompt.
 
         Returns (system_prompt, messages) for the FIRST ORAI call. Trainer should
         generate a completion and call feed_response() to advance.
+
+        start_snapshot (optional, oversight.Snapshot): if given, the freshly loaded game is
+        restored to this mid-game state BEFORE the agent runs — i.e. the policy samples its
+        on-policy rollout starting from there (Go-Explore-style dense-signal seeding, see
+        reports/2026-06-23_oversight_dense_signal_plan.md). Default None = fresh game (unchanged).
 
         Raises if not in bridged mode.
         """
@@ -396,6 +404,9 @@ class AgentRolloutWrapper:
         from run_agent import load_game  # noqa: E402
 
         self.game = load_game(self.game_id, self.seed)
+        if start_snapshot is not None:
+            from oversight import restore  # arc-witness-envs; only on the Go-Explore path
+            restore(self.game, start_snapshot)
 
         def _run_in_thread():
             try:
@@ -473,7 +484,7 @@ class AgentRolloutWrapper:
 
         rec = self._records[-1]
         new_path = list(getattr(self.game, "_path", []))
-        new_level = getattr(self.agent, "_level_index", 0)
+        new_level = getattr(self.agent, "_levels_genuine", 0)  # genuine env wins only (skip-path excluded; fix 2026-06-17)
 
         geo_total, geo_breakdown = compute_geometric_reward(
             self.game,

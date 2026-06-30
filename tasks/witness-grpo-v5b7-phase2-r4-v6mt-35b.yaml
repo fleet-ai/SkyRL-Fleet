@@ -113,7 +113,7 @@ envs:
   # === Anti-collapse hyperparameters (matches 9B R3/R4/R5; lr halved for 35B) ===
   LR: "5.0e-7"                       # 35B uses smaller lr than 9B's 2e-6
   NUM_EPOCHS: 25                     # R5 was ~24-30h; R4 wall-clock unknown — cut after measuring first steps
-  KL_LOSS_COEF: "0.005"              # anti-drift
+  KL_LOSS_COEF: "0.01"               # anti-drift (0.005->0.01: anchor harder to SFT v6 basin; collapse RCA 2026-06-17)
   ENTROPY_LOSS_COEF: "0.005"         # exploration bonus
 
   # === Batching (matches 9B R5 for apples-to-apples comparison) ===
@@ -126,14 +126,13 @@ envs:
   EVAL_N_SAMPLES_PER_PROMPT: 3
 
   # === Checkpointing (35B-aware) ===
-  # ckpt_interval=20 keeps ckpts spaced ~80 min apart (one ckpt sync ~30 min at 35B's ~250 GB).
-  # max_ckpts_to_keep=3 (plan §5.1): 2 left only one fallback after the 8/16-shard
-  # corruption history; 3 gives two. disk_size=2000 has room.
-  CKPT_INTERVAL: 20
-  # 1 (not 3): /workspace shared NFS is chronically ~96-98% full; one 35B FSDP ckpt
-  # is ~210-250G and during a save new+old coexist. Keeping 3 would need ~1TB of
-  # shared scratch that does not exist. 1 trades corruption-resilience for fit.
-  MAX_CKPTS_TO_KEEP: 1
+  # ckpt_interval=5 (was 20): capture an early healthy ckpt + enable bisection if the
+  # collapse recurs (RCA 2026-06-17). One ckpt sync ~30 min at 35B's ~250 GB.
+  CKPT_INTERVAL: 5
+  # 2 (was 1): one fallback for bisection. /workspace shared NFS is chronically
+  # ~96-98% full and a 35B FSDP ckpt is ~210-250G (new+old coexist during a save),
+  # so 2 is the safe ceiling; 4 would need ~1.25TB scratch. Watch df at first save.
+  MAX_CKPTS_TO_KEEP: 2
 
   # === Generator capacity ===
   # Sized for 35B + longer trajectories. 9B R5 hit response_length=14400
@@ -161,9 +160,15 @@ envs:
   RULE_JUDGE_SAMPLE_RATE: "0.20"
   RULE_JUDGE_MAX_REWARD: "0.30"
 
-  # Rubric (R4) — ON. This is the defining reward of R4 (Haiku judge, 15% sample).
-  # It hits OpenRouter, so OPENROUTER_API_KEY is REQUIRED even with fallback OFF.
-  ENABLE_RUBRIC_REWARD: "1"
+  # Rubric (R4) — OFF (was "1"): ungated non-negative judge reward = top latent
+  # reward-hack when env-solve=0 (reward audit 2026-06-17); judge never sees GT.
+  ENABLE_RUBRIC_REWARD: "0"
+  # Geometric (dense process) reward — OFF (default "1"): is_valid_move is hardcoded
+  # True so a non-progress step nets +0.005, and per-interval accrual makes totals
+  # ~1.5x the real outcome signal (reward settlement 2026-06-17). Outcome+step_penalty only.
+  # NOTE: watch per-game group std on the public games in the first 2-3 steps — if many
+  # go ~0 (dead-zone shift), abort before the full run (the geometric-OFF smoke gate).
+  ENABLE_PROCESS_GEOMETRIC: "0"
   RUBRIC_MODEL: "anthropic/claude-haiku-4.5"
   RUBRIC_SAMPLE_RATE: "0.15"
   RUBRIC_PER_ITEM_REWARD: "0.05"
