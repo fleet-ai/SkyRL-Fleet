@@ -57,6 +57,9 @@ MAX_INPUT_LENGTH="${MAX_INPUT_LENGTH:-128000}"
 # or trainer truncates response tokens (and you pay to generate tokens that
 # get dropped from the gradient). Default 131072 = 128K context + headroom.
 MAX_SEQUENCE_LENGTH="${MAX_SEQUENCE_LENGTH:-131072}"
+# Screenshot compression (browser_use / computer_use). 0 = disabled.
+SCREENSHOT_MAX_DIM="${SCREENSHOT_MAX_DIM:-0}"
+SCREENSHOT_JPEG_QUALITY="${SCREENSHOT_JPEG_QUALITY:-85}"
 
 EXTRA_ARGS=()
 if [ -n "${EVAL_DATASET_FILE:-}" ]; then
@@ -95,6 +98,8 @@ python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --loss-fn "$LOSS_FN" \
     --save-state-every "$SAVE_STATE_EVERY" \
     --max-concurrent "$MAX_CONCURRENT" \
+    --screenshot-max-dim "$SCREENSHOT_MAX_DIM" \
+    --screenshot-jpeg-quality "$SCREENSHOT_JPEG_QUALITY" \
     --wandb-project "$WANDB_PROJECT" \
     "${EXTRA_ARGS[@]}" \
     "$@"
