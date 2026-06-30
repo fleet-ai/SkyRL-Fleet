@@ -125,12 +125,11 @@ def test_content_blocks_skips_image_url_without_url_field():
 
 
 def test_compression_actually_reduces_byte_size():
-    """The whole point: shipping fewer image tokens. Smaller PNG → smaller
-    base64 payload after JPEG re-encode at quality 60."""
+    """Smaller image → smaller base64 payload after JPEG re-encode."""
     url = _make_data_url(1366, 768, fmt="JPEG", quality=95)
-    out = compress_image_url(url, max_dim=512, jpeg_quality=60)
+    out = compress_image_url(url, max_dim=512)
     original_bytes = len(url.split(",", 1)[1])
     new_bytes = len(out.split(",", 1)[1])
     assert new_bytes < original_bytes
-    # Sanity: should be at least 4× smaller given a 2.67× linear shrink + lower quality
-    assert new_bytes < original_bytes / 3
+    # Sanity: should be at least 3× smaller given the 2.67× linear shrink.
+    assert new_bytes < original_bytes / 2

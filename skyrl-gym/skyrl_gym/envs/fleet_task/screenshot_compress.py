@@ -19,9 +19,11 @@ because there's nothing to compress locally.
 
 How it gets toggled
 -------------------
-FleetTaskEnv reads `screenshot_max_dim` and `screenshot_jpeg_quality`
-from its `extras` dict (set by main_fleet_tinker / fleet-research-api).
-0 / None disables compression — byte-identical to today's behavior.
+FleetTaskEnv reads `screenshot_max_dim` from its `extras` dict (set by
+main_fleet_tinker / fleet-research-api). 0 / None disables compression
+— byte-identical to today's behavior. JPEG re-encode quality is fixed
+at 85 inside this module; not exposed because it doesn't affect token
+count (only file bytes and visual fidelity).
 """
 
 from __future__ import annotations
@@ -41,11 +43,15 @@ _DATA_URL_RE = re.compile(
 )
 
 
+_JPEG_QUALITY = 85  # Pillow needs a value; not exposed as a knob because
+#                    it doesn't affect context-token count (only file size
+#                    and visual fidelity, neither of which is the bottleneck).
+
+
 def compress_image_url(
     data_url: str,
     *,
     max_dim: int,
-    jpeg_quality: int = 85,
 ) -> str:
     """Downscale + recompress a base64-encoded image URL.
 
@@ -54,7 +60,6 @@ def compress_image_url(
       max_dim: cap on max(width, height). If 0 or negative, no compression.
         If the image is already smaller than max_dim in both dims, pass
         through unchanged.
-      jpeg_quality: 1-95 JPEG quality for the recompressed output.
 
     Returns:
       A new `data:image/jpeg;base64,...` URL if recompressed, or the
@@ -84,7 +89,7 @@ def compress_image_url(
         new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
         img = img.convert("RGB").resize(new_size, Image.LANCZOS)
         out = io.BytesIO()
-        img.save(out, format="JPEG", quality=max(1, min(95, jpeg_quality)), optimize=True)
+        img.save(out, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
         b64 = base64.b64encode(out.getvalue()).decode("ascii")
         return f"data:image/jpeg;base64,{b64}"
     except Exception as e:  # noqa: BLE001
@@ -96,7 +101,6 @@ def compress_content_blocks(
     content: Any,
     *,
     max_dim: int,
-    jpeg_quality: int = 85,
 ) -> Any:
     """Walk an OpenAI multimodal content value and compress any
     `image_url` blocks in place. Non-list content (plain strings) and
@@ -118,7 +122,6 @@ def compress_content_blocks(
             new_url = compress_image_url(
                 block["image_url"]["url"],
                 max_dim=max_dim,
-                jpeg_quality=jpeg_quality,
             )
             new_block = dict(block)
             new_block["image_url"] = dict(block["image_url"])

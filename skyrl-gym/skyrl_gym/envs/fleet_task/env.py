@@ -475,7 +475,6 @@ class FleetTaskEnv(BaseTextEnv):
         # results before they enter chat_history. 0 disables (default),
         # byte-identical to historical behavior. See screenshot_compress.py.
         self.screenshot_max_dim = int(extras.get("screenshot_max_dim", 0) or 0)
-        self.screenshot_jpeg_quality = int(extras.get("screenshot_jpeg_quality", 85) or 85)
         # Resolved from task_config at init (in init() below). Default here
         # so step_async's post-action wait gating doesn't AttributeError on
         # rollouts that fail before init() runs.
@@ -1111,7 +1110,6 @@ class FleetTaskEnv(BaseTextEnv):
                     content = compress_content_blocks(
                         content,
                         max_dim=self.screenshot_max_dim,
-                        jpeg_quality=self.screenshot_jpeg_quality,
                     )
                 # Multimodal obs — pass blocks through; append scaffold as
                 # trailing text block (leading newlines stripped because the
