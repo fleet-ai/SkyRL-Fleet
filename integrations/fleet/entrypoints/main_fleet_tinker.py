@@ -696,6 +696,8 @@ async def collect_fleet_rollout(
     top_p: float = 1.0,
     stop_sequences: List[str] = None,
     capture_messages: bool = False,
+    screenshot_max_dim: int = 0,
+    screenshot_jpeg_quality: int = 85,
 ) -> Dict[str, Any]:
     """
     Collect a single trajectory using Fleet environment and Tinker inference.
@@ -737,6 +739,8 @@ async def collect_fleet_rollout(
         "max_turns": max_turns,
         "use_tools_channel": True,
         "model_family": model_family,
+        "screenshot_max_dim": screenshot_max_dim,
+        "screenshot_jpeg_quality": screenshot_jpeg_quality,
     }
 
     env = FleetTaskEnv(env_config=env_config, extras=extras)
@@ -980,6 +984,8 @@ async def collect_batch_rollouts(
     stop_sequences: List[str] = None,
     capture_messages: bool = False,
     on_rollout_complete: Optional[Callable[[RolloutOutput], None]] = None,
+    screenshot_max_dim: int = 0,
+    screenshot_jpeg_quality: int = 85,
 ) -> List[Dict[str, Any]]:
     """Collect rollouts for a batch of tasks with limited concurrency.
 
@@ -1017,6 +1023,8 @@ async def collect_batch_rollouts(
                     top_p=top_p,
                     stop_sequences=stop_sequences,
                     capture_messages=capture_messages,
+                    screenshot_max_dim=screenshot_max_dim,
+                    screenshot_jpeg_quality=screenshot_jpeg_quality,
                 )
                 # Stamp the sample index so downstream dumpers can produce
                 # deterministic per-rollout filenames without tracking
@@ -1133,6 +1141,8 @@ async def main(
     eval_only: bool = False,
     from_checkpoint: str = None,
     rollout_dump_dir: str = None,
+    screenshot_max_dim: int = 0,
+    screenshot_jpeg_quality: int = 85,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1212,6 +1222,8 @@ async def main(
                 # to disk. Saves memory on eval phases without a dump dir.
                 capture_messages=dumper is not None,
                 on_rollout_complete=dumper,
+                screenshot_max_dim=screenshot_max_dim,
+                screenshot_jpeg_quality=screenshot_jpeg_quality,
             )
             all_eval_rollouts.extend([r for r in eval_rollouts if not r.error])
         if not all_eval_rollouts:
@@ -1442,6 +1454,8 @@ async def main(
             top_p=top_p,
             stop_sequences=stop_sequences,
             max_concurrent=max_concurrent,
+            screenshot_max_dim=screenshot_max_dim,
+            screenshot_jpeg_quality=screenshot_jpeg_quality,
         )
 
         metrics["time/rollout"] = time.time() - rollout_start
@@ -1695,6 +1709,23 @@ if __name__ == "__main__":
         help="Save a full training state checkpoint every N steps (default 5). 0 disables.",
     )
     parser.add_argument(
+        "--screenshot-max-dim",
+        type=int,
+        default=0,
+        help="If >0, downscale every base64 screenshot in tool results so "
+             "max(width,height) <= this many pixels before it lands in "
+             "chat_history. Frees image-token budget for longer rollouts "
+             "on capped-context models (e.g. Kimi-K2.6:peft:131072 = 128K). "
+             "0 (default) = no compression, byte-identical to prior behavior.",
+    )
+    parser.add_argument(
+        "--screenshot-jpeg-quality",
+        type=int,
+        default=85,
+        help="JPEG quality (1-95) for recompressed screenshots when "
+             "--screenshot-max-dim>0. Default 85.",
+    )
+    parser.add_argument(
         "--eval-only",
         action="store_true",
         help=(
@@ -1772,6 +1803,8 @@ if __name__ == "__main__":
             results_out=args.results_out,
             save_state_every=args.save_state_every,
             max_concurrent=args.max_concurrent,
+            screenshot_max_dim=args.screenshot_max_dim,
+            screenshot_jpeg_quality=args.screenshot_jpeg_quality,
             eval_only=args.eval_only,
             from_checkpoint=args.from_checkpoint,
             rollout_dump_dir=args.rollout_dump_dir,
