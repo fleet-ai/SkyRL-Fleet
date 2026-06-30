@@ -103,7 +103,11 @@ fi
 
 DATA_DIR="$HOME/data/witness_v5b7"
 POLICY_PATH=$(cat "$HOME/policy_path.txt")
-CKPT_LOCAL_DIR="/workspace/guanghan/ckpts/witness_grpo_v5b7_${RUN_LABEL}"
+# ckpt staging dir: the legacy /workspace/guanghan/ckpts is owned by the orphaned old-guanghan
+# uid (1004) and is UNWRITABLE by the squashed-root job after a cluster restart (NFS root_squash) →
+# PermissionError. Use a fresh root-writable dir under the 777 home. Override with WITNESS_CKPT_BASE
+# once a real guanghan account owns /workspace/guanghan/ckpts again.
+CKPT_LOCAL_DIR="${WITNESS_CKPT_BASE:-/workspace/guanghan/rl_ckpts}/witness_grpo_v5b7_${RUN_LABEL}"
 EXPORT_LOCAL_DIR="/workspace/guanghan/exports/witness_grpo_v5b7_${RUN_LABEL}"
 CKPT_S3_DIR="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
 EXPORT_S3_DIR="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}/hf_export"

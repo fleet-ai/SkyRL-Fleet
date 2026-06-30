@@ -122,7 +122,7 @@ echo "[policy] POLICY_PATH=$POLICY_PATH"
 
 # Spot-preemption recovery: download prior ckpts for this RUN_LABEL if any (shared /workspace).
 CKPT_S3_BASE="s3://fleet-guanghan/witness_grpo_v5b7_${RUN_LABEL}"
-CKPT_LOCAL="/workspace/guanghan/ckpts/witness_grpo_v5b7_${RUN_LABEL}"
+CKPT_LOCAL="${WITNESS_CKPT_BASE:-/workspace/guanghan/rl_ckpts}/witness_grpo_v5b7_${RUN_LABEL}"  # match fleet-witness-run.sh (legacy ckpts owned by orphaned uid 1004 → unwritable as squashed-root)
 echo "[resume] checking for prior ckpts at $CKPT_S3_BASE"
 if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && aws s3 ls "$CKPT_S3_BASE/global_step_" 2>/dev/null | head -1 | grep -q .; then
   echo "[resume] prior ckpts found, downloading to $CKPT_LOCAL"
