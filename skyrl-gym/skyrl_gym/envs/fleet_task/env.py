@@ -27,6 +27,7 @@ from skyrl_gym.envs.base_text_env import (
     ConversationType,
 )
 from skyrl_gym.envs.fleet_task.families import get_family
+from skyrl_gym.envs.fleet_task.screenshot_compress import compress_content_blocks
 from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
 
 # Reduce MCP client log noise
@@ -470,6 +471,11 @@ class FleetTaskEnv(BaseTextEnv):
 
         self.extras = extras
         self.max_turns = extras.get("max_turns", 50)
+        # Screenshot compression — applied to image_url blocks in tool
+        # results before they enter chat_history. 0 disables (default),
+        # byte-identical to historical behavior. See screenshot_compress.py.
+        self.screenshot_max_dim = int(extras.get("screenshot_max_dim", 0) or 0)
+        self.screenshot_jpeg_quality = int(extras.get("screenshot_jpeg_quality", 85) or 85)
         # Resolved from task_config at init (in init() below). Default here
         # so step_async's post-action wait gating doesn't AttributeError on
         # rollouts that fail before init() runs.
@@ -1098,6 +1104,15 @@ class FleetTaskEnv(BaseTextEnv):
         elif tool_result:
             content = tool_result_to_message_content(tool_result)
             if isinstance(content, list):
+                # Compress screenshot image_url blocks if configured. No-op
+                # when screenshot_max_dim=0 (default) — byte-identical to
+                # pre-flag behavior.
+                if self.screenshot_max_dim > 0:
+                    content = compress_content_blocks(
+                        content,
+                        max_dim=self.screenshot_max_dim,
+                        jpeg_quality=self.screenshot_jpeg_quality,
+                    )
                 # Multimodal obs — pass blocks through; append scaffold as
                 # trailing text block (leading newlines stripped because the
                 # screenshot+text composition handles spacing).
