@@ -1,0 +1,553 @@
+"""Witness GRPO RL on cloud-tinker — ported into Deniz's Fleet×Tinker loop.
+
+REUSES `integrations/fleet/entrypoints/main_fleet_tinker.py` verbatim for everything that
+is env-agnostic — the GRPO advantage math, the Datum construction (DAPO overlong filter,
+target-shift, logprob/shape guards — the team's recent fixes), the metrics, the
+forward_backward/optim_step cycle. The ONLY witness-specific piece is rollout collection:
+we swap `FleetTaskEnv` for the witness `AgentRolloutWrapper` bridge.
+
+Key difference from FleetTaskEnv (and why per-call datums): the witness ORAI loop is
+SINGLE-TURN-PER-CALL — each call is a fresh (system,user) prompt, NOT an accumulating
+conversation. So the policy sampled each response under its own single-turn context; to keep
+the training context == the sampling context (correct importance ratios), each ORAI call
+becomes its OWN datum (prompt = that single-turn chat), and the trajectory-level GRPO
+advantage is broadcast across all of a trajectory's calls (outcome-supervised GRPO).
+
+Runs LOCALLY; tinker's cloud does GPU forward_backward/sample. Reached via
+`scripts/2026-06-23_witness_rl_tinker_launch.sh` (which the BACKEND=tinker switch dispatches to).
+
+  TINKER_API_KEY=… python -m tinker_backend.main_witness_tinker \
+      --model-name Qwen/Qwen3.5-9B --load-checkpoint-path tinker://<sft-lora> \
+      --game-ids tw07,tw03,tw06,tw02,tw05,tw08,tw11,tw13 \
+      --val-game-ids tw01,tw09,tw10,tw12 --inject-mode off
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import os
+import random
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import tinker
+import wandb
+from tinker import types
+from transformers import AutoTokenizer
+from pydantic import BaseModel
+
+# --- env-agnostic GRPO machinery, VENDORED verbatim from Deniz's loop (see _grpo_utils.py
+#     for why we vendor rather than import: his module's top-level deps — omegaconf/skyrl_gym/
+#     skyrl.train — aren't in the lean agent venv and are only used by the OpenEnv collector). ---
+from tinker_backend._grpo_utils import (  # noqa: E402
+    RolloutOutput,
+    prepare_training_data,
+    normalize_advantages,
+    compute_pass_at_n,
+    compute_per_env_metrics,
+    tokenize_chat,
+    set_seed,
+)
+
+# --- witness harness + agent on path (mirrors agent_wrapper.py) ---
+_WITNESS_DIR = Path(__file__).resolve().parent.parent          # .../train_integrations/witness
+sys.path.insert(0, str(_WITNESS_DIR))
+from harness.agent_wrapper import AgentRolloutWrapper           # noqa: E402
+
+_EXECUTOR = ThreadPoolExecutor(max_workers=64)                 # bridge calls block → run off the event loop
+
+
+async def _blocking(fn, *args):
+    return await asyncio.get_event_loop().run_in_executor(_EXECUTOR, lambda: fn(*args))
+
+
+def _load_agent_config(path: Optional[str]) -> dict:
+    """Load config.yaml + apply the SAME RL overrides env_agent.py does, so only the bridged
+    ORAI call hits the policy: ground-truth perception ON, MLLM enhancement OFF (no out-of-band
+    LLM calls to a nonexistent endpoint), provider=vllm. Mirrors env_agent.py:79-82 + the RL recipe.
+    """
+    import yaml
+    cand = path or os.environ.get("WITNESS_AGENT_CONFIG") or str(
+        Path(os.environ.get("ARC_WITNESS_AGENT",
+             Path.home() / "Documents/obsidian/research-repos/arc-witness-agent")) / "configs" / "witness_canonical.yaml")
+    with open(cand) as f:
+        cfg = yaml.safe_load(f) or {}
+    ascii_cfg = cfg.setdefault("semantic_ascii", {})
+    ascii_cfg["enabled"] = True
+    ascii_cfg["mllm_enabled"] = False                                      # RL: no MLLM enhancement
+    ascii_cfg.setdefault("env_ground_truth", {})["enabled"] = \
+        os.environ.get("USE_ENV_GROUND_TRUTH", "1") == "1"                 # GT perception (no vision LLM)
+    cfg.setdefault("llm", {})["provider"] = "vllm"
+    # Fix-3 (efficiency): disable the IncrementalPlanner's out-of-band LLM call. It has no
+    # endpoint in the tinker rollout → fails + self-disables after 3 tries anyway; a high
+    # min_rules makes can_plan() never fire → zero wasted planner calls per rollout.
+    cfg.setdefault("stages", {}).setdefault("planning", {}).setdefault("rule_planner", {})["min_rules"] = 100000
+    return cfg
+
+
+_WRONG_POOL = ["tw03", "tw06", "tw02", "tw05", "tw08", "tw11", "tw13", "tw07"]
+
+
+def _rule_card_lines(game_id: str, mode: str) -> list[str]:
+    from oversight import WitnessOracle
+    card_game = game_id if mode == "rules" else \
+        ([g for g in _WRONG_POOL if g != game_id] or _WRONG_POOL)[hash(game_id) % max(1, len(_WRONG_POOL) - 1)]
+    card = WitnessOracle().rule_card(card_game)
+    return [ln for ln in card.splitlines() if ln.strip() and not ln.startswith("#")]
+
+
+def _arc_agi3_format_score(game_id: str, gm, max_levels: int) -> float:
+    """Official ARC-AGI-3 RHAE per-game score (0–115) for one rollout, from the agent's per-level
+    metrics. Reuses the OFFICIAL scorer + baselines (bench.scoring / bench.catalog, on PYTHONPATH).
+    Per level: min(115, (baseline/actions)²·100), 0 if unsolved; game = Σ(score·weight)/Σweight
+    (weight=1-based level), capped at the completion fraction. score_cap = max_levels (=5)."""
+    try:
+        from bench.catalog import load_game_info
+        from bench.scoring import WitnessScoreCalculator
+        gi = load_game_info(game_id)
+        n = min(gi.scoreable_levels, max_levels, len(gi.baseline_actions))
+        by_idx: Dict[int, Any] = {}
+        for lm in (getattr(gm, "level_metrics", None) or []):
+            if lm.level_index not in by_idx or lm.completed:   # prefer the completed entry per level
+                by_idx[lm.level_index] = lm
+        calc = WitnessScoreCalculator(game_id)
+        for L in range(n):
+            lm = by_idx.get(L)
+            calc.add_level(level_index=L + 1,
+                           completed=bool(lm.completed) if lm else False,
+                           actions_taken=int(lm.actions_taken) if lm else 0,
+                           baseline_actions=int(gi.baseline_actions[L]))
+        return float(calc.to_score().score)
+    except Exception as e:  # noqa: BLE001
+        print(f"[arc_score] {game_id}: {e}", flush=True)
+        return 0.0
+
+
+class WitnessTrajectory(BaseModel):
+    """One witness game rollout = a list of per-ORAI-call (prompt, response, logprobs) + a return."""
+    calls: List[Dict[str, Any]]      # each: {prompt_ids, response_ids, logprobs}
+    reward: float                    # trajectory return (sum of per-call event rewards)
+    task_key: str                    # game_id (GRPO group key)
+    turns: int
+    wins: int = 0                    # # ORAI calls that completed a level (ev_r>0) — outcome-signal diagnostic
+    reward_breakdown: Dict[str, float] = {}   # per-component reward sums (outcome/step_penalty/...)
+    game_steps: int = 0              # agent game-actions this rollout (max event.step) — for steps/level
+    completed_levels: int = 0        # genuine levels won (_levels_genuine; skip-path excluded)
+    arc_score: float = 0.0           # ARC-AGI-3 RHAE per-game format score (0–115), official scorer
+    seeded: bool = False             # rollout started from a Go-Explore frontier snapshot
+    stop_reason: str = "stop"
+    duration: float = 0.0
+    total_gen_time: float = 0.0
+    total_tokens: int = 0
+    error: Optional[str] = None
+
+
+async def collect_witness_rollout(
+    game_id: str, seed: int, agent_config: dict,
+    sampling_client: tinker.SamplingClient, tokenizer: AutoTokenizer,
+    max_levels: int = 5, max_generate_length: int = 2048, max_input_length: int = 16384,
+    temperature: float = 1.0, top_p: float = 1.0, stop_sequences: List[str] = None,
+    max_orai_steps: int = 30, inject_mode: str = "off", inject_p: float = 0.0,
+    frontier=None, start_snapshot=None,
+) -> WitnessTrajectory:
+    """Drive the witness ORAI bridge; sample each call via tinker. Per-call records.
+
+    Go-Explore (goal-3): start_snapshot (if given) restarts the rollout from a restored
+    mid-game state (on-policy continuation); frontier (if given) harvests progress states
+    for future seeding. Both default off → identical to the plain T1 path."""
+    t0 = time.time()
+    wrapper = AgentRolloutWrapper(game_id=game_id, seed=seed, agent_config=agent_config,
+                                  vllm_base_url="http://unused-bridged", max_levels=max_levels, mode="bridged")
+    # T1 curriculum injection (training-only; tainted 'oracle_injected')
+    if inject_mode != "off" and inject_p > 0 and random.random() < inject_p:
+        from agent.oversight import inject_rules
+        inject_rules(wrapper.agent, _rule_card_lines(game_id, inject_mode))
+
+    calls: List[Dict[str, Any]] = []
+    total_reward, gen_time, total_tokens, stop_reason = 0.0, 0.0, 0, "stop"
+    wins = 0
+    rbd: Dict[str, float] = {}                        # per-component reward sums (for the outcome metric)
+    last_step = 0                                     # max event.step = agent game-actions (for steps/level)
+    try:
+        prompt = await _blocking(wrapper.start_bridged_rollout, start_snapshot)   # restored mid-game state if Go-Explore
+        while prompt is not None and len(calls) < max_orai_steps:  # cap ORAI calls/rollout (Deniz's max_turns)
+            system_prompt, messages = prompt
+            if not messages and not system_prompt:
+                break
+            chat = [{"role": "system", "content": system_prompt}] + list(messages)
+            input_ids = tokenize_chat(tokenizer, chat, add_generation_prompt=True)
+            if len(input_ids) > max_input_length:
+                stop_reason = "length"
+                break
+            sp = {"max_tokens": max_generate_length, "temperature": temperature, "top_p": top_p}
+            if stop_sequences:
+                sp["stop"] = stop_sequences
+            g0 = time.time()
+            result = await sampling_client.sample_async(
+                prompt=types.ModelInput.from_ints(tokens=input_ids), num_samples=1,
+                sampling_params=types.SamplingParams(**sp))
+            gen_time += time.time() - g0
+            if not result.sequences:
+                break
+            seq = result.sequences[0]
+            out_ids = list(seq.tokens)
+            out_lp = list(seq.logprobs) if seq.logprobs else [0.0] * len(out_ids)
+            if len(out_lp) != len(out_ids):   # tinker shape guard (mirror Deniz)
+                out_lp = out_lp[:len(out_ids)] + [0.0] * max(0, len(out_ids) - len(out_lp))
+            total_tokens += len(out_ids)
+            completion = tokenizer.decode(out_ids, skip_special_tokens=True)
+            calls.append({"prompt_ids": input_ids, "response_ids": out_ids, "logprobs": out_lp})
+            next_prompt, event = await _blocking(wrapper.feed_completion_and_get_next, completion)
+            ev_r = float(getattr(event, "reward", 0.0)); total_reward += ev_r
+            for _k, _v in (getattr(event, "reward_breakdown", None) or {}).items():
+                rbd[_k] = rbd.get(_k, 0.0) + float(_v)       # accumulate per-component reward (→ outcome metric)
+            _st = int(getattr(event, "step", 0) or 0)
+            if _st > last_step: last_step = _st              # agent game-action count (for steps/level)
+            if ev_r > 0:                                     # ev_r>0 ⟺ a level completed this call (outcome +1 − 0.005 step)
+                wins += 1
+                if frontier is not None:                     # Go-Explore: harvest the next-level-start state (engine forks, not tinker)
+                    try:
+                        from oversight import snapshot as _snap
+                        await _blocking(frontier.harvest, game_id, await _blocking(_snap, wrapper.game))
+                    except Exception:
+                        pass
+            prompt = next_prompt
+        if prompt is not None:                 # exited via the ORAI-step cap, not natural end → truncated
+            stop_reason = "length"
+    except Exception as e:  # noqa: BLE001
+        import traceback; traceback.print_exc()
+        return WitnessTrajectory(calls=calls, reward=total_reward, task_key=game_id,
+                                 turns=len(calls), stop_reason="error", error=str(e),
+                                 duration=time.time() - t0, wins=wins, seeded=start_snapshot is not None,
+                                 reward_breakdown=rbd, game_steps=last_step, completed_levels=wins,
+                                 arc_score=0.0)
+    finally:
+        try:
+            await _blocking(wrapper.join_bridged_rollout)
+        except Exception:  # noqa: BLE001
+            pass
+    completed = int(getattr(wrapper.agent, "_levels_genuine", wins))   # genuine levels won (skip-excluded)
+    arc = _arc_agi3_format_score(game_id, getattr(wrapper, "metrics", None), getattr(wrapper, "max_levels", 5))
+    return WitnessTrajectory(calls=calls, reward=total_reward, task_key=game_id, turns=len(calls),
+                             stop_reason=stop_reason, duration=time.time() - t0,
+                             total_gen_time=gen_time, total_tokens=total_tokens,
+                             wins=wins, seeded=start_snapshot is not None,
+                             reward_breakdown=rbd, game_steps=last_step, completed_levels=completed,
+                             arc_score=arc)
+
+
+async def collect_batch(game_ids, agent_config, sampling_client, tokenizer, n_samples_per_prompt,
+                        seed_base, max_concurrent=8, inject_mode="off", inject_p=0.0,
+                        frontier=None, seed_frac=0.0, **kw) -> List[WitnessTrajectory]:
+    sem = asyncio.Semaphore(max_concurrent)
+    seeded_k = round(seed_frac * n_samples_per_prompt)   # Go-Explore: # of N rollouts that start from a frontier snapshot
+
+    async def one(game_id, idx, start_snap):
+        async with sem:
+            t = await collect_witness_rollout(
+                game_id=game_id, seed=seed_base + idx, agent_config=agent_config,
+                sampling_client=sampling_client, tokenizer=tokenizer,
+                inject_mode=inject_mode, inject_p=inject_p,
+                frontier=frontier, start_snapshot=start_snap, **kw)
+            print(f"  [rollout {game_id} #{idx}{'*GE' if start_snap is not None else ''}] calls={len(t.calls)} "
+                  f"reward={t.reward:.3f} stop={t.stop_reason} dur={t.duration:.0f}s gen={t.total_gen_time:.0f}s "
+                  f"agent={(t.duration - t.total_gen_time):.0f}s" + (f" ERR={t.error}" if t.error else ""), flush=True)
+            return t
+    tasks, idx = [], 0
+    for g in game_ids:                       # n_samples consecutive rollouts of the SAME game (GRPO group order)
+        for j in range(n_samples_per_prompt):
+            # seed the first `seeded_k` of each group from the frontier (empty early → None → fresh)
+            snap = frontier.sample(g) if (frontier is not None and j < seeded_k) else None
+            tasks.append(one(g, idx, snap)); idx += 1
+    return list(await asyncio.gather(*tasks))
+
+
+def _traj_to_percall_rollouts(traj: WitnessTrajectory, advantage: float):
+    """Expand one trajectory into per-ORAI-call RolloutOutputs (+ broadcast advantage)."""
+    outs, advs = [], []
+    for c in traj.calls:
+        outs.append(RolloutOutput(
+            prompt_ids=c["prompt_ids"], response_ids=c["response_ids"], logprobs=c["logprobs"],
+            loss_mask=[1] * len(c["response_ids"]), reward=traj.reward,
+            task_key=traj.task_key, env_key=traj.task_key, turns=traj.turns,
+            tool_calls=0, tool_errors=0, stop_reason=traj.stop_reason, duration=traj.duration))
+        advs.append(advantage)
+    return outs, advs
+
+
+def compute_grpo_advantages_and_signal(valid, normalize: bool = True):
+    """Group trajectories by task_key (GRPO group = same game) → center rewards within group →
+    optional global normalize. Returns (advantages, metrics).
+
+    Why group by task_key and not the vendored fixed-`group_size` slicing: `valid` drops
+    errored/empty rollouts, so a fixed N-chunk straddles two games whenever a drop happens →
+    advantages centered against the wrong group (silent, wrong gradients). Grouping by task_key
+    is correct regardless of drops; identical to the old path when nothing drops.
+
+    The metrics diagnose the removed-process-reward (near-sparse) signal and whether Go-Explore
+    seeding restores it. Two variances, deliberately: with reward = +1/level − 0.005/ORAI-call,
+    non-solving rollouts STILL differ in reward via step count → `reward` variance is ~always
+    nonzero (a length gradient, not task signal). The variance GRPO needs to learn the TASK is in
+    solve count (`wins`). We log both so the contrast is explicit; `groups/frac_solve_var` is the
+    headline (off vs GE-on)."""
+    from collections import defaultdict
+    idx_by_game: Dict[str, List[int]] = defaultdict(list)
+    for i, t in enumerate(valid):
+        idx_by_game[t.task_key].append(i)
+    advantages = [0.0] * len(valid)
+    n_reward_var = n_solve_var = n_any_solve = seed_rescued = 0
+    solve_var_sum = 0.0
+    for idxs in idx_by_game.values():
+        rs = np.array([valid[i].reward for i in idxs], dtype=float)
+        ws = np.array([float(valid[i].wins) for i in idxs], dtype=float)
+        centered = rs - rs.mean()
+        for k, i in enumerate(idxs):
+            advantages[i] = float(centered[k])
+        if float(rs.var()) > 1e-12:
+            n_reward_var += 1
+        sv = float(ws.var())
+        solve_var_sum += sv
+        if ws.max() > 0:
+            n_any_solve += 1
+        if sv > 1e-12:
+            n_solve_var += 1
+            unseeded = np.array([float(valid[i].wins) for i in idxs if not valid[i].seeded], dtype=float)
+            if unseeded.size <= 1 or float(unseeded.var()) <= 1e-12:
+                seed_rescued += 1   # solve-variance exists ONLY because a seeded rollout solved differently
+    if normalize:
+        advantages = normalize_advantages(advantages)
+    n_groups = max(1, len(idx_by_game))
+    adv = np.asarray(advantages, dtype=float) if advantages else np.zeros(1)
+    metrics = {
+        "groups/n": len(idx_by_game),
+        "groups/frac_any_solve": n_any_solve / n_groups,
+        "groups/frac_solve_var": n_solve_var / n_groups,     # headline: groups with learnable OUTCOME signal
+        "groups/frac_reward_var": n_reward_var / n_groups,   # ~1 (step-length noise) — contrast vs solve_var
+        "groups/mean_solve_var": solve_var_sum / n_groups,
+        "groups/seed_rescued": seed_rescued,
+        "rollouts/seeded": sum(1 for t in valid if t.seeded),
+        "rollouts/seeded_solved": sum(1 for t in valid if t.seeded and t.wins > 0),
+        "advantage/l2": float(np.sqrt(np.mean(adv ** 2))),
+        "advantage/abs_mean": float(np.mean(np.abs(adv))),
+    }
+    return advantages, metrics
+
+
+async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_size, learning_rate,
+               lora_rank, max_steps, max_levels, max_generate_length, max_input_length,
+               max_sequence_length, n_samples_per_prompt, eval_every, seed, wandb_project, wandb_name,
+               temperature, top_p, stop_sequences, loss_fn, inject_mode, agent_config_path,
+               max_orai_steps, seed_mode="off", seed_frac=0.0, max_concurrent=8, save_every=5,
+               eval_groups=""):
+    set_seed(seed)
+    games = [g.strip() for g in game_ids.split(",") if g.strip()]
+    vals = [g.strip() for g in val_game_ids.split(",") if g.strip()]
+    # named held-out subgroups → respective eval aggregates, e.g. "composites=tw08,tw11;variants=tw09,tw10"
+    egroups = {}
+    for _part in (eval_groups or "").split(";"):
+        _part = _part.strip()
+        if not _part or "=" not in _part: continue
+        _lab, _gs = _part.split("=", 1)
+        _set = {g.strip() for g in _gs.split(",") if g.strip()}
+        if _lab.strip() and _set: egroups[_lab.strip()] = _set
+    agent_config = _load_agent_config(agent_config_path)
+    frontier = None
+    if seed_mode in ("goexplore", "preseed"):         # Go-Explore dense-signal seeding (goal-3)
+        from oversight import WitnessOracle
+        from tinker_backend.frontier import FrontierBuffer
+        frontier = FrontierBuffer(WitnessOracle())
+        if seed_mode == "preseed":                    # option D: oracle-solution pre-seed (the random
+            n = frontier.preseed_from_oracle(games, seed=seed)   # harvest filter is blind to witness — 2026-06-24)
+            print(f"[preseed] frontier from oracle solutions: added={n} stats={frontier.stats()}", flush=True)
+    wandb.init(project=wandb_project, name=wandb_name, config={
+        "model_name": model_name, "n_games": len(games), "lora_rank": lora_rank,
+        "n_samples_per_prompt": n_samples_per_prompt, "loss_fn": loss_fn, "inject_mode": inject_mode,
+        "learning_rate": learning_rate, "backend": "tinker"})
+
+    service_client = tinker.ServiceClient()                         # reads TINKER_API_KEY / TINKER_API_URL
+    # async client creation (we're inside async main; sync variants warn "deadlock from async ctx")
+    if load_checkpoint_path:
+        training_client = await service_client.create_training_client_from_state_async(load_checkpoint_path)
+    else:
+        training_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
+    adam = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    common = dict(max_levels=max_levels, max_generate_length=max_generate_length,
+                  max_input_length=max_input_length, temperature=temperature, top_p=top_p,
+                  stop_sequences=stop_sequences or [], max_orai_steps=max_orai_steps)
+
+    for step in range(max_steps):
+        t0 = time.time()
+        sampling_path = training_client.save_weights_for_sampler(name=f"step_{step:06d}").result().path
+        sampling_client = service_client.create_sampling_client(model_path=sampling_path)
+        inject_p = max(0.0, 1.0 - step / (0.4 * max_steps)) if inject_mode != "off" else 0.0
+
+        trajs = await collect_batch(games, agent_config, sampling_client, tokenizer,
+                                    n_samples_per_prompt, seed_base=1000 * (step + 1),
+                                    max_concurrent=max_concurrent,
+                                    inject_mode=inject_mode, inject_p=inject_p,
+                                    frontier=frontier, seed_frac=seed_frac, **common)
+        valid = [t for t in trajs if t.calls and not t.error]
+        if not valid:
+            print(f"[step {step}] no valid trajectories, skipping"); continue
+
+        rewards = [t.reward for t in valid]
+        advantages, signal_metrics = compute_grpo_advantages_and_signal(valid, normalize=True)
+        t_roll = time.time()                       # rollout (sampling) done
+
+        percall_rollouts, percall_advs = [], []
+        for traj, adv in zip(valid, advantages):
+            o, a = _traj_to_percall_rollouts(traj, adv)
+            percall_rollouts += o; percall_advs += a
+        datums, truncated = prepare_training_data(percall_rollouts, percall_advs, tokenizer, max_sequence_length)
+        if not datums:
+            print(f"[step {step}] no datums, skipping"); continue
+
+        fb_res = training_client.forward_backward(datums, loss_fn=loss_fn).result()
+        training_client.optim_step(adam).result()
+        t_train = time.time()                      # train (fwd/bwd + optim) done
+        # save_state periodically → resumable across interruptions + an evaluable tinker:// ckpt
+        # for the held-out official arc_score (blueprint T1 primary endpoint).
+        if save_every > 0 and (step % save_every == 0 or step == max_steps - 1):
+            try:
+                sp = training_client.save_state(name=f"{wandb_name}_s{step:03d}").result()
+                path = getattr(sp, "path", None) or getattr(sp, "state_path", sp)
+                print(f"[step {step}] saved state -> {path}", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[step {step}] save_state failed: {e}", flush=True)
+
+        fb_metrics = getattr(fb_res, "metrics", None) or {}
+        metrics = {"step": step,
+                   "time/total": time.time() - t0, "time/rollout": t_roll - t0, "time/train": t_train - t_roll,
+                   "rollouts/truncated": truncated, "rollouts/valid": len(valid),
+                   "rollouts/trunc_frac": truncated / max(1, len(datums)),
+                   "reward/avg_raw_reward": float(np.mean(rewards)), "reward/std": float(np.std(rewards)),
+                   "reward/min": float(np.min(rewards)), "reward/max": float(np.max(rewards)),
+                   "reward/avg_pass_at_n": compute_pass_at_n([t.model_dump() for t in valid], n_samples_per_prompt),
+                   "advantage/mean": float(np.mean(advantages)), "advantage/std": float(np.std(advantages)),
+                   "advantage/min": float(np.min(advantages)), "advantage/max": float(np.max(advantages)),
+                   "datums/count": len(datums), "learning_rate": learning_rate, "inject/p": inject_p}
+        # tinker forward_backward metrics (loss + whatever the loss_fn exposes) -> train/*  (SkyRL logs policy loss)
+        for k, v in fb_metrics.items():
+            try: metrics[f"train/{k}"] = float(v)
+            except (TypeError, ValueError): pass
+        metrics.update(compute_per_env_metrics([t.model_dump() for t in valid], n_samples_per_prompt))
+        metrics.update(signal_metrics)
+        # outcome-only reward signal (geometric off): mean per-rollout outcome reward over the train batch
+        metrics["reward/avg_outcome_reward"] = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in valid]))
+        metrics["reward/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in valid]))  # official RHAE, 0–115
+        if frontier is not None:
+            metrics.update({f"frontier/{k}": v for k, v in frontier.stats().items()})
+
+        # Held-out eval — MERGE into the SAME wandb.log as the training metrics (one commit/step).
+        # A separate wandb.log(step=step) AFTER the training commit is silently dropped by wandb
+        # ("step must be monotonically increasing"), losing the decisive held-out metric (2026-06-24).
+        # Also echoed into the [step] line so it lands in the node logs (log-reconstruction fallback).
+        # Uses sampling_client = this step's pre-update weights (eval@entry-to-step convention).
+        eval_str = ""
+        if eval_every > 0 and vals and step % eval_every == 0:
+            ev = await collect_batch(vals, agent_config, sampling_client, tokenizer, 1,
+                                     seed_base=7_000_000 + step, max_concurrent=max_concurrent,
+                                     inject_mode="off", inject_p=0.0, **common)
+            ev = [t for t in ev if t.calls and not t.error]
+            if ev:
+                er = [t.reward for t in ev]
+                metrics["eval/all/avg_reward"] = float(np.mean(er))
+                metrics["eval/all/pass_at_1"] = compute_pass_at_n([t.model_dump() for t in ev], 1)
+                metrics["eval/num_samples"] = len(ev)
+                # --- interpretable held-out watch set: completed levels, steps/level, outcome reward ---
+                ev_lv = [t.completed_levels for t in ev]
+                metrics["eval/avg_completed_levels"] = float(np.mean(ev_lv))
+                metrics["eval/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ev]))
+                metrics["eval/avg_steps_per_level"]  = float(sum(t.game_steps for t in ev) / max(1, sum(ev_lv)))  # pooled steps/level
+                metrics["eval/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in ev]))  # official RHAE, 0–115
+                by_g = {}
+                for t in ev:
+                    by_g.setdefault(getattr(t, "task_key", "?"), []).append(t)
+                for g, ts in by_g.items():
+                    lv = [t.completed_levels for t in ts]
+                    metrics[f"eval/{g}/avg_reward"]           = float(np.mean([t.reward for t in ts]))
+                    metrics[f"eval/{g}/avg_completed_levels"] = float(np.mean(lv))
+                    metrics[f"eval/{g}/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ts]))
+                    metrics[f"eval/{g}/avg_steps_per_level"]  = float(sum(t.game_steps for t in ts) / max(1, sum(lv)))
+                    metrics[f"eval/{g}/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in ts]))
+                # respective aggregates for named held-out subgroups (composites vs variants, etc.)
+                for _lab, _set in egroups.items():
+                    gts = [t for t in ev if getattr(t, "task_key", "?") in _set]
+                    if not gts: continue
+                    glv = [t.completed_levels for t in gts]
+                    metrics[f"eval/{_lab}/avg_reward"]            = float(np.mean([t.reward for t in gts]))
+                    metrics[f"eval/{_lab}/avg_completed_levels"]  = float(np.mean(glv))
+                    metrics[f"eval/{_lab}/avg_outcome_reward"]    = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in gts]))
+                    metrics[f"eval/{_lab}/avg_steps_per_level"]   = float(sum(t.game_steps for t in gts) / max(1, sum(glv)))
+                    metrics[f"eval/{_lab}/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in gts]))
+                eval_str = (f" eval/lvls={metrics['eval/avg_completed_levels']:.2f}"
+                            f" steps/lvl={metrics['eval/avg_steps_per_level']:.0f}(n={len(ev)})")
+                for _lab in egroups:
+                    _k = f"eval/{_lab}/avg_completed_levels"
+                    if _k in metrics: eval_str += f" {_lab}/lvls={metrics[_k]:.2f}"
+
+        wandb.log(metrics, step=step, commit=True)
+        print(f"[step {step}] reward={metrics['reward/avg_raw_reward']:.3f} "
+              f"pass@{n_samples_per_prompt}={metrics['reward/avg_pass_at_n']:.3f} "
+              f"solve_var={metrics['groups/frac_solve_var']:.2f} datums={len(datums)}{eval_str}")
+    wandb.finish()
+    print("training complete")
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description="Witness GRPO RL on cloud-tinker (ports Deniz's loop)")
+    p.add_argument("--model-name", default="Qwen/Qwen3.5-9B")
+    p.add_argument("--load-checkpoint-path", default=None, help="tinker:// SFT-LoRA warm-start")
+    p.add_argument("--game-ids", default="tw07,tw03,tw06,tw02,tw05,tw08,tw11,tw13")
+    p.add_argument("--val-game-ids", default="tw01,tw09,tw10,tw12")
+    p.add_argument("--eval-groups", default="",
+                   help='named held-out subgroups for respective eval/<label>/* aggregates, e.g. '
+                        '"composites=tw08,tw11,tw12,tw13;variants=tw09,tw10"')
+    p.add_argument("--batch-size", type=int, default=8)         # = #games per step (all, here)
+    p.add_argument("--learning-rate", type=float, default=2.0e-6)
+    p.add_argument("--lora-rank", type=int, default=32)
+    p.add_argument("--max-steps", type=int, default=30)
+    p.add_argument("--max-levels", type=int, default=5)
+    p.add_argument("--max-orai-steps", type=int, default=30, help="ORAI calls/rollout cap (SkyRL MAX_ORAI_STEPS=30)")
+    p.add_argument("--max-generate-length", type=int, default=2048)
+    p.add_argument("--max-input-length", type=int, default=16384)
+    p.add_argument("--max-sequence-length", type=int, default=18432)
+    p.add_argument("--n-samples-per-prompt", type=int, default=4)
+    p.add_argument("--eval-every", type=int, default=10)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--wandb-project", default="arc-agi-3")
+    p.add_argument("--wandb-name", default=None)
+    p.add_argument("--temperature", type=float, default=1.0)
+    p.add_argument("--top-p", type=float, default=1.0)
+    p.add_argument("--stop-sequences", default="[]", help='JSON list, e.g. ["</tool_call>"]')
+    p.add_argument("--loss-fn", default="importance_sampling", help="importance_sampling | ppo")
+    p.add_argument("--inject-mode", default="off", help="off | rules (A1-train) | shuf (A1-shuf)")
+    p.add_argument("--agent-config-path", default=None)
+    p.add_argument("--seed-mode", default="off",
+                   help="off | goexplore (online random-harvest seeding; barely fires — 2026-06-24 probe) | "
+                        "preseed (option D: oracle-solution pre-seeded frontier + online harvest)")
+    p.add_argument("--seed-frac", type=float, default=0.25, help="fraction of each GRPO group seeded from the frontier")
+    p.add_argument("--max-concurrent", type=int, default=8, help="concurrent rollouts (lower when running many arms on one node to stay under tinker's rate limit)")
+    p.add_argument("--save-every", type=int, default=5, help="save_state every N steps (resumable + evaluable tinker:// ckpt)")
+    a = p.parse_args()
+    import json as _json
+    nm = a.wandb_name or f"witness_grpo_tinker_{a.inject_mode}_{datetime.now().strftime('%m%d_%H%M')}"
+    asyncio.run(main(
+        model_name=a.model_name, game_ids=a.game_ids, val_game_ids=a.val_game_ids,
+        load_checkpoint_path=a.load_checkpoint_path, batch_size=a.batch_size,
+        learning_rate=a.learning_rate, lora_rank=a.lora_rank, max_steps=a.max_steps,
+        max_levels=a.max_levels, max_generate_length=a.max_generate_length,
+        max_input_length=a.max_input_length, max_sequence_length=a.max_sequence_length,
+        n_samples_per_prompt=a.n_samples_per_prompt, eval_every=a.eval_every, seed=a.seed,
+        wandb_project=a.wandb_project, wandb_name=nm, temperature=a.temperature, top_p=a.top_p,
+        stop_sequences=_json.loads(a.stop_sequences), loss_fn=a.loss_fn, inject_mode=a.inject_mode,
+        agent_config_path=a.agent_config_path, max_orai_steps=a.max_orai_steps,
+        seed_mode=a.seed_mode, seed_frac=a.seed_frac, max_concurrent=a.max_concurrent,
+        save_every=a.save_every, eval_groups=a.eval_groups))
