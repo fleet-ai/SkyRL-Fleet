@@ -67,7 +67,16 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: list[ChatMessage]
-    max_tokens: int = Field(default=512, ge=1)
+    # Default 4096: 512 truncates Kimi-K2.6 mid-tool-call. The Kimi grammar
+    # is <|tool_call_begin|>name<|tool_call_argument_begin|>{json}<|tool_call_end|>;
+    # a single Bash python heredoc args block routinely runs 1-3K tokens
+    # (especially in Chinese, which is denser per char). When truncated,
+    # the partial JSON fails to parse and the shim's tool_call_parser falls
+    # back to arguments={} -> tool dispatched with no payload -> sandbox
+    # 422s -> model loops on the same broken call until max_turns.
+    # Measured at 100% of 2,479 dispatches across the claweval 26-06-30
+    # run before this bump.
+    max_tokens: int = Field(default=4096, ge=1)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     top_p: Optional[float] = None
     stop: Optional[list[str] | str] = None
