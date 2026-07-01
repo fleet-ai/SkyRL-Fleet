@@ -339,6 +339,48 @@ def compute_grpo_advantages_and_signal(valid, normalize: bool = True):
     return advantages, metrics
 
 
+def _compute_eval_metrics(ev, egroups):
+    """Held-out eval metrics from eval trajectories `ev` (already filtered to calls & not error).
+    Returns (metrics_dict, eval_str). Shared by the in-loop periodic eval AND the post-loop FINAL
+    eval (step==max_steps) so the two never drift."""
+    metrics = {}
+    er = [t.reward for t in ev]
+    metrics["eval/all/avg_reward"] = float(np.mean(er))
+    metrics["eval/all/pass_at_1"] = compute_pass_at_n([t.model_dump() for t in ev], 1)
+    metrics["eval/num_samples"] = len(ev)
+    ev_lv = [t.completed_levels for t in ev]
+    metrics["eval/avg_completed_levels"] = float(np.mean(ev_lv))
+    metrics["eval/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ev]))
+    metrics["eval/avg_steps_per_level"]  = float(sum(t.game_steps for t in ev) / max(1, sum(ev_lv)))  # pooled steps/level
+    metrics["eval/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in ev]))  # official RHAE, 0–115
+    by_g = {}
+    for t in ev:
+        by_g.setdefault(getattr(t, "task_key", "?"), []).append(t)
+    for g, ts in by_g.items():
+        lv = [t.completed_levels for t in ts]
+        metrics[f"eval/{g}/avg_reward"]           = float(np.mean([t.reward for t in ts]))
+        metrics[f"eval/{g}/avg_completed_levels"] = float(np.mean(lv))
+        metrics[f"eval/{g}/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ts]))
+        metrics[f"eval/{g}/avg_steps_per_level"]  = float(sum(t.game_steps for t in ts) / max(1, sum(lv)))
+        metrics[f"eval/{g}/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in ts]))
+    # respective aggregates for named held-out subgroups (composites vs variants, etc.)
+    for _lab, _set in egroups.items():
+        gts = [t for t in ev if getattr(t, "task_key", "?") in _set]
+        if not gts: continue
+        glv = [t.completed_levels for t in gts]
+        metrics[f"eval/{_lab}/avg_reward"]            = float(np.mean([t.reward for t in gts]))
+        metrics[f"eval/{_lab}/avg_completed_levels"]  = float(np.mean(glv))
+        metrics[f"eval/{_lab}/avg_outcome_reward"]    = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in gts]))
+        metrics[f"eval/{_lab}/avg_steps_per_level"]   = float(sum(t.game_steps for t in gts) / max(1, sum(glv)))
+        metrics[f"eval/{_lab}/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in gts]))
+    eval_str = (f" eval/lvls={metrics['eval/avg_completed_levels']:.2f}"
+                f" steps/lvl={metrics['eval/avg_steps_per_level']:.0f}(n={len(ev)})")
+    for _lab in egroups:
+        _k = f"eval/{_lab}/avg_completed_levels"
+        if _k in metrics: eval_str += f" {_lab}/lvls={metrics[_k]:.2f}"
+    return metrics, eval_str
+
+
 async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_size, learning_rate,
                lora_rank, max_steps, max_levels, max_generate_length, max_input_length,
                max_sequence_length, n_samples_per_prompt, eval_every, seed, wandb_project, wandb_name,
@@ -457,46 +499,30 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
                                      inject_mode="off", inject_p=0.0, **common)
             ev = [t for t in ev if t.calls and not t.error]
             if ev:
-                er = [t.reward for t in ev]
-                metrics["eval/all/avg_reward"] = float(np.mean(er))
-                metrics["eval/all/pass_at_1"] = compute_pass_at_n([t.model_dump() for t in ev], 1)
-                metrics["eval/num_samples"] = len(ev)
-                # --- interpretable held-out watch set: completed levels, steps/level, outcome reward ---
-                ev_lv = [t.completed_levels for t in ev]
-                metrics["eval/avg_completed_levels"] = float(np.mean(ev_lv))
-                metrics["eval/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ev]))
-                metrics["eval/avg_steps_per_level"]  = float(sum(t.game_steps for t in ev) / max(1, sum(ev_lv)))  # pooled steps/level
-                metrics["eval/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in ev]))  # official RHAE, 0–115
-                by_g = {}
-                for t in ev:
-                    by_g.setdefault(getattr(t, "task_key", "?"), []).append(t)
-                for g, ts in by_g.items():
-                    lv = [t.completed_levels for t in ts]
-                    metrics[f"eval/{g}/avg_reward"]           = float(np.mean([t.reward for t in ts]))
-                    metrics[f"eval/{g}/avg_completed_levels"] = float(np.mean(lv))
-                    metrics[f"eval/{g}/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ts]))
-                    metrics[f"eval/{g}/avg_steps_per_level"]  = float(sum(t.game_steps for t in ts) / max(1, sum(lv)))
-                    metrics[f"eval/{g}/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in ts]))
-                # respective aggregates for named held-out subgroups (composites vs variants, etc.)
-                for _lab, _set in egroups.items():
-                    gts = [t for t in ev if getattr(t, "task_key", "?") in _set]
-                    if not gts: continue
-                    glv = [t.completed_levels for t in gts]
-                    metrics[f"eval/{_lab}/avg_reward"]            = float(np.mean([t.reward for t in gts]))
-                    metrics[f"eval/{_lab}/avg_completed_levels"]  = float(np.mean(glv))
-                    metrics[f"eval/{_lab}/avg_outcome_reward"]    = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in gts]))
-                    metrics[f"eval/{_lab}/avg_steps_per_level"]   = float(sum(t.game_steps for t in gts) / max(1, sum(glv)))
-                    metrics[f"eval/{_lab}/avg_arc_agi_3_format_score"] = float(np.mean([t.arc_score for t in gts]))
-                eval_str = (f" eval/lvls={metrics['eval/avg_completed_levels']:.2f}"
-                            f" steps/lvl={metrics['eval/avg_steps_per_level']:.0f}(n={len(ev)})")
-                for _lab in egroups:
-                    _k = f"eval/{_lab}/avg_completed_levels"
-                    if _k in metrics: eval_str += f" {_lab}/lvls={metrics[_k]:.2f}"
+                em, eval_str = _compute_eval_metrics(ev, egroups)
+                metrics.update(em)
 
         wandb.log(metrics, step=step, commit=True)
         print(f"[step {step}] reward={metrics['reward/avg_raw_reward']:.3f} "
               f"pass@{n_samples_per_prompt}={metrics['reward/avg_pass_at_n']:.3f} "
               f"solve_var={metrics['groups/frac_solve_var']:.2f} datums={len(datums)}{eval_str}")
+
+    # FINAL eval at step == max_steps. The periodic eval above uses each step's PRE-update
+    # weights (eval@entry-to-step), so the fully-trained policy — after the last optim_step —
+    # is otherwise never scored (the loop ends at max_steps-1). Evaluate the final weights and
+    # log at step=max_steps so every run ends on a held-out number for the final policy.
+    if eval_every > 0 and vals:
+        final_path = training_client.save_weights_for_sampler(name=f"step_{max_steps:06d}").result().path
+        final_sampling = service_client.create_sampling_client(model_path=final_path)
+        ev = await collect_batch(vals, agent_config, final_sampling, tokenizer, 1,
+                                 seed_base=7_000_000 + max_steps, max_concurrent=max_concurrent,
+                                 inject_mode="off", inject_p=0.0, **common)
+        ev = [t for t in ev if t.calls and not t.error]
+        if ev:
+            em, eval_str = _compute_eval_metrics(ev, egroups)
+            em["step"] = max_steps
+            wandb.log(em, step=max_steps, commit=True)
+            print(f"[step {max_steps}] FINAL eval{eval_str}", flush=True)
     wandb.finish()
     print("training complete")
 
