@@ -129,6 +129,28 @@ def _arc_agi3_format_score(game_id: str, gm, max_levels: int) -> float:
         return 0.0
 
 
+def _solved_level_steps(game_id: str, gm, max_levels: int) -> List[int]:
+    """Per-SOLVED-level action counts (steps spent on the levels the rollout actually WON) → feeds the
+    'avg steps per solved level' eval metric. Same per-level dedup (prefer completed) + level cap as the
+    arc scorer, so it counts only genuine solves and excludes steps wasted on unsolved levels."""
+    try:
+        from bench.catalog import load_game_info
+        gi = load_game_info(game_id)
+        n = min(gi.scoreable_levels, max_levels, len(gi.baseline_actions))
+        by_idx: Dict[int, Any] = {}
+        for lm in (getattr(gm, "level_metrics", None) or []):
+            if lm.level_index not in by_idx or lm.completed:
+                by_idx[lm.level_index] = lm
+        out = []
+        for L in range(n):
+            lm = by_idx.get(L)
+            if lm and lm.completed and int(lm.actions_taken) > 0:
+                out.append(int(lm.actions_taken))
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
 class WitnessTrajectory(BaseModel):
     """One witness game rollout = a list of per-ORAI-call (prompt, response, logprobs) + a return."""
     calls: List[Dict[str, Any]]      # each: {prompt_ids, response_ids, logprobs}
@@ -140,6 +162,7 @@ class WitnessTrajectory(BaseModel):
     game_steps: int = 0              # agent game-actions this rollout (max event.step) — for steps/level
     completed_levels: int = 0        # genuine levels won (_levels_genuine; skip-path excluded)
     arc_score: float = 0.0           # ARC-AGI-3 RHAE per-game format score (0–115), official scorer
+    solved_level_steps: List[int] = []  # actions_taken per SOLVED level → 'avg steps per solved level'
     seeded: bool = False             # rollout started from a Go-Explore frontier snapshot
     stop_reason: str = "stop"
     duration: float = 0.0
@@ -233,13 +256,15 @@ async def collect_witness_rollout(
         except Exception:  # noqa: BLE001
             pass
     completed = int(getattr(wrapper.agent, "_levels_genuine", wins))   # genuine levels won (skip-excluded)
-    arc = _arc_agi3_format_score(game_id, getattr(wrapper, "metrics", None), getattr(wrapper, "max_levels", 5))
+    _gm = getattr(wrapper, "metrics", None); _ml = getattr(wrapper, "max_levels", 5)
+    arc = _arc_agi3_format_score(game_id, _gm, _ml)
+    sls = _solved_level_steps(game_id, _gm, _ml)
     return WitnessTrajectory(calls=calls, reward=total_reward, task_key=game_id, turns=len(calls),
                              stop_reason=stop_reason, duration=time.time() - t0,
                              total_gen_time=gen_time, total_tokens=total_tokens,
                              wins=wins, seeded=start_snapshot is not None,
                              reward_breakdown=rbd, game_steps=last_step, completed_levels=completed,
-                             arc_score=arc)
+                             arc_score=arc, solved_level_steps=sls)
 
 
 async def collect_batch(game_ids, agent_config, sampling_client, tokenizer, n_samples_per_prompt,
@@ -351,7 +376,13 @@ def _compute_eval_metrics(ev, egroups):
     ev_lv = [t.completed_levels for t in ev]
     metrics["eval/avg_completed_levels"] = float(np.mean(ev_lv))
     metrics["eval/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ev]))
-    metrics["eval/avg_steps_per_level"]  = float(sum(t.game_steps for t in ev) / max(1, sum(ev_lv)))  # pooled steps/level
+    metrics["eval/avg_steps_per_level"]  = float(sum(t.game_steps for t in ev) / max(1, sum(ev_lv)))  # total steps (incl. failed level) / solved levels
+    # avg # steps per SOLVED level: mean actions_taken over levels actually won (excludes steps wasted on
+    # unsolved levels) — pure solving efficiency, vs avg_steps_per_level which charges failed-level steps too.
+    def _steps_per_solved(tl):
+        ss = [s for t in tl for s in getattr(t, "solved_level_steps", [])]
+        return float(np.mean(ss)) if ss else 0.0
+    metrics["eval/avg_steps_per_solved_level"] = _steps_per_solved(ev)
     by_g = {}
     for t in ev:
         by_g.setdefault(getattr(t, "task_key", "?"), []).append(t)
@@ -366,6 +397,7 @@ def _compute_eval_metrics(ev, egroups):
         metrics[f"eval/{g}/avg_completed_levels"] = float(np.mean(lv))
         metrics[f"eval/{g}/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ts]))
         metrics[f"eval/{g}/avg_steps_per_level"]  = float(sum(t.game_steps for t in ts) / max(1, sum(lv)))
+        metrics[f"eval/{g}/avg_steps_per_solved_level"] = _steps_per_solved(ts)
         metrics[f"eval/{g}/arc_meanN"] = game_arc_mean[g]
         metrics[f"eval/{g}/arc_bestN"] = game_arc_best[g]
     # official aggregation = per-game score THEN mean across games (arc_agi: avg_score = mean over envs)
@@ -382,12 +414,14 @@ def _compute_eval_metrics(ev, egroups):
         metrics[f"eval/{_lab}/avg_completed_levels"]  = float(np.mean(glv))
         metrics[f"eval/{_lab}/avg_outcome_reward"]    = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in gts]))
         metrics[f"eval/{_lab}/avg_steps_per_level"]   = float(sum(t.game_steps for t in gts) / max(1, sum(glv)))
+        metrics[f"eval/{_lab}/avg_steps_per_solved_level"] = _steps_per_solved(gts)
         metrics[f"eval/{_lab}/arc_meanN"] = float(np.mean([game_arc_mean[g] for g in gn])) if gn else 0.0
         metrics[f"eval/{_lab}/arc_bestN"] = float(np.mean([game_arc_best[g] for g in gn])) if gn else 0.0
         metrics[f"eval/{_lab}/avg_arc_agi_3_format_score"] = metrics[f"eval/{_lab}/arc_meanN"]  # legacy alias
     eval_str = (f" eval/lvls={metrics['eval/avg_completed_levels']:.2f}"
                 f" arc(mean/best)={metrics['eval/arc_meanN']:.1f}/{metrics['eval/arc_bestN']:.1f}"
-                f" steps/lvl={metrics['eval/avg_steps_per_level']:.0f}(n={len(ev)})")
+                f" steps/lvl={metrics['eval/avg_steps_per_level']:.0f}"
+                f" steps/solved={metrics['eval/avg_steps_per_solved_level']:.0f}(n={len(ev)})")
     for _lab in egroups:
         _k = f"eval/{_lab}/avg_completed_levels"
         if _k in metrics: eval_str += f" {_lab}/lvls={metrics[_k]:.2f}"
