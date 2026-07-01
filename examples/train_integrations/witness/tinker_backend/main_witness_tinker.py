@@ -386,7 +386,7 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
                max_sequence_length, n_samples_per_prompt, eval_every, seed, wandb_project, wandb_name,
                temperature, top_p, stop_sequences, loss_fn, inject_mode, agent_config_path,
                max_orai_steps, seed_mode="off", seed_frac=0.0, max_concurrent=8, save_every=5,
-               eval_groups=""):
+               eval_groups="", wandb_run_id="", start_step=0):
     set_seed(seed)
     games = [g.strip() for g in game_ids.split(",") if g.strip()]
     vals = [g.strip() for g in val_game_ids.split(",") if g.strip()]
@@ -407,7 +407,10 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
         if seed_mode == "preseed":                    # option D: oracle-solution pre-seed (the random
             n = frontier.preseed_from_oracle(games, seed=seed)   # harvest filter is blind to witness — 2026-06-24)
             print(f"[preseed] frontier from oracle solutions: added={n} stats={frontier.stats()}", flush=True)
-    wandb.init(project=wandb_project, name=wandb_name, config={
+    # wandb_run_id set → RESUME that run (continue its curves); else a fresh run. start_step offsets
+    # every logged/saved/eval step so a resumed run's points land AFTER the previous run's last step.
+    wandb.init(project=wandb_project, name=wandb_name,
+               id=(wandb_run_id or None), resume=("allow" if wandb_run_id else None), config={
         "model_name": model_name, "n_games": len(games), "lora_rank": lora_rank,
         "n_samples_per_prompt": n_samples_per_prompt, "loss_fn": loss_fn, "inject_mode": inject_mode,
         "learning_rate": learning_rate, "backend": "tinker"})
@@ -424,11 +427,15 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
                   max_input_length=max_input_length, temperature=temperature, top_p=top_p,
                   stop_sequences=stop_sequences or [], max_orai_steps=max_orai_steps)
 
-    for step in range(max_steps):
+    # iterate over GLOBAL step numbers so a resumed run continues (start_step..start_step+max_steps-1);
+    # start_step=0 → range(0, max_steps), the original behavior. Every step usage below (wandb.log,
+    # save_state name, eval cadence, seeds, prints) is thus the continued/global step, for free.
+    for step in range(start_step, start_step + max_steps):
         t0 = time.time()
         sampling_path = training_client.save_weights_for_sampler(name=f"step_{step:06d}").result().path
         sampling_client = service_client.create_sampling_client(model_path=sampling_path)
-        inject_p = max(0.0, 1.0 - step / (0.4 * max_steps)) if inject_mode != "off" else 0.0
+        # inject anneal uses LOCAL progress (step-start_step) so a resume doesn't start past the schedule
+        inject_p = max(0.0, 1.0 - (step - start_step) / (0.4 * max_steps)) if inject_mode != "off" else 0.0
 
         trajs = await collect_batch(games, agent_config, sampling_client, tokenizer,
                                     n_samples_per_prompt, seed_base=1000 * (step + 1),
@@ -511,18 +518,19 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
     # weights (eval@entry-to-step), so the fully-trained policy — after the last optim_step —
     # is otherwise never scored (the loop ends at max_steps-1). Evaluate the final weights and
     # log at step=max_steps so every run ends on a held-out number for the final policy.
+    final_step = start_step + max_steps
     if eval_every > 0 and vals:
-        final_path = training_client.save_weights_for_sampler(name=f"step_{max_steps:06d}").result().path
+        final_path = training_client.save_weights_for_sampler(name=f"step_{final_step:06d}").result().path
         final_sampling = service_client.create_sampling_client(model_path=final_path)
         ev = await collect_batch(vals, agent_config, final_sampling, tokenizer, 1,
-                                 seed_base=7_000_000 + max_steps, max_concurrent=max_concurrent,
+                                 seed_base=7_000_000 + final_step, max_concurrent=max_concurrent,
                                  inject_mode="off", inject_p=0.0, **common)
         ev = [t for t in ev if t.calls and not t.error]
         if ev:
             em, eval_str = _compute_eval_metrics(ev, egroups)
-            em["step"] = max_steps
-            wandb.log(em, step=max_steps, commit=True)
-            print(f"[step {max_steps}] FINAL eval{eval_str}", flush=True)
+            em["step"] = final_step
+            wandb.log(em, step=final_step, commit=True)
+            print(f"[step {final_step}] FINAL eval{eval_str}", flush=True)
     wandb.finish()
     print("training complete")
 
@@ -562,6 +570,10 @@ if __name__ == "__main__":
     p.add_argument("--seed-frac", type=float, default=0.25, help="fraction of each GRPO group seeded from the frontier")
     p.add_argument("--max-concurrent", type=int, default=8, help="concurrent rollouts (lower when running many arms on one node to stay under tinker's rate limit)")
     p.add_argument("--save-every", type=int, default=5, help="save_state every N steps (resumable + evaluable tinker:// ckpt)")
+    p.add_argument("--wandb-run-id", default="", help="resume this wandb run id (continue its curves) instead of a new run")
+    p.add_argument("--start-step", type=int, default=0,
+                   help="global step of the first iteration; for a continued run set it to the previous "
+                        "run's last step so curves/ckpts/evals continue (e.g. resume from s020 -> --start-step 21)")
     a = p.parse_args()
     import json as _json
     nm = a.wandb_name or f"witness_grpo_tinker_{a.inject_mode}_{datetime.now().strftime('%m%d_%H%M')}"
@@ -576,4 +588,5 @@ if __name__ == "__main__":
         stop_sequences=_json.loads(a.stop_sequences), loss_fn=a.loss_fn, inject_mode=a.inject_mode,
         agent_config_path=a.agent_config_path, max_orai_steps=a.max_orai_steps,
         seed_mode=a.seed_mode, seed_frac=a.seed_frac, max_concurrent=a.max_concurrent,
-        save_every=a.save_every, eval_groups=a.eval_groups))
+        save_every=a.save_every, eval_groups=a.eval_groups,
+        wandb_run_id=a.wandb_run_id, start_step=a.start_step))
