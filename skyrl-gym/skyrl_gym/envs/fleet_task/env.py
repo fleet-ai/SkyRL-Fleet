@@ -945,6 +945,13 @@ class FleetTaskEnv(BaseTextEnv):
         # never trips _done and the verifier never runs.
         force_done = agent_done or max_turns_reached
 
+        # Hand the verifier the full transcript so judge-style verifiers can
+        # grade produced artifacts + observable actions (not only a submitted
+        # final answer). OpenEnv forwards it only to verifiers whose signature
+        # accepts `conversation`, so submit-answer tasks are unaffected.
+        if self.openenv_task_env is not None:
+            self.openenv_task_env.conversation_messages = self.chat_history
+
         # Handle context management tools locally (no MCP call)
         if (
             tool_call
