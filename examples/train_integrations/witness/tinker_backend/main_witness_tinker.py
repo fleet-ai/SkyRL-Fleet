@@ -386,7 +386,7 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
                max_sequence_length, n_samples_per_prompt, eval_every, seed, wandb_project, wandb_name,
                temperature, top_p, stop_sequences, loss_fn, inject_mode, agent_config_path,
                max_orai_steps, seed_mode="off", seed_frac=0.0, max_concurrent=8, save_every=5,
-               eval_groups="", wandb_run_id="", start_step=0):
+               eval_groups="", wandb_run_id="", start_step=0, eval_n_samples=5):
     set_seed(seed)
     games = [g.strip() for g in game_ids.split(",") if g.strip()]
     vals = [g.strip() for g in val_game_ids.split(",") if g.strip()]
@@ -499,10 +499,13 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
         # ("step must be monotonically increasing"), losing the decisive held-out metric (2026-06-24).
         # Also echoed into the [step] line so it lands in the node logs (log-reconstruction fallback).
         # Uses sampling_client = this step's pre-update weights (eval@entry-to-step convention).
+        # eval_n_samples rollouts/game (default 5) averaged in _compute_eval_metrics → smoother curves;
+        # seed_base is CONSTANT (not +step) so the eval set is FIXED across steps/resumes/ablation arms
+        # (a proper validation set → clearer ablation signal; matches the frontier-model eval's 5 seeds).
         eval_str = ""
         if eval_every > 0 and vals and step % eval_every == 0:
-            ev = await collect_batch(vals, agent_config, sampling_client, tokenizer, 1,
-                                     seed_base=7_000_000 + step, max_concurrent=max_concurrent,
+            ev = await collect_batch(vals, agent_config, sampling_client, tokenizer, eval_n_samples,
+                                     seed_base=7_000_000, max_concurrent=max_concurrent,
                                      inject_mode="off", inject_p=0.0, **common)
             ev = [t for t in ev if t.calls and not t.error]
             if ev:
@@ -522,8 +525,8 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
     if eval_every > 0 and vals:
         final_path = training_client.save_weights_for_sampler(name=f"step_{final_step:06d}").result().path
         final_sampling = service_client.create_sampling_client(model_path=final_path)
-        ev = await collect_batch(vals, agent_config, final_sampling, tokenizer, 1,
-                                 seed_base=7_000_000 + final_step, max_concurrent=max_concurrent,
+        ev = await collect_batch(vals, agent_config, final_sampling, tokenizer, eval_n_samples,
+                                 seed_base=7_000_000, max_concurrent=max_concurrent,
                                  inject_mode="off", inject_p=0.0, **common)
         ev = [t for t in ev if t.calls and not t.error]
         if ev:
@@ -555,6 +558,9 @@ if __name__ == "__main__":
     p.add_argument("--max-sequence-length", type=int, default=18432)
     p.add_argument("--n-samples-per-prompt", type=int, default=4)
     p.add_argument("--eval-every", type=int, default=10)
+    p.add_argument("--eval-n-samples", type=int, default=5,
+                   help="rollouts per held-out game at eval, averaged for smoother curves (default 5; "
+                        "fixed seed set across steps → comparable, consistent with the frontier-model eval)")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--wandb-project", default="arc-agi-3")
     p.add_argument("--wandb-name", default=None)
@@ -589,4 +595,4 @@ if __name__ == "__main__":
         agent_config_path=a.agent_config_path, max_orai_steps=a.max_orai_steps,
         seed_mode=a.seed_mode, seed_frac=a.seed_frac, max_concurrent=a.max_concurrent,
         save_every=a.save_every, eval_groups=a.eval_groups,
-        wandb_run_id=a.wandb_run_id, start_step=a.start_step))
+        wandb_run_id=a.wandb_run_id, start_step=a.start_step, eval_n_samples=a.eval_n_samples))
