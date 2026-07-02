@@ -459,8 +459,10 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
             print(f"[preseed] frontier from oracle solutions: added={n} stats={frontier.stats()}", flush=True)
     # wandb_run_id set → RESUME that run (continue its curves); else a fresh run. start_step offsets
     # every logged/saved/eval step so a resumed run's points land AFTER the previous run's last step.
-    wandb.init(project=wandb_project, name=wandb_name,
-               id=(wandb_run_id or None), resume=("allow" if wandb_run_id else None), config={
+    # Resume the SAME wandb run only when a run-id is given; for a FRESH run pass NEITHER id nor resume
+    # (wandb 0.28 raises "Run ID cannot be empty" if id=None/resume=None are passed explicitly).
+    _wb_resume = {"id": wandb_run_id, "resume": "allow"} if wandb_run_id else {}
+    wandb.init(project=wandb_project, name=wandb_name, **_wb_resume, config={
         "model_name": model_name, "n_games": len(games), "lora_rank": lora_rank,
         "n_samples_per_prompt": n_samples_per_prompt, "loss_fn": loss_fn, "inject_mode": inject_mode,
         "learning_rate": learning_rate, "backend": "tinker"})
@@ -583,6 +585,16 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
             em, eval_str = _compute_eval_metrics(ev, egroups)
             em["step"] = final_step
             wandb.log(em, step=final_step, commit=True)
+            # dump the final-eval metrics to a JSON so eval-only runs (MAX_STEPS=0) are trivially
+            # collectable without the wandb API — one self-contained file per run.
+            try:
+                import json as _json
+                with open(f"eval_metrics_{wandb_name}.json", "w") as _f:
+                    _json.dump({"run": wandb_name, "model": model_name, "ckpt": load_checkpoint_path,
+                                "step": final_step, "eval_n_samples": eval_n_samples, "metrics": em}, _f, indent=2)
+                print(f"[step {final_step}] eval metrics -> eval_metrics_{wandb_name}.json", flush=True)
+            except Exception as _e:  # noqa: BLE001
+                print(f"[eval-dump] failed: {_e}", flush=True)
             print(f"[step {final_step}] FINAL eval{eval_str}", flush=True)
     wandb.finish()
     print("training complete")
