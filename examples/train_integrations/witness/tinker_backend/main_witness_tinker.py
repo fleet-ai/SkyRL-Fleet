@@ -388,13 +388,14 @@ def _compute_eval_metrics(ev, egroups):
         by_g.setdefault(getattr(t, "task_key", "?"), []).append(t)
     # RHAE per game: mean-of-N (smooth training signal) AND best-of-N (= official ARC-AGI-3 per-game
     # aggregation, arc_agi.scorecard.EnvironmentScoreList.score = max over runs). Report BOTH — ~free.
-    game_arc_mean, game_arc_best = {}, {}
+    game_arc_mean, game_arc_best, game_lv_best = {}, {}, {}
     for g, ts in by_g.items():
         lv = [t.completed_levels for t in ts]
         arc = [t.arc_score for t in ts]
-        game_arc_mean[g] = float(np.mean(arc)); game_arc_best[g] = float(np.max(arc))
+        game_arc_mean[g] = float(np.mean(arc)); game_arc_best[g] = float(np.max(arc)); game_lv_best[g] = float(np.max(lv))
         metrics[f"eval/{g}/avg_reward"]           = float(np.mean([t.reward for t in ts]))
-        metrics[f"eval/{g}/avg_completed_levels"] = float(np.mean(lv))
+        metrics[f"eval/{g}/avg_completed_levels"] = float(np.mean(lv))            # mean-of-N seeds
+        metrics[f"eval/{g}/avg_completed_levels_bestN"] = game_lv_best[g]         # best-of-N (max seed)
         metrics[f"eval/{g}/avg_outcome_reward"]   = float(np.mean([t.reward_breakdown.get("outcome", 0.0) for t in ts]))
         metrics[f"eval/{g}/avg_steps_per_level"]  = float(sum(t.game_steps for t in ts) / max(1, sum(lv)))
         metrics[f"eval/{g}/avg_steps_per_solved_level"] = _steps_per_solved(ts)
@@ -403,6 +404,7 @@ def _compute_eval_metrics(ev, egroups):
     # official aggregation = per-game score THEN mean across games (arc_agi: avg_score = mean over envs)
     metrics["eval/arc_meanN"] = float(np.mean(list(game_arc_mean.values()))) if game_arc_mean else 0.0
     metrics["eval/arc_bestN"] = float(np.mean(list(game_arc_best.values()))) if game_arc_best else 0.0  # OFFICIAL
+    metrics["eval/avg_completed_levels_bestN"] = float(np.mean(list(game_lv_best.values()))) if game_lv_best else 0.0
     metrics["eval/avg_arc_agi_3_format_score"] = metrics["eval/arc_meanN"]  # legacy alias (= mean-of-N)
     # respective aggregates for named held-out subgroups (composites vs variants, etc.)
     for _lab, _set in egroups.items():
@@ -417,8 +419,9 @@ def _compute_eval_metrics(ev, egroups):
         metrics[f"eval/{_lab}/avg_steps_per_solved_level"] = _steps_per_solved(gts)
         metrics[f"eval/{_lab}/arc_meanN"] = float(np.mean([game_arc_mean[g] for g in gn])) if gn else 0.0
         metrics[f"eval/{_lab}/arc_bestN"] = float(np.mean([game_arc_best[g] for g in gn])) if gn else 0.0
+        metrics[f"eval/{_lab}/avg_completed_levels_bestN"] = float(np.mean([game_lv_best[g] for g in gn])) if gn else 0.0
         metrics[f"eval/{_lab}/avg_arc_agi_3_format_score"] = metrics[f"eval/{_lab}/arc_meanN"]  # legacy alias
-    eval_str = (f" eval/lvls={metrics['eval/avg_completed_levels']:.2f}"
+    eval_str = (f" eval/lvls(mean/best)={metrics['eval/avg_completed_levels']:.2f}/{metrics['eval/avg_completed_levels_bestN']:.2f}"
                 f" arc(mean/best)={metrics['eval/arc_meanN']:.1f}/{metrics['eval/arc_bestN']:.1f}"
                 f" steps/lvl={metrics['eval/avg_steps_per_level']:.0f}"
                 f" steps/solved={metrics['eval/avg_steps_per_solved_level']:.0f}(n={len(ev)})")
