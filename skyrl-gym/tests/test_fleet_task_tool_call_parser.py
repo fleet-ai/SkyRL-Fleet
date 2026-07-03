@@ -244,3 +244,63 @@ class TestCrossFormatIsolation:
         )
         result = parse_tool_call(text)
         assert result["name"] == "tag_winner"
+
+
+# --------------------------------------------------------------------------- #
+# Qwen3.6 XML-function grammar (chat_template.jinja, new in 3.6)
+# --------------------------------------------------------------------------- #
+
+class TestQwen36XmlFunctionGrammar:
+    def test_wrapped_single_param(self):
+        text = (
+            "I'll check the file.\n"
+            "<tool_call>\n<function=bash>\n<parameter=command>\n"
+            "ls -la /home\n"
+            "</parameter>\n</function>\n</tool_call>"
+        )
+        assert parse_tool_call(text) == {
+            "name": "bash", "arguments": {"command": "ls -la /home"}
+        }
+
+    def test_multiline_param_value_preserved(self):
+        text = (
+            "<tool_call>\n<function=bash>\n<parameter=command>\n"
+            "cat <<'EOS' > /tmp/x\nline1\nline2\nEOS\n"
+            "</parameter>\n</function>\n</tool_call>"
+        )
+        result = parse_tool_call(text)
+        assert result["name"] == "bash"
+        assert result["arguments"]["command"] == "cat <<'EOS' > /tmp/x\nline1\nline2\nEOS"
+
+    def test_multiple_params_and_json_literal_coercion(self):
+        text = (
+            "<tool_call>\n<function=search_listings>\n"
+            "<parameter=query>\n3 bed house\n</parameter>\n"
+            "<parameter=limit>\n5\n</parameter>\n"
+            "<parameter=verified>\ntrue\n</parameter>\n"
+            "</function>\n</tool_call>"
+        )
+        result = parse_tool_call(text)
+        assert result == {
+            "name": "search_listings",
+            "arguments": {"query": "3 bed house", "limit": 5, "verified": True},
+        }
+
+    def test_missing_closing_tags_stop_string_case(self):
+        # </tool_call> (or even </function>) can be eaten by a stop string.
+        text = "<tool_call>\n<function=bash>\n<parameter=command>\npwd\n</parameter>\n"
+        result = parse_tool_call(text)
+        assert result == {"name": "bash", "arguments": {"command": "pwd"}}
+
+    def test_bare_function_without_tool_call_wrapper(self):
+        text = "<function=bash>\n<parameter=command>\necho hi\n</parameter>\n</function>"
+        result = parse_tool_call(text)
+        assert result == {"name": "bash", "arguments": {"command": "echo hi"}}
+
+    def test_no_params_yields_empty_arguments(self):
+        text = "<tool_call>\n<function=list_tools>\n</function>\n</tool_call>"
+        assert parse_tool_call(text) == {"name": "list_tools", "arguments": {}}
+
+    def test_json_grammar_still_wins_inside_same_tag(self):
+        text = '<tool_call>{"name": "json_style", "arguments": {"a": 1}}</tool_call>'
+        assert parse_tool_call(text) == {"name": "json_style", "arguments": {"a": 1}}
