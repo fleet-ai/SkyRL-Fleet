@@ -1,5 +1,29 @@
 # Fleet Integration Changelog
 
+## 2026-07-03: Tinker harness — ENV_STEP_TIMEOUT_S configurable, default 300
+
+Scope: **Tinker harness only** (`main_fleet_tinker.py`).
+
+### Problem
+
+`ENV_STEP_TIMEOUT_S=120` (added 2026-06-15, fix #1 below) interacts fatally with OpenEnv's
+`call_tool` retry loop: one tool call may spend up to `max_retries(8) × OPERATION_TIMEOUT_S(60)`
+plus backoff (~8.5 min) before failing, and one env step executes *every* tool call in the
+assistant turn. A single slow or dead tool therefore guaranteed blowing the 120s step budget,
+which kills the whole rollout (`stop_reason=env_step_timeout`, force-verified at partial state).
+Measured on openclaw_verifiers_v5: **61% of eval rollouts** (jobs `367bbd49`/`ba3dc295`, 442
+tasks × 3 × 2 arms, mean reward 0.03 vs 0.69 for natural stops) and **32% of training rollouts**
+(run `202a95bc`, mean reward 0.01) died this way. For GRPO that is randomly-punishing advantage
+noise on a third of every batch.
+
+### Fix (two-sided, pairs with OpenEnv #20)
+
+- OpenEnv #20 bounds `call_tool` total retry time to `FLEET_CALL_TOOL_DEADLINE_S` (default 90s),
+  surfacing exhaustion as a normal `tool_call_failed` observation so the rollout continues.
+- Here: `ENV_STEP_TIMEOUT_S = int(os.getenv("FLEET_ENV_STEP_TIMEOUT_S", "300"))` — the step
+  budget must fit several deadline-length calls in one turn; 300s ≈ 3 worst-case calls. Env
+  var override for experimentation without a code change.
+
 ## 2026-06-15: Tinker harness — fleet-research-api runs, timeouts, eval parity, MCP content shape
 
 Scope: **Tinker harness only** (`integrations/fleet/entrypoints/main_fleet_tinker.py`). SkyRL harness (`skyrl/train/trainer.py` + `skyrl_train.generators.skyrl_gym_generator`) is a separate code path on local GPUs via SkyPilot; none of these fixes touch it.
