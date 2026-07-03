@@ -93,7 +93,13 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 # SamplingClient and starvation-prone under concurrent rollouts.
 TINKER_SAMPLE_TIMEOUT_S = 600
 ENV_INIT_TIMEOUT_S = 90
-ENV_STEP_TIMEOUT_S = 120
+# One env step executes EVERY tool call in the assistant turn, and each call
+# may spend up to OpenEnv's call_tool deadline (FLEET_CALL_TOOL_DEADLINE_S,
+# default 90s) before surfacing as a tool error the model can react to. The
+# step budget must therefore fit several deadline-length calls; at the old
+# hardcoded 120s a single slow turn killed the rollout at ~0 reward (61% of
+# rollouts in eval jobs 367bbd49/ba3dc295, 32% in training run 202a95bc).
+ENV_STEP_TIMEOUT_S = int(os.getenv("FLEET_ENV_STEP_TIMEOUT_S", "300"))
 ENV_CLOSE_TIMEOUT_S = 30
 
 # Thread pool for env operations - isolates MCP connections per thread (like SkyRL)
