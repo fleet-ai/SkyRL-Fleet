@@ -348,3 +348,16 @@ class TestKimiSpecialTokenIdsInReminder:
                 f"Kimi tool special token {special_id} not in encoded reminder. "
                 f"Encoded ids: {sorted(ids)[:30]}..."
             )
+
+
+class TestQwenArgumentsShape:
+    def test_arguments_is_dict_not_json_string(self):
+        """Qwen3.6's chat template renders tool_calls via
+        `tool_call.arguments|items` (chat_template.jinja line ~120) — a
+        JSON-string here raises 'Can only get item pairs from a mapping'
+        at the NEXT turn's apply_chat_template and kills the rollout."""
+        parsed = {"name": "bash", "arguments": {"command": "ls -la"}}
+        msg = Qwen().build_assistant_message("x", parsed, turn=2)
+        args = msg["tool_calls"][0]["function"]["arguments"]
+        assert isinstance(args, dict)
+        assert args == {"command": "ls -la"}
