@@ -181,7 +181,12 @@ class Qwen:
                 "type": "function",
                 "function": {
                     "name": parsed_tool_call["name"],
-                    "arguments": json.dumps(parsed_tool_call.get("arguments", {})),
+                    # Dict, NOT json.dumps: Qwen3.6's chat template iterates
+                    # `tool_call.arguments|items` to render <parameter=...>
+                    # blocks and raises "Can only get item pairs from a
+                    # mapping" on a string. Qwen3.x's `|tojson` renders a
+                    # dict correctly (a string would double-encode).
+                    "arguments": parsed_tool_call.get("arguments", {}),
                 },
             }]
         return msg
