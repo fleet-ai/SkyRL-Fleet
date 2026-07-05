@@ -1144,6 +1144,8 @@ async def main(
     from_checkpoint: str = None,
     rollout_dump_dir: str = None,
     screenshot_max_dim: int = 0,
+    load_state: str = None,
+    start_step: int = 0,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1336,7 +1338,16 @@ async def main(
     training_client = None
     adam_params = None
     if not eval_only:
-        training_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
+        if load_state:
+            # Resume: restore LoRA adapter + Adam moments saved by a prior
+            # run's save_state (Cloud Run job executions cap at 24h, so any
+            # run projected past that must resume in a fresh execution).
+            # _with_optimizer: the plain from_state variant drops Adam
+            # moments, which resets the effective step-size schedule.
+            logger.info(f"Resuming training client from state: {load_state}")
+            training_client = await service_client.create_training_client_from_state_with_optimizer_async(load_state)
+        else:
+            training_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
         adam_params = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     # trust_remote_code is required for models like moonshotai/Kimi-K2.6 whose
     # tokenizer config references a custom processor class on the HF Hub.
@@ -1399,6 +1410,26 @@ async def main(
     train_dataloader = create_dataloader(current_epoch)
     train_iterator = iter(train_dataloader)
 
+    if start_step:
+        # Resume mid-schedule: the per-epoch shuffle is seeded (seed + epoch),
+        # so rebuilding the interrupted epoch's dataloader and discarding its
+        # already-consumed batches reproduces the exact batch order the
+        # crashed run would have seen — every task keeps its planned visit
+        # count. Rollouts are re-sampled fresh (on-policy), only the ORDER is
+        # replayed.
+        if not load_state:
+            raise SystemExit("--start-step requires --load-state <tinker://...state_N>")
+        current_epoch = start_step // steps_per_epoch
+        train_dataloader = create_dataloader(current_epoch)
+        train_iterator = iter(train_dataloader)
+        consumed = start_step % steps_per_epoch
+        for _ in range(consumed):
+            next(train_iterator)
+        logger.info(
+            f"Resumed at step {start_step}: epoch {current_epoch}, "
+            f"skipped {consumed} consumed batches of {steps_per_epoch}"
+        )
+
     # Pre-train eval: snapshot the base (untrained) LoRA weights and evaluate
     # on the held-out split so we have a baseline for the post-train delta.
     pre_sampling_path: str | None = None
@@ -1410,7 +1441,8 @@ async def main(
         await _run_eval(pre_sampling_client, step_index=-1, dump_label="pre")
 
     # Training loop
-    pbar = tqdm(range(max_steps), desc="Training", unit="step")
+    pbar = tqdm(range(start_step, max_steps), desc="Training", unit="step",
+                initial=start_step, total=max_steps)
     for step in pbar:
         step_start = time.time()
         metrics = {"step": step, "epoch": step // steps_per_epoch}
@@ -1737,6 +1769,26 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--load-state",
+        type=str,
+        default=None,
+        help=(
+            "Tinker TRAINING state URI to resume from (e.g. "
+            "tinker://<run-id>/weights/state_000040 — written by save_state_every). "
+            "Restores LoRA adapter + Adam moments. Pair with --start-step."
+        ),
+    )
+    parser.add_argument(
+        "--start-step",
+        type=int,
+        default=0,
+        help=(
+            "Step index to resume at (== the N in state_%%06d|N). The seeded "
+            "per-epoch shuffle replays the interrupted epoch's batch order and "
+            "skips already-consumed batches, preserving the planned task visits."
+        ),
+    )
+    parser.add_argument(
         "--rollout-dump-dir",
         type=str,
         default=None,
@@ -1799,5 +1851,7 @@ if __name__ == "__main__":
             eval_only=args.eval_only,
             from_checkpoint=args.from_checkpoint,
             rollout_dump_dir=args.rollout_dump_dir,
+            load_state=args.load_state,
+            start_step=args.start_step,
         )
     )
