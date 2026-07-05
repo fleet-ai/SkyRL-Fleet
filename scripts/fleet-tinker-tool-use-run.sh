@@ -76,6 +76,14 @@ fi
 if [ -n "${WANDB_NAME:-}" ]; then
     EXTRA_ARGS+=(--wandb-name "$WANDB_NAME")
 fi
+# Resume from a saved training state (Cloud Run executions cap at 24h; runs
+# projected past that continue in a fresh execution via LOAD_STATE+START_STEP).
+if [ -n "${LOAD_STATE:-}" ]; then
+    EXTRA_ARGS+=(--load-state "$LOAD_STATE")
+fi
+if [ -n "${START_STEP:-}" ] && [ "${START_STEP:-0}" != "0" ]; then
+    EXTRA_ARGS+=(--start-step "$START_STEP")
+fi
 
 python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --model-name "$MODEL_NAME" \

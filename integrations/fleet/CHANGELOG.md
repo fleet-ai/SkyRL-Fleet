@@ -1,5 +1,33 @@
 # Fleet Integration Changelog
 
+## 2026-07-05: Tinker harness — resume from saved state (`--load-state` + `--start-step`)
+
+Scope: **Tinker harness only** (`main_fleet_tinker.py`, `fleet-tinker-tool-use-run.sh`).
+
+### Problem
+
+Cloud Run job executions hard-cap at 24h (GCP limit). Run `986205b6` (Qwen3.6-35B-A3B,
+2×538, ~40h projected) was killed mid-step-39 with healthy metrics; the fleet-research-api
+kept reporting `running` and its /logs went empty (the API doesn't reconcile dead
+executions — W&B heartbeat is the only trustworthy liveness signal). `save_state_every=5`
+had preserved `weights/state_000040`, but nothing could consume it.
+
+### Fix
+
+- `--load-state <tinker://.../weights/state_N>`: resume via
+  `create_training_client_from_state_with_optimizer_async` (the plain `from_state` variant
+  drops Adam moments, silently resetting the effective step-size schedule).
+- `--start-step N`: the per-epoch shuffle is seeded (`seed + epoch`), so the interrupted
+  epoch's dataloader is rebuilt and its consumed batches discarded — the resumed run replays
+  the exact planned batch order (every task keeps its visit count); rollouts themselves are
+  re-sampled fresh (on-policy).
+- Run script maps `LOAD_STATE` / `START_STEP` env vars to the flags (fleet-research-api
+  forwards them from new TrainRequest fields).
+
+Rule of thumb: any /train run projected >20h should either lower scope or plan on a resume
+leg. Resume legs must reuse the SAME dataset_id and hyperparams or the seeded schedule
+diverges.
+
 ## 2026-07-03: Tinker harness — ENV_STEP_TIMEOUT_S configurable, default 300
 
 Scope: **Tinker harness only** (`main_fleet_tinker.py`).
