@@ -252,6 +252,17 @@ def _build_response_message(text: str, asst_turn: int) -> dict:
     parsed = parse_tool_call(text)
     msg = _family.build_assistant_message(text, parsed, asst_turn)
 
+    # Wire-format boundary: the family adapter may carry `arguments` as a
+    # dict (Qwen3.6's chat template iterates arguments|items, so the TRAINER
+    # needs the dict), but the OpenAI response schema requires a JSON string —
+    # strict clients (openai SDK pydantic models) reject a dict and the whole
+    # completion fails client-side (claweval jobs 7f6568a0/f487d06d: every
+    # request dropped, 0 turns). Serialize here, at the API edge only.
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        if isinstance(fn.get("arguments"), (dict, list)):
+            fn["arguments"] = json.dumps(fn["arguments"])
+
     # OpenAI clients (tau2-bench, BFCL) expect `content` to be either non-empty
     # or null. The family adapter may leave `content` empty when the model
     # emitted only a tool call. Promote empty content to a single space so
