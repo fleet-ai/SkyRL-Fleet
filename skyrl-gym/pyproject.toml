@@ -16,9 +16,10 @@ requires-python = ">=3.10"
 
 dependencies = [
     "func_timeout",
-    "pandas", 
+    "pandas",
     "requests",
     "omegaconf",
+    "pydantic",
 ]
 
 [project.urls]
