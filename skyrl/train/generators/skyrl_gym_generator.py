@@ -28,6 +28,7 @@ from skyrl.backends.skyrl_train.inference_engines.inference_engine_client import
 )
 from skyrl.train.config import GeneratorConfig, SkyRLGymConfig
 from skyrl.train.generators.base import (
+    BatchMetadata,
     GeneratorInput,
     GeneratorInterface,
     GeneratorOutput,
@@ -64,6 +65,7 @@ def _inject_fleet_model_family(
     family = family_for_model(model_name)
     if family is not None:
         env_extras["model_family"] = family
+
 
 # Closed <think>...</think> reasoning spans, used to split response tokens into thinking vs visible
 # for the log_thinking_token_metrics breakdown. Non-greedy + DOTALL so each block is matched
@@ -193,6 +195,9 @@ class SkyRLGymGenerator(GeneratorInterface):
         self.is_vl_model = self.processor is not None
         self.max_turns = generator_cfg.max_turns
         self.batched = generator_cfg.batched
+        # Optional ATOF rollout observer (integrations.fleet.atof_events.AtofEmitter),
+        # installed by the Fleet entrypoints. None means no events are emitted.
+        self.atof_emitter = None
         self.use_conversation_multi_turn = generator_cfg.use_conversation_multi_turn
         # optionally use custom chat template to get loss masks (i.e. for Qwen3)
         self.custom_chat_template = get_custom_chat_template(generator_cfg.chat_template)
@@ -274,6 +279,20 @@ class SkyRLGymGenerator(GeneratorInterface):
             **self.generator_cfg.chat_template_kwargs,
         )
 
+    def _atof_emit(self, method: str, **kwargs):
+        """Call an emitter hook without ever letting observability break a rollout.
+
+        A raised exception here would otherwise surface as a zero-reward
+        trajectory via generate()'s catch-all, silently corrupting training.
+        """
+        if self.atof_emitter is None:
+            return None
+        try:
+            return getattr(self.atof_emitter, method)(**kwargs)
+        except Exception as e:
+            logger.warning(f"ATOF emitter failed at {method}; continuing rollout: {e}")
+            return None
+
     async def _run_in_executor_if_available(self, func, *args, **kwargs):
         if (executor := self.env_executor) is not None:
             loop = asyncio.get_running_loop()
@@ -331,6 +350,7 @@ class SkyRLGymGenerator(GeneratorInterface):
         max_input_length: int,
         sampling_params: Optional[Dict[str, Any]] = None,
         trajectory_id: Optional[TrajectoryID] = None,
+        batch_metadata: Optional[BatchMetadata] = None,
     ) -> Union[TrajectoryOutput, StepWiseOutput]:
         """
         Multi-turn generation loop that executes a single trajectory.
@@ -383,10 +403,15 @@ class SkyRLGymGenerator(GeneratorInterface):
         try:
             chat_history, _ = await self._env_init(env, chat_history)
         except Exception as e:
-            logger.warning(f"Session {session_id}: env.init failed ({type(e).__name__}: {e}), returning zero-reward trajectory")
+            logger.warning(
+                f"Session {session_id}: env.init failed ({type(e).__name__}: {e}), returning zero-reward trajectory"
+            )
             # Return a minimal failed trajectory so training can continue
             dummy_ids = self.tokenizer.apply_chat_template(
-                chat_history, add_generation_prompt=False, tokenize=True, return_dict=False,
+                chat_history,
+                add_generation_prompt=False,
+                tokenize=True,
+                return_dict=False,
                 **self.generator_cfg.chat_template_kwargs,
             )
             eos_id = self.tokenizer.eos_token_id
@@ -456,6 +481,23 @@ class SkyRLGymGenerator(GeneratorInterface):
             accumulated_images=initial_images if initial_images else None,
         )
 
+        # ATOF observability (no-op unless a Fleet entrypoint installed an emitter).
+        # pending_atof_messages tracks each turn's new input messages: the post-init
+        # history for turn 1, then only the latest observations.
+        atof_trace = self._atof_emit(
+            "rollout_start",
+            task_key=env_extras.get("task_key"),
+            env_class=env_class,
+            global_step=batch_metadata.global_step if batch_metadata is not None else None,
+            phase=(
+                f"{batch_metadata.training_phase}_step_{batch_metadata.global_step}"
+                if batch_metadata is not None
+                else None
+            ),
+            sample_idx=trajectory_id.repetition_id if trajectory_id is not None else None,
+        )
+        pending_atof_messages = chat_history
+
         while not agent_loop_state.done:
 
             if len(agent_loop_state.input_ids) > max_input_length:
@@ -518,11 +560,28 @@ class SkyRLGymGenerator(GeneratorInterface):
                         response_logprobs.append(0.0)
                     added_eos = True
 
+            self._atof_emit(
+                "llm_turn",
+                trace=atof_trace,
+                new_messages=pending_atof_messages,
+                response_text=output,
+                stop_reason=stop_reason,
+            )
+
             # 2. Environment step
             env_step_output: BaseTextEnvStepOutput = await self._env_step(env, output)
             new_obs = env_step_output["observations"]
             step_reward: float = env_step_output["reward"]
             agent_loop_state.done = env_step_output["done"]
+            self._atof_emit(
+                "env_step",
+                trace=atof_trace,
+                action=output,
+                observations=new_obs or [],
+                reward=step_reward,
+                done=agent_loop_state.done,
+            )
+            pending_atof_messages = new_obs or []
 
             if env_step_output.get("postprocessed_action", None) is not None:
                 # TODO(Charlie): come back to this, we should deprecate postprocessed action
@@ -607,6 +666,15 @@ class SkyRLGymGenerator(GeneratorInterface):
         # Get environment-specific metrics after the episode is done
         env_metrics = env.get_metrics()
 
+        self._atof_emit(
+            "rollout_end",
+            trace=atof_trace,
+            # Step rewards may be None (e.g. reward computed only at episode end).
+            reward=sum(reward for reward, _ in per_step_rewards if reward is not None),
+            stop_reason=stop_reason,
+            num_turns=len(per_step_rewards),
+        )
+
         prompt_ids = agent_loop_state.input_ids[:initial_prompt_length]
         rollout_logprobs = None
         rollout_expert_indices_out = None
@@ -684,9 +752,9 @@ class SkyRLGymGenerator(GeneratorInterface):
                 rollout_logprobs=rollout_logprobs,
                 env_metrics=env_metrics,
                 rollout_expert_indices=rollout_expert_indices_out,
-                multi_modal_data={"images": agent_loop_state.accumulated_images}
-                if agent_loop_state.accumulated_images
-                else None,
+                multi_modal_data=(
+                    {"images": agent_loop_state.accumulated_images} if agent_loop_state.accumulated_images else None
+                ),
             )
 
         return agent_loop_output
@@ -839,8 +907,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                 content = msg.get("content", "")
                 if isinstance(content, list):
                     return " ".join(
-                        b.get("text", "") for b in content
-                        if isinstance(b, dict) and b.get("type") == "text"
+                        b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
                     )
                 return str(content)
         return ""
@@ -856,6 +923,7 @@ class SkyRLGymGenerator(GeneratorInterface):
         max_input_length: int,
         sampling_params: Optional[Dict[str, Any]],
         hint_cfg,
+        batch_metadata: Optional[BatchMetadata] = None,
     ) -> Tuple[List[TrajectoryOutput], List[TrajectoryID], List[str]]:
         """Run hinted rollouts for prompts where all raw samples failed.
 
@@ -872,7 +940,11 @@ class SkyRLGymGenerator(GeneratorInterface):
         from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
 
         use_llm_hints = hint_cfg.get("use_llm_hints", False) if hasattr(hint_cfg, "get") else False
-        hint_model = hint_cfg.get("hint_model", "openrouter/anthropic/claude-sonnet-4-20250514") if hasattr(hint_cfg, "get") else "openrouter/anthropic/claude-sonnet-4-20250514"
+        hint_model = (
+            hint_cfg.get("hint_model", "openrouter/anthropic/claude-sonnet-4-20250514")
+            if hasattr(hint_cfg, "get")
+            else "openrouter/anthropic/claude-sonnet-4-20250514"
+        )
         hint_timeout = hint_cfg.get("hint_llm_timeout", 30.0) if hasattr(hint_cfg, "get") else 30.0
 
         # 1. Group outputs by instance_id
@@ -911,14 +983,16 @@ class SkyRLGymGenerator(GeneratorInterface):
             hint_requests = []
             for iid, best_orig_idx, best_output, _ in failed_groups:
                 metrics = best_output.env_metrics
-                hint_requests.append({
-                    "task_prompt": self._extract_task_prompt(prompts[best_orig_idx]),
-                    "chat_history": metrics.get("chat_history", []),
-                    "verifier_stdout": metrics.get("verifier_stdout"),
-                    "verifier_error": metrics.get("verifier_error"),
-                    "tool_error_messages": metrics.get("tool_error_messages"),
-                    "instance_id": iid,
-                })
+                hint_requests.append(
+                    {
+                        "task_prompt": self._extract_task_prompt(prompts[best_orig_idx]),
+                        "chat_history": metrics.get("chat_history", []),
+                        "verifier_stdout": metrics.get("verifier_stdout"),
+                        "verifier_error": metrics.get("verifier_error"),
+                        "tool_error_messages": metrics.get("tool_error_messages"),
+                        "instance_id": iid,
+                    }
+                )
 
             hint_results = await synthesize_hints_batch(
                 hint_requests=hint_requests,
@@ -951,8 +1025,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                 continue
 
             logger.info(
-                f"Hint [{hint_category}] for instance {iid} "
-                f"(best_reward={best_reward:.3f}):\n{hint_text[:500]}"
+                f"Hint [{hint_category}] for instance {iid} " f"(best_reward={best_reward:.3f}):\n{hint_text[:500]}"
             )
             prompts_hinted += 1
 
@@ -974,6 +1047,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                         max_input_length,
                         sampling_params=sampling_params,
                         trajectory_id=tid,
+                        batch_metadata=batch_metadata,
                     )
                 )
                 hint_tids.append(tid)
@@ -1138,6 +1212,7 @@ class SkyRLGymGenerator(GeneratorInterface):
         if self.generator_cfg.step_wise_trajectories:
             assert trajectory_ids is not None, "`trajectory_ids` is a required field for step wise training"
         sampling_params: Optional[dict] = input_batch.get("sampling_params", None)
+        batch_metadata = input_batch.get("batch_metadata")
         max_tokens = self.generator_cfg.sampling_params.max_generate_length
         max_input_length = self.generator_cfg.max_input_length
 
@@ -1160,6 +1235,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                 max_input_length,
                 sampling_params=sampling_params,
                 trajectory_id=trajectory_ids[i] if trajectory_ids is not None else None,
+                batch_metadata=batch_metadata,
             )
             async_tasks.append(asyncio.ensure_future(coro))
 
@@ -1190,10 +1266,11 @@ class SkyRLGymGenerator(GeneratorInterface):
         # --- Hint augmentation: rescue GRPO signal on dead prompts ---
         # Only during training; eval should not run hints.
         n_raw = len(all_outputs)
-        batch_metadata = input_batch.get("batch_metadata")
         is_training = batch_metadata is not None and batch_metadata.training_phase == "train"
         hint_cfg = getattr(self.skyrl_gym_cfg, "fleet_task", None)
-        enable_hints = hint_cfg is not None and (hint_cfg.get("enable_hints", False) if hasattr(hint_cfg, "get") else False)
+        enable_hints = hint_cfg is not None and (
+            hint_cfg.get("enable_hints", False) if hasattr(hint_cfg, "get") else False
+        )
         if (
             enable_hints
             and not self.generator_cfg.step_wise_trajectories
@@ -1210,6 +1287,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                 max_input_length=max_input_length,
                 sampling_params=sampling_params,
                 hint_cfg=hint_cfg,
+                batch_metadata=batch_metadata,
             )
             if hint_outputs:
                 all_outputs = list(all_outputs) + hint_outputs
@@ -1315,6 +1393,7 @@ class SkyRLGymGenerator(GeneratorInterface):
 
             # Category-level metrics (LLM-synthesized vs static)
             from skyrl_gym.envs.fleet_task.hint_synthesizer import CATEGORY_LLM
+
             llm_metrics = [m for m in hinted_metrics if m.get("hint_category") == CATEGORY_LLM]
             n_llm = len(llm_metrics)
             if n_llm > 0:
