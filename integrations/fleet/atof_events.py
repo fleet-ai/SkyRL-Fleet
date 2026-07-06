@@ -1,0 +1,348 @@
+"""ATOF event emission for SkyRL rollouts.
+
+Streams rollout trajectories (LLM turns, env steps, rewards) through the
+NeMo Relay runtime to the Fleet event pipeline (MSK -> ClickPipes ->
+ClickHouse). Off unless SKYRL_ATOF_ENABLED=1; init and every emit fail open
+so training behavior is never affected.
+
+Images never go inline: they upload to S3 keyed by content hash and events
+carry the object URL. A payload that would exceed the Kafka broker cap
+(only possible from malformed env output) is truncated and flagged.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import copy
+import hashlib
+import inspect
+import json
+import os
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from loguru import logger
+
+MSK_PLUGIN_KIND = "theseus-msk-atof-export"
+DEFAULT_TOPIC = "atof.received"
+DEFAULT_CLIENT_ID = "skyrl-nemo-relay"
+DEFAULT_IMAGE_BUCKET = "fleet-trajectory-artifacts"
+IMAGE_KEY_PREFIX = "skyrl"
+# Broker cap is 20MB; leave headroom for the event envelope and metadata.
+MAX_PAYLOAD_BYTES = 19_000_000
+
+_nemo_module: Any = None
+
+
+def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEmitter"]:
+    """Start the NeMo runtime and return an emitter, or None (disabled/failed).
+
+    Requires SKYRL_ATOF_ENABLED=1 plus either the MSK env vars
+    (THESEUS_ATOF_MSK_BROKERS, THESEUS_ATOF_TENANT_ID) or
+    SKYRL_ATOF_FILE_DIR for local file output. Any failure logs one warning
+    and returns None.
+    """
+    global _nemo_module
+
+    if os.environ.get("SKYRL_ATOF_ENABLED") != "1":
+        return None
+
+    component = _component_config()
+    if component is None:
+        return None
+
+    try:
+        import nemo_relay
+    except ImportError as exc:
+        logger.warning(f"ATOF disabled: nemo_relay wheel not installed ({exc})")
+        return None
+
+    try:
+        report = _run_sync(nemo_relay.plugin.initialize({"version": 1, "components": [component]}))
+    except Exception as exc:
+        logger.warning(f"ATOF disabled: plugin initialization failed ({type(exc).__name__}: {exc})")
+        return None
+
+    errors = _initialization_errors(report)
+    if errors:
+        logger.warning(f"ATOF disabled: plugin configuration errors {errors}")
+        return None
+
+    _nemo_module = nemo_relay
+    logger.info(f"ATOF enabled: exporter={component['kind']} run={run_name}")
+    return AtofEmitter(nemo_relay, entrypoint=entrypoint, run_name=run_name, model=model)
+
+
+def drain_atof(timeout: float = 5.0) -> None:
+    """Flush buffered events before process exit. No-op when disabled."""
+    if _nemo_module is None:
+        return
+    try:
+        _nemo_module.plugin.drain(timeout)
+    except Exception as exc:
+        logger.warning(f"ATOF drain failed ({type(exc).__name__}: {exc})")
+
+
+@dataclass
+class RolloutTrace:
+    handle: Any
+    metadata: Dict[str, Any]
+    image_urls: List[Dict[str, Any]] = field(default_factory=list)
+    counters: Dict[str, int] = field(default_factory=lambda: {"truncated": 0, "image_upload_failures": 0, "emit_errors": 0})
+
+
+class AtofEmitter:
+    """Emits one ATOF trace per rollout. Every method fails open."""
+
+    def __init__(self, nemo: Any, *, entrypoint: str, run_name: str, model: str):
+        self._nemo = nemo
+        self._entrypoint = entrypoint
+        self._run_name = run_name
+        self._model = model
+        self._image_bucket = os.environ.get("SKYRL_ATOF_IMAGE_BUCKET", DEFAULT_IMAGE_BUCKET)
+        self._image_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="atof-image")
+        self._uploaded_shas: set = set()
+        self._s3 = None
+        self._warned: set = set()
+
+    def rollout_start(
+        self,
+        *,
+        task_key: str,
+        env_class: str,
+        global_step: Optional[int],
+        phase: Optional[str],
+        sample_idx: Optional[int],
+    ) -> Optional[RolloutTrace]:
+        try:
+            metadata = _drop_none(
+                {
+                    "producer_session_id": self._run_name,
+                    "trace_id": uuid.uuid4().hex,
+                    "entrypoint": self._entrypoint,
+                    "model": self._model,
+                    "task_key": task_key,
+                    "env_class": env_class,
+                    "global_step": global_step,
+                    "phase": phase,
+                    "sample_idx": sample_idx,
+                }
+            )
+            handle = self._nemo.scope.push(
+                f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata
+            )
+            return RolloutTrace(handle=handle, metadata=metadata)
+        except Exception as exc:
+            self._warn_once("rollout_start", exc)
+            return None
+
+    def llm_turn(
+        self, trace: Optional[RolloutTrace], *, new_messages: List[dict], response_text: str, stop_reason: Optional[str]
+    ) -> None:
+        if trace is None:
+            return
+        try:
+            request = self._guard(trace, {"messages": self._offload_images(trace, new_messages)})
+            response = self._guard(trace, {"content": response_text, "stop_reason": stop_reason})
+            self._nemo.llm.execute(
+                "skyrl-policy",
+                self._nemo.LLMRequest({}, request),
+                lambda _request: response,
+                handle=trace.handle,
+                metadata=trace.metadata,
+                model_name=self._model,
+            )
+        except Exception as exc:
+            trace.counters["emit_errors"] += 1
+            self._warn_once("llm_turn", exc)
+
+    def env_step(
+        self, trace: Optional[RolloutTrace], *, action: str, observations: List[dict], reward: float, done: bool
+    ) -> None:
+        if trace is None:
+            return
+        try:
+            args = self._guard(trace, {"action": action})
+            result = self._guard(
+                trace,
+                {"observations": self._offload_images(trace, observations), "reward": reward, "done": done},
+            )
+            self._nemo.tools.execute(
+                "env_step",
+                args,
+                lambda _args: result,
+                handle=trace.handle,
+                metadata=trace.metadata,
+            )
+        except Exception as exc:
+            trace.counters["emit_errors"] += 1
+            self._warn_once("env_step", exc)
+
+    def rollout_end(
+        self, trace: Optional[RolloutTrace], *, reward: float, stop_reason: Optional[str], num_turns: int
+    ) -> None:
+        if trace is None:
+            return
+        try:
+            data = _drop_none(
+                {
+                    "reward": reward,
+                    "stop_reason": stop_reason,
+                    "num_turns": num_turns,
+                    "image_urls": trace.image_urls or None,
+                    "counters": trace.counters,
+                }
+            )
+            self._nemo.scope.event("rollout_end", handle=trace.handle, data=data, metadata=trace.metadata)
+            self._nemo.scope.pop(trace.handle, output={"reward": reward})
+        except Exception as exc:
+            self._warn_once("rollout_end", exc)
+
+    def _offload_images(self, trace: RolloutTrace, messages: List[dict]) -> List[dict]:
+        """Replace base64 image data URLs with content-addressed S3 URLs.
+
+        Returns a copy when replacements happen; the caller's messages (the
+        training chat history) are never mutated.
+        """
+        if not any(_message_has_data_image(message) for message in messages):
+            return messages
+
+        messages = copy.deepcopy(messages)
+        for message in messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if not (isinstance(item, dict) and item.get("type") == "image_url"):
+                    continue
+                url = (item.get("image_url") or {}).get("url") or ""
+                if not url.startswith("data:image"):
+                    continue
+                image_bytes = base64.b64decode(url.split(",", 1)[1] if "," in url else url)
+                sha = hashlib.sha256(image_bytes).hexdigest()
+                key = f"{IMAGE_KEY_PREFIX}/{self._run_name}/{sha}"
+                s3_url = f"s3://{self._image_bucket}/{key}"
+                if sha not in self._uploaded_shas:
+                    self._uploaded_shas.add(sha)
+                    self._image_pool.submit(self._upload_image, trace, key, image_bytes)
+                item["image_url"]["url"] = s3_url
+                trace.image_urls.append({"url": s3_url, "sha256": sha, "bytes": len(image_bytes)})
+        return messages
+
+    def _upload_image(self, trace: RolloutTrace, key: str, image_bytes: bytes) -> None:
+        try:
+            if self._s3 is None:
+                self._s3 = _make_s3_client()
+            self._s3.put_object(Bucket=self._image_bucket, Key=key, Body=image_bytes)
+        except Exception as exc:
+            trace.counters["image_upload_failures"] += 1
+            self._warn_once("image_upload", exc)
+
+    def _guard(self, trace: RolloutTrace, payload: Dict[str, Any]) -> Dict[str, Any]:
+        serialized = json.dumps(payload, default=str)
+        if len(serialized) <= MAX_PAYLOAD_BYTES:
+            return payload
+        trace.counters["truncated"] += 1
+        logger.error(
+            f"ATOF payload of {len(serialized)} bytes exceeds the broker cap; truncating "
+            f"(trace_id={trace.metadata.get('trace_id')}). An env is emitting oversized output."
+        )
+        return {
+            "truncated": True,
+            "original_bytes": len(serialized),
+            "content": serialized[: MAX_PAYLOAD_BYTES - 1024],
+        }
+
+    def _warn_once(self, site: str, exc: Exception) -> None:
+        if site in self._warned:
+            return
+        self._warned.add(site)
+        logger.warning(f"ATOF emit failed at {site}; further failures logged once ({type(exc).__name__}: {exc})")
+
+
+def _component_config() -> Optional[Dict[str, Any]]:
+    file_dir = os.environ.get("SKYRL_ATOF_FILE_DIR")
+    if file_dir:
+        return {
+            "kind": "observability",
+            "enabled": True,
+            "config": {
+                "version": 1,
+                "atof": {"enabled": True, "output_directory": file_dir, "filename": "events.jsonl", "mode": "append"},
+            },
+        }
+
+    brokers = os.environ.get("THESEUS_ATOF_MSK_BROKERS", "").strip()
+    tenant_id = os.environ.get("THESEUS_ATOF_TENANT_ID", "").strip()
+    if not brokers or not tenant_id:
+        logger.warning(
+            "ATOF disabled: SKYRL_ATOF_ENABLED=1 but THESEUS_ATOF_MSK_BROKERS/THESEUS_ATOF_TENANT_ID are not set"
+        )
+        return None
+    return {
+        "kind": MSK_PLUGIN_KIND,
+        "enabled": True,
+        "config": {
+            "brokers": brokers,
+            "tenant_id": tenant_id,
+            "topic": os.environ.get("THESEUS_ATOF_MSK_TOPIC", DEFAULT_TOPIC),
+            "client_id": os.environ.get("THESEUS_ATOF_MSK_CLIENT_ID", DEFAULT_CLIENT_ID),
+            "region": os.environ.get("AWS_REGION", "us-east-1"),
+            "fail_open": True,
+        },
+    }
+
+
+def _initialization_errors(report: Any) -> Optional[List[Any]]:
+    """Error diagnostics from an initialize() report; malformed reports are errors."""
+    if not isinstance(report, dict):
+        return [{"level": "error", "message": f"invalid report type {type(report).__name__}"}]
+    diagnostics = report.get("diagnostics") or []
+    if not isinstance(diagnostics, list):
+        return [{"level": "error", "message": "invalid diagnostics"}]
+    return [d for d in diagnostics if isinstance(d, dict) and d.get("level") == "error"] or None
+
+
+def _run_sync(value: Any) -> Any:
+    """Resolve plugin.initialize()'s awaitable from sync or async contexts."""
+    if not inspect.isawaitable(value):
+        return value
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(value)
+    result: Dict[str, Any] = {}
+
+    def runner() -> None:
+        result["value"] = asyncio.run(value)
+
+    thread = threading.Thread(target=runner, name="atof-init")
+    thread.start()
+    thread.join()
+    return result.get("value")
+
+
+def _make_s3_client() -> Any:
+    import boto3
+
+    return boto3.client("s3")
+
+
+def _message_has_data_image(message: dict) -> bool:
+    content = message.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("type") == "image_url"
+        and ((item.get("image_url") or {}).get("url") or "").startswith("data:image")
+        for item in content
+    )
+
+
+def _drop_none(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in payload.items() if value is not None}
