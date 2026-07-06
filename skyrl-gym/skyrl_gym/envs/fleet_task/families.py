@@ -82,6 +82,14 @@ class Family(Protocol):
         """Body of the 'No tool call landed' observation that fires when
         parse_tool_call returns None."""
 
+    def coerce_tool_call_arguments(self, args: Any) -> Any:
+        """Coerce a tool_call's `arguments` to the type THIS family's chat
+        template renders. OpenAI wire format carries a JSON string; Qwen3.6's
+        template iterates `arguments|items` (needs a dict), Kimi's renders a
+        string. Callers replaying externally-sourced history (the tinker
+        shim) must pass every inbound tool_call through this before
+        apply_chat_template."""
+
 
 # --------------------------------------------------------------------------- #
 # Kimi-K2.6
@@ -150,6 +158,12 @@ class Kimi:
             f"text):\n{self.canonical_tool_call}"
         )
 
+    def coerce_tool_call_arguments(self, args: Any) -> Any:
+        # Kimi's template renders arguments verbatim as text: JSON string.
+        if isinstance(args, (dict, list)):
+            return json.dumps(args)
+        return args if args is not None else "{}"
+
 
 # --------------------------------------------------------------------------- #
 # Qwen3 (and Qwen2.5)
@@ -200,6 +214,20 @@ class Qwen:
             "No tool call landed. End your response with a tool call in "
             "the canonical format for your model."
         )
+
+    def coerce_tool_call_arguments(self, args: Any) -> Any:
+        # Qwen3.6's template iterates `arguments|items` to emit
+        # <parameter=...> blocks: a JSON string raises "Can only get item
+        # pairs from a mapping" (99% Internal Server Error in claweval round
+        # aec2a6c8 — every multi-turn request replays history through the
+        # template). Unparseable strings stay strings and fail loudly.
+        if isinstance(args, str):
+            try:
+                loaded = json.loads(args)
+                return loaded if isinstance(loaded, (dict, list)) else args
+            except (json.JSONDecodeError, ValueError):
+                return args
+        return args if args is not None else {}
 
 
 # --------------------------------------------------------------------------- #

@@ -307,8 +307,16 @@ def _normalize_history_ids(msgs: list[dict], family: Family) -> list[dict]:
                 new_calls = []
                 for tc in calls:
                     tc = dict(tc)
-                    fn = tc.get("function") or {}
+                    fn = dict(tc.get("function") or {})
                     name = fn.get("name")
+                    # Inbound history carries OpenAI wire-format arguments (a
+                    # JSON string); each family's template needs its own type
+                    # (Qwen3.6: dict, Kimi: string). Coerce BEFORE
+                    # apply_chat_template or Qwen's `arguments|items` raises
+                    # on every multi-turn request.
+                    if "arguments" in fn and hasattr(family, "coerce_tool_call_arguments"):
+                        fn["arguments"] = family.coerce_tool_call_arguments(fn["arguments"])
+                    tc["function"] = fn
                     old_id = tc.get("id", "") or ""
                     if name:
                         canonical_id = _canonical_id(family, name, asst_turn)

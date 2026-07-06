@@ -361,3 +361,23 @@ class TestQwenArgumentsShape:
         args = msg["tool_calls"][0]["function"]["arguments"]
         assert isinstance(args, dict)
         assert args == {"command": "ls -la"}
+
+
+class TestCoerceToolCallArguments:
+    def test_qwen_string_to_dict(self):
+        """Wire-format string args must become a dict for Qwen's template —
+        `arguments|items` on a string is the claweval 99%-error bug."""
+        assert Qwen().coerce_tool_call_arguments('{"command": "ls"}') == {"command": "ls"}
+
+    def test_qwen_dict_passthrough(self):
+        assert Qwen().coerce_tool_call_arguments({"a": 1}) == {"a": 1}
+
+    def test_qwen_unparseable_string_stays(self):
+        assert Qwen().coerce_tool_call_arguments("not json") == "not json"
+
+    def test_kimi_dict_to_string(self):
+        out = Kimi().coerce_tool_call_arguments({"command": "ls"})
+        assert isinstance(out, str) and json.loads(out) == {"command": "ls"}
+
+    def test_kimi_string_passthrough(self):
+        assert Kimi().coerce_tool_call_arguments('{"a":1}') == '{"a":1}'
