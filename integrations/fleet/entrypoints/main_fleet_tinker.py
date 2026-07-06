@@ -1146,6 +1146,7 @@ async def main(
     screenshot_max_dim: int = 0,
     load_state: str = None,
     start_step: int = 0,
+    time_budget_s: int = 0,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1445,8 +1446,28 @@ async def main(
         await _run_eval(pre_sampling_client, step_index=-1, dump_label="pre")
 
     # Training loop
+    run_started = time.time()
+    paused_at_step: int | None = None
+    pause_state_path: str | None = None
     pbar = tqdm(range(start_step, max_steps), desc="Training", unit="step", initial=start_step, total=max_steps)
     for step in pbar:
+        # Cloud Run job executions hard-cap at 24h; a run projected past the
+        # budget saves state and exits 0 BEFORE starting a step it can't
+        # finish. The launcher reads `paused` from results_out and submits a
+        # continuation execution with LOAD_STATE/START_STEP.
+        if time_budget_s and (time.time() - run_started) > time_budget_s:
+            try:
+                pause_state_path = training_client.save_state(name=f"state_{step:06d}").result().path
+            except Exception as e:
+                logger.warning(f"pause save_state failed ({e}); falling back to last periodic state")
+                pause_state_path = state_checkpoints[-1]["path"] if state_checkpoints else None
+            paused_at_step = step
+            logger.info(
+                f"TIME BUDGET REACHED at step {step}/{max_steps} "
+                f"({time.time() - run_started:.0f}s > {time_budget_s}s): pausing. "
+                f"resume: load_state={pause_state_path} start_step={step}"
+            )
+            break
         step_start = time.time()
         metrics = {"step": step, "epoch": step // steps_per_epoch}
 
@@ -1634,6 +1655,12 @@ async def main(
         payload = {
             "model_name": model_name,
             "num_steps": max_steps,
+            "paused": paused_at_step is not None,
+            "resume": (
+                {"load_state": pause_state_path, "start_step": paused_at_step}
+                if paused_at_step is not None and pause_state_path
+                else None
+            ),
             "n_train": len(train_dataset),
             "n_holdout": len(eval_dataset) if eval_dataset else 0,
             "pre_pass_rate": pre,
@@ -1783,6 +1810,17 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--time-budget-s",
+        type=int,
+        default=0,
+        help=(
+            "Wall-clock budget in seconds; 0 disables. When exceeded, the run "
+            "saves state and exits 0 with results.paused=true + resume "
+            "coordinates, BEFORE starting a step it can't finish (Cloud Run "
+            "executions hard-cap at 24h)."
+        ),
+    )
+    parser.add_argument(
         "--start-step",
         type=int,
         default=0,
@@ -1857,5 +1895,6 @@ if __name__ == "__main__":
             rollout_dump_dir=args.rollout_dump_dir,
             load_state=args.load_state,
             start_step=args.start_step,
+            time_budget_s=args.time_budget_s,
         )
     )

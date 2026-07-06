@@ -84,6 +84,9 @@ fi
 if [ -n "${START_STEP:-}" ] && [ "${START_STEP:-0}" != "0" ]; then
     EXTRA_ARGS+=(--start-step "$START_STEP")
 fi
+if [ -n "${TIME_BUDGET_S:-}" ] && [ "${TIME_BUDGET_S:-0}" != "0" ]; then
+    EXTRA_ARGS+=(--time-budget-s "$TIME_BUDGET_S")
+fi
 
 python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --model-name "$MODEL_NAME" \
