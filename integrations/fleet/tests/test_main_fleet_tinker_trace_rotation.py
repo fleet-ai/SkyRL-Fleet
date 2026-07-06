@@ -14,7 +14,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 SRC = Path(__file__).resolve().parents[3] / "integrations/fleet/entrypoints/main_fleet_tinker.py"
 
 
@@ -100,7 +99,8 @@ class TestPhaseBoundaryRotation:
             if isinstance(node, ast.AsyncFunctionDef) and node.name == "_rotate_trace_job":
                 # First statement should be an `if not fleet_api_key: return`
                 first = node.body[0]
-                assert isinstance(first, ast.If), \
-                    f"first stmt should be `if not fleet_api_key: return`, got {ast.dump(first)}"
+                assert isinstance(
+                    first, ast.If
+                ), f"first stmt should be `if not fleet_api_key: return`, got {ast.dump(first)}"
                 return
         raise AssertionError("_rotate_trace_job not found in main_fleet_tinker.py")

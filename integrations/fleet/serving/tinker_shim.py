@@ -26,6 +26,7 @@ Design notes:
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -35,22 +36,20 @@ from typing import Any, Iterable, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-import json
 
-from skyrl_gym.envs.fleet_task.families import Family, get_family, family_for_model
+from skyrl_gym.envs.fleet_task.families import Family, family_for_model, get_family
 from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
-
 
 # ─── Globals (bound in startup) ──────────────────────────────────────────
 
 
-_service_client: Any = None             # tinker.ServiceClient
-_sampling_client: Any = None            # tinker.SamplingClient
-_tokenizer: Any = None                  # transformers.AutoTokenizer
-_family: Optional[Family] = None        # per-base-model family adapter
+_service_client: Any = None  # tinker.ServiceClient
+_sampling_client: Any = None  # tinker.SamplingClient
+_tokenizer: Any = None  # transformers.AutoTokenizer
+_family: Optional[Family] = None  # per-base-model family adapter
 _ready: bool = False
-_model_id: str = "tinker"               # served-model name surfaced in /v1/models
-_token_logs: list[tuple[int, int]] = [] # (prompt_tokens, completion_tokens) running log
+_model_id: str = "tinker"  # served-model name surfaced in /v1/models
+_token_logs: list[tuple[int, int]] = []  # (prompt_tokens, completion_tokens) running log
 
 
 # ─── Request / response shapes (OpenAI v1 chat completion) ───────────────
@@ -133,7 +132,9 @@ async def chat_completions(req: ChatCompletionRequest):
     except TypeError:
         # Older tokenizers don't accept `tools=...`; retry without it.
         input_ids = _tokenizer.apply_chat_template(
-            msgs, add_generation_prompt=True, tokenize=True,
+            msgs,
+            add_generation_prompt=True,
+            tokenize=True,
         )
     input_ids = _normalize_token_list(input_ids)
 
@@ -171,8 +172,7 @@ async def chat_completions(req: ChatCompletionRequest):
         pp = sum(p for p, _ in _token_logs)
         cc = sum(c for _, c in _token_logs)
         print(
-            f"[tinker_shim] {len(_token_logs)} calls — "
-            f"prompt={pp:,} completion={cc:,} tokens",
+            f"[tinker_shim] {len(_token_logs)} calls — " f"prompt={pp:,} completion={cc:,} tokens",
             file=sys.stderr,
             flush=True,
         )
@@ -215,6 +215,7 @@ async def chat_completions(req: ChatCompletionRequest):
             }
             yield f"data: {json.dumps(final_chunk)}\n\n"
             yield "data: [DONE]\n\n"
+
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     return JSONResponse(
@@ -340,9 +341,7 @@ def _canonical_id(family: Family, name: str, turn: int) -> str:
     asking the family adapter to build a dummy assistant message and
     extracting the id it generates. This keeps the id-format definition in
     exactly ONE place (families.py)."""
-    synth = family.build_assistant_message(
-        "", {"name": name, "arguments": {}}, turn
-    )
+    synth = family.build_assistant_message("", {"name": name, "arguments": {}}, turn)
     calls = synth.get("tool_calls") or []
     if not calls:
         # Adapter didn't emit a tool_calls section — leave id unchanged.
@@ -421,11 +420,15 @@ async def _on_startup() -> None:
     _family = get_family(family_for_model(hf_model_name))
     print(
         f"[tinker_shim] family={_family.name if _family else None} for base={hf_model_name}",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
 
-    print(f"[tinker_shim] loading tokenizer for {hf_model_name} (cold cache may take 1–2 min)…",
-          file=sys.stderr, flush=True)
+    print(
+        f"[tinker_shim] loading tokenizer for {hf_model_name} (cold cache may take 1–2 min)…",
+        file=sys.stderr,
+        flush=True,
+    )
     _tokenizer = AutoTokenizer.from_pretrained(hf_model_name, trust_remote_code=True)
 
     print(f"[tinker_shim] creating sampling_client for {checkpoint}…", file=sys.stderr, flush=True)
@@ -437,8 +440,7 @@ async def _on_startup() -> None:
         _sampling_client = _service_client.create_sampling_client(model_path=checkpoint)
     except Exception as e:
         print(
-            f"[tinker_shim] FATAL: failed to create sampling_client for {checkpoint!r}: "
-            f"{type(e).__name__}: {e}",
+            f"[tinker_shim] FATAL: failed to create sampling_client for {checkpoint!r}: " f"{type(e).__name__}: {e}",
             file=sys.stderr,
             flush=True,
         )

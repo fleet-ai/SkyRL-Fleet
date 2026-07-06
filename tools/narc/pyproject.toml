@@ -22,7 +22,10 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 88
+# Match the repo-wide black line length (root pyproject [tool.black]): black
+# runs from the repo root and reformats to 120, so an 88 limit here is
+# unenforceable (the two hooks undo each other and CI stays red).
+line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]

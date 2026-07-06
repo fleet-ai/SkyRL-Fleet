@@ -19,15 +19,13 @@ Run:
 
 from __future__ import annotations
 
-import asyncio
 import json
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock
 
 import integrations.fleet.serving.tinker_shim as shim
-
 
 # Some FastAPI lifespan handlers need `_ready=True` to accept requests.
 # We swap globals for a deterministic, dependency-free request path.
@@ -70,7 +68,7 @@ def _sse_chunks(text: str) -> list[dict | str]:
     for raw in text.strip().split("\n\n"):
         if not raw.startswith("data: "):
             continue
-        body = raw[len("data: "):]
+        body = raw[len("data: ") :]
         if body == "[DONE]":
             out.append("[DONE]")
         else:
@@ -79,21 +77,27 @@ def _sse_chunks(text: str) -> list[dict | str]:
 
 
 def test_streaming_returns_sse_when_stream_true(shim_client):
-    resp = shim_client.post("/v1/chat/completions", json={
-        "model": "test-model",
-        "messages": [{"role": "user", "content": "hi"}],
-        "stream": True,
-    })
+    resp = shim_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/event-stream")
 
 
 def test_streaming_emits_content_then_final_then_done(shim_client):
-    resp = shim_client.post("/v1/chat/completions", json={
-        "model": "test-model",
-        "messages": [{"role": "user", "content": "hi"}],
-        "stream": True,
-    })
+    resp = shim_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
     chunks = _sse_chunks(resp.text)
 
     # 1 content chunk + 1 final chunk + [DONE]
@@ -113,11 +117,14 @@ def test_streaming_usage_fields_present_on_final_chunk(shim_client):
     """OpenAI clients (incl. claw-eval) read usage from the final chunk
     when stream_options.include_usage is set; some always read it. Include
     it unconditionally — it's free and harmless."""
-    resp = shim_client.post("/v1/chat/completions", json={
-        "model": "test-model",
-        "messages": [{"role": "user", "content": "hi"}],
-        "stream": True,
-    })
+    resp = shim_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
     chunks = _sse_chunks(resp.text)
     final = chunks[1]
     assert "usage" in final
@@ -129,11 +136,14 @@ def test_streaming_usage_fields_present_on_final_chunk(shim_client):
 def test_nonstreaming_path_still_works(shim_client):
     """Regression guard: adding the streaming branch must not break the
     default non-streaming response shape that all other benches rely on."""
-    resp = shim_client.post("/v1/chat/completions", json={
-        "model": "test-model",
-        "messages": [{"role": "user", "content": "hi"}],
-        # no stream=true
-    })
+    resp = shim_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            # no stream=true
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["object"] == "chat.completion"
@@ -146,23 +156,27 @@ def test_streaming_with_tool_calls_propagates_in_delta(shim_client, monkeypatch)
     include them in delta.tool_calls — without this, claw-eval would see
     a plain-text completion and miss the structured call."""
     from skyrl_gym.envs.fleet_task.families import Kimi
+
     monkeypatch.setattr(shim, "_family", Kimi())
     # Tokenizer decode returns a Kimi-syntax tool call
     tok = _fake_tokenizer()
     tok.decode.return_value = (
         "<|tool_calls_section_begin|>"
         "<|tool_call_begin|>functions.foo:0"
-        "<|tool_call_argument_begin|>{\"x\":1}"
+        '<|tool_call_argument_begin|>{"x":1}'
         "<|tool_call_end|>"
         "<|tool_calls_section_end|>"
     )
     monkeypatch.setattr(shim, "_tokenizer", tok)
 
-    resp = shim_client.post("/v1/chat/completions", json={
-        "model": "test-model",
-        "messages": [{"role": "user", "content": "hi"}],
-        "stream": True,
-    })
+    resp = shim_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        },
+    )
     chunks = _sse_chunks(resp.text)
     content_chunk = chunks[0]
     tcs = content_chunk["choices"][0]["delta"].get("tool_calls")

@@ -33,11 +33,11 @@ import scenarios as scenarios_mod  # noqa: E402
 
 # (slug, short label, no_think)  — one model per vendor.
 MODELS = [
-    ("openai/gpt-5.5",                   "GPT-5.5",      False),
-    ("anthropic/claude-opus-4.8",        "Opus-4.8",     False),
-    ("google/gemini-3.1-pro-preview",    "Gemini-3.1-Pro", False),
+    ("openai/gpt-5.5", "GPT-5.5", False),
+    ("anthropic/claude-opus-4.8", "Opus-4.8", False),
+    ("google/gemini-3.1-pro-preview", "Gemini-3.1-Pro", False),
     ("meta-llama/llama-3.3-70b-instruct", "Llama-3.3-70B", False),
-    ("qwen/qwen3.5-9b",                  "Qwen3.5-9B",   True),   # hybrid -> no-think
+    ("qwen/qwen3.5-9b", "Qwen3.5-9B", True),  # hybrid -> no-think
 ]
 
 
@@ -52,20 +52,22 @@ def _no_think_body(base_url: str):
     return {"chat_template_kwargs": {"enable_thinking": False}}
 
 
-async def play_dual_pair(client_a, client_b, sc, model_a, nt_a, url_a, model_b, nt_b, url_b,
-                         max_turns, temperature, max_tokens):
+async def play_dual_pair(
+    client_a, client_b, sc, model_a, nt_a, url_a, model_b, nt_b, url_b, max_turns, temperature, max_tokens
+):
     """Dual-tag game with independent no_think per seat. Seat A holds you_values,
     opens; seat B holds them_values. Returns the game.Outcome dict."""
     items = list(sc.item_names)
     body_a = _no_think_body(url_a) if nt_a else None
     body_b = _no_think_body(url_b) if nt_b else None
     sys_a = run_eval._maybe_no_think(
-        prompts.build_system_prompt(items, list(sc.counts), list(sc.you_values), max_turns, protocol="dual"), nt_a)
+        prompts.build_system_prompt(items, list(sc.counts), list(sc.you_values), max_turns, protocol="dual"), nt_a
+    )
     sys_b = run_eval._maybe_no_think(
-        prompts.build_system_prompt(items, list(sc.counts), list(sc.them_values), max_turns, protocol="dual"), nt_b)
+        prompts.build_system_prompt(items, list(sc.counts), list(sc.them_values), max_turns, protocol="dual"), nt_b
+    )
 
-    hist_a = [{"role": "system", "content": sys_a},
-              {"role": "user", "content": prompts.OPENING_USER_MSG}]
+    hist_a = [{"role": "system", "content": sys_a}, {"role": "user", "content": prompts.OPENING_USER_MSG}]
     hist_b = [{"role": "system", "content": sys_b}]
 
     last = {"a": None, "b": None}
@@ -118,15 +120,27 @@ async def main_async(args):
         sb, lb, ntb, ub = models[bi]
         async with sem:
             try:
-                return await play_dual_pair(clients[ua], clients[ub], sc, sa, nta, ua, sb, ntb, ub,
-                                            args.max_turns, args.temperature, args.max_tokens)
+                return await play_dual_pair(
+                    clients[ua],
+                    clients[ub],
+                    sc,
+                    sa,
+                    nta,
+                    ua,
+                    sb,
+                    ntb,
+                    ub,
+                    args.max_turns,
+                    args.temperature,
+                    args.max_tokens,
+                )
             except Exception as e:  # noqa: BLE001
-                return {"error": str(e), "agreed": False, "you_norm": 0.0, "them_norm": 0.0,
-                        "reason": "error"}
+                return {"error": str(e), "agreed": False, "you_norm": 0.0, "them_norm": 0.0, "reason": "error"}
 
     # --policy-only: only compute the policy's row + column (policy vs each frontier,
     # both seats), skipping the frontier x frontier block to save API cost.
     policy_idx = (len(models) - 1) if args.policy_model else None
+
     def _wanted(ai, bi):
         if not args.policy_only or policy_idx is None:
             return True
@@ -142,8 +156,11 @@ async def main_async(args):
                 index.append((ai, bi))
                 tasks.append(one(ai, bi, sc))
     ncells = sum(1 for ai in range(M) for bi in range(M) if _wanted(ai, bi))
-    print(f"running {len(tasks)} games ({ncells} cells x {len(scs)} scenarios"
-          f"{' [policy-only]' if args.policy_only else ''})...", flush=True)
+    print(
+        f"running {len(tasks)} games ({ncells} cells x {len(scs)} scenarios"
+        f"{' [policy-only]' if args.policy_only else ''})...",
+        flush=True,
+    )
     flat = await asyncio.gather(*tasks)
 
     # aggregate per cell
@@ -151,7 +168,7 @@ async def main_async(args):
     for (ai, bi), r in zip(index, flat):
         cells[(ai, bi)].append(r)
 
-    you_outcome = [[None] * M for _ in range(M)]   # seat A normalized outcome
+    you_outcome = [[None] * M for _ in range(M)]  # seat A normalized outcome
     agree = [[None] * M for _ in range(M)]
     joint = [[None] * M for _ in range(M)]
     for ai in range(M):
@@ -167,9 +184,15 @@ async def main_async(args):
 
     labels = [m[1] for m in models]
     payload = {
-        "config": {"dataset": args.dataset, "split": args.split, "n": len(scs),
-                   "max_turns": args.max_turns, "seed": args.seed, "protocol": "dual",
-                   "models": [{"slug": m[0], "label": m[1], "no_think": m[2], "base_url": m[3]} for m in models]},
+        "config": {
+            "dataset": args.dataset,
+            "split": args.split,
+            "n": len(scs),
+            "max_turns": args.max_turns,
+            "seed": args.seed,
+            "protocol": "dual",
+            "models": [{"slug": m[0], "label": m[1], "no_think": m[2], "base_url": m[3]} for m in models],
+        },
         "labels": labels,
         "seatA_outcome": you_outcome,
         "agreement": agree,
@@ -195,27 +218,57 @@ async def run_exploitation_probe(args):
 
     parts = []
     if args.policy_model:
-        parts.append({"slug": args.policy_model, "label": args.policy_label,
-                      "no_think": args.policy_no_think, "base_url": args.policy_base_url, "role": "policy"})
+        parts.append(
+            {
+                "slug": args.policy_model,
+                "label": args.policy_label,
+                "no_think": args.policy_no_think,
+                "base_url": args.policy_base_url,
+                "role": "policy",
+            }
+        )
     if args.base_model:
-        parts.append({"slug": args.base_model, "label": args.base_label,
-                      "no_think": True, "base_url": run_probe.OPENROUTER_URL, "role": "base"})
+        parts.append(
+            {
+                "slug": args.base_model,
+                "label": args.base_label,
+                "no_think": True,
+                "base_url": run_probe.OPENROUTER_URL,
+                "role": "base",
+            }
+        )
     # Default reference pool = the cross-play frontier models (skipping dupes).
     if args.probe_reference or not parts:
         existing = {p["slug"] for p in parts}
         for slug, label, nt in MODELS:
             if slug not in existing:
-                parts.append({"slug": slug, "label": label, "no_think": nt,
-                              "base_url": run_probe.OPENROUTER_URL, "role": "reference"})
+                parts.append(
+                    {
+                        "slug": slug,
+                        "label": label,
+                        "no_think": nt,
+                        "base_url": run_probe.OPENROUTER_URL,
+                        "role": "reference",
+                    }
+                )
 
     await run_probe.run_probe(
-        parts, dataset=args.dataset, split=args.split, n=args.n, max_turns=args.max_turns,
-        temperature=args.temperature, max_tokens=args.max_tokens, concurrency=args.concurrency,
-        seed=args.seed, protocol="dual")
+        parts,
+        dataset=args.dataset,
+        split=args.split,
+        n=args.n,
+        max_turns=args.max_turns,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens,
+        concurrency=args.concurrency,
+        seed=args.seed,
+        protocol="dual",
+    )
 
 
 def render_heatmap(payload):
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
@@ -225,31 +278,41 @@ def render_heatmap(payload):
     M = len(labels)
 
     with np.errstate(all="ignore"):
-        rowmeans = np.nanmean(A, axis=1)   # mean outcome as opener  (vs the field)
-        colmeans = np.nanmean(A, axis=0)   # mean outcome conceded TO opponents as partner
+        rowmeans = np.nanmean(A, axis=1)  # mean outcome as opener  (vs the field)
+        colmeans = np.nanmean(A, axis=0)  # mean outcome conceded TO opponents as partner
     vmax = max(0.6, float(np.nanmax(A))) if np.isfinite(A).any() else 0.6
 
     fig, ax = plt.subplots(figsize=(8.2, 6.6))
     im = ax.imshow(A, cmap="viridis", vmin=0.0, vmax=vmax)
     ax.set_xticks(range(M))
     ax.set_yticks(range(M))
-    ax.set_xticklabels([f"{lbl}\n(opp μ={cm:.2f})" for lbl, cm in zip(labels, colmeans)],
-                       rotation=35, ha="right", fontsize=8)
+    ax.set_xticklabels(
+        [f"{lbl}\n(opp μ={cm:.2f})" for lbl, cm in zip(labels, colmeans)], rotation=35, ha="right", fontsize=8
+    )
     ax.set_yticklabels([f"{lbl}  (μ={rm:.2f})" for lbl, rm in zip(labels, rowmeans)], fontsize=8)
     ax.set_xlabel("Partner (seat B)")
     ax.set_ylabel("Opener (seat A) — score is for this side")
-    title = (f"Cross-play seat-A outcome reward · dual · {payload['config']['dataset']}/"
-             f"{payload['config']['split']} · n={payload['config']['n']}/cell\n"
-             f"row μ = how well the opener does vs the field (higher = stronger)")
+    title = (
+        f"Cross-play seat-A outcome reward · dual · {payload['config']['dataset']}/"
+        f"{payload['config']['split']} · n={payload['config']['n']}/cell\n"
+        f"row μ = how well the opener does vs the field (higher = stronger)"
+    )
     ax.set_title(title, fontsize=10)
     for i in range(M):
         for j in range(M):
             v = A[i, j]
             if np.isnan(v):
                 continue
-            ax.text(j, i, f"{v:.2f}", ha="center", va="center",
-                    color="white" if v < 0.33 else "black", fontsize=9,
-                    fontweight="bold" if i == j else "normal")
+            ax.text(
+                j,
+                i,
+                f"{v:.2f}",
+                ha="center",
+                va="center",
+                color="white" if v < 0.33 else "black",
+                fontsize=9,
+                fontweight="bold" if i == j else "normal",
+            )
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label("seat-A normalized outcome (no-deal=0)")
     fig.tight_layout()
@@ -270,18 +333,30 @@ def parse_args():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--render-only", action="store_true", help="re-render heatmap from crossplay_matrix.json")
     # Exploitation probe (run_probe.py) — companion diagnostic for periodic eval.
-    ap.add_argument("--probe", action="store_true",
-                    help="also run the exploitation probe vs a scripted conceder (see run_probe.py)")
-    ap.add_argument("--probe-reference", action="store_true",
-                    help="include the frontier MODELS as probe reference even when --policy-model is set")
+    ap.add_argument(
+        "--probe", action="store_true", help="also run the exploitation probe vs a scripted conceder (see run_probe.py)"
+    )
+    ap.add_argument(
+        "--probe-reference",
+        action="store_true",
+        help="include the frontier MODELS as probe reference even when --policy-model is set",
+    )
     ap.add_argument("--policy-model", default=None, help="trained checkpoint slug for the probe")
     ap.add_argument("--policy-base-url", default="http://localhost:8000/v1")
     ap.add_argument("--policy-label", default="Policy")
     # These models are trained THINKING-ON; default to thinking enabled in the matrix.
-    ap.add_argument("--policy-no-think", action="store_true", default=False,
-                    help="disable thinking for the policy (default: thinking ON)")
-    ap.add_argument("--policy-only", action="store_true", default=False,
-                    help="only play the policy's row+column vs the frontier (skip frontier x frontier)")
+    ap.add_argument(
+        "--policy-no-think",
+        action="store_true",
+        default=False,
+        help="disable thinking for the policy (default: thinking ON)",
+    )
+    ap.add_argument(
+        "--policy-only",
+        action="store_true",
+        default=False,
+        help="only play the policy's row+column vs the frontier (skip frontier x frontier)",
+    )
     ap.add_argument("--base-model", default=None, help="pre-RL base model slug for the probe Δ")
     ap.add_argument("--base-label", default="Base")
     return ap.parse_args()

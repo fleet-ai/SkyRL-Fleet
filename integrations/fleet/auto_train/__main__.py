@@ -127,7 +127,9 @@ def _process_one(
     if modality not in backend_supported:
         logger.warning(
             "modality %s not supported by backend=%s for %s; skipping",
-            modality, backend, dataset_key,
+            modality,
+            backend,
+            dataset_key,
         )
         notify_not_implemented(dataset_key, modality, 0)
         state.mark_processed(dataset_key, modality)
@@ -152,7 +154,10 @@ def _process_one(
     if len(tasks) < MIN_TASKS_TO_LAUNCH:
         logger.warning(
             "Skipping %s/%s: %d tasks < %d threshold",
-            dataset_key, modality, len(tasks), MIN_TASKS_TO_LAUNCH,
+            dataset_key,
+            modality,
+            len(tasks),
+            MIN_TASKS_TO_LAUNCH,
         )
         notify_below_threshold(dataset_key, modality, len(tasks), MIN_TASKS_TO_LAUNCH)
         state.mark_processed(dataset_key, modality)
@@ -184,7 +189,9 @@ def _process_one(
     if dry_run:
         logger.info(
             "[DRY RUN] Would upload %d tasks to s3 for %s/%s",
-            len(tasks), dataset_key, modality,
+            len(tasks),
+            dataset_key,
+            modality,
         )
         s3_uri = f"s3://(dry-run)/{dataset_key}/openenv/all_{modality}.json"
     else:
@@ -209,7 +216,8 @@ def _process_one(
         )
         if not ok:
             notify_launch_failure(
-                dataset_key, modality,
+                dataset_key,
+                modality,
                 "fleet-tinker-tool-use-run.sh failed or produced no results JSON",
             )
             return 1
@@ -275,8 +283,7 @@ def cmd_trigger(args: argparse.Namespace) -> int:
             logger.info("--ignore-seed: treating all %d datasets as candidates", len(new_datasets))
         else:
             new_datasets = [d for d in datasets if not state.is_seen(d.dataset_key)]
-            logger.info("Active datasets: %d, new since last tick: %d",
-                        len(datasets), len(new_datasets))
+            logger.info("Active datasets: %d, new since last tick: %d", len(datasets), len(new_datasets))
 
         if args.max_datasets and len(new_datasets) > args.max_datasets:
             logger.info("Capping to first %d datasets (newest-first)", args.max_datasets)
@@ -310,7 +317,10 @@ def cmd_trigger(args: argparse.Namespace) -> int:
                 if args.modality and modality != args.modality:
                     continue
                 rc = _process_one(
-                    client, dataset, modality, state,
+                    client,
+                    dataset,
+                    modality,
+                    state,
                     dry_run=args.dry_run,
                     skip_smoke=args.skip_smoke,
                     api_key=api_key,
@@ -356,28 +366,42 @@ def main(argv: list[str] | None = None) -> int:
     p_trig.add_argument("--modality", choices=SUPPORTED_MODALITIES, default=None)
     p_trig.add_argument("--dry-run", action="store_true")
     p_trig.add_argument("--skip-smoke", action="store_true")
-    p_trig.add_argument("--team-id", default=None,
-                        help="Filter datasets by team_id (e.g., fleet team a1025f0b...)")
-    p_trig.add_argument("--max-datasets", type=int, default=None,
-                        help="Cap the number of new datasets processed this tick (newest-first)")
-    p_trig.add_argument("--ignore-seed", action="store_true",
-                        help="Treat all datasets as candidates (bypass seen_datasets and processed_pairs filters). For targeted testing.")
-    p_trig.add_argument("--tinker-base-model", default=TINKER_DEFAULT_BASE_MODEL,
-                        help="Base model for --backend tinker (HF id, e.g., moonshotai/Kimi-K2.6).")
-    p_trig.add_argument("--tinker-num-steps", type=int, default=TINKER_DEFAULT_NUM_STEPS,
-                        help="Training steps for --backend tinker.")
-    p_trig.add_argument("--tinker-lora-rank", type=int, default=TINKER_DEFAULT_LORA_RANK,
-                        help="LoRA rank for --backend tinker.")
-    p_trig.add_argument("--tinker-max-concurrent", type=int, default=TINKER_DEFAULT_MAX_CONCURRENT,
-                        help="Max concurrent rollouts for --backend tinker.")
+    p_trig.add_argument("--team-id", default=None, help="Filter datasets by team_id (e.g., fleet team a1025f0b...)")
+    p_trig.add_argument(
+        "--max-datasets",
+        type=int,
+        default=None,
+        help="Cap the number of new datasets processed this tick (newest-first)",
+    )
+    p_trig.add_argument(
+        "--ignore-seed",
+        action="store_true",
+        help="Treat all datasets as candidates (bypass seen_datasets and processed_pairs filters). For targeted testing.",
+    )
+    p_trig.add_argument(
+        "--tinker-base-model",
+        default=TINKER_DEFAULT_BASE_MODEL,
+        help="Base model for --backend tinker (HF id, e.g., moonshotai/Kimi-K2.6).",
+    )
+    p_trig.add_argument(
+        "--tinker-num-steps", type=int, default=TINKER_DEFAULT_NUM_STEPS, help="Training steps for --backend tinker."
+    )
+    p_trig.add_argument(
+        "--tinker-lora-rank", type=int, default=TINKER_DEFAULT_LORA_RANK, help="LoRA rank for --backend tinker."
+    )
+    p_trig.add_argument(
+        "--tinker-max-concurrent",
+        type=int,
+        default=TINKER_DEFAULT_MAX_CONCURRENT,
+        help="Max concurrent rollouts for --backend tinker.",
+    )
     p_trig.set_defaults(func=cmd_trigger)
 
     p_status = sub.add_parser("status", help="Show processed pairs")
     p_status.set_defaults(func=cmd_status)
 
     p_seed = sub.add_parser("seed", help="Force-seed state with all current datasets")
-    p_seed.add_argument("--force", action="store_true",
-                        help="Overwrite existing seed")
+    p_seed.add_argument("--force", action="store_true", help="Overwrite existing seed")
     p_seed.set_defaults(func=cmd_seed)
 
     args = parser.parse_args(argv)

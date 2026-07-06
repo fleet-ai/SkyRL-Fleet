@@ -68,9 +68,7 @@ def build_system_prompt(scenario: Scenario, cfg: TermsConfig = DEFAULT_CONFIG) -
             "Never Accept a price strictly above reservation_price: "
             "u(p > reservation_price) < 0, which is worse than the disagreement utility of 0."
         )
-        monotone_text = (
-            "Buyer offers weakly increase across rounds: if p_prev^A exists, then p >= p_prev^A."
-        )
+        monotone_text = "Buyer offers weakly increase across rounds: if p_prev^A exists, then p >= p_prev^A."
         accept_constraint = (
             "If decision = Accept, price = null and counterpart_offer must be non-null "
             "and no greater than reservation_price."
@@ -79,9 +77,7 @@ def build_system_prompt(scenario: Scenario, cfg: TermsConfig = DEFAULT_CONFIG) -
             "If decision = Offer, price must lie within bounds and weakly above the "
             "previous own offer if one exists."
         )
-        r_hat_constraint = (
-            "r_hat lies in [p_min, p_max] and estimates the counterpart seller's reservation value."
-        )
+        r_hat_constraint = "r_hat lies in [p_min, p_max] and estimates the counterpart seller's reservation value."
     else:
         utility = (
             "u(p) = p - reservation_price   if agreement occurs at price p,\n"
@@ -94,9 +90,7 @@ def build_system_prompt(scenario: Scenario, cfg: TermsConfig = DEFAULT_CONFIG) -
             "Never Accept a price strictly below reservation_price: "
             "u(p < reservation_price) < 0, which is worse than the disagreement utility of 0."
         )
-        monotone_text = (
-            "Seller offers weakly decrease across rounds: if p_prev^A exists, then p <= p_prev^A."
-        )
+        monotone_text = "Seller offers weakly decrease across rounds: if p_prev^A exists, then p <= p_prev^A."
         accept_constraint = (
             "If decision = Accept, price = null and counterpart_offer must be non-null "
             "and no less than reservation_price."
@@ -105,9 +99,7 @@ def build_system_prompt(scenario: Scenario, cfg: TermsConfig = DEFAULT_CONFIG) -
             "If decision = Offer, price must lie within bounds and weakly below the "
             "previous own offer if one exists."
         )
-        r_hat_constraint = (
-            "r_hat lies in [p_min, p_max] and estimates the counterpart buyer's reservation value."
-        )
+        r_hat_constraint = "r_hat lies in [p_min, p_max] and estimates the counterpart buyer's reservation value."
 
     return f"""You are a rational negotiating agent playing the role of a {ROLE} in a bilateral price negotiation against a simulated counterpart.
 
@@ -181,17 +173,11 @@ def build_user_message(
     if offer_present:
         legal_decisions = ["Offer", "Accept", "Reject"]
 
-    monotone = (
-        "buyer: non-decreasing" if is_buyer else "seller: non-increasing"
-    )
+    monotone = "buyer: non-decreasing" if is_buyer else "seller: non-increasing"
     if is_buyer:
-        ir_note = (
-            "individual rationality: never Offer or Accept a price above reservation_price"
-        )
+        ir_note = "individual rationality: never Offer or Accept a price above reservation_price"
     else:
-        ir_note = (
-            "individual rationality: never Offer or Accept a price below reservation_price"
-        )
+        ir_note = "individual rationality: never Offer or Accept a price below reservation_price"
 
     accept_utility = None
     if offer_present:
@@ -459,6 +445,7 @@ def template_voice(move: CounterpartMove, scenario: Scenario, is_opening: bool) 
 # Smoke test
 # ----------------------------------------------------------------------------------
 if __name__ == "__main__":
+
     def _make_scenario(role: str) -> Scenario:
         counter = "seller" if role == "buyer" else "buyer"
         return Scenario(
@@ -501,7 +488,8 @@ if __name__ == "__main__":
 
     # --- User message: no counterpart offer => Accept illegal ---
     um_no_offer = build_user_message(
-        buyer, k=1,
+        buyer,
+        k=1,
         counterpart_offer=None,
         counterpart_message=None,
         own_previous_offer=None,
@@ -521,7 +509,8 @@ if __name__ == "__main__":
         for i in range(1, 10)
     ]
     um_offer = build_user_message(
-        buyer, k=4,
+        buyer,
+        k=4,
         counterpart_offer=58.0,
         counterpart_message="I can do 58.00.",
         own_previous_offer=45.0,
@@ -534,16 +523,18 @@ if __name__ == "__main__":
     print("\n[OK] user message: 5 keys, legality + accept_utility + history window correct.\n")
 
     # --- Parser: (a) clean JSON ---
-    clean = json.dumps({
-        "decision": "offer",
-        "price": "55.5",
-        "message": "Let's meet in the middle.",
-        "belief": {
-            "r_hat": 42.0,
-            "kappa_hat": 0.4,
-            "stance_probs": {"conciliatory": 0.2, "neutral": 0.6, "aggressive": 0.2},
-        },
-    })
+    clean = json.dumps(
+        {
+            "decision": "offer",
+            "price": "55.5",
+            "message": "Let's meet in the middle.",
+            "belief": {
+                "r_hat": 42.0,
+                "kappa_hat": 0.4,
+                "stance_probs": {"conciliatory": 0.2, "neutral": 0.6, "aggressive": 0.2},
+            },
+        }
+    )
     a = parse_agent_action(clean, buyer, own_previous_offer=50.0)
     assert a.parse_error is None
     assert a.decision == "Offer"

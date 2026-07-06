@@ -117,9 +117,7 @@ def test_load_policy_only_latest_loads_policy_and_sets_global_step(tmp_path):
 
     # The consistency validator hits the filesystem in non-trivial ways; stub
     # it out so the test stays focused on this method's contract.
-    with patch(
-        "skyrl.train.utils.trainer_utils.validate_consistency_for_latest_checkpoint"
-    ) as validator:
+    with patch("skyrl.train.utils.trainer_utils.validate_consistency_for_latest_checkpoint") as validator:
         loaded = exp._load_policy_only(trainer)
 
     assert loaded is True

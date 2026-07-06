@@ -92,9 +92,7 @@ def do_s3_list(prefix: str):
     cmd = ["aws", "s3", "ls", prefix.rstrip("/") + "/"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise SystemExit(
-            f"aws s3 ls failed (exit {result.returncode}):\n{result.stderr.strip()}"
-        )
+        raise SystemExit(f"aws s3 ls failed (exit {result.returncode}):\n{result.stderr.strip()}")
     run_ids = []
     for line in result.stdout.splitlines():
         # Lines for common prefixes look like: "                       PRE run_name/"
@@ -114,16 +112,21 @@ def do_s3_sync(run_id: str, name: str, prefix: str):
     dst = DATA_DIR / name
     dst.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "aws", "s3", "sync", src, str(dst),
-        "--exclude", "*",
-        "--include", "global_step_*.jsonl",
+        "aws",
+        "s3",
+        "sync",
+        src,
+        str(dst),
+        "--exclude",
+        "*",
+        "--include",
+        "global_step_*.jsonl",
     ]
     print(f"syncing {src} -> {dst} …")
     result = subprocess.run(cmd)
     if result.returncode != 0:
         raise SystemExit(
-            f"aws s3 sync failed (exit {result.returncode}). "
-            "Check your AWS credentials and that the run id exists."
+            f"aws s3 sync failed (exit {result.returncode}). " "Check your AWS credentials and that the run id exists."
         )
     files = list(dst.glob("global_step_*.jsonl"))
     if not files:
@@ -191,8 +194,9 @@ def main():
     out = DATA_DIR / "manifest.json"
     out.write_text(json.dumps(manifest, indent=2))
     total = sum(s["count"] for r in runs for s in r["steps"])
-    print(f"wrote {out} — {len(runs)} run(s), "
-          f"{sum(len(r['steps']) for r in runs)} step files, {total} trajectories")
+    print(
+        f"wrote {out} — {len(runs)} run(s), " f"{sum(len(r['steps']) for r in runs)} step files, {total} trajectories"
+    )
     for r in runs:
         print(f"  · {r['name']}: {len(r['steps'])} steps")
 

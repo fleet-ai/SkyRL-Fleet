@@ -64,9 +64,7 @@ class TinyDecoderBlock(nn.Module):
         scores = scores.masked_fill(mask, torch.finfo(scores.dtype).min)
         weights = torch.softmax(scores.float(), dim=-1).to(dtype=x.dtype)
         attended = torch.matmul(weights, value)
-        attended = (
-            attended.transpose(1, 2).contiguous().view(batch, sequence, d_model)
-        )
+        attended = attended.transpose(1, 2).contiguous().view(batch, sequence, d_model)
         x = x + self.out_proj(attended)
 
         normed = self.mlp_norm(x)
@@ -125,9 +123,7 @@ class TinyDecoderLM(nn.Module):
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         _, sequence = input_ids.shape
         if sequence > self.sequence_length:
-            raise ValueError(
-                f"sequence length {sequence} exceeds maximum {self.sequence_length}"
-            )
+            raise ValueError(f"sequence length {sequence} exceeds maximum {self.sequence_length}")
         positions = torch.arange(sequence, device=input_ids.device).unsqueeze(0)
         x = self.token_embedding(input_ids) + self.position_embedding(positions)
         for layer in self.layers:

@@ -95,6 +95,7 @@ class FleetPPOExp(BasePPOExp):
                 from integrations.fleet.s3_checkpoints import (
                     broadcast_checkpoint_to_workers,
                 )
+
                 broadcast_checkpoint_to_workers(ckpt_path)
             except Exception as e:
                 logger.warning(f"Failed to download checkpoint from S3: {e}")

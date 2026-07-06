@@ -127,7 +127,11 @@ def _provision_one(
             elapsed = time.time() - start
             logger.warning(
                 "smoke[%s] attempt %d/%d failed in %.1fs: %s",
-                env_key, attempt, retries, elapsed, e,
+                env_key,
+                attempt,
+                retries,
+                elapsed,
+                e,
             )
     return SmokeResult(
         env_key=env_key,
@@ -151,8 +155,7 @@ def run_smoke_test(
     """
     if modality not in SUPPORTED_MODALITIES:
         raise NotImplementedError(
-            f"Modality {modality!r} not supported (dataset={dataset_key}). "
-            f"Supported: {SUPPORTED_MODALITIES}"
+            f"Modality {modality!r} not supported (dataset={dataset_key}). " f"Supported: {SUPPORTED_MODALITIES}"
         )
 
     unique_envs = {t.get("env_key") for t in tasks if t.get("env_key")}

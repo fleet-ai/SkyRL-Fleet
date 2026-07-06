@@ -37,7 +37,9 @@ def notify_tinker_eval(
     wandb_url: str | None = None,
 ) -> None:
     delta = post_pass_rate - pre_pass_rate
-    arrow = ":chart_with_upwards_trend:" if delta > 0 else (":chart_with_downwards_trend:" if delta < 0 else ":bar_chart:")
+    arrow = (
+        ":chart_with_upwards_trend:" if delta > 0 else (":chart_with_downwards_trend:" if delta < 0 else ":bar_chart:")
+    )
     wandb_line = f"\n• wandb: {wandb_url}" if wandb_url else ""
     slack_notify(
         f"{arrow} Tinker training finished\n"

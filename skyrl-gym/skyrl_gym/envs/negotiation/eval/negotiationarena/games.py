@@ -22,6 +22,7 @@ from config import Scenario, Trade
 # 1. Initial resources
 # ---------------------------------------------------------------------------
 
+
 def initial_resources(scenario: Scenario, seat: int) -> dict[str, int]:
     """Return a fresh copy of scenario.initial_resources[seat]."""
     return dict(scenario.initial_resources[seat])
@@ -30,6 +31,7 @@ def initial_resources(scenario: Scenario, seat: int) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 # 2. Apply trade
 # ---------------------------------------------------------------------------
+
 
 def apply_trade(
     scenario: Scenario,
@@ -60,6 +62,7 @@ def apply_trade(
 # ---------------------------------------------------------------------------
 # 3. Trade legality
 # ---------------------------------------------------------------------------
+
 
 def is_legal_trade(
     scenario: Scenario,
@@ -142,6 +145,7 @@ def is_legal_trade(
 # 4. Compute payoffs  (SPEC §3)
 # ---------------------------------------------------------------------------
 
+
 def compute_payoffs(
     scenario: Scenario,
     accepted_trade: Optional[Trade],
@@ -183,6 +187,7 @@ def compute_payoffs(
 # 5. Extract price  (sell_buy)
 # ---------------------------------------------------------------------------
 
+
 def extract_price(
     scenario: Scenario,
     accepted_trade: Optional[Trade],
@@ -197,6 +202,7 @@ def extract_price(
 # 6. Extract proposer give  (ultimatum)
 # ---------------------------------------------------------------------------
 
+
 def extract_proposer_give(
     scenario: Scenario,
     accepted_trade: Optional[Trade],
@@ -210,6 +216,7 @@ def extract_proposer_give(
 # ---------------------------------------------------------------------------
 # 7. Decisive winner
 # ---------------------------------------------------------------------------
+
 
 def decisive_winner(
     payoffs: dict[int, float],

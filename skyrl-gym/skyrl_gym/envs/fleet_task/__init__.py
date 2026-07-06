@@ -17,5 +17,6 @@ __all__ = ["FleetTaskEnv", "parse_tool_call"]
 def __getattr__(name):
     if name == "FleetTaskEnv":
         from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
+
         return FleetTaskEnv
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

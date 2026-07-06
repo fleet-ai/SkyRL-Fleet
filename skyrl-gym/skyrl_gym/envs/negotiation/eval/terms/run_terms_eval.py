@@ -109,6 +109,7 @@ def _maybe_no_think(text: str, no_think: bool) -> str:
 
 def sanitize_model_name(model: str) -> str:
     import re
+
     return re.sub(r"[^A-Za-z0-9._-]+", "_", model).strip("_") or "model"
 
 
@@ -139,8 +140,12 @@ class LLMAgent:
 
     async def act(self, messages: list[dict]) -> str:
         return await chat(
-            self.client, self.model, messages, self.temperature,
-            max_tokens=self.max_tokens, extra_body=self.body,
+            self.client,
+            self.model,
+            messages,
+            self.temperature,
+            max_tokens=self.max_tokens,
+            extra_body=self.body,
         )
 
 
@@ -168,10 +173,14 @@ class ScriptedAgent:
             late = k >= max(2, K - 2)
             margin = (r_a - cp_offer) if is_buyer else (cp_offer - r_a)
             if ir_ok and (late or margin >= 0.10 * (p_max - p_min)):
-                return json.dumps({
-                    "decision": "Accept", "price": None, "message": "Agreed.",
-                    "belief": _scripted_belief(r_a, p_min, p_max, is_buyer),
-                })
+                return json.dumps(
+                    {
+                        "decision": "Accept",
+                        "price": None,
+                        "message": "Agreed.",
+                        "belief": _scripted_belief(r_a, p_min, p_max, is_buyer),
+                    }
+                )
 
         # Otherwise make a conceding offer toward r_a.
         if own_prev is None:
@@ -186,17 +195,22 @@ class ScriptedAgent:
         # Round to the individually-rational side so a 2-dp price never crosses r_a
         # (a buyer floors, a seller ceils) -- otherwise rounding can trip the strict-IR check.
         price = math.floor(offer * 100) / 100 if is_buyer else math.ceil(offer * 100) / 100
-        return json.dumps({
-            "decision": "Offer", "price": price, "message": "Here is my offer.",
-            "belief": _scripted_belief(r_a, p_min, p_max, is_buyer),
-        })
+        return json.dumps(
+            {
+                "decision": "Offer",
+                "price": price,
+                "message": "Here is my offer.",
+                "belief": _scripted_belief(r_a, p_min, p_max, is_buyer),
+            }
+        )
 
 
 def _scripted_belief(r_a, p_min, p_max, is_buyer) -> dict:
     # Guess the counterpart reservation sits on the other side of our own.
     r_hat = (p_max + r_a) / 2 if is_buyer else (p_min + r_a) / 2
     return {
-        "r_hat": round(r_hat, 2), "kappa_hat": 0.5,
+        "r_hat": round(r_hat, 2),
+        "kappa_hat": 0.5,
         "stance_probs": {"conciliatory": 0.34, "neutral": 0.33, "aggressive": 0.33},
     }
 
@@ -228,9 +242,11 @@ class VoiceLLM:
         )
         try:
             txt = await chat(
-                self.client, self.model,
+                self.client,
+                self.model,
                 [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}],
-                temperature=0.7, max_tokens=80,
+                temperature=0.7,
+                max_tokens=80,
             )
             txt = (txt or "").strip()
             if move.decision == "Offer" and move.price is not None and price_str not in txt:
@@ -277,10 +293,10 @@ async def play_episode(scenario: Scenario, cfg: TermsConfig, agent, voice, no_th
         counterpart_offers.append(opening.price)
         msg = await voice.render(opening, scenario, is_opening=True)
         current_cp_message = msg
-        rounds.append(RoundLog(0, "counterpart", "Offer", opening.price, msg,
-                               opening.sentiment, opening.strategy_cue))
-        history.append({"round": 0, "actor": "counterpart", "decision": "Offer",
-                        "price": opening.price, "message": msg})
+        rounds.append(RoundLog(0, "counterpart", "Offer", opening.price, msg, opening.sentiment, opening.strategy_cue))
+        history.append(
+            {"round": 0, "actor": "counterpart", "decision": "Offer", "price": opening.price, "message": msg}
+        )
 
     agreed = False
     terminal_price: float | None = None
@@ -289,7 +305,8 @@ async def play_episode(scenario: Scenario, cfg: TermsConfig, agent, voice, no_th
     try:
         for k in range(1, cfg.K + 1):
             user_msg = prompts.build_user_message(
-                scenario, k,
+                scenario,
+                k,
                 counterpart_offer=current_cp_offer,
                 counterpart_message=current_cp_message,
                 own_previous_offer=own_previous_offer,
@@ -307,14 +324,26 @@ async def play_episode(scenario: Scenario, cfg: TermsConfig, agent, voice, no_th
             # Record belief (only if the agent reported something parseable).
             b = action.belief
             if b.r_hat is not None or b.kappa_hat is not None or b.stance_probs is not None:
-                belief_samples.append({
-                    "r_hat": b.r_hat, "kappa_hat": b.kappa_hat, "stance_probs": b.stance_probs,
-                })
+                belief_samples.append(
+                    {
+                        "r_hat": b.r_hat,
+                        "kappa_hat": b.kappa_hat,
+                        "stance_probs": b.stance_probs,
+                    }
+                )
 
-            rounds.append(RoundLog(k, "agent", action.decision, action.price, action.message,
-                                   belief=b, violations=crit + sec))
-            history.append({"round": k, "actor": "agent", "decision": action.decision,
-                            "price": action.price, "message": action.message})
+            rounds.append(
+                RoundLog(k, "agent", action.decision, action.price, action.message, belief=b, violations=crit + sec)
+            )
+            history.append(
+                {
+                    "round": k,
+                    "actor": "agent",
+                    "decision": action.decision,
+                    "price": action.price,
+                    "message": action.message,
+                }
+            )
 
             # Unparseable / illegal -> invalid action terminates with no deal.
             if action.parse_error is not None:
@@ -355,19 +384,19 @@ async def play_episode(scenario: Scenario, cfg: TermsConfig, agent, voice, no_th
                 terminal_price = price
                 termination = "Agreement"
                 cp_msg = await voice.render(move, scenario, is_opening=False)
-                rounds.append(RoundLog(k, "counterpart", "Accept", None, cp_msg,
-                                       move.sentiment, move.strategy_cue))
-                history.append({"round": k, "actor": "counterpart", "decision": "Accept",
-                                "price": None, "message": cp_msg})
+                rounds.append(RoundLog(k, "counterpart", "Accept", None, cp_msg, move.sentiment, move.strategy_cue))
+                history.append(
+                    {"round": k, "actor": "counterpart", "decision": "Accept", "price": None, "message": cp_msg}
+                )
                 break
 
             if move.decision == "Reject":
                 termination = "CounterpartWalkAway"
                 cp_msg = await voice.render(move, scenario, is_opening=False)
-                rounds.append(RoundLog(k, "counterpart", "Reject", None, cp_msg,
-                                       move.sentiment, move.strategy_cue))
-                history.append({"round": k, "actor": "counterpart", "decision": "Reject",
-                                "price": None, "message": cp_msg})
+                rounds.append(RoundLog(k, "counterpart", "Reject", None, cp_msg, move.sentiment, move.strategy_cue))
+                history.append(
+                    {"round": k, "actor": "counterpart", "decision": "Reject", "price": None, "message": cp_msg}
+                )
                 break
 
             # Counter-offer.
@@ -376,24 +405,37 @@ async def play_episode(scenario: Scenario, cfg: TermsConfig, agent, voice, no_th
             counterpart_offers.append(move.price)
             cp_msg = await voice.render(move, scenario, is_opening=is_open)
             current_cp_message = cp_msg
-            rounds.append(RoundLog(k, "counterpart", "Offer", move.price, cp_msg,
-                                   move.sentiment, move.strategy_cue))
-            history.append({"round": k, "actor": "counterpart", "decision": "Offer",
-                            "price": move.price, "message": cp_msg})
+            rounds.append(RoundLog(k, "counterpart", "Offer", move.price, cp_msg, move.sentiment, move.strategy_cue))
+            history.append(
+                {"round": k, "actor": "counterpart", "decision": "Offer", "price": move.price, "message": cp_msg}
+            )
 
         util = metrics_mod.episode_utility(scenario, agreed, terminal_price)
         return EpisodeResult(
-            scenario=scenario, rounds=rounds, agreed=agreed, terminal_price=terminal_price,
-            termination=termination, agent_utility=util, critical_violation=critical,
-            violation_tags=violation_tags, agent_opening_price=agent_opening_price,
+            scenario=scenario,
+            rounds=rounds,
+            agreed=agreed,
+            terminal_price=terminal_price,
+            termination=termination,
+            agent_utility=util,
+            critical_violation=critical,
+            violation_tags=violation_tags,
+            agent_opening_price=agent_opening_price,
             belief_samples=belief_samples,
         )
     except Exception as e:  # noqa: BLE001
         return EpisodeResult(
-            scenario=scenario, rounds=rounds, agreed=False, terminal_price=None,
-            termination="Error", agent_utility=0.0, critical_violation=critical,
-            violation_tags=violation_tags, agent_opening_price=agent_opening_price,
-            belief_samples=belief_samples, error=str(e),
+            scenario=scenario,
+            rounds=rounds,
+            agreed=False,
+            terminal_price=None,
+            termination="Error",
+            agent_utility=0.0,
+            critical_violation=critical,
+            violation_tags=violation_tags,
+            agent_opening_price=agent_opening_price,
+            belief_samples=belief_samples,
+            error=str(e),
         )
 
 
@@ -401,12 +443,18 @@ async def play_episode(scenario: Scenario, cfg: TermsConfig, agent, voice, no_th
 # Serialization helpers.
 # ----------------------------------------------------------------------------------
 def _round_to_dict(r: RoundLog) -> dict:
-    d = {"k": r.k, "actor": r.actor, "decision": r.decision, "price": r.price,
-         "message": r.message, "sentiment": r.sentiment, "strategy_cue": r.strategy_cue,
-         "violations": r.violations}
+    d = {
+        "k": r.k,
+        "actor": r.actor,
+        "decision": r.decision,
+        "price": r.price,
+        "message": r.message,
+        "sentiment": r.sentiment,
+        "strategy_cue": r.strategy_cue,
+        "violations": r.violations,
+    }
     if r.belief is not None and (r.belief.r_hat is not None or r.belief.stance_probs is not None):
-        d["belief"] = {"r_hat": r.belief.r_hat, "kappa_hat": r.belief.kappa_hat,
-                       "stance_probs": r.belief.stance_probs}
+        d["belief"] = {"r_hat": r.belief.r_hat, "kappa_hat": r.belief.kappa_hat, "stance_probs": r.belief.stance_probs}
     return d
 
 
@@ -414,15 +462,25 @@ def _episode_to_dict(res: EpisodeResult, include_rounds: bool) -> dict:
     sc = res.scenario
     d = {
         "episode_id": sc.episode_id,
-        "regime": sc.regime, "family": sc.family,
-        "agent_role": sc.agent_role, "opener": sc.opener,
-        "r_agent": sc.r_agent, "r_counterpart": sc.r_counterpart,
-        "kappa_B": sc.kappa_B, "eta_B": sc.eta_B, "delta": sc.delta, "feasible": sc.feasible,
-        "agreed": res.agreed, "terminal_price": res.terminal_price,
-        "termination": res.termination, "agent_utility": res.agent_utility,
-        "critical_violation": res.critical_violation, "violation_tags": res.violation_tags,
+        "regime": sc.regime,
+        "family": sc.family,
+        "agent_role": sc.agent_role,
+        "opener": sc.opener,
+        "r_agent": sc.r_agent,
+        "r_counterpart": sc.r_counterpart,
+        "kappa_B": sc.kappa_B,
+        "eta_B": sc.eta_B,
+        "delta": sc.delta,
+        "feasible": sc.feasible,
+        "agreed": res.agreed,
+        "terminal_price": res.terminal_price,
+        "termination": res.termination,
+        "agent_utility": res.agent_utility,
+        "critical_violation": res.critical_violation,
+        "violation_tags": res.violation_tags,
         "agent_opening_price": res.agent_opening_price,
-        "n_rounds": len(res.rounds), "error": res.error,
+        "n_rounds": len(res.rounds),
+        "error": res.error,
     }
     if include_rounds:
         d["rounds"] = [_round_to_dict(r) for r in res.rounds]
@@ -435,7 +493,10 @@ def _episode_to_dict(res: EpisodeResult, include_rounds: bool) -> dict:
 async def main_async(args):
     cfg = TermsConfig(K=args.max_rounds) if args.max_rounds else config.DEFAULT_CONFIG
     scs = scenarios_mod.generate_scenarios(
-        n=args.n, base_seed=args.seed, cfg=cfg, full_suite=args.full_suite,
+        n=args.n,
+        base_seed=args.seed,
+        cfg=cfg,
+        full_suite=args.full_suite,
     )
 
     out_dir = Path(args.out_dir)
@@ -466,18 +527,27 @@ async def main_async(args):
             return res
 
     t0 = time.time()
-    print(f"running {total} TERMS-Bench episodes "
-          f"({'full suite' if args.full_suite else f'n={args.n}'})...", flush=True)
+    print(
+        f"running {total} TERMS-Bench episodes " f"({'full suite' if args.full_suite else f'n={args.n}'})...",
+        flush=True,
+    )
     results = await asyncio.gather(*[run_one(sc) for sc in scs])
     elapsed = time.time() - t0
 
     agg = metrics_mod.compute_metrics(results, cfg)
     cfg_block = {
-        "model": model_label, "base_url": base_url_label,
-        "n": total, "full_suite": args.full_suite, "seed": args.seed,
-        "K": cfg.K, "temperature": args.temperature, "max_tokens": args.max_tokens,
-        "no_think": args.no_think, "voice_model": args.voice_model,
-        "concurrency": args.concurrency, "elapsed_s": round(elapsed, 2),
+        "model": model_label,
+        "base_url": base_url_label,
+        "n": total,
+        "full_suite": args.full_suite,
+        "seed": args.seed,
+        "K": cfg.K,
+        "temperature": args.temperature,
+        "max_tokens": args.max_tokens,
+        "no_think": args.no_think,
+        "voice_model": args.voice_model,
+        "concurrency": args.concurrency,
+        "elapsed_s": round(elapsed, 2),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "provenance": "Reconstructed from arXiv:2605.13909 (official code not public).",
     }
@@ -511,19 +581,25 @@ def print_report(cfg_block: dict, agg: dict) -> None:
     print(f"  SE+  (surplus efficiency)     : {_fmt(o['SE_plus'])}")
     print(f"     = AGR+ x CSE+              : {_fmt(o['AGR_plus'])} x {_fmt(o['CSE_plus'])}")
     print(f"  FAGR- (false agree, infeas.)  : {_fmt(o['FAGR_minus'])}   safe-term: {_fmt(o['safe_term_minus'])}")
-    print(f"  BE_type (belief error)        : {_fmt(o['BE_type'])}   "
-          f"(r {_fmt(o['BE_r'])} / kappa {_fmt(o['BE_kappa'])} / brier {_fmt(o['Brier_eta'])})")
+    print(
+        f"  BE_type (belief error)        : {_fmt(o['BE_type'])}   "
+        f"(r {_fmt(o['BE_r'])} / kappa {_fmt(o['BE_kappa'])} / brier {_fmt(o['Brier_eta'])})"
+    )
     print(f"  CritViol%                     : {_fmt(o['CritViol_pct'])}")
     print(f"  mean utility (secondary)      : {_fmt(o['mean_utility'])}")
     print("-" * 64)
     print("  SE+ by family:")
     for fam, blk in agg["by_family"].items():
-        print(f"    - {fam:<12}: SE+ {_fmt(blk['SE_plus'])}  AGR+ {_fmt(blk['AGR_plus'])}  "
-              f"FAGR- {_fmt(blk['FAGR_minus'])}  BE_type {_fmt(blk['BE_type'])}")
+        print(
+            f"    - {fam:<12}: SE+ {_fmt(blk['SE_plus'])}  AGR+ {_fmt(blk['AGR_plus'])}  "
+            f"FAGR- {_fmt(blk['FAGR_minus'])}  BE_type {_fmt(blk['BE_type'])}"
+        )
     print("  SE+ by regime:")
     for reg, blk in agg["by_regime"].items():
-        print(f"    - {reg:<14}: SE+ {_fmt(blk['SE_plus'])}  AGR+ {_fmt(blk['AGR_plus'])}  "
-              f"FAGR- {_fmt(blk['FAGR_minus'])}")
+        print(
+            f"    - {reg:<14}: SE+ {_fmt(blk['SE_plus'])}  AGR+ {_fmt(blk['AGR_plus'])}  "
+            f"FAGR- {_fmt(blk['FAGR_minus'])}"
+        )
     print("=" * 64)
 
 
@@ -539,13 +615,16 @@ def parse_args():
     p.add_argument("--max-tokens", type=int, default=512)
     p.add_argument("--concurrency", type=int, default=16)
     p.add_argument("--no-think", action="store_true")
-    p.add_argument("--voice-model", default=None,
-                   help="Optional model slug for the cosmetic counterpart voice (default: templates).")
-    p.add_argument("--save-transcripts", action="store_true",
-                   help="Include full per-round transcripts in the results JSON.")
+    p.add_argument(
+        "--voice-model",
+        default=None,
+        help="Optional model slug for the cosmetic counterpart voice (default: templates).",
+    )
+    p.add_argument(
+        "--save-transcripts", action="store_true", help="Include full per-round transcripts in the results JSON."
+    )
     p.add_argument("--out-dir", default=str(HERE / "results"))
-    p.add_argument("--dry-run", action="store_true",
-                   help="Offline self-test: scripted agent, no API calls.")
+    p.add_argument("--dry-run", action="store_true", help="Offline self-test: scripted agent, no API calls.")
     return p.parse_args()
 
 

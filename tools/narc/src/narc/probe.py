@@ -48,10 +48,7 @@ def dump_json(outfile: Any, payload: dict[str, Any]) -> None:
 
 def safe_filename_component(value: Any) -> str:
     text = str(value)
-    safe = "".join(
-        character if character.isalnum() or character == "-" else "-"
-        for character in text
-    )
+    safe = "".join(character if character.isalnum() or character == "-" else "-" for character in text)
     return safe.strip("-") or "unknown"
 
 
@@ -200,9 +197,7 @@ def parameter_hash(model: Any) -> str:
 
 def gradient_hash(model: Any) -> str:
     named_gradients = [
-        (name, parameter.grad)
-        for name, parameter in model.named_parameters()
-        if parameter.grad is not None
+        (name, parameter.grad) for name, parameter in model.named_parameters() if parameter.grad is not None
     ]
     return hash_named_tensors(named_gradients)
 
@@ -355,13 +350,7 @@ def run_training_steps(
     if final_logits is None or final_grad_hash is None:
         raise RuntimeError("probe ran zero training steps")
 
-    selected = (
-        final_logits.reshape(-1)[: min(16, final_logits.numel())]
-        .float()
-        .detach()
-        .cpu()
-        .tolist()
-    )
+    selected = final_logits.reshape(-1)[: min(16, final_logits.numel())].float().detach().cpu().tolist()
     output = {
         "losses": losses,
         "final_loss": losses[-1],
@@ -475,9 +464,7 @@ def default_config(args: argparse.Namespace, dtype_name: str) -> ProbeConfig:
         num_heads=argument_or_default(args.num_heads, defaults["num_heads"]),
         mlp_ratio=argument_or_default(args.mlp_ratio, defaults["mlp_ratio"]),
         steps=argument_or_default(args.steps, defaults["steps"]),
-        warmup_steps=args.warmup_steps
-        if args.warmup_steps is not None
-        else defaults["warmup_steps"],
+        warmup_steps=args.warmup_steps if args.warmup_steps is not None else defaults["warmup_steps"],
         dtype=dtype_name,
         repeat=defaults["repeat"],
         deterministic=not args.no_deterministic,
@@ -577,10 +564,7 @@ def default_output_path(result: ProbeResult, out_dir: Path) -> Path:
     rank = safe_filename_component(result.slurm.get("slurm_procid") or "local")
     local_rank = safe_filename_component(result.slurm.get("slurm_localid") or "0")
     run_id = safe_filename_component(result.run_id)
-    filename = (
-        f"{device_id}-rank{rank}-local{local_rank}-pid{result.pid}-"
-        f"{run_id}.json"
-    )
+    filename = f"{device_id}-rank{rank}-local{local_rank}-pid{result.pid}-" f"{run_id}.json"
     return out_dir / filename
 
 

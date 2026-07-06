@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from skyrl_gym.envs.fleet_task.env import (
     MAX_TOOL_OUTPUT_CHARS,
@@ -27,11 +26,13 @@ SUFFIX_RE = r"\[TRUNCATED — \d+ chars elided\.\]"
 
 # --- None pass-through ---------------------------------------------------
 
+
 def test_none_passes_through():
     assert truncate_tool_result(None) is None
 
 
 # --- short payloads (under cap) are unchanged ----------------------------
+
 
 def test_short_string_unchanged():
     s = "hello world"
@@ -63,6 +64,7 @@ def test_primitive_int_unchanged_when_short():
 
 # --- overflowing payloads get truncated ----------------------------------
 
+
 def test_long_string_truncated():
     s = "x" * 5000
     out = truncate_tool_result(s, max_chars=100)
@@ -70,6 +72,7 @@ def test_long_string_truncated():
     assert len(out) < 5000
     assert out.startswith("x" * 100)
     import re
+
     assert re.search(SUFFIX_RE, out), out[-200:]
 
 
@@ -84,6 +87,7 @@ def test_huge_dict_serialized_and_truncated():
     assert isinstance(out, str), "huge dict should be cast to string"
     assert len(out) < serialized_len
     import re
+
     assert re.search(SUFFIX_RE, out)
 
 
@@ -97,10 +101,12 @@ def test_huge_list_of_records_serialized_and_truncated():
     assert isinstance(out, str)
     assert len(out) < serialized_len
     import re
+
     assert re.search(SUFFIX_RE, out)
 
 
 # --- non-JSON-serializable shapes fall back to str(...) ------------------
+
 
 def test_non_json_serializable_falls_back_to_str():
     class Weird:
@@ -111,16 +117,19 @@ def test_non_json_serializable_falls_back_to_str():
     assert isinstance(out, str)
     assert len(out) < 5000
     import re
+
     assert re.search(SUFFIX_RE, out)
 
 
 # --- suffix accuracy -----------------------------------------------------
+
 
 def test_truncated_suffix_reports_correct_elided_count():
     s = "a" * 1500
     out = truncate_tool_result(s, max_chars=1000)
     # We kept the first 1000 chars; 500 should be reported as elided.
     import re
+
     m = re.search(r"\[TRUNCATED — (\d+) chars elided\.\]", out)
     assert m, out[-300:]
     assert int(m.group(1)) == 500
@@ -128,10 +137,12 @@ def test_truncated_suffix_reports_correct_elided_count():
 
 # --- default max_chars uses MAX_TOOL_OUTPUT_CHARS ------------------------
 
+
 def test_default_max_chars_is_module_constant():
     s = "y" * (MAX_TOOL_OUTPUT_CHARS + 100)
     out = truncate_tool_result(s)
     assert len(out) > MAX_TOOL_OUTPUT_CHARS  # includes the suffix
     assert out.startswith("y" * MAX_TOOL_OUTPUT_CHARS)
     import re
+
     assert re.search(SUFFIX_RE, out)

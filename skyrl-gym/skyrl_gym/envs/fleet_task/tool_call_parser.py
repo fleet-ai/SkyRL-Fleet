@@ -62,9 +62,13 @@ _KIMI_CALL_BEGIN = "<|tool_call_begin|>"
 _KIMI_CALL_ARG_BEGIN = "<|tool_call_argument_begin|>"
 _KIMI_CALL_END = "<|tool_call_end|>"
 _KIMI_CALL_RE = re.compile(
-    re.escape(_KIMI_CALL_BEGIN) + r"\s*(.*?)\s*"
-    + re.escape(_KIMI_CALL_ARG_BEGIN) + r"\s*(.*?)\s*"
-    + r"(?:" + re.escape(_KIMI_CALL_END) + r"|\Z)",
+    re.escape(_KIMI_CALL_BEGIN)
+    + r"\s*(.*?)\s*"
+    + re.escape(_KIMI_CALL_ARG_BEGIN)
+    + r"\s*(.*?)\s*"
+    + r"(?:"
+    + re.escape(_KIMI_CALL_END)
+    + r"|\Z)",
     re.DOTALL,
 )
 # Strip optional "functions." namespace prefix and optional ":N" id suffix.

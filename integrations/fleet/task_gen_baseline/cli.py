@@ -154,8 +154,10 @@ def validate_context_arguments(args: argparse.Namespace) -> None:
             "Solve requires environment context. Use a generated JSON file with env_key/data_key/data_version, "
             "or pass --fleet-task-key, --fleet-task-key-file, or manual --env-key/--data-key/--data-version."
         )
-    if args.command == "solve" and args.judge_model and not (
-        args.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY", "")
+    if (
+        args.command == "solve"
+        and args.judge_model
+        and not (args.openrouter_api_key or os.environ.get("OPENROUTER_API_KEY", ""))
     ):
         raise RuntimeError("OPENROUTER_API_KEY is required when --judge-model is set for solve.")
 
@@ -848,9 +850,7 @@ def attach_rollout_metrics(result: Dict[str, Any], rollout_record: Optional[Dict
 
     expected = result["eval_k_rollouts"] if result["training_phase"] == "eval" else result["k_rollouts"]
     if result["solver_rollouts"] != expected:
-        raise RuntimeError(
-            f"Expected {expected} solver rollout score(s), got {result['solver_rollouts']} from Fleet."
-        )
+        raise RuntimeError(f"Expected {expected} solver rollout score(s), got {result['solver_rollouts']} from Fleet.")
 
 
 def call_openrouter(
@@ -999,7 +999,9 @@ async def generate_attempt_async(args: argparse.Namespace, attempt: int) -> Dict
             if "<task>" in final_text:
                 log_generate(f"Detected <task> block on attempt={attempt} turn={turn_number}")
                 if args.enforce_exploration_gate and env.max_turns > 1 and not env.called_query_db:
-                    log_generate("Task arrived before query_db; adding exploration feedback without running solver rollouts")
+                    log_generate(
+                        "Task arrived before query_db; adding exploration feedback without running solver rollouts"
+                    )
                     if turns_remaining > 0:
                         observations = [format_exploration_feedback(turns_remaining)]
                         conversation.extend(observations)

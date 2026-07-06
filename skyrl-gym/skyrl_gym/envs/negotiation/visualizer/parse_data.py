@@ -46,9 +46,9 @@ def parse_dialogue(text: str):
         if not chunk:
             continue
         if chunk.startswith("YOU:"):
-            speaker, msg = "you", chunk[len("YOU:"):].strip()
+            speaker, msg = "you", chunk[len("YOU:") :].strip()
         elif chunk.startswith("THEM:"):
-            speaker, msg = "them", chunk[len("THEM:"):].strip()
+            speaker, msg = "them", chunk[len("THEM:") :].strip()
         else:
             speaker, msg = "them", chunk.strip()
         if msg:

@@ -56,10 +56,7 @@ def test_cpu_correctness_probe_is_repeatable():
     assert timing["optimizer_step_seconds"]
     assert timing["mean_forward_seconds"] is not None
     assert timing["mean_backward_seconds"] is not None
-    assert (
-        payload["measurements"]["runs"][0]["input_hash"]
-        == payload["checks"]["input_hash"]
-    )
+    assert payload["measurements"]["runs"][0]["input_hash"] == payload["checks"]["input_hash"]
     assert payload["fingerprint_hash"]
     assert payload["schema_version"] == SCHEMA_VERSION
     assert payload["probe_config"]["seed"] == 0
@@ -95,9 +92,7 @@ def test_cpu_correctness_probe_uses_input_seed():
     ]
     first = run_probe(parser.parse_args([*base_args, "--input-seed", "1234"]))
     second = run_probe(parser.parse_args([*base_args, "--input-seed", "1234"]))
-    different_inputs = run_probe(
-        parser.parse_args([*base_args, "--input-seed", "5678"])
-    )
+    different_inputs = run_probe(parser.parse_args([*base_args, "--input-seed", "5678"]))
 
     assert first.probe_config["input_seed"] == 1234
     assert different_inputs.probe_config["input_seed"] == 5678
@@ -257,9 +252,7 @@ def test_default_output_location_supports_s3_prefix():
         "s3://fleet-research/narc/job-1/",
     )
 
-    assert output_location == (
-        "s3://fleet-research/narc/job-1/GPU-a-rank7-local3-pid123-run-a.json"
-    )
+    assert output_location == ("s3://fleet-research/narc/job-1/GPU-a-rank7-local3-pid123-run-a.json")
 
 
 def test_run_rejects_directory_outfile_before_probe(tmp_path, monkeypatch):

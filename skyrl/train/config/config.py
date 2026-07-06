@@ -837,6 +837,7 @@ class SkyRLTrainConfig(BaseConfig):
             # Hydra compose can fail (e.g., GlobalHydra already initialized).
             # Fall back to loading YAML directly without Hydra defaults resolution.
             import yaml
+
             config_yaml = Path(__file__).parent / "ppo_base_config.yaml"
             with open(config_yaml) as f:
                 raw_yaml = yaml.safe_load(f)
@@ -935,6 +936,7 @@ def get_config_as_yaml_str(cfg) -> str:
     # Handle OmegaConf DictConfig (from Hydra entrypoints)
     try:
         from omegaconf import OmegaConf
+
         if OmegaConf.is_config(cfg):
             return OmegaConf.to_yaml(cfg, resolve=True)
     except ImportError:

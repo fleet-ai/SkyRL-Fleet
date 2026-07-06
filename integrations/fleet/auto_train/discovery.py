@@ -38,8 +38,9 @@ def _supabase_headers() -> dict:
 @dataclass
 class Dataset:
     """A Fleet dataset (Supabase row from `task_projects`)."""
-    id: str                # task_projects.id (UUID)
-    dataset_key: str       # task_projects.project_key (the stable string identifier)
+
+    id: str  # task_projects.id (UUID)
+    dataset_key: str  # task_projects.project_key (the stable string identifier)
     name: str
     status: str
     team_id: str | None = None
@@ -75,14 +76,16 @@ def list_active_datasets(
             key = row.get("project_key") or row.get("name")
             if not key:
                 continue
-            out.append(Dataset(
-                id=row["id"],
-                dataset_key=key,
-                name=row.get("name", ""),
-                status=row["status"],
-                team_id=row.get("team_id"),
-                created_at=row.get("created_at"),
-            ))
+            out.append(
+                Dataset(
+                    id=row["id"],
+                    dataset_key=key,
+                    name=row.get("name", ""),
+                    status=row["status"],
+                    team_id=row.get("team_id"),
+                    created_at=row.get("created_at"),
+                )
+            )
         if len(rows) < 1000:
             break
         offset += 1000

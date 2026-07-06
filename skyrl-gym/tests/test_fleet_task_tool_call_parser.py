@@ -21,22 +21,21 @@ Kimi-K2 native grammar:
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call
+from skyrl_gym.envs.fleet_task.tool_call_parser import parse_tool_call  # noqa: E402  (import after sys.path setup)
 
 
 # --------------------------------------------------------------------------- #
 # Tag-based formats (Qwen / Llama / others)
 # --------------------------------------------------------------------------- #
+
 
 class TestTagFormats:
     def test_tool_call_with_closing_tag(self):
@@ -85,6 +84,7 @@ class TestTagFormats:
 # Kimi-K2 native format
 # --------------------------------------------------------------------------- #
 
+
 class TestKimiK2Format:
     # Real output captured from `moonshotai/Kimi-K2.6:peft:131072` against
     # a Fleet data-eng env (single-rollout debug script, see CHANGELOG).
@@ -119,52 +119,30 @@ class TestKimiK2Format:
         assert result == {"name": "bash", "arguments": {"cmd": "ls"}}
 
     def test_strips_functions_prefix(self):
-        text = (
-            "<|tool_call_begin|>functions.my_tool:5"
-            "<|tool_call_argument_begin|>{}"
-            "<|tool_call_end|>"
-        )
+        text = "<|tool_call_begin|>functions.my_tool:5" "<|tool_call_argument_begin|>{}" "<|tool_call_end|>"
         result = parse_tool_call(text)
         assert result["name"] == "my_tool"
 
     def test_strips_index_suffix(self):
-        text = (
-            "<|tool_call_begin|>functions.x:42"
-            "<|tool_call_argument_begin|>{}"
-            "<|tool_call_end|>"
-        )
+        text = "<|tool_call_begin|>functions.x:42" "<|tool_call_argument_begin|>{}" "<|tool_call_end|>"
         result = parse_tool_call(text)
         assert result["name"] == "x"
 
     def test_handles_no_functions_prefix(self):
         # If a future Kimi config drops the prefix, the parser should still work.
-        text = (
-            "<|tool_call_begin|>bash:1"
-            "<|tool_call_argument_begin|>"
-            '{"cmd": "pwd"}'
-            "<|tool_call_end|>"
-        )
+        text = "<|tool_call_begin|>bash:1" "<|tool_call_argument_begin|>" '{"cmd": "pwd"}' "<|tool_call_end|>"
         result = parse_tool_call(text)
         assert result == {"name": "bash", "arguments": {"cmd": "pwd"}}
 
     def test_handles_no_index_suffix(self):
-        text = (
-            "<|tool_call_begin|>functions.bash"
-            "<|tool_call_argument_begin|>"
-            '{"cmd": "pwd"}'
-            "<|tool_call_end|>"
-        )
+        text = "<|tool_call_begin|>functions.bash" "<|tool_call_argument_begin|>" '{"cmd": "pwd"}' "<|tool_call_end|>"
         result = parse_tool_call(text)
         assert result == {"name": "bash", "arguments": {"cmd": "pwd"}}
 
     def test_handles_missing_end_marker(self):
         # When `<|tool_calls_section_end|>` is a stop sequence, the per-call
         # `<|tool_call_end|>` may also get stripped.
-        text = (
-            "<|tool_call_begin|>functions.bash:1"
-            "<|tool_call_argument_begin|>"
-            '{"cmd": "ls"}'
-        )
+        text = "<|tool_call_begin|>functions.bash:1" "<|tool_call_argument_begin|>" '{"cmd": "ls"}'
         result = parse_tool_call(text)
         assert result is not None
         assert result["name"] == "bash"
@@ -214,11 +192,7 @@ class TestKimiK2Format:
         assert result["arguments"] == {"a": 1}
 
     def test_empty_args_dict(self):
-        text = (
-            "<|tool_call_begin|>functions.noop:1"
-            "<|tool_call_argument_begin|>{}"
-            "<|tool_call_end|>"
-        )
+        text = "<|tool_call_begin|>functions.noop:1" "<|tool_call_argument_begin|>{}" "<|tool_call_end|>"
         result = parse_tool_call(text)
         assert result == {"name": "noop", "arguments": {}}
 
@@ -227,12 +201,10 @@ class TestKimiK2Format:
 # Cross-format isolation
 # --------------------------------------------------------------------------- #
 
+
 class TestCrossFormatIsolation:
     def test_text_with_neither_format_returns_none(self):
-        text = (
-            "I'd like to call ls, but I don't know the right format. "
-            "Let me think about this more carefully."
-        )
+        text = "I'd like to call ls, but I don't know the right format. " "Let me think about this more carefully."
         assert parse_tool_call(text) is None
 
     def test_tag_format_takes_precedence_when_both_present(self):
@@ -250,6 +222,7 @@ class TestCrossFormatIsolation:
 # Qwen3.6 XML-function grammar (chat_template.jinja, new in 3.6)
 # --------------------------------------------------------------------------- #
 
+
 class TestQwen36XmlFunctionGrammar:
     def test_wrapped_single_param(self):
         text = (
@@ -258,9 +231,7 @@ class TestQwen36XmlFunctionGrammar:
             "ls -la /home\n"
             "</parameter>\n</function>\n</tool_call>"
         )
-        assert parse_tool_call(text) == {
-            "name": "bash", "arguments": {"command": "ls -la /home"}
-        }
+        assert parse_tool_call(text) == {"name": "bash", "arguments": {"command": "ls -la /home"}}
 
     def test_multiline_param_value_preserved(self):
         text = (

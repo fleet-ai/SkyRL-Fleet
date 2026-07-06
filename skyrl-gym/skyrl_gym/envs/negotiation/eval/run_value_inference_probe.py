@@ -50,8 +50,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
-sys.path.insert(0, str(HERE))            # sibling modules (run_eval, run_crossplay)
-sys.path.insert(0, str(HERE.parent))     # package dir (game / prompts / scenarios)
+sys.path.insert(0, str(HERE))  # sibling modules (run_eval, run_crossplay)
+sys.path.insert(0, str(HERE.parent))  # package dir (game / prompts / scenarios)
 
 import game  # noqa: E402
 import prompts  # noqa: E402
@@ -143,7 +143,7 @@ def _pearson(a, b):
     if va == 0 or vb == 0:
         return None
     cov = sum((a[i] - ma) * (b[i] - mb) for i in range(n))
-    return cov / ((va ** 0.5) * (vb ** 0.5))
+    return cov / ((va**0.5) * (vb**0.5))
 
 
 def _spearman(a, b):
@@ -199,9 +199,24 @@ async def _elicit(client, model, base_hist, items, body, temperature, max_tokens
     return parse_estimate(text, items), text
 
 
-async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_think, pol_url,
-                          opp_model, opp_no_think, opp_url, sc, max_turns, temperature,
-                          max_tokens, est_max_tokens, protocol, opp_proactive):
+async def play_value_game(
+    client_pol,
+    client_opp,
+    *,
+    policy_model,
+    policy_no_think,
+    pol_url,
+    opp_model,
+    opp_no_think,
+    opp_url,
+    sc,
+    max_turns,
+    temperature,
+    max_tokens,
+    est_max_tokens,
+    protocol,
+    opp_proactive,
+):
     items = list(sc.item_names)
     counts = list(sc.counts)
     n = len(counts)
@@ -209,21 +224,23 @@ async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_thi
     body_opp = _no_think_body(opp_url) if opp_no_think else None
 
     sys_a = run_eval._maybe_no_think(
-        prompts.build_system_prompt(items, counts, list(sc.you_values), max_turns, protocol=protocol),
-        policy_no_think)
+        prompts.build_system_prompt(items, counts, list(sc.you_values), max_turns, protocol=protocol), policy_no_think
+    )
     sys_b = run_eval._maybe_no_think(
-        prompts.build_system_prompt(items, counts, list(sc.them_values), max_turns,
-                                    protocol=protocol, proactive=opp_proactive),
-        opp_no_think)
+        prompts.build_system_prompt(
+            items, counts, list(sc.them_values), max_turns, protocol=protocol, proactive=opp_proactive
+        ),
+        opp_no_think,
+    )
 
     # PRIOR belief: only the policy's own values + the pool are known yet.
     prior_hist = [{"role": "system", "content": sys_a}]
     prior_est, prior_raw = await _elicit(
-        client_pol, policy_model, prior_hist, items, body_pol, temperature, est_max_tokens)
+        client_pol, policy_model, prior_hist, items, body_pol, temperature, est_max_tokens
+    )
 
     # Play the negotiation. hist_a is the policy's own view (branched for the posterior).
-    hist_a = [{"role": "system", "content": sys_a},
-              {"role": "user", "content": prompts.OPENING_USER_MSG}]
+    hist_a = [{"role": "system", "content": sys_a}, {"role": "user", "content": prompts.OPENING_USER_MSG}]
     hist_b = [{"role": "system", "content": sys_b}]
 
     last = {"a": None, "b": None}
@@ -272,8 +289,7 @@ async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_thi
         outcome = game.evaluate(counts, list(sc.you_values), list(sc.them_values), you_take, them_take)
 
     # POSTERIOR belief: branch off the policy's post-game history.
-    post_est, post_raw = await _elicit(
-        client_pol, policy_model, hist_a, items, body_pol, temperature, est_max_tokens)
+    post_est, post_raw = await _elicit(client_pol, policy_model, hist_a, items, body_pol, temperature, est_max_tokens)
 
     them_values = list(sc.them_values)
     return {
@@ -341,10 +357,24 @@ def _delta_models(policy_agg, base_agg):
 # --------------------------------------------------------------------------- #
 # Driver                                                                       #
 # --------------------------------------------------------------------------- #
-async def run_value_inference(participants, *, opponent, dataset="dnd", split="val", n=16,
-                              max_turns=6, temperature=0.7, max_tokens=2000, est_max_tokens=512,
-                              concurrency=12, seed=1, protocol="dual", opp_proactive=False,
-                              out_prefix="value_inference_probe", write=True):
+async def run_value_inference(
+    participants,
+    *,
+    opponent,
+    dataset="dnd",
+    split="val",
+    n=16,
+    max_turns=6,
+    temperature=0.7,
+    max_tokens=2000,
+    est_max_tokens=512,
+    concurrency=12,
+    seed=1,
+    protocol="dual",
+    opp_proactive=False,
+    out_prefix="value_inference_probe",
+    write=True,
+):
     """Run the value-inference probe for each participant against a fixed opponent.
 
     ``participants`` is a list of dicts ``{slug, label, no_think, base_url, role}``
@@ -368,34 +398,56 @@ async def run_value_inference(participants, *, opponent, dataset="dnd", split="v
         async with sem:
             try:
                 return await play_value_game(
-                    clients[p["base_url"]], clients[opponent["base_url"]],
-                    policy_model=p["slug"], policy_no_think=p["no_think"], pol_url=p["base_url"],
-                    opp_model=opponent["slug"], opp_no_think=opponent["no_think"],
-                    opp_url=opponent["base_url"], sc=sc, max_turns=max_turns,
-                    temperature=temperature, max_tokens=max_tokens, est_max_tokens=est_max_tokens,
-                    protocol=protocol, opp_proactive=opp_proactive)
+                    clients[p["base_url"]],
+                    clients[opponent["base_url"]],
+                    policy_model=p["slug"],
+                    policy_no_think=p["no_think"],
+                    pol_url=p["base_url"],
+                    opp_model=opponent["slug"],
+                    opp_no_think=opponent["no_think"],
+                    opp_url=opponent["base_url"],
+                    sc=sc,
+                    max_turns=max_turns,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    est_max_tokens=est_max_tokens,
+                    protocol=protocol,
+                    opp_proactive=opp_proactive,
+                )
             except Exception as e:  # noqa: BLE001
-                return {"error": str(e),
-                        "outcome": game.evaluate(list(sc.counts), list(sc.you_values),
-                                                 list(sc.them_values), None, None).to_dict(),
-                        "item_names": list(sc.item_names), "counts": list(sc.counts),
-                        "you_values": list(sc.you_values), "them_values": list(sc.them_values),
-                        "prior_estimate": None, "post_estimate": None,
-                        "prior_scores": score_estimate(None, list(sc.them_values)),
-                        "post_scores": score_estimate(None, list(sc.them_values)),
-                        "num_turns": 0}
+                return {
+                    "error": str(e),
+                    "outcome": game.evaluate(
+                        list(sc.counts), list(sc.you_values), list(sc.them_values), None, None
+                    ).to_dict(),
+                    "item_names": list(sc.item_names),
+                    "counts": list(sc.counts),
+                    "you_values": list(sc.you_values),
+                    "them_values": list(sc.them_values),
+                    "prior_estimate": None,
+                    "post_estimate": None,
+                    "prior_scores": score_estimate(None, list(sc.them_values)),
+                    "post_scores": score_estimate(None, list(sc.them_values)),
+                    "num_turns": 0,
+                }
 
-    print(f"running {len(participants)} models x {len(scs)} scenarios vs opponent "
-          f"{opponent['label']} ({protocol} protocol)...", flush=True)
+    print(
+        f"running {len(participants)} models x {len(scs)} scenarios vs opponent "
+        f"{opponent['label']} ({protocol} protocol)...",
+        flush=True,
+    )
 
     per_model = {}
     for p in participants:
         recs = await asyncio.gather(*[one(p, sc) for sc in scs])
         per_model[p["label"]] = {"config": p, "aggregate": aggregate(recs), "runs": recs}
         a = per_model[p["label"]]["aggregate"]
-        print(f"  [{p['label']:>16}] post_spearman={a['post_spearman']} "
-              f"(prior={a['prior_spearman']}, Δ={a['delta_spearman']})  "
-              f"post_top1={a['post_top1']}  parse={a['post_parse_rate']}", flush=True)
+        print(
+            f"  [{p['label']:>16}] post_spearman={a['post_spearman']} "
+            f"(prior={a['prior_spearman']}, Δ={a['delta_spearman']})  "
+            f"post_top1={a['post_top1']}  parse={a['post_parse_rate']}",
+            flush=True,
+        )
 
     policy_label = next((p["label"] for p in participants if p["role"] == "policy"), None)
     base_label = next((p["label"] for p in participants if p["role"] == "base"), None)
@@ -404,13 +456,20 @@ async def run_value_inference(participants, *, opponent, dataset="dnd", split="v
         deltas = _delta_models(per_model[policy_label]["aggregate"], per_model[base_label]["aggregate"])
 
     payload = {
-        "config": {"dataset": dataset, "split": split, "n": len(scs), "max_turns": max_turns,
-                   "seed": seed, "protocol": protocol, "opponent": opponent,
-                   "opp_proactive": opp_proactive, "participants": participants},
+        "config": {
+            "dataset": dataset,
+            "split": split,
+            "n": len(scs),
+            "max_turns": max_turns,
+            "seed": seed,
+            "protocol": protocol,
+            "opponent": opponent,
+            "opp_proactive": opp_proactive,
+            "participants": participants,
+        },
         "policy_label": policy_label,
         "base_label": base_label,
-        "per_model": {lbl: {"config": d["config"], "aggregate": d["aggregate"]}
-                      for lbl, d in per_model.items()},
+        "per_model": {lbl: {"config": d["config"], "aggregate": d["aggregate"]} for lbl, d in per_model.items()},
         "deltas_policy_minus_base": deltas,
         "per_model_runs": {lbl: d["runs"] for lbl, d in per_model.items()},
     }
@@ -428,6 +487,7 @@ async def run_value_inference(participants, *, opponent, dataset="dnd", split="v
 
 def render(payload, out_prefix="value_inference_probe"):
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
@@ -443,10 +503,8 @@ def render(payload, out_prefix="value_inference_probe"):
     for j, (key, name) in enumerate(metrics):
         prior = [(a.get(f"prior_{key}") or 0.0) for a in aggs]
         post = [(a.get(f"post_{key}") or 0.0) for a in aggs]
-        ax.bar(x + (2 * j - 2.5) * w, prior, w, color=f"C{j}", alpha=0.45,
-               label=f"{name} (prior)")
-        ax.bar(x + (2 * j - 1.5) * w, post, w, color=f"C{j}",
-               label=f"{name} (post)")
+        ax.bar(x + (2 * j - 2.5) * w, prior, w, color=f"C{j}", alpha=0.45, label=f"{name} (prior)")
+        ax.bar(x + (2 * j - 1.5) * w, post, w, color=f"C{j}", label=f"{name} (post)")
     ax.axhline(0.0, color="grey", lw=0.8)
 
     pol, base = payload.get("policy_label"), payload.get("base_label")
@@ -459,9 +517,11 @@ def render(payload, out_prefix="value_inference_probe"):
     ax.set_ylabel("metric value (higher = better inference)")
     ax.set_ylim(min(-0.1, min((a.get("prior_spearman") or 0.0) for a in aggs) - 0.05), 1.0)
     cfg = payload["config"]
-    title = (f"Opponent value-inference probe vs {cfg['opponent']['label']} · {cfg['protocol']} · "
-             f"{cfg['dataset']}/{cfg['split']} · n={cfg['n']}\n"
-             f"prior (faint) vs posterior (solid): how well each model reads the hidden them_values")
+    title = (
+        f"Opponent value-inference probe vs {cfg['opponent']['label']} · {cfg['protocol']} · "
+        f"{cfg['dataset']}/{cfg['split']} · n={cfg['n']}\n"
+        f"prior (faint) vs posterior (solid): how well each model reads the hidden them_values"
+    )
     ax.set_title(title, fontsize=10)
     ax.legend(fontsize=7, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.16))
     fig.tight_layout()
@@ -476,19 +536,32 @@ def render(payload, out_prefix="value_inference_probe"):
 def build_participants(args):
     parts = []
     if args.policy_model:
-        parts.append({"slug": args.policy_model, "label": args.policy_label,
-                      "no_think": args.policy_no_think, "base_url": args.policy_base_url,
-                      "role": "policy"})
+        parts.append(
+            {
+                "slug": args.policy_model,
+                "label": args.policy_label,
+                "no_think": args.policy_no_think,
+                "base_url": args.policy_base_url,
+                "role": "policy",
+            }
+        )
     if args.base_model:
-        parts.append({"slug": args.base_model, "label": args.base_label,
-                      "no_think": args.base_no_think, "base_url": args.base_base_url,
-                      "role": "base"})
+        parts.append(
+            {
+                "slug": args.base_model,
+                "label": args.base_label,
+                "no_think": args.base_no_think,
+                "base_url": args.base_base_url,
+                "role": "base",
+            }
+        )
     if args.reference or not parts:
         existing = {p["slug"] for p in parts}
         for slug, label, nt in REFERENCE_MODELS:
             if slug not in existing and slug != args.opponent_model:
-                parts.append({"slug": slug, "label": label, "no_think": nt,
-                              "base_url": OPENROUTER_URL, "role": "reference"})
+                parts.append(
+                    {"slug": slug, "label": label, "no_think": nt, "base_url": OPENROUTER_URL, "role": "reference"}
+                )
     return parts
 
 
@@ -500,8 +573,7 @@ def parse_args():
     ap.add_argument("--max-turns", type=int, default=6)
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--max-tokens", type=int, default=2000)
-    ap.add_argument("--est-max-tokens", type=int, default=512,
-                    help="token budget for the private value-estimate reply")
+    ap.add_argument("--est-max-tokens", type=int, default=512, help="token budget for the private value-estimate reply")
     ap.add_argument("--concurrency", type=int, default=12)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--protocol", default="dual", choices=["dual", "single"])
@@ -509,11 +581,13 @@ def parse_args():
     ap.add_argument("--opponent-model", default=DEFAULT_OPPONENT[0])
     ap.add_argument("--opponent-base-url", default=OPENROUTER_URL)
     ap.add_argument("--opponent-label", default=DEFAULT_OPPONENT[1])
-    ap.add_argument("--opponent-no-think", dest="opponent_no_think", action="store_true",
-                    default=DEFAULT_OPPONENT[2])
+    ap.add_argument("--opponent-no-think", dest="opponent_no_think", action="store_true", default=DEFAULT_OPPONENT[2])
     ap.add_argument("--opponent-think", dest="opponent_no_think", action="store_false")
-    ap.add_argument("--opponent-proactive", action="store_true",
-                    help="opponent volunteers its priorities (upper bound on inferability)")
+    ap.add_argument(
+        "--opponent-proactive",
+        action="store_true",
+        help="opponent volunteers its priorities (upper bound on inferability)",
+    )
     # Trained policy (typically a local vLLM endpoint).
     ap.add_argument("--policy-model", default=None, help="trained checkpoint slug/name")
     ap.add_argument("--policy-base-url", default="http://localhost:8000/v1")
@@ -528,8 +602,9 @@ def parse_args():
     ap.add_argument("--base-think", dest="base_no_think", action="store_false")
     # Frontier reference pool.
     ap.add_argument("--reference", action="store_true", help="also measure the frontier reference pool")
-    ap.add_argument("--render-only", action="store_true",
-                    help="re-render the bar chart from value_inference_probe.json")
+    ap.add_argument(
+        "--render-only", action="store_true", help="re-render the bar chart from value_inference_probe.json"
+    )
     return ap.parse_args()
 
 
@@ -541,14 +616,30 @@ def main():
         render(payload)
         return
     participants = build_participants(args)
-    opponent = {"slug": args.opponent_model, "label": args.opponent_label,
-                "no_think": args.opponent_no_think, "base_url": args.opponent_base_url,
-                "role": "opponent"}
-    asyncio.run(run_value_inference(
-        participants, opponent=opponent, dataset=args.dataset, split=args.split, n=args.n,
-        max_turns=args.max_turns, temperature=args.temperature, max_tokens=args.max_tokens,
-        est_max_tokens=args.est_max_tokens, concurrency=args.concurrency, seed=args.seed,
-        protocol=args.protocol, opp_proactive=args.opponent_proactive))
+    opponent = {
+        "slug": args.opponent_model,
+        "label": args.opponent_label,
+        "no_think": args.opponent_no_think,
+        "base_url": args.opponent_base_url,
+        "role": "opponent",
+    }
+    asyncio.run(
+        run_value_inference(
+            participants,
+            opponent=opponent,
+            dataset=args.dataset,
+            split=args.split,
+            n=args.n,
+            max_turns=args.max_turns,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            est_max_tokens=args.est_max_tokens,
+            concurrency=args.concurrency,
+            seed=args.seed,
+            protocol=args.protocol,
+            opp_proactive=args.opponent_proactive,
+        )
+    )
 
 
 if __name__ == "__main__":

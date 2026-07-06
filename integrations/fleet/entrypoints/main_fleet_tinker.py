@@ -406,9 +406,7 @@ def prepare_training_data(
 
         # Ensure logprobs and response_ids are in sync before building training data
         if len(logprobs) != len(response_ids):
-            logger.warning(
-                f"Datum {idx}: logprobs ({len(logprobs)}) != response_ids ({len(response_ids)}), fixing"
-            )
+            logger.warning(f"Datum {idx}: logprobs ({len(logprobs)}) != response_ids ({len(response_ids)}), fixing")
             if len(logprobs) > len(response_ids):
                 logprobs = logprobs[: len(response_ids)]
             else:
@@ -514,6 +512,7 @@ _IMAGE_PLACEHOLDER = "IMAGE"
 # Advisory only — used in our prompt_len bookkeeping; do NOT pass to ImageChunk
 # (Tinker validates against its own count and 422s on mismatch).
 _DEFAULT_IMAGE_TOKENS = 1500
+
 
 def _decode_data_url(url: str) -> Optional[Tuple[bytes, str]]:
     """Decode a `data:image/...;base64,...` URL into `(jpeg_bytes, "jpeg")`.
@@ -722,22 +721,25 @@ async def collect_fleet_rollout(
     # `use_tools_channel=True` asks the env to omit the in-system-message tool
     # JSON dump; we pass tools via `apply_chat_template(tools=...)` so models
     # like Kimi-K2 / Qwen3+ see them in their native tool_declare channel.
-    env_config = OmegaConf.create({
-        "tasks_file": tasks_file,
-        "ttl_seconds": 7200,
-        # Multi-app verifier stdout → fractional reward; required for any
-        # gradient signal on BU/CU where binary aggregation gives reward=0
-        # on rollouts with visible per-app progress. Single-flag opt-in;
-        # tasks whose stdout has no accumulator emit None and fall back to
-        # the binary score.
-        "partial_reward": True,
-    })
+    env_config = OmegaConf.create(
+        {
+            "tasks_file": tasks_file,
+            "ttl_seconds": 7200,
+            # Multi-app verifier stdout → fractional reward; required for any
+            # gradient signal on BU/CU where binary aggregation gives reward=0
+            # on rollouts with visible per-app progress. Single-flag opt-in;
+            # tasks whose stdout has no accumulator emit None and fall back to
+            # the binary score.
+            "partial_reward": True,
+        }
+    )
     # model_family picks the per-family YAML scaffold + canonical-format
     # reject content. Derived from the tokenizer's `name_or_path` so we
     # don't need to thread model_name through every helper. Unknown
     # family → env falls back to no scaffold + generic reject. Shared
     # helper with SkyRL's generator inject so both paths agree.
     from skyrl_gym.envs.fleet_task.families import family_for_model
+
     model_family = family_for_model(getattr(tokenizer, "name_or_path", ""))
     extras = {
         "task_key": task_key,
@@ -753,16 +755,12 @@ async def collect_fleet_rollout(
         # Initialize environment in thread pool - isolates MCP connections.
         # On timeout, let the TimeoutError raise to collect_single_rollout's
         # generic Exception handler.
-        chat_history, metadata = await asyncio.wait_for(
-            _env_init(env, []), ENV_INIT_TIMEOUT_S
-        )
+        chat_history, metadata = await asyncio.wait_for(_env_init(env, []), ENV_INIT_TIMEOUT_S)
         env_key = metadata.get("env_key", "unknown")
         env_tools = metadata.get("tools") or env.tools
 
         # Tokenize initial prompt
-        prompt_ids = tokenize_chat(
-            tokenizer, chat_history, add_generation_prompt=True, tools=env_tools
-        )
+        prompt_ids = tokenize_chat(tokenizer, chat_history, add_generation_prompt=True, tools=env_tools)
 
         all_response_ids = []
         all_logprobs = []
@@ -786,7 +784,9 @@ async def collect_fleet_rollout(
             if oe is not None and getattr(oe, "_done", False):
                 total_reward = env.last_reward if env.last_reward is not None else total_reward
                 done = True
-                logger.info(f"[{task_key}] verifier already finalized; skipping force on {reason} (reward={total_reward})")
+                logger.info(
+                    f"[{task_key}] verifier already finalized; skipping force on {reason} (reward={total_reward})"
+                )
                 return
             try:
                 out = await asyncio.wait_for(_env_step(env, "<done>"), ENV_STEP_TIMEOUT_S)
@@ -1179,6 +1179,7 @@ async def main(
         if not rollout_dump_dir:
             return None
         import json as _json
+
         phase_dir = os.path.join(rollout_dump_dir, label)
         os.makedirs(phase_dir, exist_ok=True)
 
@@ -1192,6 +1193,7 @@ async def main(
                     _json.dump(r.model_dump(), fh, indent=2, default=str)
             except Exception as e:
                 logger.warning(f"rollout dump failed for {r.task_key} s{sample}: {e}")
+
         return _dump
 
     async def _run_eval(
@@ -1248,11 +1250,13 @@ async def main(
         # curve has a baseline point without confusing wandb's monotonic step.
         wandb.log(eval_metrics, step=max(step_index, 0), commit=True)
         logger.info(f"step={step_index}: eval pass@1={eval_pass_at_1:.3f}, n={len(all_eval_rollouts)}")
-        eval_entries.append({
-            "step": step_index,
-            "pass_at_1": float(eval_pass_at_1),
-            "num_samples": len(all_eval_rollouts),
-        })
+        eval_entries.append(
+            {
+                "step": step_index,
+                "pass_at_1": float(eval_pass_at_1),
+                "num_samples": len(all_eval_rollouts),
+            }
+        )
         return eval_pass_at_1
 
     # Setup WandB run name
@@ -1285,9 +1289,7 @@ async def main(
 
     # Load datasets. Eval-only mode skips the training parquet entirely; only
     # eval_dataset_file is required to drive the held-out rollouts.
-    train_dataset = (
-        load_dataset("parquet", data_files=dataset_file)["train"] if dataset_file else None
-    )
+    train_dataset = load_dataset("parquet", data_files=dataset_file)["train"] if dataset_file else None
     eval_dataset = load_dataset("parquet", data_files=eval_dataset_file)["train"] if eval_dataset_file else None
 
     if train_dataset is not None:
@@ -1310,6 +1312,7 @@ async def main(
             return
         try:
             from envs.fleet_env.trace import create_trace_job
+
             name = f"{_trace_job_stem}_{label}"
             job_id = await create_trace_job(fleet_api_key, name)
             FleetTaskEnv.set_trace_config(job_id=job_id, model=model_name)
@@ -1347,7 +1350,9 @@ async def main(
             logger.info(f"Resuming training client from state: {load_state}")
             training_client = await service_client.create_training_client_from_state_with_optimizer_async(load_state)
         else:
-            training_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
+            training_client = await service_client.create_lora_training_client_async(
+                base_model=model_name, rank=lora_rank
+            )
         adam_params = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
     # trust_remote_code is required for models like moonshotai/Kimi-K2.6 whose
     # tokenizer config references a custom processor class on the HF Hub.
@@ -1369,11 +1374,10 @@ async def main(
         sampling_client = service_client.create_sampling_client(model_path=from_checkpoint)
         await _rotate_trace_job("eval_only")
         eval_pass_rate = await _run_eval(sampling_client, step_index=0, dump_label="eval_only")
-        logger.info(
-            f"eval-only complete: pass_at_{eval_n_samples_per_prompt}={eval_pass_rate}"
-        )
+        logger.info(f"eval-only complete: pass_at_{eval_n_samples_per_prompt}={eval_pass_rate}")
         if results_out:
             import json as _json
+
             try:
                 wandb_url = wandb.run.get_url() if wandb.run else None
             except Exception:
@@ -1441,8 +1445,7 @@ async def main(
         await _run_eval(pre_sampling_client, step_index=-1, dump_label="pre")
 
     # Training loop
-    pbar = tqdm(range(start_step, max_steps), desc="Training", unit="step",
-                initial=start_step, total=max_steps)
+    pbar = tqdm(range(start_step, max_steps), desc="Training", unit="step", initial=start_step, total=max_steps)
     for step in pbar:
         step_start = time.time()
         metrics = {"step": step, "epoch": step // steps_per_epoch}
@@ -1450,9 +1453,7 @@ async def main(
         # On-policy sampler for this step's rollouts. Use the ephemeral variant
         # so we don't persist an 8.7 GB named checkpoint at every step — only
         # step_pretrain and step_final are durable (eval needs to replay them).
-        sampling_client = (
-            await training_client.save_weights_and_get_sampling_client_async()
-        )
+        sampling_client = await training_client.save_weights_and_get_sampling_client_async()
 
         # Get batch
         try:
@@ -1593,13 +1594,9 @@ async def main(
         is_last_step = step == max_steps - 1
         if save_state_every > 0 and ((step + 1) % save_state_every == 0 or is_last_step):
             try:
-                state_path = training_client.save_state(
-                    name=f"state_{step + 1:06d}"
-                ).result().path
+                state_path = training_client.save_state(name=f"state_{step + 1:06d}").result().path
                 state_checkpoints.append({"step": step + 1, "path": state_path})
-                logger.info(
-                    f"Saved training state after step {step}: {state_path}"
-                )
+                logger.info(f"Saved training state after step {step}: {state_path}")
             except Exception as e:
                 logger.warning(f"save_state after step {step} failed: {e}")
 
@@ -1626,6 +1623,7 @@ async def main(
     # last entry is the post-train number. Delta is the headline metric.
     if results_out:
         import json as _json
+
         pre = eval_entries[0]["pass_at_1"] if eval_entries else None
         post = eval_entries[-1]["pass_at_1"] if eval_entries else None
         delta = (post - pre) if (pre is not None and post is not None) else None
@@ -1671,12 +1669,18 @@ if __name__ == "__main__":
     parser.add_argument("--tasks-file", type=str, required=True, help="Path to tasks JSON file")
     # --dataset-file is required for training; in --eval-only mode it's unused
     # and may be omitted. The post-parse validation below enforces this.
-    parser.add_argument("--dataset-file", type=str, default=None, help="Path to training parquet (required unless --eval-only)")
-    parser.add_argument("--eval-dataset-file", type=str, default=None, help="Path to eval parquet (required for --eval-only)")
+    parser.add_argument(
+        "--dataset-file", type=str, default=None, help="Path to training parquet (required unless --eval-only)"
+    )
+    parser.add_argument(
+        "--eval-dataset-file", type=str, default=None, help="Path to eval parquet (required for --eval-only)"
+    )
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--eval-batch-size", type=int, default=32)
     parser.add_argument(
-        "--eval-n-samples-per-prompt", type=int, default=3,
+        "--eval-n-samples-per-prompt",
+        type=int,
+        default=3,
         help="Number of eval rollouts per task; reported as pass@N. Default 3.",
     )
     parser.add_argument("--learning-rate", type=float, default=4e-5)
@@ -1744,10 +1748,10 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="If >0, downscale every base64 screenshot in tool results so "
-             "max(width,height) <= this many pixels before it lands in "
-             "chat_history. Frees image-token budget for longer rollouts "
-             "on capped-context models (e.g. Kimi-K2.6:peft:131072 = 128K). "
-             "0 (default) = no compression, byte-identical to prior behavior.",
+        "max(width,height) <= this many pixels before it lands in "
+        "chat_history. Frees image-token budget for longer rollouts "
+        "on capped-context models (e.g. Kimi-K2.6:peft:131072 = 128K). "
+        "0 (default) = no compression, byte-identical to prior behavior.",
     )
     parser.add_argument(
         "--eval-only",

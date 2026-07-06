@@ -238,15 +238,10 @@ class NegotiationEnv(BaseTextEnv):
         # The generator sets extras["max_turns"] = generator.max_turns; that is
         # the number of policy turns (= agent_loop iterations). Fall back to the
         # value baked into the dataset, then a small default.
-        self.max_turns = int(
-            extras.get("max_turns", extra_info.get("max_turns", 6))
-        )
+        self.max_turns = int(extras.get("max_turns", extra_info.get("max_turns", 6)))
 
         # --- Protocol: prefer what the prompt was built with (dataset), else config ---
-        self.protocol: str = (
-            extra_info.get("protocol")
-            or _cfg_get(env_config, "protocol", "single")
-        )
+        self.protocol: str = extra_info.get("protocol") or _cfg_get(env_config, "protocol", "single")
 
         # --- Reward shaping config ---
         self.reward_mode: str = _cfg_get(env_config, "reward_mode", "outcome")
@@ -275,9 +270,7 @@ class NegotiationEnv(BaseTextEnv):
         #   Default 0 = off, so gate-arm runs are unaffected. Applied to the FINAL reward
         #   (like the other think-channel penalties) so a violation on the deal-closing
         #   turn is still penalized.
-        self.action_before_think_penalty: float = float(
-            _cfg_get(env_config, "action_before_think_penalty", 0.0)
-        )
+        self.action_before_think_penalty: float = float(_cfg_get(env_config, "action_before_think_penalty", 0.0))
         self.you_msgs: int = 0
         self.think_nonempty_msgs: int = 0
         self.empty_think_msgs: int = 0
@@ -302,9 +295,7 @@ class NegotiationEnv(BaseTextEnv):
         self.transcript_sample_rate: float = float(_cfg_get(env_config, "transcript_sample_rate", 1.0))
 
         # --- Opponent ("them") LLM config ---
-        self.opponent_model: str = _cfg_get(
-            env_config, "opponent_model", "openrouter/openai/gpt-4o-mini"
-        )
+        self.opponent_model: str = _cfg_get(env_config, "opponent_model", "openrouter/openai/gpt-4o-mini")
         self.opponent_base_url: Optional[str] = _cfg_get(env_config, "opponent_base_url", None)
         self.opponent_temperature: float = float(_cfg_get(env_config, "opponent_temperature", 0.7))
         self.opponent_max_tokens: int = int(_cfg_get(env_config, "opponent_max_tokens", 512))
@@ -336,8 +327,11 @@ class NegotiationEnv(BaseTextEnv):
         them_sys = extra_info.get("them_system_prompt")
         if not them_sys:
             them_sys = prompts.build_system_prompt(
-                self.item_names, self.counts, self.them_values,
-                self.max_turns, protocol=self.protocol,
+                self.item_names,
+                self.counts,
+                self.them_values,
+                self.max_turns,
+                protocol=self.protocol,
             )
         if self.opponent_aggressive:
             them_sys = them_sys + "\n\n" + prompts.ADVERSARY_AGGRESSIVE_BLOCK
@@ -667,9 +661,7 @@ class NegotiationEnv(BaseTextEnv):
         """Compute the verifiable outcome and the scalar reward."""
         self.you_take = you_take
         self.them_take = them_take
-        self.outcome = game.evaluate(
-            self.counts, self.you_values, self.them_values, you_take, them_take
-        )
+        self.outcome = game.evaluate(self.counts, self.you_values, self.them_values, you_take, them_take)
         out = self.outcome
         if out.agreed:
             reward = out.you_norm

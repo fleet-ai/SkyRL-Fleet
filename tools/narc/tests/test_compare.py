@@ -24,9 +24,7 @@ class FakeS3Paginator:
     def paginate(self, Bucket, Prefix):
         yield {
             "Contents": [
-                {"Key": key}
-                for bucket, key in sorted(self.objects)
-                if bucket == Bucket and key.startswith(Prefix)
+                {"Key": key} for bucket, key in sorted(self.objects) if bucket == Bucket and key.startswith(Prefix)
             ]
         }
 
@@ -531,9 +529,7 @@ def test_compare_cli_allows_overwriting_previous_s3_compare_report(monkeypatch):
     result = result_payload()
     objects = {
         ("fleet-research", "narc/result.json"): json.dumps(result),
-        ("fleet-research", "narc/compare.json"): json.dumps(
-            {"compare_schema_version": 1}
-        ),
+        ("fleet-research", "narc/compare.json"): json.dumps({"compare_schema_version": 1}),
     }
     install_fake_s3(monkeypatch, objects)
     parser = generate_cli()
@@ -582,9 +578,7 @@ def test_compare_refuses_s3_outfile_when_existence_check_fails(
     install_fake_s3(
         monkeypatch,
         objects,
-        head_errors={
-            ("fleet-research", "narc/result.json"): s3_client_error("AccessDenied")
-        },
+        head_errors={("fleet-research", "narc/result.json"): s3_client_error("AccessDenied")},
     )
     parser = generate_cli()
     args = parser.parse_args(
@@ -620,9 +614,5 @@ def test_compare_paths_reads_s3_prefix(monkeypatch):
     assert report["inputs"] == ["s3://fleet-research/narc/"]
     assert report["total_files"] == 2
     assert report["loaded_results"] == 2
-    assert report["partitions"][0]["results"][0]["path"] == (
-        "s3://fleet-research/narc/a.json"
-    )
-    assert report["partitions"][0]["results"][1]["path"] == (
-        "s3://fleet-research/narc/b.json"
-    )
+    assert report["partitions"][0]["results"][0]["path"] == ("s3://fleet-research/narc/a.json")
+    assert report["partitions"][0]["results"][1]["path"] == ("s3://fleet-research/narc/b.json")

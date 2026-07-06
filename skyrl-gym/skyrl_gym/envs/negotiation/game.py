@@ -90,15 +90,15 @@ class Outcome:
     them_score: int = 0
     you_max: int = 0
     them_max: int = 0
-    you_norm: float = 0.0          # you_score / you_max  (terminal outcome reward)
+    you_norm: float = 0.0  # you_score / you_max  (terminal outcome reward)
     them_norm: float = 0.0
     joint_score: int = 0
-    pareto_optimal: bool = False   # is the achieved split on the Pareto frontier?
-    max_joint: int = 0             # best achievable joint score for this scenario
+    pareto_optimal: bool = False  # is the achieved split on the Pareto frontier?
+    max_joint: int = 0  # best achievable joint score for this scenario
     joint_efficiency: float = 0.0  # joint_score / max_joint
-    pareto_bonus: float = 0.0      # 1.0 if pareto_optimal else 0.0 (on agreement)
-    nash_product: float = 0.0      # you_norm * them_norm — win-win signal (high only
-                                   # when BOTH sides do well; a lopsided split scores ~0)
+    pareto_bonus: float = 0.0  # 1.0 if pareto_optimal else 0.0 (on agreement)
+    nash_product: float = 0.0  # you_norm * them_norm — win-win signal (high only
+    # when BOTH sides do well; a lopsided split scores ~0)
 
     def to_dict(self) -> Dict:
         return {k: v for k, v in self.__dict__.items()}
@@ -179,7 +179,5 @@ def evaluate(
         max_joint=max_joint,
         joint_efficiency=(joint / max_joint) if max_joint else 0.0,
         pareto_bonus=1.0 if is_pareto else 0.0,
-        nash_product=(
-            ((you_score / you_max) if you_max else 0.0) * ((them_score / them_max) if them_max else 0.0)
-        ),
+        nash_product=(((you_score / you_max) if you_max else 0.0) * ((them_score / them_max) if them_max else 0.0)),
     )

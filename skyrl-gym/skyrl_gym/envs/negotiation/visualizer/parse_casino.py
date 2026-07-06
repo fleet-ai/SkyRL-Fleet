@@ -128,38 +128,40 @@ def parse_corpus():
             you_score = sum(you_alloc[i] * you_values[i] for i in range(3))
             them_score = sum(them_alloc[i] * them_values[i] for i in range(3))
 
-        games.append({
-            "dataset": "casino",
-            "item_names": ITEM_NAMES,
-            "counts": [UNITS_PER_ITEM] * 3,
-            "you_values": you_values,
-            "them_values": them_values,
-            "you_max": SCORE_MAX,
-            "them_max": SCORE_MAX,
-            "turns": turns,
-            "num_turns": len(turns),
-            "agreed": agreed,
-            "valid_alloc": valid_alloc,
-            "you_alloc": you_alloc,
-            "them_alloc": them_alloc,
-            "you_score": you_score,
-            "them_score": them_score,
-            "first_speaker": turns[0]["speaker"] if turns else None,
-            "meta": {
-                "you": {
-                    "reasons": agent_reasons(a1),
-                    "points_scored": a1["outcomes"].get("points_scored"),
-                    "satisfaction": a1["outcomes"].get("satisfaction"),
-                    "likeness": a1["outcomes"].get("opponent_likeness"),
+        games.append(
+            {
+                "dataset": "casino",
+                "item_names": ITEM_NAMES,
+                "counts": [UNITS_PER_ITEM] * 3,
+                "you_values": you_values,
+                "them_values": them_values,
+                "you_max": SCORE_MAX,
+                "them_max": SCORE_MAX,
+                "turns": turns,
+                "num_turns": len(turns),
+                "agreed": agreed,
+                "valid_alloc": valid_alloc,
+                "you_alloc": you_alloc,
+                "them_alloc": them_alloc,
+                "you_score": you_score,
+                "them_score": them_score,
+                "first_speaker": turns[0]["speaker"] if turns else None,
+                "meta": {
+                    "you": {
+                        "reasons": agent_reasons(a1),
+                        "points_scored": a1["outcomes"].get("points_scored"),
+                        "satisfaction": a1["outcomes"].get("satisfaction"),
+                        "likeness": a1["outcomes"].get("opponent_likeness"),
+                    },
+                    "them": {
+                        "reasons": agent_reasons(a2),
+                        "points_scored": a2["outcomes"].get("points_scored"),
+                        "satisfaction": a2["outcomes"].get("satisfaction"),
+                        "likeness": a2["outcomes"].get("opponent_likeness"),
+                    },
                 },
-                "them": {
-                    "reasons": agent_reasons(a2),
-                    "points_scored": a2["outcomes"].get("points_scored"),
-                    "satisfaction": a2["outcomes"].get("satisfaction"),
-                    "likeness": a2["outcomes"].get("opponent_likeness"),
-                },
-            },
-        })
+            }
+        )
     return games
 
 
@@ -204,7 +206,10 @@ def summarize(games):
         "score_hist": score_hist,
         "extra_cards": [
             {"label": "Avg satisfaction", "value": (f"{round(sum(sats) / len(sats), 2)} / 5" if sats else "n/a")},
-            {"label": "Strategy-annotated turns", "value": f"{round(annotated / total_turns * 100, 1)}%" if total_turns else "0%"},
+            {
+                "label": "Strategy-annotated turns",
+                "value": f"{round(annotated / total_turns * 100, 1)}%" if total_turns else "0%",
+            },
         ],
     }
 

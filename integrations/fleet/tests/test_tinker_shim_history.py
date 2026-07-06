@@ -28,7 +28,6 @@ from integrations.fleet.serving.tinker_shim import (
 )
 from skyrl_gym.envs.fleet_task.families import Kimi, get_family
 
-
 # ---------------------------------------------------------------------------
 # _normalize_history_ids
 # ---------------------------------------------------------------------------
@@ -59,11 +58,13 @@ def test_normalize_single_call_gets_trainer_id():
         {
             "role": "assistant",
             "content": "",
-            "tool_calls": [{
-                "id": "call_abc123",
-                "type": "function",
-                "function": {"name": "emails_search", "arguments": '{"q":"x"}'},
-            }],
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "type": "function",
+                    "function": {"name": "emails_search", "arguments": '{"q":"x"}'},
+                }
+            ],
         },
     ]
     out = _normalize_history_ids(msgs, Kimi())
@@ -76,11 +77,13 @@ def test_normalize_tool_result_id_remapped():
         {
             "role": "assistant",
             "content": "",
-            "tool_calls": [{
-                "id": "call_abc123",
-                "type": "function",
-                "function": {"name": "foo", "arguments": "{}"},
-            }],
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "type": "function",
+                    "function": {"name": "foo", "arguments": "{}"},
+                }
+            ],
         },
         {"role": "tool", "tool_call_id": "call_abc123", "content": "result"},
     ]
@@ -93,13 +96,17 @@ def test_normalize_tool_result_id_remapped():
 def test_normalize_two_assistant_turns_get_different_turn_indices():
     msgs = [
         {"role": "user", "content": "a"},
-        {"role": "assistant", "content": "",
-         "tool_calls": [{"id": "call_1", "type": "function",
-                         "function": {"name": "foo", "arguments": "{}"}}]},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "foo", "arguments": "{}"}}],
+        },
         {"role": "tool", "tool_call_id": "call_1", "content": "r1"},
-        {"role": "assistant", "content": "",
-         "tool_calls": [{"id": "call_2", "type": "function",
-                         "function": {"name": "bar", "arguments": "{}"}}]},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "bar", "arguments": "{}"}}],
+        },
         {"role": "tool", "tool_call_id": "call_2", "content": "r2"},
     ]
     out = _normalize_history_ids(msgs, Kimi())
@@ -116,9 +123,11 @@ def test_normalize_content_only_assistant_still_advances_turn_counter():
         {"role": "user", "content": "a"},
         {"role": "assistant", "content": "thinking..."},  # no tool_calls
         {"role": "user", "content": "go"},
-        {"role": "assistant", "content": "",
-         "tool_calls": [{"id": "call_1", "type": "function",
-                         "function": {"name": "foo", "arguments": "{}"}}]},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "foo", "arguments": "{}"}}],
+        },
     ]
     out = _normalize_history_ids(msgs, Kimi())
     assert out[3]["tool_calls"][0]["id"] == _trainer_id("foo", 1)
@@ -128,9 +137,11 @@ def test_normalize_idempotent_on_canonical_ids():
     canonical = _trainer_id("foo", 0)
     msgs = [
         {"role": "user", "content": "a"},
-        {"role": "assistant", "content": "",
-         "tool_calls": [{"id": canonical, "type": "function",
-                         "function": {"name": "foo", "arguments": "{}"}}]},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": canonical, "type": "function", "function": {"name": "foo", "arguments": "{}"}}],
+        },
         {"role": "tool", "tool_call_id": canonical, "content": "r"},
     ]
     out = _normalize_history_ids(msgs, Kimi())
@@ -150,10 +161,8 @@ def test_normalize_multi_tool_calls_in_one_assistant_turn():
             "role": "assistant",
             "content": "",
             "tool_calls": [
-                {"id": "call_1", "type": "function",
-                 "function": {"name": "foo", "arguments": "{}"}},
-                {"id": "call_2", "type": "function",
-                 "function": {"name": "bar", "arguments": "{}"}},
+                {"id": "call_1", "type": "function", "function": {"name": "foo", "arguments": "{}"}},
+                {"id": "call_2", "type": "function", "function": {"name": "bar", "arguments": "{}"}},
             ],
         },
     ]
@@ -178,9 +187,7 @@ def test_normalize_missing_function_name_skipped():
     leave its id alone."""
     msgs = [
         {"role": "user", "content": "a"},
-        {"role": "assistant", "content": "",
-         "tool_calls": [{"id": "call_1", "type": "function",
-                         "function": {}}]},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1", "type": "function", "function": {}}]},
     ]
     out = _normalize_history_ids(msgs, Kimi())
     assert out[1]["tool_calls"][0]["id"] == "call_1"  # unchanged
@@ -220,7 +227,7 @@ def test_build_response_message_kimi_tool_call(monkeypatch):
     text = (
         "<|tool_calls_section_begin|>"
         "<|tool_call_begin|>functions.emails_search:0"
-        "<|tool_call_argument_begin|>{\"query\":\"Schedule\"}"
+        '<|tool_call_argument_begin|>{"query":"Schedule"}'
         "<|tool_call_end|>"
         "<|tool_calls_section_end|>"
     )
@@ -234,6 +241,7 @@ def test_build_response_message_content_only_fallback(monkeypatch):
     """When the model emits prose with no tool call, fall back to
     content-only — but never empty content (some clients reject that)."""
     import integrations.fleet.serving.tinker_shim as shim
+
     monkeypatch.setattr(shim, "_family", Kimi())
 
     msg = _build_response_message("I cannot help with that.", asst_turn=0)
@@ -245,6 +253,7 @@ def test_build_response_message_content_only_fallback(monkeypatch):
 def test_build_response_message_empty_text_promoted_to_space(monkeypatch):
     """Empty model output → content=' ' so OpenAI clients don't reject."""
     import integrations.fleet.serving.tinker_shim as shim
+
     monkeypatch.setattr(shim, "_family", Kimi())
 
     msg = _build_response_message("", asst_turn=0)
@@ -254,6 +263,7 @@ def test_build_response_message_empty_text_promoted_to_space(monkeypatch):
 def test_build_response_message_no_family_uses_passthrough(monkeypatch):
     """Unknown base model (no family adapter): emit content as-is, no parse."""
     import integrations.fleet.serving.tinker_shim as shim
+
     monkeypatch.setattr(shim, "_family", None)
 
     msg = _build_response_message("hello world", asst_turn=0)
@@ -290,7 +300,8 @@ def test_integration_render_uses_trainer_id_in_prompt():
 
     try:
         tok = AutoTokenizer.from_pretrained(
-            "moonshotai/Kimi-K2.6", trust_remote_code=True,
+            "moonshotai/Kimi-K2.6",
+            trust_remote_code=True,
         )
     except Exception as e:
         pytest.skip(f"Kimi-K2.6 tokenizer unavailable: {e}")
@@ -301,38 +312,42 @@ def test_integration_render_uses_trainer_id_in_prompt():
         {
             "role": "assistant",
             "content": "",
-            "tool_calls": [{
-                "id": bad_id,
-                "type": "function",
-                "function": {
-                    "name": "emails_search",
-                    "arguments": '{"query":"Schedule"}',
-                },
-            }],
+            "tool_calls": [
+                {
+                    "id": bad_id,
+                    "type": "function",
+                    "function": {
+                        "name": "emails_search",
+                        "arguments": '{"query":"Schedule"}',
+                    },
+                }
+            ],
         },
         {"role": "tool", "tool_call_id": bad_id, "content": "Subject: Schedule"},
     ]
-    tools = [{
-        "type": "function",
-        "function": {
-            "name": "emails_search",
-            "description": "Search emails",
-            "parameters": {"type": "object", "properties": {
-                "query": {"type": "string"}}},
-        },
-    }]
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "emails_search",
+                "description": "Search emails",
+                "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+        }
+    ]
 
     normalized = _normalize_history_ids(msgs, Kimi())
     rendered = tok.apply_chat_template(
-        normalized, tools=tools, add_generation_prompt=True, tokenize=False,
+        normalized,
+        tools=tools,
+        add_generation_prompt=True,
+        tokenize=False,
     )
 
     canonical = _trainer_id("emails_search", 0)
     assert canonical in rendered, (
-        f"expected canonical id {canonical!r} in rendered prompt; "
-        f"last 1500 chars:\n{rendered[-1500:]}"
+        f"expected canonical id {canonical!r} in rendered prompt; " f"last 1500 chars:\n{rendered[-1500:]}"
     )
     assert bad_id not in rendered, (
-        f"OpenAI id {bad_id!r} leaked into rendered prompt; "
-        f"last 1500 chars:\n{rendered[-1500:]}"
+        f"OpenAI id {bad_id!r} leaked into rendered prompt; " f"last 1500 chars:\n{rendered[-1500:]}"
     )

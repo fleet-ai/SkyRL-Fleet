@@ -13,11 +13,7 @@ def package_version() -> str:
 
 
 def generate_cli() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "narc: deterministic accelerator probes for compute clusters"
-        )
-    )
+    parser = argparse.ArgumentParser(description=("narc: deterministic accelerator probes for compute clusters"))
     parser.add_argument(
         "--version",
         action="version",
