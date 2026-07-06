@@ -1621,3 +1621,194 @@ async def test_step_wise_trajectories_basic_output_validation(mock_make, mock_to
     # Validate stop_reasons
     for i, stop_reason in enumerate(generator_output["stop_reasons"]):
         assert isinstance(stop_reason, str), f"stop_reasons[{i}] should be a string"
+
+
+# --- ATOF observability hooks (Fleet) ---
+
+
+class RecordingAtofEmitter:
+    """Records hook calls; optionally raises to prove hooks are isolated."""
+
+    def __init__(self, raise_always: bool = False):
+        self.calls: List[tuple] = []
+        self.raise_always = raise_always
+
+    def _record(self, method: str, kwargs: Dict[str, Any]):
+        # Snapshot at call time: the real emitter serializes payloads at the
+        # emit boundary, while the loop mutates chat_history in place after.
+        import copy
+
+        self.calls.append((method, copy.deepcopy(kwargs)))
+        if self.raise_always:
+            raise RuntimeError("emitter bug")
+
+    def rollout_start(self, **kwargs):
+        self._record("rollout_start", kwargs)
+        return "trace-1"
+
+    def llm_turn(self, **kwargs):
+        self._record("llm_turn", kwargs)
+
+    def env_step(self, **kwargs):
+        self._record("env_step", kwargs)
+
+    def rollout_end(self, **kwargs):
+        self._record("rollout_end", kwargs)
+
+    def named(self, method: str) -> List[Dict[str, Any]]:
+        return [kwargs for m, kwargs in self.calls if m == method]
+
+
+@pytest.mark.asyncio
+@patch("skyrl_gym.make")
+async def test_agent_loop_atof_hooks_emit_sequence(mock_make, mock_tokenizer, mock_llm, generator_cfg, mock_env_cfg):
+    """A two-turn rollout emits start, two turns, two env steps, and a final mark."""
+    from skyrl.train.generators.base import BatchMetadata, TrajectoryID
+
+    generator_cfg.batched = False
+    generator_cfg.use_conversation_multi_turn = True
+    generator_cfg.max_turns = 2
+
+    obs_turn_1 = [{"role": "user", "content": "obs1"}]
+    step_outputs = iter(
+        [
+            BaseTextEnvStepOutput(observations=obs_turn_1, reward=0.5, done=False, metadata={}),
+            BaseTextEnvStepOutput(observations=[], reward=1.0, done=True, metadata={}),
+        ]
+    )
+    mock_env = MagicMock()
+    mock_env.init_async = AsyncMock(return_value=([{"role": "user", "content": "Initial input"}], {}))
+    mock_env.step_async = AsyncMock(side_effect=lambda x: next(step_outputs))
+    mock_env.close_async = AsyncMock(return_value=None)
+    mock_make.return_value = mock_env
+
+    generator = SkyRLGymGenerator(
+        generator_cfg=generator_cfg,
+        skyrl_gym_cfg=mock_env_cfg,
+        inference_engine_client=mock_llm,
+        tokenizer=mock_tokenizer,
+    )
+    generator.base_conversation_token_ids = []
+    emitter = RecordingAtofEmitter()
+    generator.atof_emitter = emitter
+
+    output = await generator.agent_loop(
+        [{"role": "user", "content": "What is 2 + 2?"}],
+        mock_env_cfg.env_class,
+        {"task_key": "task-9"},
+        max_tokens=8,
+        max_input_length=512,
+        trajectory_id=TrajectoryID(instance_id="uid1", repetition_id=3),
+        batch_metadata=BatchMetadata(global_step=7, training_phase="train"),
+    )
+
+    (start,) = emitter.named("rollout_start")
+    assert start["task_key"] == "task-9"
+    assert start["env_class"] == mock_env_cfg.env_class
+    assert start["global_step"] == 7
+    assert start["phase"] == "train_step_7"
+    assert start["sample_idx"] == 3
+
+    turns = emitter.named("llm_turn")
+    assert len(turns) == 2
+    assert all(t["trace"] == "trace-1" for t in turns)
+    assert turns[0]["new_messages"] == [{"role": "user", "content": "Initial input"}]
+    assert turns[1]["new_messages"] == obs_turn_1
+    assert all(t["response_text"] == "mocked output" for t in turns)
+    assert all(t["stop_reason"] == "stop" for t in turns)
+
+    steps = emitter.named("env_step")
+    assert len(steps) == 2
+    assert steps[0] == {
+        "trace": "trace-1",
+        "action": "mocked output",
+        "observations": obs_turn_1,
+        "reward": 0.5,
+        "done": False,
+    }
+    assert steps[1]["reward"] == 1.0 and steps[1]["done"] is True and steps[1]["observations"] == []
+
+    (end,) = emitter.named("rollout_end")
+    assert end == {"trace": "trace-1", "reward": 1.5, "stop_reason": "stop", "num_turns": 2}
+
+    # Hook order: start, then (turn, step) pairs, then end.
+    assert [m for m, _ in emitter.calls] == [
+        "rollout_start",
+        "llm_turn",
+        "env_step",
+        "llm_turn",
+        "env_step",
+        "rollout_end",
+    ]
+    assert output.stop_reason == "stop"
+
+
+@pytest.mark.asyncio
+@patch("skyrl_gym.make")
+async def test_agent_loop_no_emitter_is_default(mock_make, mock_tokenizer, mock_llm, mock_env, generator_cfg, mock_env_cfg):
+    """Without an emitter installed, rollouts run exactly as before."""
+    generator_cfg.batched = False
+    generator_cfg.use_conversation_multi_turn = True
+    mock_env.init_async = AsyncMock(return_value=([{"role": "user", "content": "Initial input"}], {}))
+    mock_env.step_async = AsyncMock(
+        side_effect=lambda x: BaseTextEnvStepOutput(observations=[], reward=1.0, done=True, metadata={})
+    )
+    mock_env.close_async = AsyncMock(return_value=None)
+    mock_make.return_value = mock_env
+
+    generator = SkyRLGymGenerator(
+        generator_cfg=generator_cfg,
+        skyrl_gym_cfg=mock_env_cfg,
+        inference_engine_client=mock_llm,
+        tokenizer=mock_tokenizer,
+    )
+    generator.base_conversation_token_ids = []
+    assert generator.atof_emitter is None
+
+    output = await generator.agent_loop(
+        [{"role": "user", "content": "What is 2 + 2?"}],
+        mock_env_cfg.env_class,
+        {"answer": "4"},
+        max_tokens=8,
+        max_input_length=512,
+    )
+    assert output.stop_reason == "stop"
+    assert (output.reward if isinstance(output.reward, float) else sum(output.reward)) == 1.0
+
+
+@pytest.mark.asyncio
+@patch("skyrl_gym.make")
+async def test_agent_loop_raising_emitter_does_not_break_rollout(
+    mock_make, mock_tokenizer, mock_llm, mock_env, generator_cfg, mock_env_cfg
+):
+    """An emitter bug must never turn into a failed (zero-reward) trajectory."""
+    generator_cfg.batched = False
+    generator_cfg.use_conversation_multi_turn = True
+    mock_env.init_async = AsyncMock(return_value=([{"role": "user", "content": "Initial input"}], {}))
+    mock_env.step_async = AsyncMock(
+        side_effect=lambda x: BaseTextEnvStepOutput(observations=[], reward=1.0, done=True, metadata={})
+    )
+    mock_env.close_async = AsyncMock(return_value=None)
+    mock_make.return_value = mock_env
+
+    generator = SkyRLGymGenerator(
+        generator_cfg=generator_cfg,
+        skyrl_gym_cfg=mock_env_cfg,
+        inference_engine_client=mock_llm,
+        tokenizer=mock_tokenizer,
+    )
+    generator.base_conversation_token_ids = []
+    emitter = RecordingAtofEmitter(raise_always=True)
+    generator.atof_emitter = emitter
+
+    output = await generator.agent_loop(
+        [{"role": "user", "content": "What is 2 + 2?"}],
+        mock_env_cfg.env_class,
+        {"answer": "4"},
+        max_tokens=8,
+        max_input_length=512,
+    )
+    assert (output.reward if isinstance(output.reward, float) else sum(output.reward)) == 1.0
+    assert output.stop_reason == "stop"
+    # Every hook site was attempted despite raising each time.
+    assert [m for m, _ in emitter.calls] == ["rollout_start", "llm_turn", "env_step", "rollout_end"]

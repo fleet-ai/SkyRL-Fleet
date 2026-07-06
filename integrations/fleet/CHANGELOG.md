@@ -1,5 +1,30 @@
 # Fleet Integration Changelog
 
+## 2026-07-06: SkyRL generator — ATOF rollout observability hooks
+
+Scope: **core file edit** (`skyrl/train/generators/skyrl_gym_generator.py`), not in
+upstream SkyRL. Preserve on upstream merges.
+
+### What
+
+`agent_loop()` emits one ATOF trace per rollout through
+`integrations/fleet/atof_events.py` (NeMo Relay -> MSK `atof.received` ->
+ClickHouse): trace open at rollout start, an LLM event per turn (the turn's new
+input messages + response + stop reason), a tool event per env step
+(action/observation/reward/done), and a final mark (summed reward, turn count).
+`batch_metadata` is now threaded into `agent_loop()` (and
+`_run_hint_augmentation`) so events carry global_step/phase.
+
+### Behavior guarantees
+
+- `self.atof_emitter` defaults to None and only the Fleet entrypoints install
+  one; without it every hook is a no-op and the loop is unchanged.
+- All emitter calls go through `_atof_emit()`, which swallows exceptions: an
+  observability bug must never surface as a zero-reward trajectory via
+  generate()'s catch-all (that would silently corrupt training signal).
+- The batched single-turn path (`generate_batched`) is not instrumented; all
+  fleet training paths use `agent_loop`.
+
 ## 2026-07-05: Tinker harness — resume from saved state (`--load-state` + `--start-step`)
 
 Scope: **Tinker harness only** (`main_fleet_tinker.py`, `fleet-tinker-tool-use-run.sh`).
