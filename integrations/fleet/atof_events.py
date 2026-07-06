@@ -92,7 +92,9 @@ class RolloutTrace:
     handle: Any
     metadata: Dict[str, Any]
     image_urls: List[Dict[str, Any]] = field(default_factory=list)
-    counters: Dict[str, int] = field(default_factory=lambda: {"truncated": 0, "image_upload_failures": 0, "emit_errors": 0})
+    counters: Dict[str, int] = field(
+        default_factory=lambda: {"truncated": 0, "image_upload_failures": 0, "emit_errors": 0}
+    )
 
 
 class AtofEmitter:
@@ -132,9 +134,7 @@ class AtofEmitter:
                     "sample_idx": sample_idx,
                 }
             )
-            handle = self._nemo.scope.push(
-                f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata
-            )
+            handle = self._nemo.scope.push(f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata)
             return RolloutTrace(handle=handle, metadata=metadata)
         except Exception as exc:
             self._warn_once("rollout_start", exc)

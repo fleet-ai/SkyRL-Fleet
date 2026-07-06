@@ -1745,7 +1745,9 @@ async def test_agent_loop_atof_hooks_emit_sequence(mock_make, mock_tokenizer, mo
 
 @pytest.mark.asyncio
 @patch("skyrl_gym.make")
-async def test_agent_loop_no_emitter_is_default(mock_make, mock_tokenizer, mock_llm, mock_env, generator_cfg, mock_env_cfg):
+async def test_agent_loop_no_emitter_is_default(
+    mock_make, mock_tokenizer, mock_llm, mock_env, generator_cfg, mock_env_cfg
+):
     """Without an emitter installed, rollouts run exactly as before."""
     generator_cfg.batched = False
     generator_cfg.use_conversation_multi_turn = True
