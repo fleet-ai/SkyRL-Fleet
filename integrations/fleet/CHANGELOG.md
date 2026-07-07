@@ -1,5 +1,35 @@
 # Fleet Integration Changelog
 
+## 2026-07-07: Launch scripts — ATOF enablement via `SKYRL_ATOF_ENABLED=1`
+
+Scope: **launch scripts only** (`fleet-common-setup.sh`, `fleet-common-run.sh`,
+the five fleet-training task YAMLs).
+
+### What
+
+Enabling ATOF on any fleet-training run is now one flag:
+`--env SKYRL_ATOF_ENABLED=1` (declared as `"0"` in the openenv-fleet YAMLs).
+
+- Setup: downloads the nemo-relay wheel from
+  `s3://fleet-nemo-relay-artifacts/wheels/latest/` into a `mktemp -d` dir
+  (shared multi-tenant `/tmp`; a reused dir could glob-match a stale wheel)
+  and installs it into the venv. Fails loudly under `set -e` — a broken
+  install must not degrade into a silently event-less run.
+- Run: exports `THESEUS_ATOF_MSK_BROKERS` / `THESEUS_ATOF_TENANT_ID`
+  defaults (`${VAR:-default}`, explicit launch values win) before
+  `ray start` on every rank — the emitter initializes inside Ray tasks,
+  which inherit env from the raylet. Bucket/topic/client_id default in
+  `atof_events.py`; region comes from `AWS_REGION` (code default `us-east-1`).
+- Unset flag = exactly the previous behavior; preflight needs no new vars.
+
+### Verified before shipping
+
+- skyrl-ci can read the wheels bucket (`AmazonS3FullAccess` identity policy;
+  bucket policy has no Deny) and `wheels/latest/` holds exactly one wheel.
+- SkyPilot merges CLI `--env` keys without requiring YAML declaration
+  (`Task.update_envs`), so undeclared YAMLs (CI, task-gen) can still enable
+  ATOF ad hoc.
+
 ## 2026-07-06: SkyRL generator — ATOF rollout observability hooks
 
 Scope: **core file edit** (`skyrl/train/generators/skyrl_gym_generator.py`), not in

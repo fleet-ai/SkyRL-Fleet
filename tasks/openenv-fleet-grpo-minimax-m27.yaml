@@ -47,6 +47,7 @@ envs:
   S3_DATASET_BUCKET: "fleet-internal-datasets"
   S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+  SKYRL_ATOF_ENABLED: "0"
   # TP=4 -> 8 engines (each uses 4 GPUs) across 32 GPUs
   NUM_INFERENCE_ENGINES: 8
   NUM_NODES: 4

@@ -102,6 +102,14 @@ if [ -n "$NCCL_HEARTBEAT" ]; then
   export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC="$NCCL_HEARTBEAT"
 fi
 
+# ATOF event emission (must be exported before `ray start`; Ray workers
+# inherit env from the raylet, and the emitter initializes inside Ray tasks)
+if [ "${SKYRL_ATOF_ENABLED:-}" = "1" ]; then
+  export SKYRL_ATOF_ENABLED
+  export THESEUS_ATOF_MSK_BROKERS="${THESEUS_ATOF_MSK_BROKERS:-b-1-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-2-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198}"
+  export THESEUS_ATOF_TENANT_ID="${THESEUS_ATOF_TENANT_ID:-skyrl}"
+fi
+
 TMP_DIR="${CKPT_ROOT}/skyrl-tmp"
 mkdir -p "$TMP_DIR"
 # TMPDIR and HF_HOME must be LOCAL, not NFS. On SLURM (RunPod), /workspace is NFS

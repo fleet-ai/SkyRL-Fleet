@@ -121,6 +121,15 @@ uv pip install wandb boto3 awscli
 # Pin fleet-python<=0.2.119: 0.2.120+ has async BaseWrapper bug (missing jwt/team_id params)
 uv pip install "litellm>=1.75.5" "fleet-python<=0.2.119" logfire "mcp>=1.0.0"
 
+# --- ATOF: nemo-relay wheel (rollout observability, off unless enabled) ---
+if [ "${SKYRL_ATOF_ENABLED:-}" = "1" ]; then
+  echo "Installing nemo-relay wheel for ATOF event emission..."
+  NEMO_WHEEL_DIR="$(mktemp -d)"
+  aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/"
+  uv pip install "$NEMO_WHEEL_DIR"/nemo_relay-*.whl
+  rm -rf "$NEMO_WHEEL_DIR"
+fi
+
 # --- Extra pip packages (installed before extra-setup to avoid dependency downgrades) ---
 if [ -n "$EXTRA_PIP" ]; then
   echo "Installing extra pip packages: $EXTRA_PIP"
