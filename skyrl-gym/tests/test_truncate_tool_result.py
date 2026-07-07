@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.env import (
+from skyrl_gym.envs.fleet_task.env import (  # noqa: E402  (import after sys.path setup)
     MAX_TOOL_OUTPUT_CHARS,
     truncate_tool_result,
 )
@@ -44,6 +44,7 @@ def _huge_base64(approx_chars: int = 200_000) -> str:
 # --------------------------------------------------------------------------- #
 # Multimodal lists
 # --------------------------------------------------------------------------- #
+
 
 class TestMultimodalPreserved:
     def test_image_only_passes_through_unchanged(self):
@@ -103,6 +104,7 @@ class TestMultimodalPreserved:
 # Non-multimodal shapes — the existing behavior must be preserved
 # --------------------------------------------------------------------------- #
 
+
 class TestNonMultimodalUnchanged:
     def test_none_passes_through(self):
         assert truncate_tool_result(None) is None
@@ -149,6 +151,7 @@ class TestNonMultimodalUnchanged:
 # --------------------------------------------------------------------------- #
 # Regression: the specific bug shape from the canonical hero run
 # --------------------------------------------------------------------------- #
+
 
 class TestRegressionMultimodalBug:
     def test_multimodal_list_never_becomes_tool_result_string(self):

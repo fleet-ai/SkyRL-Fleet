@@ -88,11 +88,16 @@ def translate_legacy_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
         inference_engine = generator["inference_engine"]
 
-        # Move fields from generator to inference_engine
+        # Move fields from generator to inference_engine. An explicit
+        # new-format value (e.g. a CLI override on generator.inference_engine.*)
+        # wins over the legacy flat key, which is typically just the base YAML
+        # default; moving it unconditionally would clobber the override.
         for old_field, new_field in GENERATOR_TO_INFERENCE_ENGINE_FIELDS.items():
             if old_field in generator:
                 target_field = new_field if new_field else old_field
-                inference_engine[target_field] = generator.pop(old_field)
+                legacy_value = generator.pop(old_field)
+                if target_field not in inference_engine:
+                    inference_engine[target_field] = legacy_value
 
         # Remove deprecated fields
         for field in DEPRECATED_FIELDS.get("generator", set()):

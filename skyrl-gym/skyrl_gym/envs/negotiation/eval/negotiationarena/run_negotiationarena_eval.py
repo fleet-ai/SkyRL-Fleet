@@ -145,15 +145,17 @@ class LLMSeat:
         self.max_tokens = max_tokens
         self.no_think = no_think
         self.body = NO_THINK_BODY if no_think else None
-        self.messages: list[dict] = [
-            {"role": "system", "content": _maybe_no_think(system_prompt, no_think)}
-        ]
+        self.messages: list[dict] = [{"role": "system", "content": _maybe_no_think(system_prompt, no_think)}]
 
     async def act(self, scenario, seat, state, user_msg) -> str:
         self.messages.append({"role": "user", "content": user_msg})
         raw = await chat(
-            self.client, self.model, self.messages, self.temperature,
-            max_tokens=self.max_tokens, extra_body=self.body,
+            self.client,
+            self.model,
+            self.messages,
+            self.temperature,
+            max_tokens=self.max_tokens,
+            extra_body=self.body,
         )
         self.messages.append({"role": "assistant", "content": raw})
         return raw
@@ -270,11 +272,20 @@ async def play_game(scenario: Scenario, seat_agents: dict, save_transcripts: boo
 
             # A proposal that is illegal or past the per-seat limit interrupts the game.
             if action.has_proposal and action.proposed_trade is not None:
-                blocking = [v for v in viol if v in (
-                    "proposal_after_limit", "non_integer", "negative_amount",
-                    "unknown_token", "insufficient_resources",
-                    "illegal_ultimatum_trade", "illegal_sellbuy_trade",
-                )]
+                blocking = [
+                    v
+                    for v in viol
+                    if v
+                    in (
+                        "proposal_after_limit",
+                        "non_integer",
+                        "negative_amount",
+                        "unknown_token",
+                        "insufficient_resources",
+                        "illegal_ultimatum_trade",
+                        "illegal_sellbuy_trade",
+                    )
+                ]
                 if blocking:
                     termination = "FormatError"
                     break
@@ -347,7 +358,12 @@ def build_seat_agents(scenario, args, policy_client, opponent_client) -> dict:
     else:
         sp = prompts.build_system_prompt(scenario, focal)
         agents[focal] = LLMSeat(
-            policy_client, args.model, args.temperature, args.max_tokens, args.no_think, sp,
+            policy_client,
+            args.model,
+            args.temperature,
+            args.max_tokens,
+            args.no_think,
+            sp,
         )
 
     # Opponent seat.
@@ -356,8 +372,12 @@ def build_seat_agents(scenario, args, policy_client, opponent_client) -> dict:
     else:
         sp = prompts.build_system_prompt(scenario, opp)
         agents[opp] = LLMSeat(
-            opponent_client, args.opponent_model, args.opponent_temperature,
-            args.max_tokens, args.no_think, sp,
+            opponent_client,
+            args.opponent_model,
+            args.opponent_temperature,
+            args.max_tokens,
+            args.no_think,
+            sp,
         )
     return agents
 
@@ -393,9 +413,13 @@ def _result_to_dict(res: GameResult, include_turns: bool) -> dict:
     if include_turns:
         d["turns"] = [
             {
-                "turn": tl.turn, "seat": tl.seat, "answer": tl.answer,
-                "proposed_trade": tl.proposed_trade, "message": tl.message,
-                "has_reasoning": tl.has_reasoning, "violations": tl.violations,
+                "turn": tl.turn,
+                "seat": tl.seat,
+                "answer": tl.answer,
+                "proposed_trade": tl.proposed_trade,
+                "message": tl.message,
+                "has_reasoning": tl.has_reasoning,
+                "violations": tl.violations,
             }
             for tl in res.turns
         ]
@@ -416,7 +440,11 @@ async def main_async(args):
     )
     games_subset = tuple(g for g in GAMES_ORDER if g in set(args.games)) if args.games else GAMES_ORDER
     scs = scenarios_mod.generate_scenarios(
-        n=args.n, base_seed=args.seed, cfg=cfg, games=games_subset, full_suite=args.full_suite,
+        n=args.n,
+        base_seed=args.seed,
+        cfg=cfg,
+        games=games_subset,
+        full_suite=args.full_suite,
     )
     for sc in scs:
         _apply_opponent_persona(sc, args.opponent_persona)
@@ -432,9 +460,7 @@ async def main_async(args):
             opponent_client = make_client(args.opponent_base_url)
 
     model_label = "scripted-dry-run" if args.dry_run else args.model
-    opp_label = (
-        "scripted" if (args.dry_run or args.scripted_opponent) else args.opponent_model
-    )
+    opp_label = "scripted" if (args.dry_run or args.scripted_opponent) else args.opponent_model
 
     sem = asyncio.Semaphore(args.concurrency)
     done = {"k": 0}
@@ -465,8 +491,7 @@ async def main_async(args):
         "base_url": redact_base_url(args.base_url),
         "opponent_model": opp_label,
         "opponent_base_url": (
-            None if (args.dry_run or args.scripted_opponent)
-            else redact_base_url(args.opponent_base_url)
+            None if (args.dry_run or args.scripted_opponent) else redact_base_url(args.opponent_base_url)
         ),
         "opponent_persona": args.opponent_persona,
         "n": total,
@@ -507,8 +532,10 @@ def print_report(cfg_block: dict, agg: dict) -> None:
     o = agg["overall"]
     print("\n" + "=" * 68)
     print("NegotiationArena (reconstruction) — " + cfg_block["model"])
-    print(f"  vs opponent: {cfg_block['opponent_model']}"
-          + (f"  persona={cfg_block['opponent_persona']}" if cfg_block["opponent_persona"] else ""))
+    print(
+        f"  vs opponent: {cfg_block['opponent_model']}"
+        + (f"  persona={cfg_block['opponent_persona']}" if cfg_block["opponent_persona"] else "")
+    )
     print("=" * 68)
     print(f"  games         : {o['n']}  ({o['n_deals']} deals)   elapsed_s: {cfg_block['elapsed_s']}")
     print("-" * 68)
@@ -520,9 +547,11 @@ def print_report(cfg_block: dict, agg: dict) -> None:
     print("-" * 68)
     print("  by game:")
     for game, blk in agg["by_game"].items():
-        line = (f"    - {game:<18}: deal {_fmt(blk['deal_rate'])}  "
-                f"focal_payoff {_fmt(blk['mean_focal_payoff'])}  "
-                f"win {_fmt(blk['focal_win_rate'])}")
+        line = (
+            f"    - {game:<18}: deal {_fmt(blk['deal_rate'])}  "
+            f"focal_payoff {_fmt(blk['mean_focal_payoff'])}  "
+            f"win {_fmt(blk['focal_win_rate'])}"
+        )
         if blk.get("mean_sale_price") is not None:
             line += f"  sale_price {_fmt(blk['mean_sale_price'])}  anchor_rho {_fmt(blk['anchoring_spearman'])}"
         if blk.get("mean_proposer_share") is not None:
@@ -530,8 +559,10 @@ def print_report(cfg_block: dict, agg: dict) -> None:
         print(line)
     print("  by focal role:")
     for role, blk in agg["by_focal_role"].items():
-        print(f"    - {role:<12}: deal {_fmt(blk['deal_rate'])}  "
-              f"focal_payoff {_fmt(blk['mean_focal_payoff'])}  win {_fmt(blk['focal_win_rate'])}")
+        print(
+            f"    - {role:<12}: deal {_fmt(blk['deal_rate'])}  "
+            f"focal_payoff {_fmt(blk['mean_focal_payoff'])}  win {_fmt(blk['focal_win_rate'])}"
+        )
     print("=" * 68)
 
 
@@ -539,40 +570,51 @@ def parse_args():
     p = argparse.ArgumentParser(description="NegotiationArena reconstruction eval harness")
     p.add_argument("--model", default="scripted", help="Policy model name served at --base-url")
     p.add_argument("--base-url", default="http://localhost:8000/v1", help="Policy endpoint")
-    p.add_argument("--opponent-model", default="openai/gpt-5.5",
-                   help="Frontier opponent model (OpenRouter slug)")
-    p.add_argument("--opponent-base-url", default=DEFAULT_OPPONENT_BASE_URL,
-                   help="Opponent endpoint (default OpenRouter)")
-    p.add_argument("--opponent-persona", choices=sorted(SOCIAL_BEHAVIOURS.keys()), default=None,
-                   help="Prime the OPPONENT seat with a social-behaviour persona (Appendix F.2)")
-    p.add_argument("--scripted-opponent", action="store_true",
-                   help="Use the deterministic scripted opponent (no opponent API; policy still served)")
+    p.add_argument("--opponent-model", default="openai/gpt-5.5", help="Frontier opponent model (OpenRouter slug)")
+    p.add_argument(
+        "--opponent-base-url", default=DEFAULT_OPPONENT_BASE_URL, help="Opponent endpoint (default OpenRouter)"
+    )
+    p.add_argument(
+        "--opponent-persona",
+        choices=sorted(SOCIAL_BEHAVIOURS.keys()),
+        default=None,
+        help="Prime the OPPONENT seat with a social-behaviour persona (Appendix F.2)",
+    )
+    p.add_argument(
+        "--scripted-opponent",
+        action="store_true",
+        help="Use the deterministic scripted opponent (no opponent API; policy still served)",
+    )
     p.add_argument("--n", type=int, default=36, help="Total games, balanced across game x focal_seat cells")
-    p.add_argument("--full-suite", action="store_true",
-                   help="Run N_PER_CELL_FULL_SUITE per cell instead of --n")
-    p.add_argument("--games", nargs="*", default=None,
-                   help="Subset of games to run (default: all). e.g. --games sell_buy ultimatum")
+    p.add_argument("--full-suite", action="store_true", help="Run N_PER_CELL_FULL_SUITE per cell instead of --n")
+    p.add_argument(
+        "--games",
+        nargs="*",
+        default=None,
+        help="Subset of games to run (default: all). e.g. --games sell_buy ultimatum",
+    )
     p.add_argument("--seed", type=int, default=0, help="Base seed for the scenario set")
     p.add_argument("--temperature", type=float, default=0.0, help="Policy temperature (eval default 0)")
-    p.add_argument("--opponent-temperature", type=float, default=0.7,
-                   help="Opponent temperature (paper default 0.7)")
+    p.add_argument("--opponent-temperature", type=float, default=0.7, help="Opponent temperature (paper default 0.7)")
     p.add_argument("--max-tokens", type=int, default=400, help="Per-turn token budget (paper default 400)")
     p.add_argument("--concurrency", type=int, default=8)
     p.add_argument("--no-think", action="store_true")
-    p.add_argument("--save-transcripts", action="store_true",
-                   help="Include full per-turn transcripts in the results JSON")
+    p.add_argument(
+        "--save-transcripts", action="store_true", help="Include full per-turn transcripts in the results JSON"
+    )
     p.add_argument("--out-dir", default=str(HERE / "results"))
-    p.add_argument("--dry-run", action="store_true",
-                   help="Offline self-test: BOTH seats scripted, no API calls")
+    p.add_argument("--dry-run", action="store_true", help="Offline self-test: BOTH seats scripted, no API calls")
     # Scenario-config overrides.
     p.add_argument("--ultimatum-amount", type=int, default=config.ULTIMATUM_DEFAULT_AMOUNT)
     p.add_argument("--buyer-budget", type=int, default=config.SELL_BUY_BUYER_BUDGET)
     p.add_argument("--sell-buy-cost", type=int, default=config.SELL_BUY_DEFAULT_COST)
     p.add_argument("--sell-buy-willingness", type=int, default=config.SELL_BUY_DEFAULT_WILLINGNESS)
-    p.add_argument("--no-vary-sell-buy", action="store_true",
-                   help="Use fixed (cost, willingness) instead of the U{20,40}/U{60,80} draws")
-    p.add_argument("--vary-amount", action="store_true",
-                   help="Draw the ultimatum pot from the numerosity pool (§5.2)")
+    p.add_argument(
+        "--no-vary-sell-buy",
+        action="store_true",
+        help="Use fixed (cost, willingness) instead of the U{20,40}/U{60,80} draws",
+    )
+    p.add_argument("--vary-amount", action="store_true", help="Draw the ultimatum pot from the numerosity pool (§5.2)")
     return p.parse_args()
 
 

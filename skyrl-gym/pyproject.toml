@@ -16,9 +16,10 @@ requires-python = ">=3.10"
 
 dependencies = [
     "func_timeout",
-    "pandas", 
+    "pandas",
     "requests",
     "omegaconf",
+    "pydantic",
 ]
 
 [project.urls]
@@ -29,7 +30,8 @@ include = ["skyrl_gym*"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest"
+    "pytest",
+    "pytest-asyncio",
 ]
 fleet = [
     "openenv[fleet]",

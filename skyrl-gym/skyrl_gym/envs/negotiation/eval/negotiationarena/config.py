@@ -88,10 +88,10 @@ class GamePreset:
     """Static structure of a game (Tables 1–3)."""
 
     name: GameType
-    money_token: Optional[str]          # currency token, or None (resource_exchange)
-    resource_tokens: tuple[str, ...]    # all tradeable tokens in this game
-    max_turns: int                      # turn budget (ACCEPT or budget exhaustion ends it)
-    number_of_proposals: int            # per-seat cap on own proposals (Fig. 21 rule 2)
+    money_token: Optional[str]  # currency token, or None (resource_exchange)
+    resource_tokens: tuple[str, ...]  # all tradeable tokens in this game
+    max_turns: int  # turn budget (ACCEPT or budget exhaustion ends it)
+    number_of_proposals: int  # per-seat cap on own proposals (Fig. 21 rule 2)
     integer_only: bool = True
 
 
@@ -100,21 +100,21 @@ GAME_PRESETS: dict[str, GamePreset] = {
         name="resource_exchange",
         money_token=None,
         resource_tokens=("X", "Y"),
-        max_turns=8,                    # Table 1
-        number_of_proposals=4,          # max_turns // 2
+        max_turns=8,  # Table 1
+        number_of_proposals=4,  # max_turns // 2
     ),
     "ultimatum": GamePreset(
         name="ultimatum",
         money_token="Dollars",
         resource_tokens=("Dollars",),
-        max_turns=8,                    # Table 2
+        max_turns=8,  # Table 2
         number_of_proposals=4,
     ),
     "sell_buy": GamePreset(
         name="sell_buy",
         money_token="ZUP",
         resource_tokens=("X", "ZUP"),
-        max_turns=10,                   # Table 3 / README BuySellGame(iterations=10)
+        max_turns=10,  # Table 3 / README BuySellGame(iterations=10)
         number_of_proposals=5,
     ),
 }
@@ -127,15 +127,15 @@ RESOURCE_EXCHANGE_ENDOWMENTS: tuple[dict[str, int], dict[str, int]] = (
     {"X": 5, "Y": 25},
 )
 
-ULTIMATUM_DEFAULT_AMOUNT = 100          # pot held by the proposer (seat 0)
+ULTIMATUM_DEFAULT_AMOUNT = 100  # pot held by the proposer (seat 0)
 
-SELL_BUY_BUYER_BUDGET = 100             # ZUP the buyer starts with
-SELL_BUY_DEFAULT_COST = 40              # seller cost of production
-SELL_BUY_DEFAULT_WILLINGNESS = 60       # buyer willingness to pay
-SELL_BUY_COST_RANGE: tuple[int, int] = (20, 40)         # U{20,40} (§5.1)
+SELL_BUY_BUYER_BUDGET = 100  # ZUP the buyer starts with
+SELL_BUY_DEFAULT_COST = 40  # seller cost of production
+SELL_BUY_DEFAULT_WILLINGNESS = 60  # buyer willingness to pay
+SELL_BUY_COST_RANGE: tuple[int, int] = (20, 40)  # U{20,40} (§5.1)
 SELL_BUY_WILLINGNESS_RANGE: tuple[int, int] = (60, 80)  # U{60,80} (§5.1)
 
-N_PER_CELL_FULL_SUITE = 20              # CALIBRATION DEFAULT (paper ran 60 per ordered pair)
+N_PER_CELL_FULL_SUITE = 20  # CALIBRATION DEFAULT (paper ran 60 per ordered pair)
 
 
 @dataclass(frozen=True)
@@ -146,8 +146,8 @@ class NegArenaConfig:
     buyer_budget: int = SELL_BUY_BUYER_BUDGET
     sell_buy_cost: int = SELL_BUY_DEFAULT_COST
     sell_buy_willingness: int = SELL_BUY_DEFAULT_WILLINGNESS
-    vary_sell_buy: bool = True          # draw cost/willingness from the §5.1 ranges
-    vary_amount: bool = False           # draw ultimatum amount (numerosity probe, §5.2)
+    vary_sell_buy: bool = True  # draw cost/willingness from the §5.1 ranges
+    vary_amount: bool = False  # draw ultimatum amount (numerosity probe, §5.2)
 
 
 DEFAULT_CONFIG = NegArenaConfig()
@@ -191,7 +191,7 @@ class Trade:
 class AgentAction:
     """Parsed structured response from an agent for one turn."""
 
-    answer: Optional[str]               # ACCEPTING_TAG / REFUSING_OR_WAIT_TAG / None
+    answer: Optional[str]  # ACCEPTING_TAG / REFUSING_OR_WAIT_TAG / None
     proposed_trade: Optional[Trade]
     message: str = ""
     reasoning: str = ""
@@ -212,7 +212,7 @@ class TurnLog:
     turn: int
     seat: int
     answer: Optional[str]
-    proposed_trade: Optional[dict]      # serialized Trade.to_dict() or None
+    proposed_trade: Optional[dict]  # serialized Trade.to_dict() or None
     message: str = ""
     has_reasoning: bool = False
     violations: list[str] = field(default_factory=list)
@@ -224,16 +224,16 @@ class GameResult:
     turns: list[TurnLog]
     deal: bool
     accepted_trade: Optional[Trade]
-    termination: str                    # Agreement / Timeout / FormatError / Error
-    payoffs: dict[int, float]           # {seat: payoff}
+    termination: str  # Agreement / Timeout / FormatError / Error
+    payoffs: dict[int, float]  # {seat: payoff}
     focal_payoff: float
     opp_payoff: float
-    decisive: bool                      # focal_payoff != opp_payoff
-    focal_win: Optional[bool]           # None when not decisive (tie)
-    sale_price: Optional[float] = None          # sell_buy deal price (else None)
-    proposer_give: Optional[float] = None       # ultimatum x = amount to responder
-    focal_opening_price: Optional[float] = None # focal's first numeric offer (sell_buy)
-    format_violation: bool = False              # any focal format/illegal-action violation
+    decisive: bool  # focal_payoff != opp_payoff
+    focal_win: Optional[bool]  # None when not decisive (tie)
+    sale_price: Optional[float] = None  # sell_buy deal price (else None)
+    proposer_give: Optional[float] = None  # ultimatum x = amount to responder
+    focal_opening_price: Optional[float] = None  # focal's first numeric offer (sell_buy)
+    format_violation: bool = False  # any focal format/illegal-action violation
     violation_tags: list[str] = field(default_factory=list)
     n_turns: int = 0
     error: Optional[str] = None
@@ -245,8 +245,8 @@ class Scenario:
 
     episode_id: str
     game: GameType
-    focal_seat: int                     # which seat the evaluated policy occupies (0/1)
-    first_mover: int                    # which seat speaks first
+    focal_seat: int  # which seat the evaluated policy occupies (0/1)
+    first_mover: int  # which seat speaks first
     initial_resources: tuple[dict[str, int], dict[str, int]]
     money_token: Optional[str]
     resource_tokens: tuple[str, ...]
@@ -254,9 +254,9 @@ class Scenario:
     number_of_proposals: int
     seed: int
     # game-specific valuations (None when not applicable):
-    amount_to_split: Optional[int] = None       # ultimatum
-    seller_cost: Optional[int] = None            # sell_buy (seat 0)
-    buyer_willingness: Optional[int] = None      # sell_buy (seat 1)
+    amount_to_split: Optional[int] = None  # ultimatum
+    seller_cost: Optional[int] = None  # sell_buy (seat 0)
+    buyer_willingness: Optional[int] = None  # sell_buy (seat 1)
     social_behaviour: tuple[str, str] = ("", "")
 
     # ----- convenience -----
@@ -285,17 +285,41 @@ class Scenario:
 
 
 __all__ = [
-    "PLAYER_RED", "PLAYER_BLUE", "SEAT_NAMES",
-    "MY_NAME_TAG", "RESOURCES_TAG", "GOALS_TAG", "REASONING_TAG",
-    "PLAYER_ANSWER_TAG", "PROPOSED_TRADE_TAG", "MESSAGE_TAG",
-    "ACCEPTING_TAG", "REFUSING_OR_WAIT_TAG", "PRIVATE_TAGS", "RESPONSE_TAG_ORDER",
+    "PLAYER_RED",
+    "PLAYER_BLUE",
+    "SEAT_NAMES",
+    "MY_NAME_TAG",
+    "RESOURCES_TAG",
+    "GOALS_TAG",
+    "REASONING_TAG",
+    "PLAYER_ANSWER_TAG",
+    "PROPOSED_TRADE_TAG",
+    "MESSAGE_TAG",
+    "ACCEPTING_TAG",
+    "REFUSING_OR_WAIT_TAG",
+    "PRIVATE_TAGS",
+    "RESPONSE_TAG_ORDER",
     "SOCIAL_BEHAVIOURS",
-    "GameType", "GAMES_ORDER", "ROLE_LABELS", "GamePreset", "GAME_PRESETS",
-    "RESOURCE_EXCHANGE_ENDOWMENTS", "ULTIMATUM_DEFAULT_AMOUNT",
-    "SELL_BUY_BUYER_BUDGET", "SELL_BUY_DEFAULT_COST", "SELL_BUY_DEFAULT_WILLINGNESS",
-    "SELL_BUY_COST_RANGE", "SELL_BUY_WILLINGNESS_RANGE", "N_PER_CELL_FULL_SUITE",
-    "NegArenaConfig", "DEFAULT_CONFIG",
-    "Trade", "AgentAction", "TurnLog", "GameResult", "Scenario",
+    "GameType",
+    "GAMES_ORDER",
+    "ROLE_LABELS",
+    "GamePreset",
+    "GAME_PRESETS",
+    "RESOURCE_EXCHANGE_ENDOWMENTS",
+    "ULTIMATUM_DEFAULT_AMOUNT",
+    "SELL_BUY_BUYER_BUDGET",
+    "SELL_BUY_DEFAULT_COST",
+    "SELL_BUY_DEFAULT_WILLINGNESS",
+    "SELL_BUY_COST_RANGE",
+    "SELL_BUY_WILLINGNESS_RANGE",
+    "N_PER_CELL_FULL_SUITE",
+    "NegArenaConfig",
+    "DEFAULT_CONFIG",
+    "Trade",
+    "AgentAction",
+    "TurnLog",
+    "GameResult",
+    "Scenario",
 ]
 
 

@@ -93,9 +93,7 @@ def _metric_block(results: list[EpisodeResult], cfg: TermsConfig) -> dict:
         se_plus = agr_plus * cse_plus
 
     # --- Infeasible-slice safety ---
-    fagr_minus = (
-        _mean([1.0 if r.agreed else 0.0 for r in infeasible]) if n_infeasible else None
-    )
+    fagr_minus = _mean([1.0 if r.agreed else 0.0 for r in infeasible]) if n_infeasible else None
     safe_term_minus = None if fagr_minus is None else 1.0 - fagr_minus
 
     # --- Belief errors (over ALL reported belief samples in the slice) ---
@@ -188,6 +186,7 @@ def compute_metrics(results: list[EpisodeResult], cfg: TermsConfig = DEFAULT_CON
 # Smoke test.
 # ----------------------------------------------------------------------------------
 if __name__ == "__main__":
+
     def _scn(
         episode_id: str,
         regime: str,
@@ -235,41 +234,51 @@ if __name__ == "__main__":
 
     # Feasible buyer scenario: r_buyer=70, r_seller=40 -> delta=30. Deal at 55 -> u_A=15.
     feasible_agreed = _result(
-        _scn("e1", "overlap", "candid", "buyer", r_agent=70.0, r_counterpart=40.0,
-             kappa_B=0.5, eta_B="neutral"),
+        _scn("e1", "overlap", "candid", "buyer", r_agent=70.0, r_counterpart=40.0, kappa_B=0.5, eta_B="neutral"),
         agreed=True,
         terminal_price=55.0,
         belief_samples=[
-            {"r_hat": 42.0, "kappa_hat": 0.4,
-             "stance_probs": {"conciliatory": 0.2, "neutral": 0.6, "aggressive": 0.2}},
-            {"r_hat": 41.0, "kappa_hat": 0.45,
-             "stance_probs": {"conciliatory": 0.1, "neutral": 0.7, "aggressive": 0.2}},
+            {"r_hat": 42.0, "kappa_hat": 0.4, "stance_probs": {"conciliatory": 0.2, "neutral": 0.6, "aggressive": 0.2}},
+            {
+                "r_hat": 41.0,
+                "kappa_hat": 0.45,
+                "stance_probs": {"conciliatory": 0.1, "neutral": 0.7, "aggressive": 0.2},
+            },
         ],
     )
     # Feasible buyer scenario: delta=30. Deal at 64 -> u_A=6.
     feasible_agreed2 = _result(
-        _scn("e2", "overlap", "expressive", "buyer", r_agent=80.0, r_counterpart=50.0,
-             kappa_B=0.7, eta_B="aggressive"),
+        _scn("e2", "overlap", "expressive", "buyer", r_agent=80.0, r_counterpart=50.0, kappa_B=0.7, eta_B="aggressive"),
         agreed=True,
         terminal_price=64.0,
         belief_samples=[
             {"r_hat": 55.0, "kappa_hat": 0.6, "stance_probs": None},
-            {"r_hat": None, "kappa_hat": None,
-             "stance_probs": {"conciliatory": 0.0, "neutral": 0.0, "aggressive": 1.0}},
+            {
+                "r_hat": None,
+                "kappa_hat": None,
+                "stance_probs": {"conciliatory": 0.0, "neutral": 0.0, "aggressive": 1.0},
+            },
         ],
     )
     # Feasible seller scenario, NO deal (agent walked / timed out).
     feasible_no_deal = _result(
-        _scn("e3", "urgency_shift", "candid", "seller", r_agent=30.0, r_counterpart=70.0,
-             kappa_B=0.3, eta_B="conciliatory"),
+        _scn(
+            "e3",
+            "urgency_shift",
+            "candid",
+            "seller",
+            r_agent=30.0,
+            r_counterpart=70.0,
+            kappa_B=0.3,
+            eta_B="conciliatory",
+        ),
         agreed=False,
         terminal_price=None,
         critical_violation=True,
     )
     # Infeasible scenario: r_buyer=40, r_seller=60 -> delta=-20. Held the line (good).
     infeasible_no_deal = _result(
-        _scn("e4", "no_deal", "candid", "buyer", r_agent=40.0, r_counterpart=60.0,
-             kappa_B=0.5, eta_B="neutral"),
+        _scn("e4", "no_deal", "candid", "buyer", r_agent=40.0, r_counterpart=60.0, kappa_B=0.5, eta_B="neutral"),
         agreed=False,
         terminal_price=None,
     )
@@ -286,7 +295,9 @@ if __name__ == "__main__":
     #  to 4dp in the output, so the product can differ from SE_plus by <= 5e-5.)
     assert overall["AGR_plus"] is not None and overall["CSE_plus"] is not None
     assert abs(overall["SE_plus"] - overall["AGR_plus"] * overall["CSE_plus"]) <= 1e-4, (
-        overall["SE_plus"], overall["AGR_plus"], overall["CSE_plus"]
+        overall["SE_plus"],
+        overall["AGR_plus"],
+        overall["CSE_plus"],
     )
     # On the "overlap" slice AGR_plus == 1.0 exactly, so SE_plus == CSE_plus exactly.
     overlap = out["by_regime"]["overlap"]
@@ -301,9 +312,12 @@ if __name__ == "__main__":
     assert overall["BE_r"] is not None
     assert overall["BE_kappa"] is not None
     assert overall["Brier_eta"] is not None
-    assert overall["BE_type"] == round(
-        (overall["BE_r"] + overall["BE_kappa"] + overall["Brier_eta"]) / 3.0, 4
-    ), (overall["BE_type"], overall["BE_r"], overall["BE_kappa"], overall["Brier_eta"])
+    assert overall["BE_type"] == round((overall["BE_r"] + overall["BE_kappa"] + overall["Brier_eta"]) / 3.0, 4), (
+        overall["BE_type"],
+        overall["BE_r"],
+        overall["BE_kappa"],
+        overall["Brier_eta"],
+    )
 
     # Infeasible slice safety: nobody agreed -> FAGR_minus == 0, safe_term_minus == 1.
     assert out["by_regime"]["no_deal"]["FAGR_minus"] == 0.0

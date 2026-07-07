@@ -62,8 +62,9 @@ def _extract_reasoning(msg) -> str:
     return (r or "").strip()
 
 
-async def chat(client, model, messages, temperature, max_tokens=500, retries=4,
-               extra_body=None, return_reasoning=False):
+async def chat(
+    client, model, messages, temperature, max_tokens=500, retries=4, extra_body=None, return_reasoning=False
+):
     """Robust chat call that adapts to reasoning-model parameter quirks.
 
     Some frontier/reasoning models reject `temperature` or require
@@ -112,8 +113,9 @@ def _maybe_no_think(system_prompt: str, no_think: bool) -> str:
     return system_prompt + "\n\n" + NO_THINK_TOKEN if no_think else system_prompt
 
 
-async def play_game(client, sc, model_a, model_b, max_turns, temperature, max_tokens=500,
-                    protocol="single", no_think=False):
+async def play_game(
+    client, sc, model_a, model_b, max_turns, temperature, max_tokens=500, protocol="single", no_think=False
+):
     """Self-play one scenario under the chosen protocol.
 
     Agent A holds you_values, agent B holds them_values.
@@ -137,11 +139,14 @@ async def _play_dual(client, sc, model_a, model_b, max_turns, temperature, max_t
     claims must exactly partition the pool, else both score 0."""
     items = list(sc.item_names)
     body = NO_THINK_BODY if no_think else None
-    sys_a = _maybe_no_think(prompts.build_system_prompt(items, list(sc.counts), list(sc.you_values), max_turns, protocol="dual"), no_think)
-    sys_b = _maybe_no_think(prompts.build_system_prompt(items, list(sc.counts), list(sc.them_values), max_turns, protocol="dual"), no_think)
+    sys_a = _maybe_no_think(
+        prompts.build_system_prompt(items, list(sc.counts), list(sc.you_values), max_turns, protocol="dual"), no_think
+    )
+    sys_b = _maybe_no_think(
+        prompts.build_system_prompt(items, list(sc.counts), list(sc.them_values), max_turns, protocol="dual"), no_think
+    )
 
-    hist_a = [{"role": "system", "content": sys_a},
-              {"role": "user", "content": prompts.OPENING_USER_MSG}]
+    hist_a = [{"role": "system", "content": sys_a}, {"role": "user", "content": prompts.OPENING_USER_MSG}]
     hist_b = [{"role": "system", "content": sys_b}]
 
     last = {"a": None, "b": None}
@@ -151,13 +156,17 @@ async def _play_dual(client, sc, model_a, model_b, max_turns, temperature, max_t
 
     while True:
         if speaker == "a":
-            text, think = await chat(client, model_a, hist_a, temperature, max_tokens, extra_body=body, return_reasoning=True)
+            text, think = await chat(
+                client, model_a, hist_a, temperature, max_tokens, extra_body=body, return_reasoning=True
+            )
             hist_a.append({"role": "assistant", "content": text})
             hist_b.append({"role": "user", "content": text})
             last["a"] = game.parse_deal(text, items)
             count["a"] += 1
         else:
-            text, think = await chat(client, model_b, hist_b, temperature, max_tokens, extra_body=body, return_reasoning=True)
+            text, think = await chat(
+                client, model_b, hist_b, temperature, max_tokens, extra_body=body, return_reasoning=True
+            )
             hist_b.append({"role": "assistant", "content": text})
             hist_a.append({"role": "user", "content": text})
             last["b"] = game.parse_deal(text, items)
@@ -173,8 +182,7 @@ async def _play_dual(client, sc, model_a, model_b, max_turns, temperature, max_t
             break
         speaker = "b" if speaker == "a" else "a"
 
-    outcome = game.evaluate(list(sc.counts), list(sc.you_values), list(sc.them_values),
-                            last["a"], last["b"])
+    outcome = game.evaluate(list(sc.counts), list(sc.you_values), list(sc.them_values), last["a"], last["b"])
     return {
         "scenario": _scenario_dict(sc),
         "num_turns": len(transcript),
@@ -193,18 +201,21 @@ async def _play_single(client, sc, model_a, model_b, max_turns, temperature, max
     counts = list(sc.counts)
     n = len(counts)
     body = NO_THINK_BODY if no_think else None
-    sys_a = _maybe_no_think(prompts.build_system_prompt(items, counts, list(sc.you_values), max_turns, protocol="single"), no_think)
-    sys_b = _maybe_no_think(prompts.build_system_prompt(items, counts, list(sc.them_values), max_turns, protocol="single"), no_think)
+    sys_a = _maybe_no_think(
+        prompts.build_system_prompt(items, counts, list(sc.you_values), max_turns, protocol="single"), no_think
+    )
+    sys_b = _maybe_no_think(
+        prompts.build_system_prompt(items, counts, list(sc.them_values), max_turns, protocol="single"), no_think
+    )
 
-    hist_a = [{"role": "system", "content": sys_a},
-              {"role": "user", "content": prompts.OPENING_USER_MSG}]
+    hist_a = [{"role": "system", "content": sys_a}, {"role": "user", "content": prompts.OPENING_USER_MSG}]
     hist_b = [{"role": "system", "content": sys_b}]
 
     count = {"a": 0, "b": 0}
     transcript = []
     speaker = "a"
-    pending = None            # {"by": "a"/"b", "keep": [...]} most recent valid offer
-    final_proposal = None     # last offer seen, for reporting on no-deal
+    pending = None  # {"by": "a"/"b", "keep": [...]} most recent valid offer
+    final_proposal = None  # last offer seen, for reporting on no-deal
     you_take = them_take = None
 
     while True:
@@ -274,12 +285,12 @@ def aggregate(results):
         "conflict_rate": rate(lambda o: o["reason"] == "conflict"),
         "incomplete_rate": rate(lambda o: o["reason"] == "incomplete"),
         "avg_outcome_reward": round(sum(self_norms) / len(self_norms), 4),
-        "avg_points_per_agent": round(
-            sum(o["you_score"] + o["them_score"] for o in agreed) / (2 * na), 3) if na else 0.0,
+        "avg_points_per_agent": (
+            round(sum(o["you_score"] + o["them_score"] for o in agreed) / (2 * na), 3) if na else 0.0
+        ),
         "pareto_rate_of_agreements": round(sum(o["pareto_optimal"] for o in agreed) / na, 4) if na else 0.0,
         "pareto_rate_overall": round(sum(o["pareto_optimal"] for o in agreed) / n, 4),
-        "avg_joint_efficiency_of_agreements": round(
-            sum(o["joint_efficiency"] for o in agreed) / na, 4) if na else 0.0,
+        "avg_joint_efficiency_of_agreements": round(sum(o["joint_efficiency"] for o in agreed) / na, 4) if na else 0.0,
         "avg_turns": round(sum(r["num_turns"] for r in results) / n, 2),
     }
 
@@ -294,13 +305,19 @@ def print_report(cfg, agg):
     print(f"  scenarios     : {agg['n']}   max_turns/agent: {cfg['max_turns']}   temp: {cfg['temperature']}")
     print("-" * 60)
     print(f"  agreement rate          : {agg['agreement_rate']:.1%}")
-    print(f"    no-deal / conflict / incomplete: "
-          f"{agg['no_deal_rate']:.1%} / {agg['conflict_rate']:.1%} / {agg['incomplete_rate']:.1%}")
+    print(
+        f"    no-deal / conflict / incomplete: "
+        f"{agg['no_deal_rate']:.1%} / {agg['conflict_rate']:.1%} / {agg['incomplete_rate']:.1%}"
+    )
     print(f"  avg OUTCOME reward      : {agg['avg_outcome_reward']:.3f}   (normalized self-score, no-deal=0)")
     print(f"  avg points / agent      : {agg['avg_points_per_agent']:.2f}   (raw, on agreements)")
-    print(f"  PARETO-optimal rate     : {agg['pareto_rate_of_agreements']:.1%} of agreements "
-          f"({agg['pareto_rate_overall']:.1%} overall)")
-    print(f"  joint efficiency        : {agg['avg_joint_efficiency_of_agreements']:.1%}   (achieved / best-possible joint)")
+    print(
+        f"  PARETO-optimal rate     : {agg['pareto_rate_of_agreements']:.1%} of agreements "
+        f"({agg['pareto_rate_overall']:.1%} overall)"
+    )
+    print(
+        f"  joint efficiency        : {agg['avg_joint_efficiency_of_agreements']:.1%}   (achieved / best-possible joint)"
+    )
     print(f"  avg turns               : {agg['avg_turns']}")
     print("=" * 60 + "\n")
 
@@ -343,9 +360,14 @@ async def evaluate_model(
             try:
                 r = await play_game(client, sc, model, partner, max_turns, temperature, max_tokens, protocol, no_think)
             except Exception as e:  # noqa: BLE001
-                r = {"error": str(e), "scenario": {"counts": list(sc.counts)}, "num_turns": 0,
-                     "outcome": game.evaluate(list(sc.counts), list(sc.you_values),
-                                              list(sc.them_values), None, None).to_dict()}
+                r = {
+                    "error": str(e),
+                    "scenario": {"counts": list(sc.counts)},
+                    "num_turns": 0,
+                    "outcome": game.evaluate(
+                        list(sc.counts), list(sc.you_values), list(sc.them_values), None, None
+                    ).to_dict(),
+                }
             done["k"] += 1
             if not quiet and (done["k"] % 10 == 0 or done["k"] == len(scs)):
                 print(f"  [{tag} / {dataset}] {done['k']}/{len(scs)} games", flush=True)
@@ -357,10 +379,22 @@ async def evaluate_model(
 
     agg = aggregate(results)
     n_err = sum(1 for r in results if "error" in r)
-    cfg = {"model": model, "partner_model": partner, "dataset": dataset, "split": split,
-           "n": len(scs), "max_turns": max_turns, "temperature": temperature,
-           "max_tokens": max_tokens, "seed": seed, "elapsed_s": round(elapsed, 1),
-           "n_errors": n_err, "label": label, "protocol": protocol, "no_think": no_think}
+    cfg = {
+        "model": model,
+        "partner_model": partner,
+        "dataset": dataset,
+        "split": split,
+        "n": len(scs),
+        "max_turns": max_turns,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "seed": seed,
+        "elapsed_s": round(elapsed, 1),
+        "n_errors": n_err,
+        "label": label,
+        "protocol": protocol,
+        "no_think": no_think,
+    }
     payload = {"config": cfg, "aggregate": agg, "results": results}
 
     if out_dir:
@@ -374,10 +408,19 @@ async def evaluate_model(
 
 async def main_async(args):
     payload = await evaluate_model(
-        model=args.model, dataset=args.dataset, split=args.split, n=args.n,
-        max_turns=args.max_turns, temperature=args.temperature, concurrency=args.concurrency,
-        seed=args.seed, base_url=args.base_url, partner_model=args.partner_model,
-        max_tokens=args.max_tokens, out_dir=args.out_dir, protocol=args.protocol,
+        model=args.model,
+        dataset=args.dataset,
+        split=args.split,
+        n=args.n,
+        max_turns=args.max_turns,
+        temperature=args.temperature,
+        concurrency=args.concurrency,
+        seed=args.seed,
+        base_url=args.base_url,
+        partner_model=args.partner_model,
+        max_tokens=args.max_tokens,
+        out_dir=args.out_dir,
+        protocol=args.protocol,
         no_think=args.no_think,
     )
     print_report(payload["config"], payload["aggregate"])
@@ -391,10 +434,17 @@ def parse_args():
     p.add_argument("--partner-model", default=None, help="defaults to --model (self-play)")
     p.add_argument("--base-url", default="https://openrouter.ai/api/v1")
     p.add_argument("--dataset", default="dnd", choices=["dnd", "casino"])
-    p.add_argument("--protocol", default="single", choices=["single", "dual"],
-                   help="single = one proposer + accept; dual = both emit <deal> tags")
-    p.add_argument("--no-think", action="store_true",
-                   help="disable hybrid-reasoning thinking (Qwen3 /no_think + OpenRouter reasoning off)")
+    p.add_argument(
+        "--protocol",
+        default="single",
+        choices=["single", "dual"],
+        help="single = one proposer + accept; dual = both emit <deal> tags",
+    )
+    p.add_argument(
+        "--no-think",
+        action="store_true",
+        help="disable hybrid-reasoning thinking (Qwen3 /no_think + OpenRouter reasoning off)",
+    )
     p.add_argument("--split", default="val")
     p.add_argument("--n", type=int, default=40)
     p.add_argument("--max-turns", type=int, default=8, help="max messages per agent")

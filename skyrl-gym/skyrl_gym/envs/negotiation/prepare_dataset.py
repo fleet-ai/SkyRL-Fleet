@@ -91,9 +91,7 @@ def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: i
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Prepare negotiation RLVR parquet datasets for SkyRL."
-    )
+    parser = argparse.ArgumentParser(description="Prepare negotiation RLVR parquet datasets for SkyRL.")
     parser.add_argument("--output_dir", default="~/data/fleet/negotiation")
     parser.add_argument("--dataset", default="dnd", choices=["dnd", "casino"])
     parser.add_argument("--train_split", default="train")

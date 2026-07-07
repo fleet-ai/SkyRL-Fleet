@@ -254,13 +254,7 @@ class Counterpart:
         # 2a. Acceptance.
         rho = fam.rho[stance]
         xi = fam.xi[stance]
-        g = (
-            cfg.alpha * Delta
-            + cfg.beta * sc.kappa_B
-            - cfg.gamma * Dbar
-            + rho * concede_speed
-            + xi * rigidity
-        )
+        g = cfg.alpha * Delta + cfg.beta * sc.kappa_B - cfg.gamma * Dbar + rho * concede_speed + xi * rigidity
         a_k = _sigmoid(g) if Delta >= 0.0 else 0.0
         if self.rng.random() < a_k:
             sentiment, strat = self._cues("Accept", 0.0, k)

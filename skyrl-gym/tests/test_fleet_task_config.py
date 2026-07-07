@@ -23,17 +23,18 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.config import (
+from skyrl_gym.envs.fleet_task.config import (  # noqa: E402  (import after sys.path setup)
     FleetTaskConfig,
     get_config,
     load_config,
 )
-from skyrl_gym.envs.fleet_task.env import is_done_signal
+from skyrl_gym.envs.fleet_task.env import is_done_signal  # noqa: E402  (import after sys.path setup)
 
 
 # --------------------------------------------------------------------------- #
 # Config loader
 # --------------------------------------------------------------------------- #
+
 
 class TestConfigLoader:
     def test_default_yaml_loads(self):
@@ -129,20 +130,19 @@ class TestIsDoneSignal:
         the actual response ends with a (broken) tool call attempt. The
         old code matched the quote and ended the episode prematurely
         with score=0 — 14/14 sessions in job c4b429ae died this way."""
-        action = textwrap.dedent('''\
+        action = textwrap.dedent(
+            """\
             Looking at the instructions: "Done signal: <done> - ONLY when
             the task is fully complete."
             Let me try the tool call again.
             <|tool_calls_section_begin|>functions.computer:5{"action":"screenshot"}<|tool_call_end|>
-        ''')
+        """
+        )
         assert not is_done_signal(action, DONE_SIGS)
 
     def test_done_in_middle_then_tool_call_section_end_does_not_terminate(self):
         """Trailing content after the in-body done must not be considered."""
-        action = (
-            "I'll emit <done> after this tool call.\n"
-            "<|tool_calls_section_begin|>...<|tool_calls_section_end|>"
-        )
+        action = "I'll emit <done> after this tool call.\n" "<|tool_calls_section_begin|>...<|tool_calls_section_end|>"
         assert not is_done_signal(action, DONE_SIGS)
 
     def test_done_followed_by_more_text_does_not_terminate(self):

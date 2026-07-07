@@ -62,7 +62,9 @@ def fake_repo(tmp_path: Path) -> Path:
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
     stub = scripts_dir / "fleet-tinker-tool-use-run.sh"
-    stub.write_text(textwrap.dedent("""\
+    stub.write_text(
+        textwrap.dedent(
+            """\
         #!/usr/bin/env bash
         set -euo pipefail
         : "${TASKS_FILE:?}"
@@ -93,14 +95,15 @@ def fake_repo(tmp_path: Path) -> Path:
           "wandb_run_name": "test"
         }
         JSON
-    """))
+    """
+        )
+    )
     stub.chmod(0o755)
     return tmp_path
 
 
 def _set_required_env(monkeypatch):
-    for var in ("TINKER_API_KEY", "FLEET_API_KEY", "WANDB_API_KEY",
-                "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+    for var in ("TINKER_API_KEY", "FLEET_API_KEY", "WANDB_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
         monkeypatch.setenv(var, "dummy")
 
 
@@ -171,9 +174,7 @@ def test_launcher_propagates_failure_when_stub_exits_nonzero(fake_repo: Path, mo
     """If the wrapper script fails, launcher returns (False, None)."""
     _set_required_env(monkeypatch)
     # Overwrite the stub with one that exits 1 before writing results.
-    (fake_repo / "scripts" / "fleet-tinker-tool-use-run.sh").write_text(
-        "#!/usr/bin/env bash\nexit 1\n"
-    )
+    (fake_repo / "scripts" / "fleet-tinker-tool-use-run.sh").write_text("#!/usr/bin/env bash\nexit 1\n")
     monkeypatch.setattr(tinker_launcher, "_repo_root", lambda: fake_repo)
 
     ok, results = tinker_launcher.launch_training(
@@ -188,9 +189,7 @@ def test_launcher_propagates_failure_when_stub_exits_nonzero(fake_repo: Path, mo
 def test_launcher_propagates_failure_when_results_missing(fake_repo: Path, monkeypatch):
     """If the wrapper exits 0 but produces no results JSON, launcher returns (False, None)."""
     _set_required_env(monkeypatch)
-    (fake_repo / "scripts" / "fleet-tinker-tool-use-run.sh").write_text(
-        "#!/usr/bin/env bash\nexit 0\n"
-    )
+    (fake_repo / "scripts" / "fleet-tinker-tool-use-run.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
     monkeypatch.setattr(tinker_launcher, "_repo_root", lambda: fake_repo)
 
     ok, results = tinker_launcher.launch_training(
@@ -206,14 +205,21 @@ def test_splitter_determinism_and_no_overlap(tmp_path: Path):
     """split_90_10 produces non-overlapping splits and the same shape on re-run."""
     tasks = _make_tasks(50, "tool_use")
     tp1, hp1, n_tr1, n_ho1 = split_90_10(
-        tasks=tasks, output_dir=str(tmp_path), dataset_key="dk", modality="tool_use",
+        tasks=tasks,
+        output_dir=str(tmp_path),
+        dataset_key="dk",
+        modality="tool_use",
     )
     tp2, hp2, n_tr2, n_ho2 = split_90_10(
-        tasks=tasks, output_dir=str(tmp_path), dataset_key="dk", modality="tool_use",
+        tasks=tasks,
+        output_dir=str(tmp_path),
+        dataset_key="dk",
+        modality="tool_use",
     )
     assert (n_tr1, n_ho1) == (n_tr2, n_ho2) == (45, 5)
 
     from datasets import load_dataset
+
     train_keys = set(load_dataset("parquet", data_files=tp1)["train"]["task_key"])
     holdout_keys = set(load_dataset("parquet", data_files=hp1)["train"]["task_key"])
     assert train_keys.isdisjoint(holdout_keys)
@@ -224,14 +230,19 @@ def test_splitter_different_seed_per_dataset(tmp_path: Path):
     """Two different (dataset, modality) pairs get different holdout sets."""
     tasks = _make_tasks(50, "tool_use")
     _, hp_a, _, _ = split_90_10(
-        tasks=tasks, output_dir=str(tmp_path / "a"),
-        dataset_key="dataset-a", modality="tool_use",
+        tasks=tasks,
+        output_dir=str(tmp_path / "a"),
+        dataset_key="dataset-a",
+        modality="tool_use",
     )
     _, hp_b, _, _ = split_90_10(
-        tasks=tasks, output_dir=str(tmp_path / "b"),
-        dataset_key="dataset-b", modality="tool_use",
+        tasks=tasks,
+        output_dir=str(tmp_path / "b"),
+        dataset_key="dataset-b",
+        modality="tool_use",
     )
     from datasets import load_dataset
+
     ha = set(load_dataset("parquet", data_files=hp_a)["train"]["task_key"])
     hb = set(load_dataset("parquet", data_files=hp_b)["train"]["task_key"])
     # Distinct salts ⇒ overwhelmingly different holdout sets (allow some overlap

@@ -33,8 +33,21 @@ def efficient_split(counts, you_values, them_values):
             best_j, best = j, (ya, tb)
     return best_j, best[0], best[1]
 
-ACCEPT_WORDS = ["agree", "works for me", "sounds good", "deal", "that works",
-                "ok", "okay", "sure", "accept", "confirm", "perfect", "fine by me"]
+
+ACCEPT_WORDS = [
+    "agree",
+    "works for me",
+    "sounds good",
+    "deal",
+    "that works",
+    "ok",
+    "okay",
+    "sure",
+    "accept",
+    "confirm",
+    "perfect",
+    "fine by me",
+]
 
 FNAME_RE = re.compile(
     r"^(?P<model>.+)_(?P<dataset>dnd|casino)_(?P<split>[a-z]+)"
@@ -65,11 +78,11 @@ def classify_flags(o):
         if one_sided:
             flags.append("one_sided_tag")  # only one side emitted a <deal>
         else:
-            flags.append("no_tags")        # neither emitted a parseable <deal>
+            flags.append("no_tags")  # neither emitted a parseable <deal>
     elif reason == "conflict":
-        flags.append("overclaim")          # both emitted deals, claims overlap
+        flags.append("overclaim")  # both emitted deals, claims overlap
     elif reason == "incomplete":
-        flags.append("leftover")           # claims leave items unassigned
+        flags.append("leftover")  # claims leave items unassigned
     return flags
 
 
@@ -158,8 +171,14 @@ def summarize(games, score_max):
         "turns_hist": {str(k): v for k, v in turns_hist.items()},
         "score_hist": {str(k): v for k, v in score_hist.items()},
         "extra_cards": [
-            {"label": "Outcome reward", "value": f"{round(sum(outcome_rewards)/len(outcome_rewards),3) if outcome_rewards else 0}"},
-            {"label": "Pareto (of deals)", "value": f"{round((sum(1 for g in agreed if g['pareto_optimal'])/na*100) if na else 0)}%"},
+            {
+                "label": "Outcome reward",
+                "value": f"{round(sum(outcome_rewards)/len(outcome_rewards),3) if outcome_rewards else 0}",
+            },
+            {
+                "label": "Pareto (of deals)",
+                "value": f"{round((sum(1 for g in agreed if g['pareto_optimal'])/na*100) if na else 0)}%",
+            },
             {"label": "Verbal-agree, no tag", "value": str(verbal)},
         ],
     }
@@ -210,28 +229,36 @@ def main():
             continue
         stats = summarize(games, score_max)
         runid = f"{model}__{dataset}__{protocol}"
-        (OUT / f"{runid}.json").write_text(json.dumps({"split": "all", "dataset": "eval",
-                                                       "model": model, "stats": stats, "games": games}))
+        (OUT / f"{runid}.json").write_text(
+            json.dumps({"split": "all", "dataset": "eval", "model": model, "stats": stats, "games": games})
+        )
         pretty_model = model.replace("_", "/").replace("qwen/qwen", "Qwen").replace("openai/", "")
         plabel = PROTO_LABEL.get(protocol, protocol)
         name_proto = protocol.replace("-nothink", " (no-think)").replace("-think", " (thinking)")
-        runs.append({
-            "id": runid,
-            "name": f"{pretty_model} · {dataset} · {name_proto}",
-            "blurb": (f"Self-play eval ({plabel}) · {model.replace('_','/')} on {dataset} · "
-                      f"agree {stats['agreement_rate']*100:.0f}% · outcome {stats['avg_outcome_reward']} · "
-                      f"{n} scenarios"),
-            "splits": ["all"],
-            "items": games[0]["item_names"],
-            "protocol": protocol,
-            "agreement_rate": stats["agreement_rate"],
-            "avg_outcome_reward": stats["avg_outcome_reward"],
-        })
-        print(f"exported {runid}: {len(games)} games, agree {stats['agreement_rate']:.0%}, "
-              f"outcome {stats['avg_outcome_reward']}")
+        runs.append(
+            {
+                "id": runid,
+                "name": f"{pretty_model} · {dataset} · {name_proto}",
+                "blurb": (
+                    f"Self-play eval ({plabel}) · {model.replace('_','/')} on {dataset} · "
+                    f"agree {stats['agreement_rate']*100:.0f}% · outcome {stats['avg_outcome_reward']} · "
+                    f"{n} scenarios"
+                ),
+                "splits": ["all"],
+                "items": games[0]["item_names"],
+                "protocol": protocol,
+                "agreement_rate": stats["agreement_rate"],
+                "avg_outcome_reward": stats["avg_outcome_reward"],
+            }
+        )
+        print(
+            f"exported {runid}: {len(games)} games, agree {stats['agreement_rate']:.0%}, "
+            f"outcome {stats['avg_outcome_reward']}"
+        )
     # Group by dataset, then protocol family (single-* first), then outcome reward desc.
-    runs.sort(key=lambda r: (r["id"].split("__")[1], 0 if r["protocol"].startswith("single") else 1,
-                             -r["avg_outcome_reward"]))
+    runs.sort(
+        key=lambda r: (r["id"].split("__")[1], 0 if r["protocol"].startswith("single") else 1, -r["avg_outcome_reward"])
+    )
     (OUT / "manifest.json").write_text(json.dumps({"datasets": runs}, indent=2))
     print(f"wrote {len(runs)} runs -> {OUT/'manifest.json'}")
 

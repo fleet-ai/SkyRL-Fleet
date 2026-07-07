@@ -35,9 +35,7 @@ from .discovery import (
 logger = logging.getLogger(__name__)
 
 
-def _fetch_task_versions(
-    client: httpx.Client, version_ids: Iterable[str]
-) -> dict[str, dict]:
+def _fetch_task_versions(client: httpx.Client, version_ids: Iterable[str]) -> dict[str, dict]:
     """version_id -> {prompt, verifier_id, env_variables}"""
     out: dict[str, dict] = {}
     vids = list(version_ids)
@@ -58,9 +56,7 @@ def _fetch_task_versions(
     return out
 
 
-def _fetch_verifier_code(
-    client: httpx.Client, verifier_ids: Iterable[str]
-) -> dict[str, str]:
+def _fetch_verifier_code(client: httpx.Client, verifier_ids: Iterable[str]) -> dict[str, str]:
     """verifier_id -> latest display_src."""
     out: dict[str, str] = {}
     vids = list(set(verifier_ids))
@@ -89,9 +85,7 @@ def _fetch_verifier_code(
     return out
 
 
-def build_openenv_tasks(
-    client: httpx.Client, dataset_id: str, modality: str
-) -> list[dict]:
+def build_openenv_tasks(client: httpx.Client, dataset_id: str, modality: str) -> list[dict]:
     """Return list of task dicts with OPENENV_FIELDS for the given dataset + modality."""
     if modality not in SUPPORTED_MODALITIES:
         raise NotImplementedError(f"modality {modality!r} not supported")
@@ -196,7 +190,9 @@ def apply_export_cap(
     sampled = rng.sample(sorted_tasks, cap)
     logger.info(
         "Capped %s: %d -> %d tasks (seeded by dataset_key)",
-        dataset_key, len(tasks), cap,
+        dataset_key,
+        len(tasks),
+        cap,
     )
     return sampled
 
@@ -238,10 +234,7 @@ def export_dataset(
     """Full export flow: query tasks, build JSON, upload. Returns (s3_uri, task_count)."""
     tasks = build_openenv_tasks(client, dataset_id, modality)
     if not tasks:
-        raise ValueError(
-            f"No exportable tasks for {dataset_key}/{modality} "
-            "(check prompt/verifier coverage)"
-        )
+        raise ValueError(f"No exportable tasks for {dataset_key}/{modality} " "(check prompt/verifier coverage)")
     tasks = apply_export_cap(tasks, dataset_key)
     uri = export_to_s3(tasks, dataset_key, modality, bucket=bucket)
     return uri, len(tasks)

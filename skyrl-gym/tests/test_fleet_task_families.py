@@ -35,6 +35,7 @@ from skyrl_gym.envs.fleet_task.families import (  # noqa: E402  (sys.path setup 
 # Registry + name derivation
 # --------------------------------------------------------------------------- #
 
+
 class TestRegistry:
     def test_kimi_lookup(self):
         f = get_family("kimi")
@@ -71,6 +72,7 @@ class TestFamilyForModel:
 # Kimi adapter
 # --------------------------------------------------------------------------- #
 
+
 class TestKimiBuildAssistantMessage:
     def setup_method(self):
         self.kimi = Kimi()
@@ -97,9 +99,9 @@ class TestKimiBuildAssistantMessage:
         leaving the raw <think> in content causes the double-think bug."""
         raw = (
             "<think>I should click the menu.</think>"
-            '<|tool_calls_section_begin|><|tool_call_begin|>functions.computer:5'
+            "<|tool_calls_section_begin|><|tool_call_begin|>functions.computer:5"
             '<|tool_call_argument_begin|>{"action":"screenshot"}'
-            '<|tool_call_end|><|tool_calls_section_end|>'
+            "<|tool_call_end|><|tool_calls_section_end|>"
         )
         parsed = {"name": "computer", "arguments": {"action": "screenshot"}}
         msg = self.kimi.build_assistant_message(raw, parsed, turn=5)
@@ -120,9 +122,7 @@ class TestKimiBuildAssistantMessage:
         assert msg["tool_calls"][0]["type"] == "function"
         assert msg["tool_calls"][0]["function"]["name"] == "computer"
         # arguments is a JSON STRING per OpenAI spec, not a dict
-        assert msg["tool_calls"][0]["function"]["arguments"] == json.dumps(
-            {"action": "screenshot"}
-        )
+        assert msg["tool_calls"][0]["function"]["arguments"] == json.dumps({"action": "screenshot"})
 
     def test_no_tool_call_omits_tool_calls_field(self):
         msg = self.kimi.build_assistant_message("<think>thinking</think>", None, turn=3)
@@ -156,18 +156,16 @@ class TestKimiTemplateRoundTrip:
         except ImportError:
             pytest.skip("transformers not installed")
         try:
-            tok = AutoTokenizer.from_pretrained(
-                "moonshotai/Kimi-K2.6", trust_remote_code=True
-            )
+            tok = AutoTokenizer.from_pretrained("moonshotai/Kimi-K2.6", trust_remote_code=True)
         except Exception as e:
             pytest.skip(f"Kimi tokenizer not available: {e}")
 
         kimi = Kimi()
         raw = (
             "<think>I should click the menu.</think>"
-            '<|tool_calls_section_begin|><|tool_call_begin|>functions.computer:1'
+            "<|tool_calls_section_begin|><|tool_call_begin|>functions.computer:1"
             '<|tool_call_argument_begin|>{"action":"screenshot"}'
-            '<|tool_call_end|><|tool_calls_section_end|>'
+            "<|tool_call_end|><|tool_calls_section_end|>"
         )
         parsed = {"name": "computer", "arguments": {"action": "screenshot"}}
         asst_msg = kimi.build_assistant_message(raw, parsed, turn=1)
@@ -177,8 +175,16 @@ class TestKimiTemplateRoundTrip:
             {"role": "user", "content": "task"},
             asst_msg,
         ]
-        tools = [{"type": "function", "function": {"name": "computer", "description": "c",
-                                                    "parameters": {"type": "object", "properties": {}}}}]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "computer",
+                    "description": "c",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
         rendered = tok.apply_chat_template(msgs, tools=tools, add_generation_prompt=True, tokenize=False)
 
         # PRE-fix: 3 <think> tags (template default empty + our raw + next-turn prompt).
@@ -200,9 +206,7 @@ class TestKimiTemplateRoundTrip:
         except ImportError:
             pytest.skip("transformers not installed")
         try:
-            tok = AutoTokenizer.from_pretrained(
-                "moonshotai/Kimi-K2.6", trust_remote_code=True
-            )
+            tok = AutoTokenizer.from_pretrained("moonshotai/Kimi-K2.6", trust_remote_code=True)
         except Exception as e:
             pytest.skip(f"Kimi tokenizer not available: {e}")
 
@@ -210,11 +214,21 @@ class TestKimiTemplateRoundTrip:
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "task"},
             # Pre-fix shape: raw model emission stuffed into content
-            {"role": "assistant",
-             "content": "<think>x</think><|tool_calls_section_begin|>...<|tool_calls_section_end|>"},
+            {
+                "role": "assistant",
+                "content": "<think>x</think><|tool_calls_section_begin|>...<|tool_calls_section_end|>",
+            },
         ]
-        tools = [{"type": "function", "function": {"name": "computer", "description": "c",
-                                                    "parameters": {"type": "object", "properties": {}}}}]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "computer",
+                    "description": "c",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
         rendered = tok.apply_chat_template(raw_shape, tools=tools, add_generation_prompt=True, tokenize=False)
         assert rendered.count("<think>") == 3, (
             f"expected 3 <think> in the BUGGY pre-fix shape "
@@ -225,6 +239,7 @@ class TestKimiTemplateRoundTrip:
 # --------------------------------------------------------------------------- #
 # Qwen adapter
 # --------------------------------------------------------------------------- #
+
 
 class TestQwenBuildAssistantMessage:
     def setup_method(self):
@@ -241,10 +256,7 @@ class TestQwenBuildAssistantMessage:
         directly (see Qwen3 chat_template.jinja: content.split('</think>')
         ... split('<think>')[-1]). Raw passthrough renders cleanly with
         one think block. No restructuring needed."""
-        raw = (
-            "<think>thinking</think>"
-            '<tool_call>{"name":"computer","arguments":{"action":"screenshot"}}</tool_call>'
-        )
+        raw = "<think>thinking</think>" '<tool_call>{"name":"computer","arguments":{"action":"screenshot"}}</tool_call>'
         parsed = {"name": "computer", "arguments": {"action": "screenshot"}}
         msg = self.qwen.build_assistant_message(raw, parsed, turn=3)
         # Content is the raw emission verbatim; Qwen template handles it
@@ -272,18 +284,19 @@ class TestQwenTemplateRoundTrip:
             pytest.skip(f"Qwen tokenizer not available: {e}")
 
         qwen = Qwen()
-        raw = (
-            "<think>plan</think>"
-            '<tool_call>{"name":"c","arguments":{"a":1}}</tool_call>'
-        )
+        raw = "<think>plan</think>" '<tool_call>{"name":"c","arguments":{"a":1}}</tool_call>'
         msg = qwen.build_assistant_message(raw, {"name": "c", "arguments": {"a": 1}}, turn=1)
         msgs = [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "task"},
             msg,
         ]
-        tools = [{"type": "function", "function": {"name": "c", "description": "c",
-                                                    "parameters": {"type": "object", "properties": {}}}}]
+        tools = [
+            {
+                "type": "function",
+                "function": {"name": "c", "description": "c", "parameters": {"type": "object", "properties": {}}},
+            }
+        ]
         rendered = tok.apply_chat_template(msgs, tools=tools, add_generation_prompt=True, tokenize=False)
         # Qwen template renders 1 <think> for the asst turn's reasoning.
         # Unlike Kimi, Qwen's next-turn generation prompt doesn't force a
@@ -294,6 +307,7 @@ class TestQwenTemplateRoundTrip:
 # --------------------------------------------------------------------------- #
 # Per-turn reminder + reject message
 # --------------------------------------------------------------------------- #
+
 
 class TestPerTurnReminderAndReject:
     def test_kimi_reminder_contains_indicator_and_canonical(self):
@@ -325,6 +339,7 @@ class TestPerTurnReminderAndReject:
 # Special-token IDs land in context (Kimi-specific)
 # --------------------------------------------------------------------------- #
 
+
 class TestKimiSpecialTokenIdsInReminder:
     def test_kimi_per_turn_reminder_encodes_all_5_special_tokens(self):
         """The reminder is intended to plant the 5 Kimi tool special-token
@@ -335,9 +350,7 @@ class TestKimiSpecialTokenIdsInReminder:
         except ImportError:
             pytest.skip("transformers not installed")
         try:
-            tok = AutoTokenizer.from_pretrained(
-                "moonshotai/Kimi-K2.6", trust_remote_code=True
-            )
+            tok = AutoTokenizer.from_pretrained("moonshotai/Kimi-K2.6", trust_remote_code=True)
         except Exception as e:
             pytest.skip(f"Kimi tokenizer not available: {e}")
 
@@ -345,8 +358,7 @@ class TestKimiSpecialTokenIdsInReminder:
         ids = set(tok.encode(reminder, add_special_tokens=False))
         for special_id in [163595, 163596, 163597, 163598, 163599]:
             assert special_id in ids, (
-                f"Kimi tool special token {special_id} not in encoded reminder. "
-                f"Encoded ids: {sorted(ids)[:30]}..."
+                f"Kimi tool special token {special_id} not in encoded reminder. " f"Encoded ids: {sorted(ids)[:30]}..."
             )
 
 

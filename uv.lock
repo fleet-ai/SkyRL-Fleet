@@ -10248,6 +10248,7 @@ dependencies = [
     { name = "func-timeout" },
     { name = "omegaconf" },
     { name = "pandas" },
+    { name = "pydantic" },
     { name = "requests" },
 ]
 
@@ -10257,7 +10258,9 @@ requires-dist = [
     { name = "omegaconf" },
     { name = "openenv", extras = ["fleet"], marker = "extra == 'fleet'" },
     { name = "pandas" },
+    { name = "pydantic" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'" },
     { name = "requests" },
 ]
 provides-extras = ["dev", "fleet"]

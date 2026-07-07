@@ -57,13 +57,7 @@ N_PER_CELL_FULL_SUITE = 25  # SPEC H.1.2: reproduces 100 episodes per (regime, f
 
 
 def _cell_seed(base_seed: int, f_idx: int, r_idx: int, o_idx: int, e: int) -> int:
-    return (
-        base_seed * 10_000_000
-        + f_idx * 100_000
-        + r_idx * 10_000
-        + o_idx * 1_000
-        + e * 10
-    )
+    return base_seed * 10_000_000 + f_idx * 100_000 + r_idx * 10_000 + o_idx * 1_000 + e * 10
 
 
 def _draw_stance(rng: random.Random, prior: tuple[float, float, float]) -> str:
@@ -152,9 +146,7 @@ def _build_scenario(
     )
 
 
-def _cell_axes(
-    regimes: tuple[str, ...], families: tuple[str, ...]
-) -> list[tuple[str, str, str, str]]:
+def _cell_axes(regimes: tuple[str, ...], families: tuple[str, ...]) -> list[tuple[str, str, str, str]]:
     """Enumerate cells in deterministic generation order (used for remainder spread)."""
     cells: list[tuple[str, str, str, str]] = []
     for regime in regimes:
@@ -214,11 +206,7 @@ def generate_scenarios(
     scenarios: list[Scenario] = []
     for (regime, family, agent_role, opener), count in zip(cells, counts):
         for e in range(count):
-            scenarios.append(
-                _build_scenario(
-                    regime, family, agent_role, opener, e, base_seed, cfg
-                )
-            )
+            scenarios.append(_build_scenario(regime, family, agent_role, opener, e, base_seed, cfg))
 
     scenarios.sort(key=_sort_key)
     return scenarios

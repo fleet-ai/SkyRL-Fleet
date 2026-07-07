@@ -158,9 +158,7 @@ class FleetExportExp(FleetEvalExp):
             key=lambda d: extract_step_from_path(d),
         )
         if not step_dirs:
-            raise FileNotFoundError(
-                f"No '{GLOBAL_STEP_PREFIX}*' checkpoints found under {ckpt_root}"
-            )
+            raise FileNotFoundError(f"No '{GLOBAL_STEP_PREFIX}*' checkpoints found under {ckpt_root}")
 
         logger.info(f"Exporting {len(step_dirs)} local checkpoints: {[d.name for d in step_dirs]}")
         for ckpt_dir in step_dirs:

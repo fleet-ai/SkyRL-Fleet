@@ -120,9 +120,9 @@ class Kimi:
     # copied placeholder text literally as a call name. Use a real call
     # the model can imitate verbatim and have it work end-to-end.
     canonical_tool_call = (
-        '<|tool_calls_section_begin|><|tool_call_begin|>functions.computer:0'
+        "<|tool_calls_section_begin|><|tool_call_begin|>functions.computer:0"
         '<|tool_call_argument_begin|>{"action":"screenshot"}'
-        '<|tool_call_end|><|tool_calls_section_end|>'
+        "<|tool_call_end|><|tool_calls_section_end|>"
     )
 
     def build_assistant_message(
@@ -135,21 +135,20 @@ class Kimi:
         if reasoning:
             msg["reasoning_content"] = reasoning
         if parsed_tool_call:
-            msg["tool_calls"] = [{
-                "id": f"functions.{parsed_tool_call['name']}:{turn}",
-                "type": "function",
-                "function": {
-                    "name": parsed_tool_call["name"],
-                    "arguments": json.dumps(parsed_tool_call.get("arguments", {})),
-                },
-            }]
+            msg["tool_calls"] = [
+                {
+                    "id": f"functions.{parsed_tool_call['name']}:{turn}",
+                    "type": "function",
+                    "function": {
+                        "name": parsed_tool_call["name"],
+                        "arguments": json.dumps(parsed_tool_call.get("arguments", {})),
+                    },
+                }
+            ]
         return msg
 
     def per_turn_reminder(self, turn: int, max_turns: int) -> str:
-        return (
-            f"\n\n[Turn {turn}/{max_turns}]\n"
-            f"[Next tool call format]\n{self.canonical_tool_call}"
-        )
+        return f"\n\n[Turn {turn}/{max_turns}]\n" f"[Next tool call format]\n{self.canonical_tool_call}"
 
     def reject_message(self) -> str:
         return (
@@ -190,19 +189,21 @@ class Qwen:
     ) -> Dict[str, Any]:
         msg: Dict[str, Any] = {"role": "assistant", "content": action}
         if parsed_tool_call:
-            msg["tool_calls"] = [{
-                "id": f"call_{turn}",
-                "type": "function",
-                "function": {
-                    "name": parsed_tool_call["name"],
-                    # Dict, NOT json.dumps: Qwen3.6's chat template iterates
-                    # `tool_call.arguments|items` to render <parameter=...>
-                    # blocks and raises "Can only get item pairs from a
-                    # mapping" on a string. Qwen3.x's `|tojson` renders a
-                    # dict correctly (a string would double-encode).
-                    "arguments": parsed_tool_call.get("arguments", {}),
-                },
-            }]
+            msg["tool_calls"] = [
+                {
+                    "id": f"call_{turn}",
+                    "type": "function",
+                    "function": {
+                        "name": parsed_tool_call["name"],
+                        # Dict, NOT json.dumps: Qwen3.6's chat template iterates
+                        # `tool_call.arguments|items` to render <parameter=...>
+                        # blocks and raises "Can only get item pairs from a
+                        # mapping" on a string. Qwen3.x's `|tojson` renders a
+                        # dict correctly (a string would double-encode).
+                        "arguments": parsed_tool_call.get("arguments", {}),
+                    },
+                }
+            ]
         return msg
 
     def per_turn_reminder(self, turn: int, max_turns: int) -> str:
@@ -210,10 +211,7 @@ class Qwen:
         return f"\n\n[Turn {turn}/{max_turns}]"
 
     def reject_message(self) -> str:
-        return (
-            "No tool call landed. End your response with a tool call in "
-            "the canonical format for your model."
-        )
+        return "No tool call landed. End your response with a tool call in " "the canonical format for your model."
 
     def coerce_tool_call_arguments(self, args: Any) -> Any:
         # Qwen3.6's template iterates `arguments|items` to emit

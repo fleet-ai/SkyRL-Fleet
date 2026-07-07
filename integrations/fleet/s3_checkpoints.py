@@ -79,11 +79,9 @@ class S3CheckpointUploader:
         else:
             try:
                 import ray
+
                 nodes = ray.nodes()
-                node_ips = sorted(set(
-                    n["NodeManagerAddress"] for n in nodes
-                    if n.get("Alive", False)
-                ))
+                node_ips = sorted(set(n["NodeManagerAddress"] for n in nodes if n.get("Alive", False)))
             except Exception:
                 return
 
@@ -103,7 +101,11 @@ class S3CheckpointUploader:
             if os.path.exists(expanded):
                 ssh_key = expanded
                 break
-        ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+        ssh_cmd = (
+            f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}"
+            if ssh_key
+            else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+        )
 
         timeout = _estimate_rsync_timeout(local_dir)
 
@@ -112,8 +114,10 @@ class S3CheckpointUploader:
             try:
                 subprocess.run(
                     [
-                        "rsync", "-az",
-                        "-e", ssh_cmd,
+                        "rsync",
+                        "-az",
+                        "-e",
+                        ssh_cmd,
                         f"gcpuser@{worker_ip}:{local_dir}/",
                         f"{local_dir}/",
                     ],
@@ -320,9 +324,7 @@ def _estimate_rsync_timeout(path: str, min_timeout: int = 300) -> int:
         Timeout in seconds.
     """
     try:
-        total_size = sum(
-            f.stat().st_size for f in Path(path).rglob("*") if f.is_file()
-        )
+        total_size = sum(f.stat().st_size for f in Path(path).rglob("*") if f.is_file())
         timeout = max(min_timeout, int(total_size / (100 * 1024 * 1024)) + 60)
         logger.info(f"Estimated rsync timeout for {total_size / 1e9:.1f}GB: {timeout}s")
         return timeout
@@ -354,11 +356,9 @@ def broadcast_checkpoint_to_workers(ckpt_path: str, timeout: Optional[int] = Non
         # Fall back to Ray cluster node discovery
         try:
             import ray
+
             nodes = ray.nodes()
-            node_ips = sorted(set(
-                n["NodeManagerAddress"] for n in nodes
-                if n.get("Alive", False)
-            ))
+            node_ips = sorted(set(n["NodeManagerAddress"] for n in nodes if n.get("Alive", False)))
             logger.info(f"Discovered {len(node_ips)} nodes from Ray cluster")
         except Exception as e:
             logger.warning(f"Could not discover nodes: {e}")
@@ -386,7 +386,11 @@ def broadcast_checkpoint_to_workers(ckpt_path: str, timeout: Optional[int] = Non
         if os.path.exists(expanded):
             ssh_key = expanded
             break
-    ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}" if ssh_key else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+    ssh_cmd = (
+        f"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -i {ssh_key}"
+        if ssh_key
+        else "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+    )
 
     if timeout is None:
         timeout = _estimate_rsync_timeout(ckpt_path)
@@ -402,8 +406,10 @@ def broadcast_checkpoint_to_workers(ckpt_path: str, timeout: Optional[int] = Non
             )
             subprocess.run(
                 [
-                    "rsync", "-az",
-                    "-e", ssh_cmd,
+                    "rsync",
+                    "-az",
+                    "-e",
+                    ssh_cmd,
                     f"{ckpt_path}/",
                     f"gcpuser@{worker_ip}:{ckpt_path}/",
                 ],

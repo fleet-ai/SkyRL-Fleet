@@ -83,12 +83,7 @@ def matches_expected_type(value: Any, expected_type: type[Any]) -> bool:
 
 def probe_schema_messages(document: dict[str, Any]) -> list[str]:
     if document.get("schema_version") != SCHEMA_VERSION:
-        return [
-            (
-                f"unsupported schema_version {document.get('schema_version')!r}; "
-                f"expected {SCHEMA_VERSION}"
-            )
-        ]
+        return [(f"unsupported schema_version {document.get('schema_version')!r}; " f"expected {SCHEMA_VERSION}")]
 
     messages: list[str] = []
     missing = sorted(REQUIRED_RESULT_KEYS.difference(document.keys()))
@@ -141,24 +136,14 @@ def probe_schema_messages(document: dict[str, Any]) -> list[str]:
             elif device_type not in {"cpu", "cuda"}:
                 messages.append("fingerprint.device.type must be cpu or cuda")
             accelerator_id = device.get("accelerator_id")
-            valid_accelerator_id = (
-                isinstance(accelerator_id, str) and bool(accelerator_id)
-            )
+            valid_accelerator_id = isinstance(accelerator_id, str) and bool(accelerator_id)
             if accelerator_id is not None and not valid_accelerator_id:
-                messages.append(
-                    "fingerprint.device.accelerator_id must be a non-empty string "
-                    "when present"
-                )
+                messages.append("fingerprint.device.accelerator_id must be a non-empty string " "when present")
             if device_type == "cuda" and accelerator_id is None:
-                messages.append(
-                    "fingerprint.device.accelerator_id must be a non-empty string "
-                    "for cuda results"
-                )
+                messages.append("fingerprint.device.accelerator_id must be a non-empty string " "for cuda results")
             cuda_driver = device.get("cuda_driver")
             if cuda_driver is not None and not isinstance(cuda_driver, dict):
-                messages.append(
-                    "fingerprint.device.cuda_driver must be an object when present"
-                )
+                messages.append("fingerprint.device.cuda_driver must be an object when present")
     return messages
 
 
@@ -209,11 +194,7 @@ def canonical_json(value: Any) -> str:
 
 def normalized_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            key: normalized_value(value[key])
-            for key in sorted(value)
-            if isinstance(key, str)
-        }
+        return {key: normalized_value(value[key]) for key in sorted(value) if isinstance(key, str)}
     if isinstance(value, list):
         return [normalized_value(item) for item in value]
     return value
@@ -285,17 +266,12 @@ def compare_paths(
             if error is not None:
                 load_errors.append(error)
             elif location_identity(json_path) in explicit_inputs:
-                schema_errors.append(
-                    invalid_result_error(json_path, "result JSON must be an object")
-                )
+                schema_errors.append(invalid_result_error(json_path, "result JSON must be an object"))
             else:
                 ignored_files.append(location_text(json_path))
             continue
         if not is_probe_result(result):
-            if (
-                "schema_version" in result
-                or location_identity(json_path) in explicit_inputs
-            ):
+            if "schema_version" in result or location_identity(json_path) in explicit_inputs:
                 schema_errors.append(probe_schema_error(json_path, result))
             else:
                 ignored_files.append(location_text(json_path))
@@ -356,10 +332,7 @@ def compare_paths(
 
 
 def is_compare_report(document: dict[str, Any] | None) -> bool:
-    return (
-        isinstance(document, dict)
-        and document.get("compare_schema_version") == COMPARE_SCHEMA_VERSION
-    )
+    return isinstance(document, dict) and document.get("compare_schema_version") == COMPARE_SCHEMA_VERSION
 
 
 def path_contains(parent: Path, candidate: Path) -> bool:
@@ -385,11 +358,7 @@ def output_s3_path_is_input_json(
     prefix = input_key
     if prefix and not prefix.endswith("/"):
         prefix = f"{prefix}/"
-    return (
-        output_key.endswith(".json")
-        and not output_key.endswith(".tmp")
-        and output_key.startswith(prefix)
-    )
+    return output_key.endswith(".json") and not output_key.endswith(".tmp") and output_key.startswith(prefix)
 
 
 def output_path_is_input_json(
@@ -423,9 +392,7 @@ def validate_compare_output_path(
         document, error = load_result(output_path)
         if error is None and is_compare_report(document):
             continue
-        raise ValueError(
-            "outfile must not overwrite an existing JSON file from the compare inputs"
-        )
+        raise ValueError("outfile must not overwrite an existing JSON file from the compare inputs")
 
 
 def handle_compare(args: argparse.Namespace) -> None:

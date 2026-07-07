@@ -65,6 +65,7 @@ from integrations.fleet.entrypoints import main_fleet_tinker as mft  # noqa: E40
 # Test fixtures
 # --------------------------------------------------------------------------- #
 
+
 def _make_data_url(fmt: str = "png", color: str = "red") -> str:
     """Build a small valid data URL for a 10x10 image."""
     img = Image.new("RGB", (10, 10), color=color)
@@ -101,6 +102,7 @@ def fake_tokenizer():
 # --------------------------------------------------------------------------- #
 # _decode_data_url
 # --------------------------------------------------------------------------- #
+
 
 class TestDecodeDataUrl:
     def test_none_input_returns_none(self):
@@ -140,6 +142,7 @@ class TestDecodeDataUrl:
 # _sanitize_content
 # --------------------------------------------------------------------------- #
 
+
 class TestSanitizeContent:
     def test_string_passthrough(self):
         text, images = mft._sanitize_content("hello world")
@@ -167,18 +170,22 @@ class TestSanitizeContent:
         assert images == []
 
     def test_list_of_text_dicts(self):
-        text, images = mft._sanitize_content([
-            {"type": "text", "text": "first"},
-            {"type": "text", "text": "second"},
-        ])
+        text, images = mft._sanitize_content(
+            [
+                {"type": "text", "text": "first"},
+                {"type": "text", "text": "second"},
+            ]
+        )
         assert text == "first\nsecond"
         assert images == []
 
     def test_image_url_data_url_extracted(self):
         url = _make_data_url("png")
-        text, images = mft._sanitize_content([
-            {"type": "image_url", "image_url": {"url": url}},
-        ])
+        text, images = mft._sanitize_content(
+            [
+                {"type": "image_url", "image_url": {"url": url}},
+            ]
+        )
         assert mft._IMAGE_PLACEHOLDER in text
         assert len(images) == 1
         img_bytes, fmt = images[0]
@@ -186,17 +193,21 @@ class TestSanitizeContent:
         assert img_bytes[:3] == b"\xff\xd8\xff"
 
     def test_image_url_undecodable_falls_back_to_text_marker(self):
-        text, images = mft._sanitize_content([
-            {"type": "image_url", "image_url": {"url": "http://nope.com/a.png"}},
-        ])
+        text, images = mft._sanitize_content(
+            [
+                {"type": "image_url", "image_url": {"url": "http://nope.com/a.png"}},
+            ]
+        )
         assert text == "[image]"
         assert images == []
 
     def test_inline_image_bytes(self):
         raw = b"\xff\xd8\xff" + b"\x00" * 100
-        text, images = mft._sanitize_content([
-            {"type": "image", "image": raw},
-        ])
+        text, images = mft._sanitize_content(
+            [
+                {"type": "image", "image": raw},
+            ]
+        )
         assert mft._IMAGE_PLACEHOLDER in text
         assert len(images) == 1
         img_bytes, _fmt = images[0]
@@ -204,11 +215,13 @@ class TestSanitizeContent:
 
     def test_mixed_text_and_image_preserves_order(self):
         url = _make_data_url("png")
-        text, images = mft._sanitize_content([
-            {"type": "text", "text": "before"},
-            {"type": "image_url", "image_url": {"url": url}},
-            {"type": "text", "text": "after"},
-        ])
+        text, images = mft._sanitize_content(
+            [
+                {"type": "text", "text": "before"},
+                {"type": "image_url", "image_url": {"url": url}},
+                {"type": "text", "text": "after"},
+            ]
+        )
         idx_before = text.find("before")
         idx_placeholder = text.find(mft._IMAGE_PLACEHOLDER)
         idx_after = text.find("after")
@@ -220,6 +233,7 @@ class TestSanitizeContent:
 # sanitize_text_only
 # --------------------------------------------------------------------------- #
 
+
 class TestSanitizeTextOnly:
     def test_string_passthrough(self):
         assert mft.sanitize_text_only("hi") == "hi"
@@ -229,9 +243,11 @@ class TestSanitizeTextOnly:
 
     def test_image_becomes_literal_image_marker(self):
         url = _make_data_url("png")
-        out = mft.sanitize_text_only([
-            {"type": "image_url", "image_url": {"url": url}},
-        ])
+        out = mft.sanitize_text_only(
+            [
+                {"type": "image_url", "image_url": {"url": url}},
+            ]
+        )
         # Must be a string, not a tuple
         assert isinstance(out, str)
         # Image is replaced by "[image]" marker, NOT the internal placeholder
@@ -240,11 +256,13 @@ class TestSanitizeTextOnly:
 
     def test_mixed_returns_single_string(self):
         url = _make_data_url("png")
-        out = mft.sanitize_text_only([
-            {"type": "text", "text": "before"},
-            {"type": "image_url", "image_url": {"url": url}},
-            {"type": "text", "text": "after"},
-        ])
+        out = mft.sanitize_text_only(
+            [
+                {"type": "text", "text": "before"},
+                {"type": "image_url", "image_url": {"url": url}},
+                {"type": "text", "text": "after"},
+            ]
+        )
         assert isinstance(out, str)
         assert "before" in out
         assert "[image]" in out
@@ -255,6 +273,7 @@ class TestSanitizeTextOnly:
 # --------------------------------------------------------------------------- #
 # build_model_input_chunks
 # --------------------------------------------------------------------------- #
+
 
 class TestBuildModelInputChunks:
     def test_text_only_returns_single_text_chunk(self, fake_tokenizer):
@@ -276,11 +295,14 @@ class TestBuildModelInputChunks:
         url = _make_data_url("png")
         chat = [
             {"role": "system", "content": "system prompt"},
-            {"role": "user", "content": [
-                {"type": "text", "text": "see this"},
-                {"type": "image_url", "image_url": {"url": url}},
-                {"type": "text", "text": "thanks"},
-            ]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "see this"},
+                    {"type": "image_url", "image_url": {"url": url}},
+                    {"type": "text", "text": "thanks"},
+                ],
+            },
         ]
         chunks, total = mft.build_model_input_chunks(fake_tokenizer, chat)
         # Must contain at least one ImageChunk (has `data` attribute)
@@ -299,11 +321,14 @@ class TestBuildModelInputChunks:
         u1 = _make_data_url("png", "red")
         u2 = _make_data_url("png", "blue")
         chat = [
-            {"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": u1}},
-                {"type": "text", "text": "and"},
-                {"type": "image_url", "image_url": {"url": u2}},
-            ]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": u1}},
+                    {"type": "text", "text": "and"},
+                    {"type": "image_url", "image_url": {"url": u2}},
+                ],
+            },
         ]
         chunks, total = mft.build_model_input_chunks(fake_tokenizer, chat)
         image_chunks = [c for c in chunks if hasattr(c, "data")]
@@ -316,6 +341,7 @@ class TestBuildModelInputChunks:
 # tools= threading — verifies the HF chat-template `tools=` kwarg reaches
 # apply_chat_template once, for both text-only and multimodal paths.
 # --------------------------------------------------------------------------- #
+
 
 class _RecordingTokenizer:
     """Tokenizer stub that records every apply_chat_template call so tests can
@@ -394,9 +420,7 @@ class TestToolsThreading:
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "hi"},
         ]
-        chunks, total = mft.build_model_input_chunks(
-            tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS
-        )
+        chunks, total = mft.build_model_input_chunks(tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS)
         # Exactly one apply_chat_template call for the text-only fast path.
         assert len(tok.calls) == 1
         assert tok.calls[0]["tools"] is self.SAMPLE_TOOLS
@@ -418,9 +442,7 @@ class TestToolsThreading:
                 ],
             },
         ]
-        chunks, _total = mft.build_model_input_chunks(
-            tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS
-        )
+        chunks, _total = mft.build_model_input_chunks(tok, chat, add_generation_prompt=True, tools=self.SAMPLE_TOOLS)
         # Multimodal slow path: still exactly one apply_chat_template call
         # (the per-image splicing happens in plain Python after rendering).
         assert len(tok.calls) == 1
@@ -455,16 +477,17 @@ class TestToolsThreading:
         assert len(tok.calls) == 1
         # Inspect what the recorder built as the body: <tool_declare> should
         # appear exactly once even with 5 assistant turns.
-        body = tok.apply_chat_template(
-            chat, add_generation_prompt=False, tokenize=False, tools=self.SAMPLE_TOOLS
-        )
+        body = tok.apply_chat_template(chat, add_generation_prompt=False, tokenize=False, tools=self.SAMPLE_TOOLS)
         assert body.count("<tool_declare>") == 1
 
     def test_undecodable_image_falls_back_to_text(self, fake_tokenizer):
         chat = [
-            {"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": "http://no.png"}},
-            ]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": "http://no.png"}},
+                ],
+            },
         ]
         chunks, total = mft.build_model_input_chunks(fake_tokenizer, chat)
         # Single text chunk, no images

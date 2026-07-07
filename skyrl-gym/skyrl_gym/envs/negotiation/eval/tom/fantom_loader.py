@@ -43,7 +43,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _DATA_URL = "https://storage.googleapis.com/ai2-mosaic-public/projects/fantom/fantom.tar.gz"
-_TARBALL  = "fantom.tar.gz"
+_TARBALL = "fantom.tar.gz"
 _JSON_NAME = "fantom_v1.json"
 
 # Switch to "full_context" for the harder evaluation setting.
@@ -57,6 +57,7 @@ _PROMPT_HEADER = (
 # ---------------------------------------------------------------------------
 # Download helpers
 # ---------------------------------------------------------------------------
+
 
 def _download(data_dir: Path) -> None:
     """Download and extract FanToM into *data_dir* if the JSON is not already present.
@@ -83,6 +84,7 @@ def _download(data_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 # Item builders
 # ---------------------------------------------------------------------------
+
 
 def _mcq_prompt_and_answer(
     context: str,
@@ -113,6 +115,7 @@ def _mcq_prompt_and_answer(
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def load_items(data_dir, max_samples: int = 0, seed: int = 0) -> list[dict]:
     """Load FanToM items for offline ToM evaluation.
 
@@ -135,34 +138,36 @@ def load_items(data_dir, max_samples: int = 0, seed: int = 0) -> list[dict]:
     items: list[dict] = []
 
     for set_entry in sets:
-        sid      = set_entry["set_id"]
-        part_id  = set_entry["part_id"]
-        conv_id  = set_entry["conv_id"]
-        context  = set_entry[_CONTEXT_KEY].strip()
-        fact_q   = set_entry["factQA"]["question"]
-        fact_a   = set_entry["factQA"]["correct_answer"]
+        sid = set_entry["set_id"]
+        part_id = set_entry["part_id"]
+        conv_id = set_entry["conv_id"]
+        context = set_entry[_CONTEXT_KEY].strip()
+        fact_q = set_entry["factQA"]["question"]
+        fact_a = set_entry["factQA"]["correct_answer"]
 
         base_meta = {"set_id": sid, "part_id": part_id, "conv_id": conv_id}
 
         # ------------------------------------------------------------------ #
         # Fact question  (scoring: exact / F1-rule-scorable)
         # ------------------------------------------------------------------ #
-        items.append({
-            "id":      f"fantom/{sid}/fact",
-            "task":    "fantom",
-            "subtype": "fact",
-            "system":  None,
-            "prompt":  (
-                f"{_PROMPT_HEADER}\n\n"
-                f"{context}\n\n"
-                f"Question: {fact_q}\n\n"
-                "Answer with a single short phrase."
-            ),
-            "answer":  fact_a,
-            "choices": None,
-            "scoring": "exact",
-            "meta":    {**base_meta, "question_type": "fact"},
-        })
+        items.append(
+            {
+                "id": f"fantom/{sid}/fact",
+                "task": "fantom",
+                "subtype": "fact",
+                "system": None,
+                "prompt": (
+                    f"{_PROMPT_HEADER}\n\n"
+                    f"{context}\n\n"
+                    f"Question: {fact_q}\n\n"
+                    "Answer with a single short phrase."
+                ),
+                "answer": fact_a,
+                "choices": None,
+                "scoring": "exact",
+                "meta": {**base_meta, "question_type": "fact"},
+            }
+        )
 
         # ------------------------------------------------------------------ #
         # Belief questions: MCQ variant only
@@ -174,54 +179,60 @@ def load_items(data_dir, max_samples: int = 0, seed: int = 0) -> list[dict]:
         for bq_i, bqa in enumerate(set_entry["beliefQAs"]):
             correct_first = (hash(sid) + bq_i) % 2 == 0
             prompt, gold, choices = _mcq_prompt_and_answer(
-                context, bqa["question"],
-                bqa["correct_answer"], bqa["wrong_answer"],
+                context,
+                bqa["question"],
+                bqa["correct_answer"],
+                bqa["wrong_answer"],
                 correct_first,
             )
-            items.append({
-                "id":      f"fantom/{sid}/beliefq_{bq_i}",
-                "task":    "fantom",
-                "subtype": "beliefq_choice",
-                "system":  None,
-                "prompt":  prompt,
-                "answer":  gold,
-                "choices": choices,
-                "scoring": "mcq",
-                "meta": {
-                    **base_meta,
-                    "question_type":           bqa["question_type"],
-                    "tom_type":                bqa["tom_type"],
-                    "missed_info_accessibility": bqa["missed_info_accessibility"],
-                },
-            })
+            items.append(
+                {
+                    "id": f"fantom/{sid}/beliefq_{bq_i}",
+                    "task": "fantom",
+                    "subtype": "beliefq_choice",
+                    "system": None,
+                    "prompt": prompt,
+                    "answer": gold,
+                    "choices": choices,
+                    "scoring": "mcq",
+                    "meta": {
+                        **base_meta,
+                        "question_type": bqa["question_type"],
+                        "tom_type": bqa["tom_type"],
+                        "missed_info_accessibility": bqa["missed_info_accessibility"],
+                    },
+                }
+            )
 
         # ------------------------------------------------------------------ #
         # Answerability — list variant
         # ------------------------------------------------------------------ #
         al = set_entry.get("answerabilityQA_list")
         if al is not None:
-            items.append({
-                "id":      f"fantom/{sid}/answerability_list",
-                "task":    "fantom",
-                "subtype": "answerability_list",
-                "system":  None,
-                "prompt":  (
-                    f"{_PROMPT_HEADER}\n\n"
-                    f"{context}\n\n"
-                    f"Target question: {fact_q}\n"
-                    f"Question: {al['question']}\n\n"
-                    "Answer with only the names, separated by commas."
-                ),
-                "answer":  ", ".join(al["correct_answer"]),
-                "choices": None,
-                "scoring": "list",
-                "meta": {
-                    **base_meta,
-                    "question_type":             al["question_type"],
-                    "missed_info_accessibility": al["missed_info_accessibility"],
-                    "wrong_names":               al["wrong_answer"],
-                },
-            })
+            items.append(
+                {
+                    "id": f"fantom/{sid}/answerability_list",
+                    "task": "fantom",
+                    "subtype": "answerability_list",
+                    "system": None,
+                    "prompt": (
+                        f"{_PROMPT_HEADER}\n\n"
+                        f"{context}\n\n"
+                        f"Target question: {fact_q}\n"
+                        f"Question: {al['question']}\n\n"
+                        "Answer with only the names, separated by commas."
+                    ),
+                    "answer": ", ".join(al["correct_answer"]),
+                    "choices": None,
+                    "scoring": "list",
+                    "meta": {
+                        **base_meta,
+                        "question_type": al["question_type"],
+                        "missed_info_accessibility": al["missed_info_accessibility"],
+                        "wrong_names": al["wrong_answer"],
+                    },
+                }
+            )
 
         # ------------------------------------------------------------------ #
         # Answerability — binary variant
@@ -232,55 +243,59 @@ def load_items(data_dir, max_samples: int = 0, seed: int = 0) -> list[dict]:
         for ab_i, abqa in enumerate(set_entry["answerabilityQAs_binary"]):
             if abqa["correct_answer"] == "no:long":
                 continue
-            items.append({
-                "id":      f"fantom/{sid}/answerability_binary_{ab_i}",
-                "task":    "fantom",
-                "subtype": "answerability_binary",
-                "system":  None,
-                "prompt":  (
-                    f"{_PROMPT_HEADER}\n\n"
-                    f"{context}\n\n"
-                    f"Target question: {fact_q}\n"
-                    f"Question: {abqa['question']}\n\n"
-                    "Answer with only 'yes' or 'no'."
-                ),
-                "answer":  abqa["correct_answer"],   # "yes" or "no"
-                "choices": None,
-                "scoring": "binary",
-                "meta": {
-                    **base_meta,
-                    "question_type":             abqa["question_type"],
-                    "missed_info_accessibility": abqa["missed_info_accessibility"],
-                },
-            })
+            items.append(
+                {
+                    "id": f"fantom/{sid}/answerability_binary_{ab_i}",
+                    "task": "fantom",
+                    "subtype": "answerability_binary",
+                    "system": None,
+                    "prompt": (
+                        f"{_PROMPT_HEADER}\n\n"
+                        f"{context}\n\n"
+                        f"Target question: {fact_q}\n"
+                        f"Question: {abqa['question']}\n\n"
+                        "Answer with only 'yes' or 'no'."
+                    ),
+                    "answer": abqa["correct_answer"],  # "yes" or "no"
+                    "choices": None,
+                    "scoring": "binary",
+                    "meta": {
+                        **base_meta,
+                        "question_type": abqa["question_type"],
+                        "missed_info_accessibility": abqa["missed_info_accessibility"],
+                    },
+                }
+            )
 
         # ------------------------------------------------------------------ #
         # Info-accessibility — list variant
         # ------------------------------------------------------------------ #
         il = set_entry.get("infoAccessibilityQA_list")
         if il is not None:
-            items.append({
-                "id":      f"fantom/{sid}/infoaccess_list",
-                "task":    "fantom",
-                "subtype": "infoaccess_list",
-                "system":  None,
-                "prompt":  (
-                    f"{_PROMPT_HEADER}\n\n"
-                    f"{context}\n\n"
-                    f"Information: {fact_q} {fact_a}\n"
-                    f"Question: {il['question']}\n\n"
-                    "Answer with only the names, separated by commas."
-                ),
-                "answer":  ", ".join(il["correct_answer"]),
-                "choices": None,
-                "scoring": "list",
-                "meta": {
-                    **base_meta,
-                    "question_type":             il["question_type"],
-                    "missed_info_accessibility": il["missed_info_accessibility"],
-                    "wrong_names":               il["wrong_answer"],
-                },
-            })
+            items.append(
+                {
+                    "id": f"fantom/{sid}/infoaccess_list",
+                    "task": "fantom",
+                    "subtype": "infoaccess_list",
+                    "system": None,
+                    "prompt": (
+                        f"{_PROMPT_HEADER}\n\n"
+                        f"{context}\n\n"
+                        f"Information: {fact_q} {fact_a}\n"
+                        f"Question: {il['question']}\n\n"
+                        "Answer with only the names, separated by commas."
+                    ),
+                    "answer": ", ".join(il["correct_answer"]),
+                    "choices": None,
+                    "scoring": "list",
+                    "meta": {
+                        **base_meta,
+                        "question_type": il["question_type"],
+                        "missed_info_accessibility": il["missed_info_accessibility"],
+                        "wrong_names": il["wrong_answer"],
+                    },
+                }
+            )
 
         # ------------------------------------------------------------------ #
         # Info-accessibility — binary variant  (no:long also dropped)
@@ -288,27 +303,29 @@ def load_items(data_dir, max_samples: int = 0, seed: int = 0) -> list[dict]:
         for ib_i, ibqa in enumerate(set_entry["infoAccessibilityQAs_binary"]):
             if ibqa["correct_answer"] == "no:long":
                 continue
-            items.append({
-                "id":      f"fantom/{sid}/infoaccess_binary_{ib_i}",
-                "task":    "fantom",
-                "subtype": "infoaccess_binary",
-                "system":  None,
-                "prompt":  (
-                    f"{_PROMPT_HEADER}\n\n"
-                    f"{context}\n\n"
-                    f"Information: {fact_q} {fact_a}\n"
-                    f"Question: {ibqa['question']}\n\n"
-                    "Answer with only 'yes' or 'no'."
-                ),
-                "answer":  ibqa["correct_answer"],   # "yes" or "no"
-                "choices": None,
-                "scoring": "binary",
-                "meta": {
-                    **base_meta,
-                    "question_type":             ibqa["question_type"],
-                    "missed_info_accessibility": ibqa["missed_info_accessibility"],
-                },
-            })
+            items.append(
+                {
+                    "id": f"fantom/{sid}/infoaccess_binary_{ib_i}",
+                    "task": "fantom",
+                    "subtype": "infoaccess_binary",
+                    "system": None,
+                    "prompt": (
+                        f"{_PROMPT_HEADER}\n\n"
+                        f"{context}\n\n"
+                        f"Information: {fact_q} {fact_a}\n"
+                        f"Question: {ibqa['question']}\n\n"
+                        "Answer with only 'yes' or 'no'."
+                    ),
+                    "answer": ibqa["correct_answer"],  # "yes" or "no"
+                    "choices": None,
+                    "scoring": "binary",
+                    "meta": {
+                        **base_meta,
+                        "question_type": ibqa["question_type"],
+                        "missed_info_accessibility": ibqa["missed_info_accessibility"],
+                    },
+                }
+            )
 
     # Shuffle at the question level (after all items are built), then truncate.
     rng = random.Random(seed)

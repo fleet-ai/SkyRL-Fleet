@@ -89,8 +89,7 @@ class FleetEvalExp(BasePPOExp):
     def run(self):
         trainer = self._setup_trainer()
         assert trainer.eval_dataloader is not None, (
-            "FleetEvalExp requires an eval dataset. Set `data.val_data` "
-            "and `trainer.eval_interval > 0`."
+            "FleetEvalExp requires an eval dataset. Set `data.val_data` " "and `trainer.eval_interval > 0`."
         )
 
         # Optional S3 resume: download FSDP shards on this VM and broadcast
@@ -171,9 +170,7 @@ class FleetEvalExp(BasePPOExp):
             return False
 
         if trainer.resume_mode == ResumeMode.LATEST:
-            latest_file = os.path.join(
-                trainer.cfg.trainer.ckpt_path, "latest_ckpt_global_step.txt"
-            )
+            latest_file = os.path.join(trainer.cfg.trainer.ckpt_path, "latest_ckpt_global_step.txt")
             if not io.exists(latest_file):
                 logger.warning(
                     "resume_mode=latest but no checkpoint found at "
@@ -182,9 +179,7 @@ class FleetEvalExp(BasePPOExp):
                 return False
             with io.open_file(latest_file, "r") as f:
                 step = int(f.read().strip())
-            ckpt_dir = os.path.join(
-                trainer.cfg.trainer.ckpt_path, f"{GLOBAL_STEP_PREFIX}{step}"
-            )
+            ckpt_dir = os.path.join(trainer.cfg.trainer.ckpt_path, f"{GLOBAL_STEP_PREFIX}{step}")
             validate_consistency_for_latest_checkpoint(
                 trainer.cfg.trainer.ckpt_path,
                 step,

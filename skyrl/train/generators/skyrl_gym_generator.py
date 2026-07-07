@@ -1429,8 +1429,10 @@ class SkyRLGymGenerator(GeneratorInterface):
             # set loss mask to 0 if the stop reason is not "stop"
             loss_masks = apply_overlong_filtering(loss_masks, stop_reasons)
 
-        # Collect per-trajectory images (for dump_training_trajectories)
-        multi_modal_data_list = [output.multi_modal_data for output in all_outputs]
+        # Collect per-trajectory images (for dump_training_trajectories).
+        # StepWiseOutput has no multi_modal_data; the dump feature only applies
+        # to whole-trajectory outputs.
+        multi_modal_data_list = [getattr(output, "multi_modal_data", None) for output in all_outputs]
 
         generator_output: GeneratorOutput = {
             "prompt_token_ids": prompt_token_ids,

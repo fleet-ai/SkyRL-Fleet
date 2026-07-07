@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.util
-import contextlib
 import io
 import os
 import platform
@@ -13,7 +13,6 @@ import uuid
 from typing import Any
 
 from narc.checksum import stable_hash
-
 
 DETERMINISTIC_ENV_DEFAULTS = {
     "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
@@ -281,11 +280,7 @@ def collect_fingerprint(
             "version": torch.__version__,
             "cuda_version": getattr(torch.version, "cuda", None),
             "git_version": getattr(torch.version, "git_version", None),
-            "cudnn_version": (
-                torch.backends.cudnn.version()
-                if hasattr(torch.backends, "cudnn")
-                else None
-            ),
+            "cudnn_version": (torch.backends.cudnn.version() if hasattr(torch.backends, "cudnn") else None),
             "config_hash": config_hash,
         },
         "device": {
@@ -302,9 +297,7 @@ def collect_fingerprint(
         driver_identity = cuda_driver_identity(logical_device)
         torch_identity = torch_device_identity(props)
         stable_identifier = (
-            driver_identity.get("uuid")
-            or torch_identity.get("uuid")
-            or visible_device_identifier(logical_device)
+            driver_identity.get("uuid") or torch_identity.get("uuid") or visible_device_identifier(logical_device)
         )
         nvidia_smi = nvidia_smi_query(stable_identifier)
         sm_count = getattr(props, "multi_processor_count", None)

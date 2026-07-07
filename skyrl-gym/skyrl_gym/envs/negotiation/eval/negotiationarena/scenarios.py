@@ -50,12 +50,7 @@ _AMOUNT_POOL: tuple[int, ...] = (100, 1000, 10_000, 100_000)
 
 
 def _cell_seed(base_seed: int, g_idx: int, seat_idx: int, e: int) -> int:
-    return (
-        base_seed * 10_000_000
-        + g_idx * 100_000
-        + seat_idx * 10_000
-        + e * 10
-    )
+    return base_seed * 10_000_000 + g_idx * 100_000 + seat_idx * 10_000 + e * 10
 
 
 def _build_scenario(
@@ -104,9 +99,7 @@ def _build_scenario(
 
     elif game == "sell_buy":
         if cfg.vary_sell_buy:
-            seller_cost = random.Random(cell + _STREAM_COST).randint(
-                SELL_BUY_COST_RANGE[0], SELL_BUY_COST_RANGE[1]
-            )
+            seller_cost = random.Random(cell + _STREAM_COST).randint(SELL_BUY_COST_RANGE[0], SELL_BUY_COST_RANGE[1])
             buyer_willingness = random.Random(cell + _STREAM_WILLINGNESS).randint(
                 SELL_BUY_WILLINGNESS_RANGE[0], SELL_BUY_WILLINGNESS_RANGE[1]
             )
@@ -196,9 +189,7 @@ def generate_scenarios(
     scenarios: list[Scenario] = []
     for (game, focal_seat), count in zip(cells, counts):
         for e in range(count):
-            scenarios.append(
-                _build_scenario(game, focal_seat, e, base_seed, cfg, games)
-            )
+            scenarios.append(_build_scenario(game, focal_seat, e, base_seed, cfg, games))
 
     scenarios.sort(key=lambda s: _sort_key(s, games))
     return scenarios
@@ -208,16 +199,12 @@ if __name__ == "__main__":
     # --- Full suite: N_PER_CELL_FULL_SUITE * len(GAMES_ORDER) * 2 total. ---
     suite = generate_scenarios(0, full_suite=True)
     expected_full = N_PER_CELL_FULL_SUITE * len(GAMES_ORDER) * 2
-    assert len(suite) == expected_full, (
-        f"full_suite count mismatch: got {len(suite)}, expected {expected_full}"
-    )
+    assert len(suite) == expected_full, f"full_suite count mismatch: got {len(suite)}, expected {expected_full}"
 
     # --- Balanced spread: n == num_cells => exactly 1 per cell. ---
     num_cells = len(GAMES_ORDER) * 2
     balanced = generate_scenarios(num_cells, base_seed=42)
-    assert len(balanced) == num_cells, (
-        f"balanced count mismatch: got {len(balanced)}, expected {num_cells}"
-    )
+    assert len(balanced) == num_cells, f"balanced count mismatch: got {len(balanced)}, expected {num_cells}"
     seen: dict[tuple[str, int], int] = {}
     for s in balanced:
         key = (s.game, s.focal_seat)
@@ -229,52 +216,33 @@ if __name__ == "__main__":
     again = generate_scenarios(num_cells, base_seed=42)
     assert len(again) == len(balanced)
     for a, b in zip(balanced, again):
-        assert a.episode_id == b.episode_id, (
-            f"episode_id mismatch: {a.episode_id!r} vs {b.episode_id!r}"
-        )
+        assert a.episode_id == b.episode_id, f"episode_id mismatch: {a.episode_id!r} vs {b.episode_id!r}"
         assert a.seed == b.seed, f"seed mismatch: {a.episode_id}"
         assert a.seller_cost == b.seller_cost, f"seller_cost mismatch: {a.episode_id}"
-        assert a.buyer_willingness == b.buyer_willingness, (
-            f"buyer_willingness mismatch: {a.episode_id}"
-        )
-        assert a.amount_to_split == b.amount_to_split, (
-            f"amount_to_split mismatch: {a.episode_id}"
-        )
+        assert a.buyer_willingness == b.buyer_willingness, f"buyer_willingness mismatch: {a.episode_id}"
+        assert a.amount_to_split == b.amount_to_split, f"amount_to_split mismatch: {a.episode_id}"
 
     # --- sell_buy: integer valuations within declared ranges (vary_sell_buy=True). ---
     sell_buy_scenarios = [s for s in suite if s.game == "sell_buy"]
     for s in sell_buy_scenarios:
-        assert isinstance(s.seller_cost, int), (
-            f"seller_cost not int: {s.episode_id}"
-        )
-        assert SELL_BUY_COST_RANGE[0] <= s.seller_cost <= SELL_BUY_COST_RANGE[1], (
-            f"seller_cost={s.seller_cost} out of {SELL_BUY_COST_RANGE}: {s.episode_id}"
-        )
-        assert isinstance(s.buyer_willingness, int), (
-            f"buyer_willingness not int: {s.episode_id}"
-        )
+        assert isinstance(s.seller_cost, int), f"seller_cost not int: {s.episode_id}"
         assert (
-            SELL_BUY_WILLINGNESS_RANGE[0]
-            <= s.buyer_willingness
-            <= SELL_BUY_WILLINGNESS_RANGE[1]
-        ), (
-            f"buyer_willingness={s.buyer_willingness} out of "
-            f"{SELL_BUY_WILLINGNESS_RANGE}: {s.episode_id}"
+            SELL_BUY_COST_RANGE[0] <= s.seller_cost <= SELL_BUY_COST_RANGE[1]
+        ), f"seller_cost={s.seller_cost} out of {SELL_BUY_COST_RANGE}: {s.episode_id}"
+        assert isinstance(s.buyer_willingness, int), f"buyer_willingness not int: {s.episode_id}"
+        assert SELL_BUY_WILLINGNESS_RANGE[0] <= s.buyer_willingness <= SELL_BUY_WILLINGNESS_RANGE[1], (
+            f"buyer_willingness={s.buyer_willingness} out of " f"{SELL_BUY_WILLINGNESS_RANGE}: {s.episode_id}"
         )
 
     # --- ultimatum: proposer (seat 0) holds the full pot; responder (seat 1) holds 0. ---
     ult_scenarios = [s for s in suite if s.game == "ultimatum"]
     for s in ult_scenarios:
-        assert s.amount_to_split is not None, (
-            f"amount_to_split is None: {s.episode_id}"
-        )
+        assert s.amount_to_split is not None, f"amount_to_split is None: {s.episode_id}"
         assert s.initial_resources[0] == {"Dollars": s.amount_to_split}, (
-            f"proposer resources wrong: {s.episode_id}, "
-            f"got {s.initial_resources[0]}"
+            f"proposer resources wrong: {s.episode_id}, " f"got {s.initial_resources[0]}"
         )
         assert s.initial_resources[1] == {"Dollars": 0}, (
-            f"responder resources wrong: {s.episode_id}, "
-            f"got {s.initial_resources[1]}"
+            f"responder resources wrong: {s.episode_id}, " f"got {s.initial_resources[1]}"
         )
 
     # --- Counts-by-(game, focal_role) table. ---

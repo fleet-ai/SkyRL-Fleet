@@ -38,6 +38,7 @@ from config import (
 # Internal helpers — tolerant XML-like tag extraction
 # ---------------------------------------------------------------------------
 
+
 def _extract_tag(text: str, tag: str) -> str:
     """Extract the content of the first ``<tag>`` occurrence.
 
@@ -68,10 +69,7 @@ def _extract_tag(text: str, tag: str) -> str:
 
 def _has_any_tag(text: str) -> bool:
     """Return True if *text* contains at least one recognised response tag."""
-    return any(
-        re.search(rf"<{re.escape(tag)}\s*>", text, re.IGNORECASE)
-        for tag in RESPONSE_TAG_ORDER
-    )
+    return any(re.search(rf"<{re.escape(tag)}\s*>", text, re.IGNORECASE) for tag in RESPONSE_TAG_ORDER)
 
 
 def _name_to_seat(name: str) -> Optional[int]:
@@ -103,16 +101,14 @@ def _fmt_resources(bundle: dict) -> str:
 # Goal-text factory  (see user-query spec, §2 SPEC.md)
 # ---------------------------------------------------------------------------
 
+
 def _goal_text(scenario: Scenario, seat: int) -> str:
     """Return the goal string for *seat* in *scenario*."""
     game = scenario.game
     opp_name = scenario.seat_name(scenario.other_seat(seat))
 
     if game == "resource_exchange":
-        return (
-            "Maximize your total resources. "
-            "More resources in general are always better."
-        )
+        return "Maximize your total resources. " "More resources in general are always better."
 
     if game == "ultimatum":
         amount = scenario.amount_to_split
@@ -154,6 +150,7 @@ def _goal_text(scenario: Scenario, seat: int) -> str:
 # 1.  build_system_prompt  (Appendix F, Fig. 21)
 # ---------------------------------------------------------------------------
 
+
 def build_system_prompt(scenario: Scenario, seat: int) -> str:
     """Build the role-appropriate system prompt for *seat* in *scenario*.
 
@@ -175,14 +172,10 @@ def build_system_prompt(scenario: Scenario, seat: int) -> str:
     # One concrete trade-string example using the game's actual tokens.
     tok0 = scenario.resource_tokens[0]
     tok1 = scenario.resource_tokens[-1]
-    trade_example = (
-        f"Player RED Gives {tok0}: amount | Player BLUE Gives {tok1}: amount"
-    )
+    trade_example = f"Player RED Gives {tok0}: amount | Player BLUE Gives {tok1}: amount"
 
     # Required-tag block (human-readable enumeration in protocol order).
-    tag_lines = "\n".join(
-        f"  <{tag}> ..." for tag in RESPONSE_TAG_ORDER
-    )
+    tag_lines = "\n".join(f"  <{tag}> ..." for tag in RESPONSE_TAG_ORDER)
 
     # Private-tag disclosure note.
     private_note = (
@@ -251,6 +244,7 @@ def build_system_prompt(scenario: Scenario, seat: int) -> str:
 # 2.  build_opening_user_message
 # ---------------------------------------------------------------------------
 
+
 def build_opening_user_message(scenario: Scenario, seat: int) -> str:
     """Return the kickoff user message for the given *seat*.
 
@@ -269,6 +263,7 @@ def build_opening_user_message(scenario: Scenario, seat: int) -> str:
 # ---------------------------------------------------------------------------
 # 3.  filter_public  — strip private-tag blocks before forwarding
 # ---------------------------------------------------------------------------
+
 
 def filter_public(raw: str) -> str:
     """Strip every ``PRIVATE_TAGS`` block from *raw*.
@@ -302,6 +297,7 @@ def filter_public(raw: str) -> str:
 # ---------------------------------------------------------------------------
 # 4.  parse_trade_string
 # ---------------------------------------------------------------------------
+
 
 def parse_trade_string(s: str, scenario: Scenario) -> Optional[Trade]:
     """Parse a canonical NegotiationArena trade string into a Trade.
@@ -379,6 +375,7 @@ def parse_trade_string(s: str, scenario: Scenario) -> Optional[Trade]:
 # 5.  parse_agent_action
 # ---------------------------------------------------------------------------
 
+
 def parse_agent_action(raw: str, scenario: Scenario, seat: int) -> AgentAction:
     """Tolerant parser for a raw agent response.
 
@@ -421,9 +418,9 @@ def parse_agent_action(raw: str, scenario: Scenario, seat: int) -> AgentAction:
 
     # Extract all fields via the tolerant tag extractor.
     answer_raw = _extract_tag(raw, PLAYER_ANSWER_TAG)
-    trade_raw  = _extract_tag(raw, PROPOSED_TRADE_TAG)
-    message    = _extract_tag(raw, MESSAGE_TAG)
-    reasoning  = _extract_tag(raw, REASONING_TAG)
+    trade_raw = _extract_tag(raw, PROPOSED_TRADE_TAG)
+    message = _extract_tag(raw, MESSAGE_TAG)
+    reasoning = _extract_tag(raw, REASONING_TAG)
 
     # Normalise <player answer> token.
     if not answer_raw:
@@ -458,6 +455,7 @@ def parse_agent_action(raw: str, scenario: Scenario, seat: int) -> AgentAction:
 # ---------------------------------------------------------------------------
 # 6.  detect_violations  — structural / format checks only
 # ---------------------------------------------------------------------------
+
 
 def detect_violations(
     action: AgentAction,
@@ -531,19 +529,13 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     seller_sp = build_system_prompt(sc, seat=0)
 
-    assert f"<{MY_NAME_TAG}>" in seller_sp, \
-        f"seller prompt missing <{MY_NAME_TAG}> tag"
-    assert "Player RED" in seller_sp, \
-        "seller prompt missing Player RED name"
-    assert str(SELL_BUY_DEFAULT_COST) in seller_sp, \
-        "seller prompt missing seller_cost"
-    assert "Only you know" in seller_sp, \
-        "seller prompt missing incomplete-info note"
-    assert "seller" in seller_sp.lower(), \
-        "seller prompt missing 'seller' in goal text"
+    assert f"<{MY_NAME_TAG}>" in seller_sp, f"seller prompt missing <{MY_NAME_TAG}> tag"
+    assert "Player RED" in seller_sp, "seller prompt missing Player RED name"
+    assert str(SELL_BUY_DEFAULT_COST) in seller_sp, "seller prompt missing seller_cost"
+    assert "Only you know" in seller_sp, "seller prompt missing incomplete-info note"
+    assert "seller" in seller_sp.lower(), "seller prompt missing 'seller' in goal text"
     for tag in RESPONSE_TAG_ORDER:
-        assert f"<{tag}>" in seller_sp, \
-            f"seller prompt missing required tag <{tag}>"
+        assert f"<{tag}>" in seller_sp, f"seller prompt missing required tag <{tag}>"
     print("OK seller system prompt: tags + goal text present.")
 
     # ------------------------------------------------------------------
@@ -551,19 +543,13 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     buyer_sp = build_system_prompt(sc, seat=1)
 
-    assert f"<{MY_NAME_TAG}>" in buyer_sp, \
-        f"buyer prompt missing <{MY_NAME_TAG}> tag"
-    assert "Player BLUE" in buyer_sp, \
-        "buyer prompt missing Player BLUE name"
-    assert str(SELL_BUY_DEFAULT_WILLINGNESS) in buyer_sp, \
-        "buyer prompt missing buyer_willingness"
-    assert "Only you know" in buyer_sp, \
-        "buyer prompt missing incomplete-info note"
-    assert "buyer" in buyer_sp.lower(), \
-        "buyer prompt missing 'buyer' in goal text"
+    assert f"<{MY_NAME_TAG}>" in buyer_sp, f"buyer prompt missing <{MY_NAME_TAG}> tag"
+    assert "Player BLUE" in buyer_sp, "buyer prompt missing Player BLUE name"
+    assert str(SELL_BUY_DEFAULT_WILLINGNESS) in buyer_sp, "buyer prompt missing buyer_willingness"
+    assert "Only you know" in buyer_sp, "buyer prompt missing incomplete-info note"
+    assert "buyer" in buyer_sp.lower(), "buyer prompt missing 'buyer' in goal text"
     for tag in RESPONSE_TAG_ORDER:
-        assert f"<{tag}>" in buyer_sp, \
-            f"buyer prompt missing required tag <{tag}>"
+        assert f"<{tag}>" in buyer_sp, f"buyer prompt missing required tag <{tag}>"
     print("OK buyer system prompt: tags + goal text present.")
 
     # Social-behaviour variant: persona appended.
@@ -583,8 +569,7 @@ if __name__ == "__main__":
         social_behaviour=("You are cunning and sly.", ""),
     )
     persona_sp = build_system_prompt(sc_persona, seat=0)
-    assert "cunning" in persona_sp.lower(), \
-        "social_behaviour not appended to system prompt"
+    assert "cunning" in persona_sp.lower(), "social_behaviour not appended to system prompt"
     print("OK social_behaviour appended when non-empty.")
 
     # ------------------------------------------------------------------
@@ -592,25 +577,18 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     t = parse_trade_string("Player RED Gives X: 1 | Player BLUE Gives ZUP: 45", sc)
     assert t is not None, "parse_trade_string returned None for valid trade"
-    assert t.gives[0] == {"X": 1}, \
-        f"gives[0] wrong: {t.gives[0]}"
-    assert t.gives[1] == {"ZUP": 45}, \
-        f"gives[1] wrong: {t.gives[1]}"
+    assert t.gives[0] == {"X": 1}, f"gives[0] wrong: {t.gives[0]}"
+    assert t.gives[1] == {"ZUP": 45}, f"gives[1] wrong: {t.gives[1]}"
     print("OK parse_trade_string: gives[0]=={'X':1}, gives[1]=={'ZUP':45}.")
 
     # WAIT string → None
-    assert parse_trade_string("WAIT", sc) is None, \
-        "parse_trade_string('WAIT') should return None"
-    assert parse_trade_string("", sc) is None, \
-        "parse_trade_string('') should return None"
+    assert parse_trade_string("WAIT", sc) is None, "parse_trade_string('WAIT') should return None"
+    assert parse_trade_string("", sc) is None, "parse_trade_string('') should return None"
 
     # Non-integer amount preserved as float.
-    t_float = parse_trade_string(
-        "Player RED Gives X: 1.5 | Player BLUE Gives ZUP: 0", sc
-    )
+    t_float = parse_trade_string("Player RED Gives X: 1.5 | Player BLUE Gives ZUP: 0", sc)
     assert t_float is not None
-    assert isinstance(t_float.gives[0].get("X"), float), \
-        "non-integer amount must be kept as float"
+    assert isinstance(t_float.gives[0].get("X"), float), "non-integer amount must be kept as float"
     print("OK parse_trade_string: non-integer preserved as float.")
 
     # ------------------------------------------------------------------
@@ -626,20 +604,13 @@ if __name__ == "__main__":
         "<message> Here is my opening offer."
     )
     action = parse_agent_action(clean_raw, sc, seat=0)
-    assert action.parse_error is None, \
-        f"Unexpected parse_error: {action.parse_error}"
-    assert action.answer == REFUSING_OR_WAIT_TAG, \
-        f"Expected WAIT, got {action.answer!r}"
-    assert action.proposed_trade is not None, \
-        "Expected a proposed trade"
-    assert action.proposed_trade.gives[0] == {"X": 1}, \
-        f"Trade gives[0] wrong: {action.proposed_trade.gives[0]}"
-    assert action.proposed_trade.gives[1] == {"ZUP": 55}, \
-        f"Trade gives[1] wrong: {action.proposed_trade.gives[1]}"
-    assert "start high" in action.reasoning, \
-        "reasoning not extracted correctly"
-    assert "opening offer" in action.message, \
-        "message not extracted correctly"
+    assert action.parse_error is None, f"Unexpected parse_error: {action.parse_error}"
+    assert action.answer == REFUSING_OR_WAIT_TAG, f"Expected WAIT, got {action.answer!r}"
+    assert action.proposed_trade is not None, "Expected a proposed trade"
+    assert action.proposed_trade.gives[0] == {"X": 1}, f"Trade gives[0] wrong: {action.proposed_trade.gives[0]}"
+    assert action.proposed_trade.gives[1] == {"ZUP": 55}, f"Trade gives[1] wrong: {action.proposed_trade.gives[1]}"
+    assert "start high" in action.reasoning, "reasoning not extracted correctly"
+    assert "opening offer" in action.message, "message not extracted correctly"
     print("OK parse_agent_action: clean COUNTER response parsed correctly.")
 
     # Closed-tag variant for <reason>.
@@ -649,8 +620,7 @@ if __name__ == "__main__":
     )
     action_closed = parse_agent_action(closed_raw, sc, seat=0)
     assert action_closed.parse_error is None
-    assert "start high" in action_closed.reasoning, \
-        "closed-tag reasoning not extracted"
+    assert "start high" in action_closed.reasoning, "closed-tag reasoning not extracted"
     print("OK parse_agent_action: closed-tag reasoning extracted correctly.")
 
     # ------------------------------------------------------------------
@@ -667,25 +637,18 @@ if __name__ == "__main__":
     )
     accept_action = parse_agent_action(accept_raw, sc, seat=1)
     assert accept_action.parse_error is None
-    assert accept_action.answer == ACCEPTING_TAG, \
-        f"Expected ACCEPT, got {accept_action.answer!r}"
-    assert accept_action.proposed_trade is None, \
-        "ACCEPT+WAIT trade should yield no proposed_trade"
+    assert accept_action.answer == ACCEPTING_TAG, f"Expected ACCEPT, got {accept_action.answer!r}"
+    assert accept_action.proposed_trade is None, "ACCEPT+WAIT trade should yield no proposed_trade"
     assert accept_action.is_accept
     print("OK parse_agent_action: ACCEPT response parsed correctly.")
 
     # ------------------------------------------------------------------
     # 6. parse_agent_action: garbage → parse_error set
     # ------------------------------------------------------------------
-    garbage_action = parse_agent_action(
-        "this is completely unstructured text with no tags!", sc, seat=0
-    )
-    assert garbage_action.parse_error is not None, \
-        "garbage input must set parse_error"
+    garbage_action = parse_agent_action("this is completely unstructured text with no tags!", sc, seat=0)
+    assert garbage_action.parse_error is not None, "garbage input must set parse_error"
     assert garbage_action.answer is None
-    print(
-        f"OK parse_agent_action: garbage sets parse_error={garbage_action.parse_error!r}."
-    )
+    print(f"OK parse_agent_action: garbage sets parse_error={garbage_action.parse_error!r}.")
 
     # Empty string.
     empty_action = parse_agent_action("", sc, seat=0)
@@ -705,14 +668,10 @@ if __name__ == "__main__":
         "<message> Let's negotiate."
     )
     public = filter_public(raw_with_reason)
-    assert "SECRET" not in public, \
-        "filter_public must strip <reason> content"
-    assert "<reason>" not in public.lower(), \
-        "filter_public must remove the <reason> tag itself"
-    assert "Let's negotiate" in public, \
-        "filter_public must keep <message> content"
-    assert "Player RED" in public, \
-        "filter_public must keep <my name> content"
+    assert "SECRET" not in public, "filter_public must strip <reason> content"
+    assert "<reason>" not in public.lower(), "filter_public must remove the <reason> tag itself"
+    assert "Let's negotiate" in public, "filter_public must keep <message> content"
+    assert "Player RED" in public, "filter_public must keep <my name> content"
     print("OK filter_public: reason stripped, message/name retained.")
 
     # Closed-reason variant: explicit </reason> close tag.
@@ -726,10 +685,8 @@ if __name__ == "__main__":
         "<message> Nothing to propose yet."
     )
     pub2 = filter_public(raw_closed_reason)
-    assert "SECRET" not in pub2, \
-        "filter_public must strip closed-form <reason> content"
-    assert "Nothing to propose" in pub2, \
-        "filter_public must keep <message> after closed-form strip"
+    assert "SECRET" not in pub2, "filter_public must strip closed-form <reason> content"
+    assert "Nothing to propose" in pub2, "filter_public must keep <message> after closed-form strip"
     print("OK filter_public: closed-tag reason stripped correctly.")
 
     # ------------------------------------------------------------------
@@ -738,20 +695,17 @@ if __name__ == "__main__":
 
     # invalid_action: garbage parse.
     viols_inv = detect_violations(garbage_action, sc, seat=0, proposals_made=0)
-    assert "invalid_action" in viols_inv, \
-        f"Expected invalid_action, got {viols_inv}"
+    assert "invalid_action" in viols_inv, f"Expected invalid_action, got {viols_inv}"
     print("OK detect_violations: invalid_action flagged for garbage parse.")
 
     # proposal_after_limit: proposals_made == number_of_proposals.
     viols_limit = detect_violations(action, sc, seat=0, proposals_made=5)
-    assert "proposal_after_limit" in viols_limit, \
-        f"Expected proposal_after_limit, got {viols_limit}"
+    assert "proposal_after_limit" in viols_limit, f"Expected proposal_after_limit, got {viols_limit}"
     print("OK detect_violations: proposal_after_limit flagged at limit.")
 
     # No violations for clean action within limit.
     viols_clean = detect_violations(action, sc, seat=0, proposals_made=1)
-    assert viols_clean == [], \
-        f"Expected no violations, got {viols_clean}"
+    assert viols_clean == [], f"Expected no violations, got {viols_clean}"
     print("OK detect_violations: clean action within limit → no violations.")
 
     # format_missing_answer: unrecognisable <player answer> content.
@@ -765,13 +719,10 @@ if __name__ == "__main__":
         "<message> Hello."
     )
     bad_action = parse_agent_action(bad_answer_raw, sc, seat=0)
-    assert bad_action.parse_error is None, \
-        "bad answer tag should not set parse_error (tags are present)"
-    assert bad_action.answer is None, \
-        "unrecognisable answer content should yield answer=None"
+    assert bad_action.parse_error is None, "bad answer tag should not set parse_error (tags are present)"
+    assert bad_action.answer is None, "unrecognisable answer content should yield answer=None"
     viols_fmt = detect_violations(bad_action, sc, seat=0, proposals_made=0)
-    assert "format_missing_answer" in viols_fmt, \
-        f"Expected format_missing_answer, got {viols_fmt}"
+    assert "format_missing_answer" in viols_fmt, f"Expected format_missing_answer, got {viols_fmt}"
     print("OK detect_violations: format_missing_answer flagged for bad answer token.")
 
     print("\nprompts.py smoke test passed.")

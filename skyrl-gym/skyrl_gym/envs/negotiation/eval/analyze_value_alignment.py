@@ -168,10 +168,16 @@ def analyze(path: Path):
         vc_them.append(ct)
         vc_all.extend([x for x in (cy, ct) if x is not None])
 
-        zc_all.extend([x for x in (zero_value_concession(yt, counts, yv),
-                                   zero_value_concession(tt, counts, tv)) if x is not None])
-        top_all.extend([1.0 if x else 0.0 for x in (top_item_secured(yt, counts, yv),
-                                                      top_item_secured(tt, counts, tv)) if x is not None])
+        zc_all.extend(
+            [x for x in (zero_value_concession(yt, counts, yv), zero_value_concession(tt, counts, tv)) if x is not None]
+        )
+        top_all.extend(
+            [
+                1.0 if x else 0.0
+                for x in (top_item_secured(yt, counts, yv), top_item_secured(tt, counts, tv))
+                if x is not None
+            ]
+        )
 
         fo = first_you_offer(r["transcript"], item_names)
         if fo is not None:
@@ -214,9 +220,11 @@ def main():
         m.update(model=label, dataset=dataset, protocol=protocol, file=fname)
         rows.append(m)
 
-    hdr = (f"{'model':16} {'data':7} {'proto':7} {'deals':>5} "
-           f"{'VC both':>8} {'VC prop':>8} {'VC acc':>8} {'0-conc':>7} {'top':>5} "
-           f"{'1stoff':>7} {'talk(y/t)':>11}")
+    hdr = (
+        f"{'model':16} {'data':7} {'proto':7} {'deals':>5} "
+        f"{'VC both':>8} {'VC prop':>8} {'VC acc':>8} {'0-conc':>7} {'top':>5} "
+        f"{'1stoff':>7} {'talk(y/t)':>11}"
+    )
     print("\n" + "=" * len(hdr))
     print("VALUE-AWARENESS  (VC = value-capture conditional on quantity; higher = uses value fn)")
     print("  VC prop = proposer/you side, VC acc = accepter/them side")
@@ -225,10 +233,12 @@ def main():
     print("-" * len(hdr))
     for m in rows:
         talk = f"{fmt(m['value_talk_you'])}/{fmt(m['value_talk_them'])}"
-        print(f"{m['model']:16} {m['dataset']:7} {m['protocol']:7} {m['n_deals']:>5} "
-              f"{fmt(m['value_capture_both']):>8} {fmt(m['value_capture_you']):>8} "
-              f"{fmt(m['value_capture_them']):>8} {fmt(m['zero_concession']):>7} "
-              f"{fmt(m['top_item_secured']):>5} {fmt(m['first_offer_capture']):>7} {talk:>11}")
+        print(
+            f"{m['model']:16} {m['dataset']:7} {m['protocol']:7} {m['n_deals']:>5} "
+            f"{fmt(m['value_capture_both']):>8} {fmt(m['value_capture_you']):>8} "
+            f"{fmt(m['value_capture_them']):>8} {fmt(m['zero_concession']):>7} "
+            f"{fmt(m['top_item_secured']):>5} {fmt(m['first_offer_capture']):>7} {talk:>11}"
+        )
 
     paired_dnd()
 
@@ -259,10 +269,12 @@ def _per_scenario_capture(path: Path):
 def paired_dnd():
     """Same-scenario, both-protocols-agreed paired comparison on dnd."""
     pairs = [
-        ("gpt-4o-mini", "openai_gpt-4o-mini_dnd_val_single_n20.json",
-         "openai_gpt-4o-mini_dnd_val_dual_n12.json"),
-        ("qwen3.5-35b-a3b", "qwen_qwen3.5-35b-a3b_dnd_val_single-nothink_n20.json",
-         "qwen_qwen3.5-35b-a3b_dnd_val_dual-nothink_n12.json"),
+        ("gpt-4o-mini", "openai_gpt-4o-mini_dnd_val_single_n20.json", "openai_gpt-4o-mini_dnd_val_dual_n12.json"),
+        (
+            "qwen3.5-35b-a3b",
+            "qwen_qwen3.5-35b-a3b_dnd_val_single-nothink_n20.json",
+            "qwen_qwen3.5-35b-a3b_dnd_val_dual-nothink_n12.json",
+        ),
     ]
     print("\n" + "=" * 70)
     print("PAIRED dnd: same scenarios, agreed under BOTH protocols")
@@ -279,8 +291,7 @@ def paired_dnd():
             continue
         s_mean = st.mean(cs[i] for i in shared)
         d_mean = st.mean(cd[i] for i in shared)
-        print(f"{label:16} {len(shared):>7} {s_mean*100:7.0f}% {d_mean*100:7.0f}% "
-              f"{(d_mean-s_mean)*100:>+14.0f}%")
+        print(f"{label:16} {len(shared):>7} {s_mean*100:7.0f}% {d_mean*100:7.0f}% " f"{(d_mean-s_mean)*100:>+14.0f}%")
 
 
 if __name__ == "__main__":

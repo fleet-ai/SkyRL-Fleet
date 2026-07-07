@@ -68,7 +68,9 @@ def probe_aws() -> dict:
     try:
         sts = boto3.client(
             "sts",
-            config=Config(connect_timeout=PROBE_TIMEOUT_SECONDS, read_timeout=PROBE_TIMEOUT_SECONDS, retries={"max_attempts": 1}),
+            config=Config(
+                connect_timeout=PROBE_TIMEOUT_SECONDS, read_timeout=PROBE_TIMEOUT_SECONDS, retries={"max_attempts": 1}
+            ),
         )
         identity = sts.get_caller_identity()
         return _ok("aws", f"authenticated as {identity.get('Arn', '<unknown ARN>')}")
@@ -90,6 +92,7 @@ def probe_fleet() -> dict:
     # Preferred path: use the SDK, since the base URL may evolve.
     try:
         from fleet import Fleet  # type: ignore
+
         try:
             client = Fleet(api_key=api_key)
             # load_tasks with a non-existent env_key is a cheap auth probe:
@@ -141,6 +144,7 @@ def probe_wandb() -> dict:
 
     try:
         import wandb  # type: ignore
+
         try:
             api = wandb.Api(api_key=api_key, timeout=PROBE_TIMEOUT_SECONDS)
             viewer = api.viewer

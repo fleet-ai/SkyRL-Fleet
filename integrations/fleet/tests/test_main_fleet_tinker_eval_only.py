@@ -17,16 +17,9 @@ Run:
 from __future__ import annotations
 
 import ast
-import inspect
 from pathlib import Path
 
-import pytest
-
-
-SRC = (
-    Path(__file__).resolve().parents[3]
-    / "integrations/fleet/entrypoints/main_fleet_tinker.py"
-)
+SRC = Path(__file__).resolve().parents[3] / "integrations/fleet/entrypoints/main_fleet_tinker.py"
 
 
 def _parse() -> ast.Module:
@@ -83,8 +76,7 @@ def test_argparse_validates_eval_only_requires_from_checkpoint():
     --from-checkpoint' early."""
     src = SRC.read_text()
     assert "--eval-only requires --from-checkpoint" in src, (
-        "Argparse must error out with a clear message when --eval-only is "
-        "passed without --from-checkpoint"
+        "Argparse must error out with a clear message when --eval-only is " "passed without --from-checkpoint"
     )
     assert "--eval-only requires --eval-dataset-file" in src, (
         "Argparse must also require --eval-dataset-file in eval-only mode; "
@@ -136,8 +128,7 @@ def test_eval_only_branch_calls_run_eval():
         if isinstance(n, ast.Call)
     ]
     assert "_run_eval" in calls, (
-        "Eval-only branch must call _run_eval to produce rollouts + metrics. "
-        f"Found calls: {sorted(set(calls))[:20]}"
+        "Eval-only branch must call _run_eval to produce rollouts + metrics. " f"Found calls: {sorted(set(calls))[:20]}"
     )
 
 

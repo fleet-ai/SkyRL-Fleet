@@ -44,7 +44,6 @@ Written blind from the contract, not the implementation. The contract:
 
 from __future__ import annotations
 
-import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -55,7 +54,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.env import build_system_content
+from skyrl_gym.envs.fleet_task.env import build_system_content  # noqa: E402  (import after sys.path setup)
 
 
 SAMPLE_TOOLS = [
@@ -91,6 +90,7 @@ FIXED_NOW = datetime(2026, 6, 15, 12, 0, 0)
 # Legacy path (use_tools_channel=False) — tools embedded as text
 # --------------------------------------------------------------------------- #
 
+
 class TestLegacyToolsInPrompt:
     def test_contains_available_tools_section(self):
         out = build_system_content(SAMPLE_TOOLS, now=FIXED_NOW)
@@ -123,6 +123,7 @@ class TestLegacyToolsInPrompt:
 # --------------------------------------------------------------------------- #
 # Tools-channel path (use_tools_channel=True) — tools omitted from system text
 # --------------------------------------------------------------------------- #
+
 
 class TestToolsChannel:
     def test_available_tools_section_still_present(self):
@@ -199,6 +200,7 @@ class TestToolsChannel:
 # --------------------------------------------------------------------------- #
 # Modality-conditional sections (orthogonal to use_tools_channel)
 # --------------------------------------------------------------------------- #
+
 
 class TestModalitySections:
     @pytest.mark.parametrize("channel", [True, False])
@@ -366,6 +368,7 @@ class TestModalitySections:
 # Env variables propagation
 # --------------------------------------------------------------------------- #
 
+
 class TestEnvVariables:
     def test_logged_in_user_rendered(self):
         out = build_system_content(
@@ -420,10 +423,22 @@ class TestEnvVariables:
 # canonical shape Kimi sees through apply_chat_template(tools=...).
 _COMPUTER_ACTIONS_WITH_TEXT_ARG = {"key", "type", "hold_key"}
 _COMPUTER_ACTIONS_WITHOUT_KEYS_ARG = {
-    "screenshot", "left_click", "right_click", "middle_click",
-    "double_click", "triple_click", "type", "key", "scroll",
-    "wait", "mouse_move", "left_click_drag", "cursor_position",
-    "left_mouse_down", "left_mouse_up", "hold_key",
+    "screenshot",
+    "left_click",
+    "right_click",
+    "middle_click",
+    "double_click",
+    "triple_click",
+    "type",
+    "key",
+    "scroll",
+    "wait",
+    "mouse_move",
+    "left_click_drag",
+    "cursor_position",
+    "left_mouse_down",
+    "left_mouse_up",
+    "hold_key",
 }
 
 
@@ -461,7 +476,7 @@ class TestHintSchemaCompliance:
         shape — `keys` is not on the schema."""
         text = self._bu_hint_text()
         assert '"keys"' not in text, (
-            "BU hint contains `\"keys\"` which is not on the MCP computer "
+            'BU hint contains `"keys"` which is not on the MCP computer '
             "schema; the `key` action takes `text: string` (xdotool combo). "
             "See job 4746408e_4 root cause."
         )
@@ -481,7 +496,7 @@ class TestHintSchemaCompliance:
         accepts = (
             '"action": "key"' in text and '"text": "alt+Left"' in text,
             '"action":"key"' in text and '"text":"alt+Left"' in text,
-            ('"text"' in text and 'alt+Left' in text),
+            ('"text"' in text and "alt+Left" in text),
         )
         assert any(accepts), (
             "BU hint must teach the schema-compliant `key` action shape: "
@@ -505,21 +520,15 @@ class TestHintSchemaCompliance:
         for ex in examples:
             assert "action" in ex, f"example missing action: {ex!r}"
             # action must be in the documented vocabulary
-            assert ex["action"] in _COMPUTER_ACTIONS_WITHOUT_KEYS_ARG | {"navigate"}, (
-                f"action {ex['action']!r} not in computer vocabulary"
-            )
+            assert ex["action"] in _COMPUTER_ACTIONS_WITHOUT_KEYS_ARG | {
+                "navigate"
+            }, f"action {ex['action']!r} not in computer vocabulary"
             # `keys` is not a real field on the schema.
-            assert "keys" not in ex, (
-                f"example uses `keys` arg which is not on schema: {ex!r}"
-            )
+            assert "keys" not in ex, f"example uses `keys` arg which is not on schema: {ex!r}"
             # key/type/hold_key actions must provide `text`.
             if ex["action"] in _COMPUTER_ACTIONS_WITH_TEXT_ARG:
-                assert "text" in ex, (
-                    f"action {ex['action']!r} requires `text`: {ex!r}"
-                )
-                assert isinstance(ex["text"], str), (
-                    f"`text` must be a string for {ex['action']!r}: {ex!r}"
-                )
+                assert "text" in ex, f"action {ex['action']!r} requires `text`: {ex!r}"
+                assert isinstance(ex["text"], str), f"`text` must be a string for {ex['action']!r}: {ex!r}"
 
     def test_cu_hint_does_not_reintroduce_keys_shape(self):
         # CU hint never had the bad example, but pin it so a future edit
@@ -535,6 +544,7 @@ def _extract_json_objects_containing(text: str, marker: str) -> list:
     substrings that don't json.loads cleanly so unrelated `{` in prose
     don't fail the test."""
     import json as _json
+
     results = []
     i = 0
     while i < len(text):
@@ -568,6 +578,7 @@ def _extract_json_objects_containing(text: str, marker: str) -> list:
 # Determinism / purity
 # --------------------------------------------------------------------------- #
 
+
 class TestPurity:
     def test_same_inputs_same_output(self):
         a = build_system_content(SAMPLE_TOOLS, now=FIXED_NOW)
@@ -592,6 +603,7 @@ class TestPurity:
 # Model-family-specific format example block
 # --------------------------------------------------------------------------- #
 
+
 class TestModelFamilyFormatBlock:
     """When use_tools_channel=True AND a known model_family is passed,
     the system prompt must include `## Tool Call Format` with the
@@ -607,8 +619,11 @@ class TestModelFamilyFormatBlock:
 
     def test_kimi_family_emits_kimi_canonical_block(self):
         out = build_system_content(
-            SAMPLE_TOOLS, modality="browser_use",
-            use_tools_channel=True, model_family="kimi", now=FIXED_NOW,
+            SAMPLE_TOOLS,
+            modality="browser_use",
+            use_tools_channel=True,
+            model_family="kimi",
+            now=FIXED_NOW,
         )
         assert "## Tool Call Format" in out
         # Literal Kimi special-token markers must be present in the text
@@ -624,24 +639,33 @@ class TestModelFamilyFormatBlock:
         The `## Tool Call Format` block is dead weight for Qwen and
         intentionally skipped."""
         out = build_system_content(
-            SAMPLE_TOOLS, modality="tool_use",
-            use_tools_channel=True, model_family="qwen", now=FIXED_NOW,
+            SAMPLE_TOOLS,
+            modality="tool_use",
+            use_tools_channel=True,
+            model_family="qwen",
+            now=FIXED_NOW,
         )
         assert "## Tool Call Format" not in out
         assert "<|tool_call_begin|>" not in out
 
     def test_unknown_family_omits_block(self):
         out = build_system_content(
-            SAMPLE_TOOLS, modality="tool_use",
-            use_tools_channel=True, model_family="llama", now=FIXED_NOW,
+            SAMPLE_TOOLS,
+            modality="tool_use",
+            use_tools_channel=True,
+            model_family="llama",
+            now=FIXED_NOW,
         )
         # No format example for unknown families — safer than guessing.
         assert "## Tool Call Format" not in out
 
     def test_no_family_omits_block(self):
         out = build_system_content(
-            SAMPLE_TOOLS, modality="tool_use",
-            use_tools_channel=True, model_family=None, now=FIXED_NOW,
+            SAMPLE_TOOLS,
+            modality="tool_use",
+            use_tools_channel=True,
+            model_family=None,
+            now=FIXED_NOW,
         )
         assert "## Tool Call Format" not in out
 
@@ -650,8 +674,11 @@ class TestModelFamilyFormatBlock:
         text-grammar Qwen example (the legacy path) regardless of
         model_family — this branch was never gated on family."""
         out = build_system_content(
-            SAMPLE_TOOLS, modality="tool_use",
-            use_tools_channel=False, model_family="kimi", now=FIXED_NOW,
+            SAMPLE_TOOLS,
+            modality="tool_use",
+            use_tools_channel=False,
+            model_family="kimi",
+            now=FIXED_NOW,
         )
         assert "## Tool Call Format" in out
         assert "<tool_call>" in out

@@ -80,6 +80,11 @@ def split_90_10(
 
     logger.info(
         "Split %s/%s: %d total → %d train + %d holdout (seed=%s)",
-        dataset_key, modality, len(records), len(train_records), len(holdout_records), salt,
+        dataset_key,
+        modality,
+        len(records),
+        len(train_records),
+        len(holdout_records),
+        salt,
     )
     return train_path, holdout_path, len(train_records), len(holdout_records)

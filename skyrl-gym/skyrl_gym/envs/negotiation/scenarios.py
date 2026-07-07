@@ -44,9 +44,9 @@ def generate_synthetic_scenarios(n: int = 128, seed: int = 0) -> List[Scenario]:
     attempts = 0
     while len(out) < n and attempts < n * 50:
         attempts += 1
-        k = rng.randint(4, 6)                                   # 4-6 items (train has 3)
+        k = rng.randint(4, 6)  # 4-6 items (train has 3)
         names = tuple(rng.sample(_SYN_ITEMS, k))
-        counts = tuple(rng.randint(1, 4) for _ in range(k))     # larger counts
+        counts = tuple(rng.randint(1, 4) for _ in range(k))  # larger counts
         integ = rng.random()  # 0 = distributive (both want same), 1 = integrative
         you, them = [], []
         for _ in range(k):
@@ -84,9 +84,7 @@ def load_scenarios(dataset: str = "dnd", split: str = "val", dedupe: bool = True
         return generate_synthetic_scenarios(n=128, seed=0)
     path = VIZ_DATA / dataset / f"{split}.json"
     if not path.exists():
-        raise FileNotFoundError(
-            f"No parsed data at {path}. Run visualizer/build.py first."
-        )
+        raise FileNotFoundError(f"No parsed data at {path}. Run visualizer/build.py first.")
     data = json.loads(path.read_text())
     out: List[Scenario] = []
     seen = set()

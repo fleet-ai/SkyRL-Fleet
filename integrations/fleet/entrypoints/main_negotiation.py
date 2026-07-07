@@ -158,7 +158,7 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
         agg = payload["per_model"]["Policy"]["aggregate"]
         metrics = {}
         for key in (
-            "opp_norm",            # HEADLINE: pushover's score; lower = squeezed harder
+            "opp_norm",  # HEADLINE: pushover's score; lower = squeezed harder
             "policy_norm",
             "pool_take_fraction",
             "value_capture",

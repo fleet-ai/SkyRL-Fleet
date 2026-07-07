@@ -44,9 +44,7 @@ def _repo_root() -> Path:
     for parent in current.parents:
         if (parent / "scripts" / "fleet-tinker-tool-use-run.sh").exists():
             return parent
-    raise FileNotFoundError(
-        "scripts/fleet-tinker-tool-use-run.sh not found above auto_train module"
-    )
+    raise FileNotFoundError("scripts/fleet-tinker-tool-use-run.sh not found above auto_train module")
 
 
 def build_launch_env(
@@ -63,24 +61,23 @@ def build_launch_env(
 ) -> dict[str, str]:
     """Env dict for fleet-tinker-tool-use-run.sh. Inherits caller env."""
     if modality not in TINKER_MODALITY_SUPPORT:
-        raise NotImplementedError(
-            f"modality {modality!r} not supported by Tinker launcher "
-            f"(dataset={dataset_key})"
-        )
+        raise NotImplementedError(f"modality {modality!r} not supported by Tinker launcher " f"(dataset={dataset_key})")
     env = os.environ.copy()
-    env.update({
-        "TASKS_FILE": tasks_file,
-        "DATASET_FILE": dataset_file,
-        "EVAL_DATASET_FILE": eval_dataset_file,
-        "RESULTS_OUT": results_out,
-        "MODEL_NAME": base_model,
-        "MAX_STEPS": str(num_steps),
-        "LORA_RANK": str(lora_rank),
-        "MAX_CONCURRENT": str(max_concurrent),
-        "EVAL_BEFORE_TRAIN": "1",
-        "WANDB_NAME": f"tinker_{dataset_key}_{modality}",
-        "AUTO_TRAIN_BACKEND": "tinker",  # routes notify to the Tinker Slack channel
-    })
+    env.update(
+        {
+            "TASKS_FILE": tasks_file,
+            "DATASET_FILE": dataset_file,
+            "EVAL_DATASET_FILE": eval_dataset_file,
+            "RESULTS_OUT": results_out,
+            "MODEL_NAME": base_model,
+            "MAX_STEPS": str(num_steps),
+            "LORA_RANK": str(lora_rank),
+            "MAX_CONCURRENT": str(max_concurrent),
+            "EVAL_BEFORE_TRAIN": "1",
+            "WANDB_NAME": f"tinker_{dataset_key}_{modality}",
+            "AUTO_TRAIN_BACKEND": "tinker",  # routes notify to the Tinker Slack channel
+        }
+    )
     return env
 
 
@@ -125,7 +122,8 @@ def launch_training(
     if modality not in TINKER_MODALITY_SUPPORT:
         logger.warning(
             "modality %r not supported by Tinker launcher (dataset=%s)",
-            modality, dataset_key,
+            modality,
+            dataset_key,
         )
         return False, None
 
@@ -137,7 +135,11 @@ def launch_training(
     if dry_run:
         logger.info(
             "[DRY RUN] tinker launch %s/%s base=%s steps=%d (would write %s)",
-            dataset_key, modality, base_model, num_steps, results_out,
+            dataset_key,
+            modality,
+            base_model,
+            num_steps,
+            results_out,
         )
         return True, None
 
@@ -170,12 +172,21 @@ def launch_training(
     cmd = ["bash", str(script)]
     logger.info(
         "Launching Tinker: dataset=%s modality=%s model=%s steps=%d n_train=%d n_holdout=%d",
-        dataset_key, modality, base_model, num_steps, n_train, n_holdout,
+        dataset_key,
+        modality,
+        base_model,
+        num_steps,
+        n_train,
+        n_holdout,
     )
     proc = subprocess.Popen(
-        cmd, cwd=str(root), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
+        cmd,
+        cwd=str(root),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
     for line in iter(proc.stdout.readline, ""):  # type: ignore[arg-type]
         sys.stdout.write(line)
@@ -185,7 +196,9 @@ def launch_training(
     if proc.returncode != 0:
         logger.error(
             "fleet-tinker-tool-use-run.sh failed (exit=%d) for %s/%s",
-            proc.returncode, dataset_key, modality,
+            proc.returncode,
+            dataset_key,
+            modality,
         )
         return False, None
 

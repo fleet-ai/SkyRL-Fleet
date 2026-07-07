@@ -77,17 +77,13 @@ def load_tasks_from_json(tasks_file: str) -> Dict[str, Any]:
         elif isinstance(data, dict) and "tasks" in data:
             tasks = data["tasks"]
         else:
-            raise ValueError(
-                f"Invalid JSON format in {tasks_file}: expected array or object with 'tasks' key"
-            )
+            raise ValueError(f"Invalid JSON format in {tasks_file}: expected array or object with 'tasks' key")
 
         if not tasks:
             raise ValueError(f"No tasks found in {tasks_file}")
 
         # Index by task_key (support both 'key' and 'task_key' fields)
-        _TASK_CACHE[tasks_file] = {
-            t.get("key") or t.get("task_key"): t for t in tasks
-        }
+        _TASK_CACHE[tasks_file] = {t.get("key") or t.get("task_key"): t for t in tasks}
 
     return _TASK_CACHE[tasks_file]
 
@@ -123,21 +119,19 @@ def truncate_tool_result(tool_result: Any, max_chars: int = MAX_TOOL_OUTPUT_CHAR
         return None
 
     # Multimodal content blocks: never serialize whole structure.
-    if (
-        isinstance(tool_result, list)
-        and tool_result
-        and all(isinstance(b, dict) and "type" in b for b in tool_result)
-    ):
+    if isinstance(tool_result, list) and tool_result and all(isinstance(b, dict) and "type" in b for b in tool_result):
         out: list[dict] = []
         for b in tool_result:
             if b.get("type") == "text":
                 t = b.get("text", "")
                 if isinstance(t, str) and len(t) > max_chars:
                     elided = len(t) - max_chars
-                    out.append({
-                        "type": "text",
-                        "text": t[:max_chars] + f"\n\n[TRUNCATED — {elided} chars elided.]",
-                    })
+                    out.append(
+                        {
+                            "type": "text",
+                            "text": t[:max_chars] + f"\n\n[TRUNCATED — {elided} chars elided.]",
+                        }
+                    )
                 else:
                     out.append(b)
             else:
@@ -172,15 +166,9 @@ def tool_result_to_message_content(tool_result: Any) -> Any:
         not valid. Should be a string, a list/tuple of strings or a
         list/tuple of integers."
     """
-    if isinstance(tool_result, list) and tool_result and all(
-        isinstance(b, dict) and "type" in b for b in tool_result
-    ):
+    if isinstance(tool_result, list) and tool_result and all(isinstance(b, dict) and "type" in b for b in tool_result):
         return tool_result
-    body = (
-        json.dumps(tool_result, indent=2)
-        if isinstance(tool_result, (list, dict))
-        else tool_result
-    )
+    body = json.dumps(tool_result, indent=2) if isinstance(tool_result, (list, dict)) else tool_result
     return f"Tool result:\n{body}"
 
 
@@ -243,7 +231,7 @@ def _bu_interaction_hints(portal_url: Optional[str]) -> str:
         "- After any action: take a screenshot to verify the screen changed.\n"
         "- If `navigate` returns a 403 page, you guessed a wrong host. Recover with\n"
         "  the browser back-button keystroke — call `computer` with arguments\n"
-        "  `{\"action\": \"key\", \"text\": \"alt+Left\"}` (xdotool combo syntax in the\n"
+        '  `{"action": "key", "text": "alt+Left"}` (xdotool combo syntax in the\n'
         "  `text` field; the schema has no `keys` field).\n"
         "- When the task is fully complete, output your final answer and emit <done>.\n"
         f"\n## Action Vocabulary\n"
@@ -425,7 +413,7 @@ def build_system_content(
         f"IMPORTANT: When the task is complete, first output your final "
         f"answer with the requested information, THEN say <done>. Do not "
         f"just say <done> without providing the answer.\n\n"
-        f"NEVER respond with just a message. NEVER say \"feel free to ask\" "
+        f'NEVER respond with just a message. NEVER say "feel free to ask" '
         f"or offer further help.\n"
         f"If the task is complete, provide your answer then say <done>. "
         f"Otherwise, make a tool call."
@@ -482,16 +470,14 @@ class FleetTaskEnv(BaseTextEnv):
 
         # Task configuration from extras (set by dataset)
         self.task_key = extras.get("task_key")
-        self.tasks_file = (
-            env_config.get("tasks_file") if hasattr(env_config, "get") else None
-        ) or extras.get("tasks_file")
+        self.tasks_file = (env_config.get("tasks_file") if hasattr(env_config, "get") else None) or extras.get(
+            "tasks_file"
+        )
 
         if not self.task_key:
             raise ValueError("task_key must be provided in extras (from dataset)")
         if not self.tasks_file:
-            raise ValueError(
-                "tasks_file must be provided in env_config or extras"
-            )
+            raise ValueError("tasks_file must be provided in env_config or extras")
 
         # Expand path
         self.tasks_file = os.path.expanduser(self.tasks_file)
@@ -502,18 +488,15 @@ class FleetTaskEnv(BaseTextEnv):
         if not self.task_config:
             available_keys = list(tasks.keys())[:5]
             raise ValueError(
-                f"Task '{self.task_key}' not found in {self.tasks_file}. "
-                f"Available keys (first 5): {available_keys}"
+                f"Task '{self.task_key}' not found in {self.tasks_file}. " f"Available keys (first 5): {available_keys}"
             )
 
         # API key
-        self.api_key = (
-            env_config.get("api_key") if hasattr(env_config, "get") else None
-        ) or os.environ.get("FLEET_API_KEY")
+        self.api_key = (env_config.get("api_key") if hasattr(env_config, "get") else None) or os.environ.get(
+            "FLEET_API_KEY"
+        )
         if not self.api_key:
-            raise ValueError(
-                "FLEET_API_KEY must be set in env_config or environment"
-            )
+            raise ValueError("FLEET_API_KEY must be set in env_config or environment")
 
         # Logfire telemetry (no-op if LOGFIRE_TOKEN is not set)
         logfire_token = os.environ.get("LOGFIRE_TOKEN")
@@ -526,23 +509,13 @@ class FleetTaskEnv(BaseTextEnv):
                 pass
 
         # TTL for Fleet environment instances
-        self.ttl_seconds = (
-            env_config.get("ttl_seconds") if hasattr(env_config, "get") else None
-        )
+        self.ttl_seconds = env_config.get("ttl_seconds") if hasattr(env_config, "get") else None
 
         # Partial reward: use verifier accumulator counts instead of binary 0/1
-        self.partial_reward = (
-            env_config.get("partial_reward", False)
-            if hasattr(env_config, "get")
-            else False
-        )
+        self.partial_reward = env_config.get("partial_reward", False) if hasattr(env_config, "get") else False
 
         # Hint config
-        self.enable_hints = (
-            env_config.get("enable_hints", False)
-            if hasattr(env_config, "get")
-            else False
-        )
+        self.enable_hints = env_config.get("enable_hints", False) if hasattr(env_config, "get") else False
 
         # Environment state (initialized on init())
         self.openenv_task_env = None
@@ -565,9 +538,7 @@ class FleetTaskEnv(BaseTextEnv):
 
         # Context management (uses OpenEnv's ContextManager)
         self.enable_context_tools = (
-            env_config.get("enable_context_tools", False)
-            if hasattr(env_config, "get")
-            else False
+            env_config.get("enable_context_tools", False) if hasattr(env_config, "get") else False
         )
         self.context_manager = None
         if self.enable_context_tools:
@@ -578,13 +549,9 @@ class FleetTaskEnv(BaseTextEnv):
                     "Enabling context management tools with "
                     f"max_output_chars={extras.get('max_output_chars', 10000)}"
                 )
-                self.context_manager = ContextManager(
-                    max_output_chars=extras.get("max_output_chars", 10000)
-                )
+                self.context_manager = ContextManager(max_output_chars=extras.get("max_output_chars", 10000))
             except ImportError:
-                logger.warning(
-                    "ContextManager not available, disabling context tools"
-                )
+                logger.warning("ContextManager not available, disabling context tools")
 
     def _adapt_computer_tool_for_qwen(self):
         """Adapt computer tool description for Qwen VL's [0, 1000] coordinate space.
@@ -635,8 +602,7 @@ class FleetTaskEnv(BaseTextEnv):
             func["description"] = desc
 
             logger.info(
-                f"Adapted computer tool for Qwen VL: actual_screen={w}x{h}, "
-                f"model coordinate space=[0, 1000]"
+                f"Adapted computer tool for Qwen VL: actual_screen={w}x{h}, " f"model coordinate space=[0, 1000]"
             )
             break
 
@@ -670,20 +636,14 @@ class FleetTaskEnv(BaseTextEnv):
 
         Modifies tool_call arguments in-place.
         """
-        if not getattr(self, "screen_width", None) or not getattr(
-            self, "screen_height", None
-        ):
+        if not getattr(self, "screen_width", None) or not getattr(self, "screen_height", None):
             return
         args = tool_call.get("arguments", {})
         if not args or tool_call.get("name") != "computer":
             return
         for field in ("coordinate", "start_coordinate"):
             coords = args.get(field)
-            if not (
-                coords
-                and isinstance(coords, (list, tuple))
-                and len(coords) == 2
-            ):
+            if not (coords and isinstance(coords, (list, tuple)) and len(coords) == 2):
                 continue
             try:
                 x, y = float(coords[0]), float(coords[1])
@@ -722,9 +682,7 @@ class FleetTaskEnv(BaseTextEnv):
 
         return config
 
-    async def init_async(
-        self, prompt: ConversationType
-    ) -> Tuple[ConversationType, Dict[str, Any]]:
+    async def init_async(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
         """Initialize the Fleet environment and return initial observation.
 
         Creates Fleet environment via OpenEnv's FleetTaskEnv and returns
@@ -747,9 +705,7 @@ class FleetTaskEnv(BaseTextEnv):
                 partial_reward=self.partial_reward,
             )
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to create OpenEnv FleetTaskEnv: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to create OpenEnv FleetTaskEnv: {e}") from e
 
         # Reset episode state (tools are already cached from __init__)
         obs = await self.openenv_task_env.reset_async()
@@ -771,9 +727,7 @@ class FleetTaskEnv(BaseTextEnv):
         if self.context_manager:
             self.tools = self.tools + self.context_manager.get_tools()
         if not self.tools:
-            raise RuntimeError(
-                f"Task {self.task_key}: no tools found. Fleet env requires tools."
-            )
+            raise RuntimeError(f"Task {self.task_key}: no tools found. Fleet env requires tools.")
 
         # VL: adapt computer tool for Qwen's normalized coordinate space.
         # Cache on self for step_async (post-action wait gating).
@@ -788,10 +742,7 @@ class FleetTaskEnv(BaseTextEnv):
         # Inject hint from previous failed attempt if provided
         hint = self.extras.get("hint")
         if hint:
-            task_prompt = (
-                f"{task_prompt}\n\nHere is feedback from a previous attempt "
-                f"to help you:\n{hint}"
-            )
+            task_prompt = f"{task_prompt}\n\nHere is feedback from a previous attempt " f"to help you:\n{hint}"
 
         # Build system prompt. Tools are either embedded as text below (legacy
         # path for vLLM/SkyRL where the rendered prompt is the only channel) or
@@ -853,9 +804,7 @@ class FleetTaskEnv(BaseTextEnv):
 
         return self.chat_history.copy(), metadata
 
-    def init(
-        self, prompt: ConversationType
-    ) -> Tuple[ConversationType, Dict[str, Any]]:
+    def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
         """Initialize the Fleet environment (sync wrapper).
 
         Uses asyncio.run() for sync contexts. For async contexts, the upstream
@@ -891,16 +840,13 @@ class FleetTaskEnv(BaseTextEnv):
         # assistant message so the per-family adapter can structure the
         # message correctly with reasoning_content / tool_calls fields.
         from .config import get_config
+
         _cfg = get_config()
         agent_done = is_done_signal(action, _cfg.done_signals)
         tool_call = parse_tool_call(action)
 
         # VL: catch done signal wrapped in a computer tool call.
-        if (
-            not agent_done
-            and tool_call
-            and tool_call.get("arguments", {}).get("action") == "done"
-        ):
+        if not agent_done and tool_call and tool_call.get("arguments", {}).get("action") == "done":
             agent_done = True
             tool_call = None
 
@@ -921,14 +867,16 @@ class FleetTaskEnv(BaseTextEnv):
         else:
             assistant_msg = {"role": "assistant", "content": action}
             if tool_call:
-                assistant_msg["tool_calls"] = [{
-                    "id": f"call_{self.turns}",
-                    "type": "function",
-                    "function": {
-                        "name": tool_call["name"],
-                        "arguments": json.dumps(tool_call.get("arguments", {})),
-                    },
-                }]
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": f"call_{self.turns}",
+                        "type": "function",
+                        "function": {
+                            "name": tool_call["name"],
+                            "arguments": json.dumps(tool_call.get("arguments", {})),
+                        },
+                    }
+                ]
         self.chat_history.append(assistant_msg)
         self._scaffold_per_msg.append("")  # assistant turns carry no scaffold
         if self.context_manager:
@@ -953,11 +901,7 @@ class FleetTaskEnv(BaseTextEnv):
             self.openenv_task_env.conversation_messages = self.chat_history
 
         # Handle context management tools locally (no MCP call)
-        if (
-            tool_call
-            and self.context_manager
-            and self.context_manager.is_context_tool(tool_call["name"])
-        ):
+        if tool_call and self.context_manager and self.context_manager.is_context_tool(tool_call["name"]):
             tool_result, self.chat_history = self.context_manager.execute_tool(
                 tool_call["name"],
                 tool_call.get("arguments", {}),
@@ -974,9 +918,7 @@ class FleetTaskEnv(BaseTextEnv):
 
             try:
                 mcp_start = time.time()
-                obs, reward, done, info = (
-                    await self.openenv_task_env.step_async(openenv_action)
-                )
+                obs, reward, done, info = await self.openenv_task_env.step_async(openenv_action)
                 mcp_time = time.time() - mcp_start
                 tool_result = obs.get("observation")
                 if "tool_error" in info:
@@ -1012,9 +954,7 @@ class FleetTaskEnv(BaseTextEnv):
             openenv_action = {"done": True}
             try:
                 mcp_start = time.time()
-                obs, reward, done, info = (
-                    await self.openenv_task_env.step_async(openenv_action)
-                )
+                obs, reward, done, info = await self.openenv_task_env.step_async(openenv_action)
                 mcp_time = time.time() - mcp_start
             except Exception as e:
                 mcp_time = time.time() - mcp_start
@@ -1022,14 +962,8 @@ class FleetTaskEnv(BaseTextEnv):
 
         # Detect error patterns in tool_result
         if not error and tool_result:
-            result_str = (
-                str(tool_result)
-                if not isinstance(tool_result, str)
-                else tool_result
-            )
-            if result_str.strip().startswith(
-                "Error:"
-            ) or result_str.strip().startswith("error:"):
+            result_str = str(tool_result) if not isinstance(tool_result, str) else tool_result
+            if result_str.strip().startswith("Error:") or result_str.strip().startswith("error:"):
                 error = result_str
                 tool_result = None
             elif isinstance(tool_result, dict) and tool_result.get("error"):
@@ -1054,9 +988,7 @@ class FleetTaskEnv(BaseTextEnv):
                     fleet_env = getattr(orch, "_fleet_env", None)
                     if fleet_env:
                         inst_id = getattr(fleet_env, "instance_id", None)
-                exec_id = getattr(
-                    self.openenv_task_env, "_last_verifier_execution_id", None
-                )
+                exec_id = getattr(self.openenv_task_env, "_last_verifier_execution_id", None)
                 logger.info(
                     f"[{self.task_key}] upload_trace exec_id={exec_id} reward={reward} agent_done={agent_done} max_turns_reached={max_turns_reached}"
                 )
@@ -1079,9 +1011,7 @@ class FleetTaskEnv(BaseTextEnv):
                     verifier_execution_id=exec_id,
                 )
             except Exception as e:
-                logger.warning(
-                    f"Failed to upload trace for {self.task_key}: {e}"
-                )
+                logger.warning(f"Failed to upload trace for {self.task_key}: {e}")
 
         # Build observation message
         if max_turns_reached:
@@ -1159,8 +1089,7 @@ class FleetTaskEnv(BaseTextEnv):
                 obs_content = family.reject_message()
             else:
                 obs_content = (
-                    "No tool call landed. End your response with a tool "
-                    "call in the canonical format for your model."
+                    "No tool call landed. End your response with a tool " "call in the canonical format for your model."
                 )
         else:
             obs_content = "Action executed."
@@ -1181,9 +1110,7 @@ class FleetTaskEnv(BaseTextEnv):
             "turn": self.turns,
             "tool_call": tool_call,
             "tool_result": (
-                tool_result[:200]
-                if isinstance(tool_result, str) and len(tool_result) > 200
-                else tool_result
+                tool_result[:200] if isinstance(tool_result, str) and len(tool_result) > 200 else tool_result
             ),
             "error": error,
             "done_reason": "agent_done" if agent_done else None,
@@ -1193,11 +1120,7 @@ class FleetTaskEnv(BaseTextEnv):
 
         # If context was modified, return full chat_history so the generator
         # can replace its copy (required for stepwise training).
-        if (
-            tool_call
-            and self.context_manager
-            and self.context_manager.is_context_tool(tool_call["name"])
-        ):
+        if tool_call and self.context_manager and self.context_manager.is_context_tool(tool_call["name"]):
             if tool_call["name"] == "manage_context":
                 metadata["modified_chat_history"] = self.chat_history.copy()
 
@@ -1252,9 +1175,11 @@ class FleetTaskEnv(BaseTextEnv):
                 lstripped = scaffold.lstrip("\n")
                 new_blocks = list(c)
                 last_text_idx = next(
-                    (i for i in range(len(new_blocks) - 1, -1, -1)
-                     if isinstance(new_blocks[i], dict)
-                     and new_blocks[i].get("type") == "text"),
+                    (
+                        i
+                        for i in range(len(new_blocks) - 1, -1, -1)
+                        if isinstance(new_blocks[i], dict) and new_blocks[i].get("type") == "text"
+                    ),
                     None,
                 )
                 if last_text_idx is not None:
@@ -1274,25 +1199,15 @@ class FleetTaskEnv(BaseTextEnv):
     def _capture_verifier_feedback(self):
         """Capture verifier feedback from OpenEnv before nulling the env."""
         if self.openenv_task_env:
-            self._verifier_stdout = getattr(
-                self.openenv_task_env, "verifier_stdout", None
-            )
-            self._verifier_error = getattr(
-                self.openenv_task_env, "verifier_error", None
-            )
-            self._tool_error_messages = getattr(
-                self.openenv_task_env, "tool_errors_list", []
-            )
+            self._verifier_stdout = getattr(self.openenv_task_env, "verifier_stdout", None)
+            self._verifier_error = getattr(self.openenv_task_env, "verifier_error", None)
+            self._tool_error_messages = getattr(self.openenv_task_env, "tool_errors_list", [])
             # Surface verifier output so failure modes (LLM-judge details,
             # tracebacks, GRADING_DETAILS blocks) are grep'able from logs.
             if self._verifier_stdout:
-                logger.info(
-                    f"[{self.task_key}] verifier stdout: {self._verifier_stdout[:1500]}"
-                )
+                logger.info(f"[{self.task_key}] verifier stdout: {self._verifier_stdout[:1500]}")
             if self._verifier_error:
-                logger.warning(
-                    f"[{self.task_key}] verifier error: {self._verifier_error[:1500]}"
-                )
+                logger.warning(f"[{self.task_key}] verifier error: {self._verifier_error[:1500]}")
 
     def close(self):
         """Close the Fleet environment and cleanup resources."""
@@ -1326,8 +1241,7 @@ class FleetTaskEnv(BaseTextEnv):
         """Return environment metrics for this episode."""
         metrics = {
             "task_key": self.task_key,
-            "env_key": self.task_config.get("env_key")
-            or self.task_config.get("env_id"),
+            "env_key": self.task_config.get("env_key") or self.task_config.get("env_id"),
             "turns": self.turns,
             "tool_calls": self.tool_calls,
             "tool_errors": self.tool_errors,
@@ -1367,52 +1281,29 @@ class FleetTaskEnv(BaseTextEnv):
                 re.DOTALL,
             )
             suc_match = re.search(
-                r">>> SUCCESS_ACCUMULATOR >>>\n(.+?)\n"
-                r"<<< SUCCESS_ACCUMULATOR <<<",
+                r">>> SUCCESS_ACCUMULATOR >>>\n(.+?)\n" r"<<< SUCCESS_ACCUMULATOR <<<",
                 verifier_stdout,
                 re.DOTALL,
             )
             if err_match or suc_match:
                 try:
-                    errors = (
-                        ast.literal_eval(err_match.group(1))
-                        if err_match
-                        else []
-                    )
-                    successes = (
-                        ast.literal_eval(suc_match.group(1))
-                        if suc_match
-                        else []
-                    )
+                    errors = ast.literal_eval(err_match.group(1)) if err_match else []
+                    successes = ast.literal_eval(suc_match.group(1)) if suc_match else []
                 except Exception:
                     errors, successes = [], []
                 if successes:
-                    parts.append(
-                        f"Checks passed ({len(successes)}): "
-                        + ", ".join(
-                            str(s)[:100] for s in successes[:5]
-                        )
-                    )
+                    parts.append(f"Checks passed ({len(successes)}): " + ", ".join(str(s)[:100] for s in successes[:5]))
                 if errors:
-                    parts.append(
-                        f"Checks failed ({len(errors)}): "
-                        + ", ".join(str(e)[:100] for e in errors[:5])
-                    )
+                    parts.append(f"Checks failed ({len(errors)}): " + ", ".join(str(e)[:100] for e in errors[:5]))
 
         if verifier_error:
             parts.append(f"Verifier: {verifier_error}")
 
         if tool_error_messages:
             unique = list(dict.fromkeys(tool_error_messages))[:5]
-            parts.append(
-                "Tool errors: " + "; ".join(e[:200] for e in unique)
-            )
+            parts.append("Tool errors: " + "; ".join(e[:200] for e in unique))
 
-        return (
-            "\n".join(parts)
-            if parts
-            else "The previous attempt failed. Try a different approach."
-        )
+        return "\n".join(parts) if parts else "The previous attempt failed. Try a different approach."
 
     @staticmethod
     def aggregate_metrics(
@@ -1431,9 +1322,7 @@ class FleetTaskEnv(BaseTextEnv):
             for key, value in m.items():
                 if key.startswith("env_init_failed/"):
                     env_key = key.split("/", 1)[1]
-                    env_init_failures[env_key] = (
-                        env_init_failures.get(env_key, 0) + int(value)
-                    )
+                    env_init_failures[env_key] = env_init_failures.get(env_key, 0) + int(value)
                     total_init_failures += int(value)
 
             env_key = m.get("env_key")
@@ -1445,12 +1334,8 @@ class FleetTaskEnv(BaseTextEnv):
                         "tool_errors": [],
                     }
                 env_data[env_key]["turns"].append(m.get("turns", 0))
-                env_data[env_key]["tool_calls"].append(
-                    m.get("tool_calls", 0)
-                )
-                env_data[env_key]["tool_errors"].append(
-                    m.get("tool_errors", 0)
-                )
+                env_data[env_key]["tool_calls"].append(m.get("tool_calls", 0))
+                env_data[env_key]["tool_errors"].append(m.get("tool_errors", 0))
 
         result: Dict[str, Any] = {}
         total_turns = 0
@@ -1469,16 +1354,8 @@ class FleetTaskEnv(BaseTextEnv):
             total_env_turns = sum(turns_list)
             total_env_tool_calls = sum(tool_calls_list)
             total_env_tool_errors = sum(tool_errors_list)
-            tool_calls_per_turn = (
-                total_env_tool_calls / total_env_turns
-                if total_env_turns > 0
-                else 0
-            )
-            tool_error_rate = (
-                total_env_tool_errors / total_env_tool_calls
-                if total_env_tool_calls > 0
-                else 0
-            )
+            tool_calls_per_turn = total_env_tool_calls / total_env_turns if total_env_turns > 0 else 0
+            tool_error_rate = total_env_tool_errors / total_env_tool_calls if total_env_tool_calls > 0 else 0
 
             result[f"{env_key}/avg_turns"] = avg_turns
             result[f"{env_key}/min_turns"] = min(turns_list)
@@ -1495,24 +1372,12 @@ class FleetTaskEnv(BaseTextEnv):
             total_tool_errors += total_env_tool_errors
             total_episodes += len(turns_list)
 
-        result["avg_turns"] = (
-            total_turns / total_episodes if total_episodes > 0 else 0
-        )
-        result["avg_tool_calls"] = (
-            total_tool_calls / total_episodes if total_episodes > 0 else 0
-        )
-        result["tool_calls_per_turn"] = (
-            total_tool_calls / total_turns if total_turns > 0 else 0
-        )
-        result["avg_tool_errors"] = (
-            total_tool_errors / total_episodes if total_episodes > 0 else 0
-        )
+        result["avg_turns"] = total_turns / total_episodes if total_episodes > 0 else 0
+        result["avg_tool_calls"] = total_tool_calls / total_episodes if total_episodes > 0 else 0
+        result["tool_calls_per_turn"] = total_tool_calls / total_turns if total_turns > 0 else 0
+        result["avg_tool_errors"] = total_tool_errors / total_episodes if total_episodes > 0 else 0
         result["total_tool_errors"] = total_tool_errors
-        result["tool_error_rate"] = (
-            total_tool_errors / total_tool_calls
-            if total_tool_calls > 0
-            else 0
-        )
+        result["tool_error_rate"] = total_tool_errors / total_tool_calls if total_tool_calls > 0 else 0
         result["total_episodes"] = total_episodes
 
         for env_key, failures in env_init_failures.items():

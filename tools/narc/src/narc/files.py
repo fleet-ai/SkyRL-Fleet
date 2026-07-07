@@ -7,7 +7,6 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
-
 ResultLocation = Path | str
 
 
@@ -105,11 +104,7 @@ def list_s3_json_paths(
     excluded = {location_identity(path) for path in exclude_paths or set()}
     bucket, prefix = parse_s3_uri(uri)
     client = s3_client()
-    if (
-        not prefix.endswith("/")
-        and s3_object_exists(client, bucket, prefix)
-        and location_identity(uri) not in excluded
-    ):
+    if not prefix.endswith("/") and s3_object_exists(client, bucket, prefix) and location_identity(uri) not in excluded:
         return [uri]
 
     list_prefix = prefix
@@ -131,20 +126,11 @@ def list_s3_json_paths(
                 if not isinstance(key, str):
                     continue
                 entry_uri = s3_uri(bucket, key)
-                if (
-                    key.endswith(".json")
-                    and not key.endswith(".tmp")
-                    and location_identity(entry_uri) not in excluded
-                ):
+                if key.endswith(".json") and not key.endswith(".tmp") and location_identity(entry_uri) not in excluded:
                     locations.append(entry_uri)
     except Exception:
         return [uri]
-    if (
-        not locations
-        and uri.endswith(".json")
-        and not uri.endswith(".tmp")
-        and location_identity(uri) not in excluded
-    ):
+    if not locations and uri.endswith(".json") and not uri.endswith(".tmp") and location_identity(uri) not in excluded:
         return [uri]
     return sorted(locations, key=location_text)
 
@@ -165,8 +151,7 @@ def iter_json_paths(
     return sorted(
         candidate
         for candidate in local_path.rglob("*.json")
-        if not candidate.name.endswith(".tmp")
-        and location_identity(candidate) not in excluded
+        if not candidate.name.endswith(".tmp") and location_identity(candidate) not in excluded
     )
 
 
@@ -174,19 +159,13 @@ def input_location_is_explicit(path: ResultLocation) -> bool:
     if is_s3_uri(path):
         bucket, key = parse_s3_uri(str(path))
         return bool(key) and (
-            key.endswith(".json")
-            or key.endswith(".tmp")
-            or s3_object_exists(s3_client(), bucket, key)
+            key.endswith(".json") or key.endswith(".tmp") or s3_object_exists(s3_client(), bucket, key)
         )
     return Path(path).is_file()
 
 
 def explicit_input_identities(paths: list[ResultLocation]) -> set[str]:
-    return {
-        location_identity(path)
-        for path in paths
-        if input_location_is_explicit(path)
-    }
+    return {location_identity(path) for path in paths if input_location_is_explicit(path)}
 
 
 def load_result(

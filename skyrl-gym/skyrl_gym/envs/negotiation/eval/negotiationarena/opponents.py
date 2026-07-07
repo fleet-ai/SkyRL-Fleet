@@ -42,6 +42,7 @@ from config import (
 # Module-level helper
 # ---------------------------------------------------------------------------
 
+
 def format_response(
     scenario: Scenario,
     seat: int,
@@ -77,17 +78,15 @@ def format_response(
         res_str = "nothing"
     if not goal:
         goal = "Maximize my total outcome."
-    trade_str = (
-        trade.to_string(config.SEAT_NAMES) if trade is not None else REFUSING_OR_WAIT_TAG
-    )
+    trade_str = trade.to_string(config.SEAT_NAMES) if trade is not None else REFUSING_OR_WAIT_TAG
     tag_values: dict[str, str] = {
-        MY_NAME_TAG:       name,
-        RESOURCES_TAG:     res_str,
-        GOALS_TAG:         goal,
-        REASONING_TAG:     reasoning,
+        MY_NAME_TAG: name,
+        RESOURCES_TAG: res_str,
+        GOALS_TAG: goal,
+        REASONING_TAG: reasoning,
         PLAYER_ANSWER_TAG: answer,
         PROPOSED_TRADE_TAG: trade_str,
-        MESSAGE_TAG:       message,
+        MESSAGE_TAG: message,
     }
     return "\n".join(f"<{tag}> {tag_values[tag]}" for tag in RESPONSE_TAG_ORDER)
 
@@ -95,6 +94,7 @@ def format_response(
 # ---------------------------------------------------------------------------
 # ScriptedOpponent
 # ---------------------------------------------------------------------------
+
 
 class ScriptedOpponent:
     """Deterministic, no-API counterpart for the NegotiationArena ``--dry-run``.
@@ -139,18 +139,14 @@ class ScriptedOpponent:
         if standing_offer is not None:
             payoff = games.compute_payoffs(scenario, standing_offer)[seat]
             late = turn >= max_turns - 2
-            if payoff > 0 and (
-                late or self._good_enough(scenario, seat, payoff, turn, max_turns)
-            ):
+            if payoff > 0 and (late or self._good_enough(scenario, seat, payoff, turn, max_turns)):
                 return format_response(
-                    scenario, seat,
+                    scenario,
+                    seat,
                     answer=ACCEPTING_TAG,
                     trade=None,
                     message="I accept your proposal.",
-                    reasoning=(
-                        "Your offer gives me a positive payoff and "
-                        "conditions favour accepting now."
-                    ),
+                    reasoning=("Your offer gives me a positive payoff and " "conditions favour accepting now."),
                     goal=goal,
                     resources=own_resources,
                 )
@@ -160,21 +156,20 @@ class ScriptedOpponent:
             trade = self._counter_proposal(scenario, seat, proposals_made, own_resources)
             if trade is not None:
                 return format_response(
-                    scenario, seat,
+                    scenario,
+                    seat,
                     answer=REFUSING_OR_WAIT_TAG,
                     trade=trade,
                     message="Here is my counter-proposal.",
-                    reasoning=(
-                        "I am making a strategic offer that benefits me "
-                        "while leaving room for agreement."
-                    ),
+                    reasoning=("I am making a strategic offer that benefits me " "while leaving room for agreement."),
                     goal=goal,
                     resources=own_resources,
                 )
 
         # ── 3. Wait ──────────────────────────────────────────────────────
         return format_response(
-            scenario, seat,
+            scenario,
+            seat,
             answer=REFUSING_OR_WAIT_TAG,
             trade=None,
             message="Waiting for a more favourable offer.",
@@ -189,17 +184,9 @@ class ScriptedOpponent:
         if scenario.game == "resource_exchange":
             return "Maximize my total resources."
         if scenario.game == "ultimatum":
-            return (
-                "Keep as much of the pot as possible."
-                if seat == 0 else
-                "Get as many Dollars as possible."
-            )
+            return "Keep as much of the pot as possible." if seat == 0 else "Get as many Dollars as possible."
         if scenario.game == "sell_buy":
-            return (
-                "Sell X above my production cost."
-                if seat == 0 else
-                "Buy X below my willingness to pay."
-            )
+            return "Sell X above my production cost." if seat == 0 else "Buy X below my willingness to pay."
         return "Maximize my outcome."
 
     # ── Acceptance threshold ─────────────────────────────────────────────
@@ -254,9 +241,7 @@ class ScriptedOpponent:
         own_resources: dict,
     ) -> Optional[Trade]:
         if scenario.game == "resource_exchange":
-            return self._propose_resource_exchange(
-                scenario, seat, proposals_made, own_resources
-            )
+            return self._propose_resource_exchange(scenario, seat, proposals_made, own_resources)
         if scenario.game == "ultimatum":
             return self._propose_ultimatum(scenario, seat, proposals_made)
         if scenario.game == "sell_buy":
@@ -359,7 +344,7 @@ class ScriptedOpponent:
         if seat == 0:  # seller: open high, concede down
             opening = cost + int(0.80 * surplus)
             price = max(cost + 5, opening - proposals_made * step)
-        else:           # buyer: open low, concede up
+        else:  # buyer: open low, concede up
             opening = cost + int(0.20 * surplus)
             price = min(wtp - 5, opening + proposals_made * step)
 
@@ -392,22 +377,24 @@ if __name__ == "__main__":
         own_res = dict(re_sc.initial_resources[seat])
 
         # No standing offer → should counter-propose (answer=WAIT, trade != None)
-        raw = opp.act(re_sc, seat, {
-            "turn": 1, "max_turns": 8,
-            "standing_offer": None, "own_resources": own_res, "proposals_made": 0,
-        })
+        raw = opp.act(
+            re_sc,
+            seat,
+            {
+                "turn": 1,
+                "max_turns": 8,
+                "standing_offer": None,
+                "own_resources": own_res,
+                "proposals_made": 0,
+            },
+        )
         action = prompts.parse_agent_action(raw, re_sc, seat)
-        assert action.parse_error is None, \
-            f"[re s{seat}] unexpected parse_error: {action.parse_error!r}"
-        assert action.answer == REFUSING_OR_WAIT_TAG, \
-            f"[re s{seat}] expected WAIT, got {action.answer!r}"
-        assert action.proposed_trade is not None, \
-            f"[re s{seat}] expected a proposed trade"
+        assert action.parse_error is None, f"[re s{seat}] unexpected parse_error: {action.parse_error!r}"
+        assert action.answer == REFUSING_OR_WAIT_TAG, f"[re s{seat}] expected WAIT, got {action.answer!r}"
+        assert action.proposed_trade is not None, f"[re s{seat}] expected a proposed trade"
         # Seat must not give more of any token than it currently holds.
         for tok, amt in action.proposed_trade.give(seat).items():
-            assert amt <= own_res.get(tok, 0), (
-                f"[re s{seat}] gives {tok}:{amt} but holds {own_res.get(tok, 0)}"
-            )
+            assert amt <= own_res.get(tok, 0), f"[re s{seat}] gives {tok}:{amt} but holds {own_res.get(tok, 0)}"
 
         # Clearly good standing offer at last turn → must ACCEPT
         if seat == 0:
@@ -417,17 +404,22 @@ if __name__ == "__main__":
             # seat 1 gives Y:3, receives X:8  →  net +5 for seat 1
             good_trade = Trade(gives={0: {"X": 8}, 1: {"Y": 3}})
 
-        raw_late = opp.act(re_sc, seat, {
-            "turn": 7, "max_turns": 8,
-            "standing_offer": good_trade, "own_resources": own_res, "proposals_made": 0,
-        })
+        raw_late = opp.act(
+            re_sc,
+            seat,
+            {
+                "turn": 7,
+                "max_turns": 8,
+                "standing_offer": good_trade,
+                "own_resources": own_res,
+                "proposals_made": 0,
+            },
+        )
         a_late = prompts.parse_agent_action(raw_late, re_sc, seat)
-        assert a_late.parse_error is None, \
-            f"[re s{seat} late] parse_error: {a_late.parse_error!r}"
+        assert a_late.parse_error is None, f"[re s{seat} late] parse_error: {a_late.parse_error!r}"
         payoff = games.compute_payoffs(re_sc, good_trade)[seat]
         assert a_late.answer == ACCEPTING_TAG, (
-            f"[re s{seat}] should ACCEPT at last turn "
-            f"(payoff={payoff}, answer={a_late.answer!r})"
+            f"[re s{seat}] should ACCEPT at last turn " f"(payoff={payoff}, answer={a_late.answer!r})"
         )
 
     # ── ultimatum ────────────────────────────────────────────────────────
@@ -447,34 +439,42 @@ if __name__ == "__main__":
     for seat in (0, 1):
         own_res = dict(ult_sc.initial_resources[seat])
 
-        raw = opp.act(ult_sc, seat, {
-            "turn": 1, "max_turns": 8,
-            "standing_offer": None, "own_resources": own_res, "proposals_made": 0,
-        })
+        raw = opp.act(
+            ult_sc,
+            seat,
+            {
+                "turn": 1,
+                "max_turns": 8,
+                "standing_offer": None,
+                "own_resources": own_res,
+                "proposals_made": 0,
+            },
+        )
         action = prompts.parse_agent_action(raw, ult_sc, seat)
-        assert action.parse_error is None, \
-            f"[ult s{seat}] unexpected parse_error: {action.parse_error!r}"
-        assert action.proposed_trade is not None, \
-            f"[ult s{seat}] expected a proposed trade"
+        assert action.parse_error is None, f"[ult s{seat}] unexpected parse_error: {action.parse_error!r}"
+        assert action.proposed_trade is not None, f"[ult s{seat}] expected a proposed trade"
         # Check that this seat does not over-give.
         for tok, amt in action.proposed_trade.give(seat).items():
-            assert amt <= own_res.get(tok, 0), (
-                f"[ult s{seat}] gives {tok}:{amt} but holds {own_res.get(tok, 0)}"
-            )
+            assert amt <= own_res.get(tok, 0), f"[ult s{seat}] gives {tok}:{amt} but holds {own_res.get(tok, 0)}"
 
         # Proposer gives 45 → payoff_seat0 = 55, payoff_seat1 = 45; both positive.
         good_trade = Trade(gives={0: {"Dollars": 45}, 1: {"Dollars": 0}})
-        raw_late = opp.act(ult_sc, seat, {
-            "turn": 7, "max_turns": 8,
-            "standing_offer": good_trade, "own_resources": own_res, "proposals_made": 0,
-        })
+        raw_late = opp.act(
+            ult_sc,
+            seat,
+            {
+                "turn": 7,
+                "max_turns": 8,
+                "standing_offer": good_trade,
+                "own_resources": own_res,
+                "proposals_made": 0,
+            },
+        )
         a_late = prompts.parse_agent_action(raw_late, ult_sc, seat)
-        assert a_late.parse_error is None, \
-            f"[ult s{seat} late] parse_error: {a_late.parse_error!r}"
+        assert a_late.parse_error is None, f"[ult s{seat} late] parse_error: {a_late.parse_error!r}"
         payoff = games.compute_payoffs(ult_sc, good_trade)[seat]
         assert a_late.answer == ACCEPTING_TAG, (
-            f"[ult s{seat}] should ACCEPT at last turn "
-            f"(payoff={payoff}, answer={a_late.answer!r})"
+            f"[ult s{seat}] should ACCEPT at last turn " f"(payoff={payoff}, answer={a_late.answer!r})"
         )
 
     # ── sell_buy ─────────────────────────────────────────────────────────
@@ -495,33 +495,41 @@ if __name__ == "__main__":
     for seat in (0, 1):
         own_res = dict(sb_sc.initial_resources[seat])
 
-        raw = opp.act(sb_sc, seat, {
-            "turn": 1, "max_turns": 10,
-            "standing_offer": None, "own_resources": own_res, "proposals_made": 0,
-        })
+        raw = opp.act(
+            sb_sc,
+            seat,
+            {
+                "turn": 1,
+                "max_turns": 10,
+                "standing_offer": None,
+                "own_resources": own_res,
+                "proposals_made": 0,
+            },
+        )
         action = prompts.parse_agent_action(raw, sb_sc, seat)
-        assert action.parse_error is None, \
-            f"[sb s{seat}] unexpected parse_error: {action.parse_error!r}"
-        assert action.proposed_trade is not None, \
-            f"[sb s{seat}] expected a proposed trade"
+        assert action.parse_error is None, f"[sb s{seat}] unexpected parse_error: {action.parse_error!r}"
+        assert action.proposed_trade is not None, f"[sb s{seat}] expected a proposed trade"
         for tok, amt in action.proposed_trade.give(seat).items():
-            assert amt <= own_res.get(tok, 0), (
-                f"[sb s{seat}] gives {tok}:{amt} but holds {own_res.get(tok, 0)}"
-            )
+            assert amt <= own_res.get(tok, 0), f"[sb s{seat}] gives {tok}:{amt} but holds {own_res.get(tok, 0)}"
 
         # Price = 50 → seller payoff = 10, buyer payoff = 10; both clearly positive.
         good_trade = Trade(gives={0: {"X": 1}, 1: {"ZUP": 50}})
-        raw_late = opp.act(sb_sc, seat, {
-            "turn": 9, "max_turns": 10,
-            "standing_offer": good_trade, "own_resources": own_res, "proposals_made": 0,
-        })
+        raw_late = opp.act(
+            sb_sc,
+            seat,
+            {
+                "turn": 9,
+                "max_turns": 10,
+                "standing_offer": good_trade,
+                "own_resources": own_res,
+                "proposals_made": 0,
+            },
+        )
         a_late = prompts.parse_agent_action(raw_late, sb_sc, seat)
-        assert a_late.parse_error is None, \
-            f"[sb s{seat} late] parse_error: {a_late.parse_error!r}"
+        assert a_late.parse_error is None, f"[sb s{seat} late] parse_error: {a_late.parse_error!r}"
         payoff = games.compute_payoffs(sb_sc, good_trade)[seat]
         assert a_late.answer == ACCEPTING_TAG, (
-            f"[sb s{seat}] should ACCEPT at last turn "
-            f"(payoff={payoff}, answer={a_late.answer!r})"
+            f"[sb s{seat}] should ACCEPT at last turn " f"(payoff={payoff}, answer={a_late.answer!r})"
         )
 
     print("opponents.py smoke test passed.")

@@ -27,10 +27,7 @@ def test_normalize_gpu_uuid_accepts_torch_uuid_bytes():
 
 
 def test_normalize_gpu_uuid_adds_prefix_to_bare_uuid_string():
-    assert (
-        normalize_gpu_uuid("00112233-4455-6677-8899-aabbccddeeff")
-        == "GPU-00112233-4455-6677-8899-aabbccddeeff"
-    )
+    assert normalize_gpu_uuid("00112233-4455-6677-8899-aabbccddeeff") == "GPU-00112233-4455-6677-8899-aabbccddeeff"
 
 
 def test_torch_device_identity_is_json_serializable():

@@ -184,8 +184,13 @@ def _build_worked_example(item_names: List[str]) -> str:
 
 
 def build_system_prompt(
-    item_names: List[str], counts: List[int], values: List[int], max_turns: int, protocol: str = "single",
-    proactive: bool = False, elicit_block: "str | None" = None,
+    item_names: List[str],
+    counts: List[int],
+    values: List[int],
+    max_turns: int,
+    protocol: str = "single",
+    proactive: bool = False,
+    elicit_block: "str | None" = None,
 ) -> str:
     # elicit_block (if not None) overrides `proactive`: pass the exact block to inject
     # ("" = none). Lets prepare_dataset give different blocks to the policy vs opponent
@@ -210,10 +215,6 @@ def build_system_prompt(
     )
 
 
-OPENING_USER_MSG = (
-    "You speak first. Open the negotiation with a brief message proposing how to split the items."
-)
+OPENING_USER_MSG = "You speak first. Open the negotiation with a brief message proposing how to split the items."
 
-PARTNER_FIRST_MSG = (
-    "The other player will speak first. Wait for their message, then respond."
-)
+PARTNER_FIRST_MSG = "The other player will speak first. Wait for their message, then respond."

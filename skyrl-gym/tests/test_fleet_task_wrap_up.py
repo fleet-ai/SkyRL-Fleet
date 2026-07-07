@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.env import (
+from skyrl_gym.envs.fleet_task.env import (  # noqa: E402  (import after sys.path setup)
     FleetTaskEnv,
     MAX_TOOL_OUTPUT_CHARS,
 )
@@ -47,6 +47,7 @@ from skyrl_gym.envs.fleet_task.env import (
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
 
 def _bash_call_action() -> str:
     """A model-style assistant message with a valid <tool_call> for bash."""
@@ -88,6 +89,7 @@ def _make_env(max_turns: int = 50, modality: str = "tool_use") -> FleetTaskEnv:
     env._tool_error_messages = []
     env.context_manager = None
     env.enable_context_tools = False
+    env.screenshot_max_dim = 0
     env.task_config = {"env_key": "data-eng", "task_modality": modality}
     return env
 
@@ -106,6 +108,7 @@ async def _step_and_get_obs(env: FleetTaskEnv, mock_step_return, action: str = N
 # --------------------------------------------------------------------------- #
 # 1. Per-turn footer — text-only branch
 # --------------------------------------------------------------------------- #
+
 
 # Per-turn scaffold is now per-family in fleet_task.yaml; tests must opt
 # into a family. Qwen's YAML has the turn indicator (and only the turn
@@ -174,6 +177,7 @@ class TestTurnFooterTextOnly:
 # 2. Per-turn footer — multimodal branch (computer_use / browser_use)
 # --------------------------------------------------------------------------- #
 
+
 class TestTurnFooterMultimodal:
     @pytest.mark.asyncio
     async def test_footer_appended_as_trailing_text_block(self):
@@ -219,6 +223,7 @@ class TestTurnFooterMultimodal:
 # --------------------------------------------------------------------------- #
 # 3. No-tool-call hint is format-agnostic, covers truncation in one line
 # --------------------------------------------------------------------------- #
+
 
 class TestNoToolCallHint:
     @pytest.mark.asyncio
@@ -288,6 +293,7 @@ class TestNoToolCallHint:
 # 4. Force-verifier on max_turns
 # --------------------------------------------------------------------------- #
 
+
 class TestForceDoneAtMaxTurns:
     @pytest.mark.asyncio
     async def test_done_true_sent_on_last_turn_with_tool_call(self):
@@ -341,6 +347,7 @@ class TestForceDoneAtMaxTurns:
 # --------------------------------------------------------------------------- #
 # 4. Tool-output truncation
 # --------------------------------------------------------------------------- #
+
 
 class TestToolOutputTruncation:
     @pytest.mark.asyncio

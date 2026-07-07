@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -24,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from skyrl_gym.envs.fleet_task.env import FleetTaskEnv
+from skyrl_gym.envs.fleet_task.env import FleetTaskEnv  # noqa: E402  (import after sys.path setup)
 
 
 # Standard viewport used by the Fleet computer-use envs.
@@ -51,6 +50,7 @@ def _call(action: str, coord, field: str = "coordinate") -> dict:
 # --------------------------------------------------------------------------- #
 # Kimi [0, 1.0] case — the regression we caught
 # --------------------------------------------------------------------------- #
+
 
 class TestKimiNormalizedRange:
     def test_session_827f4376_turn6_real_case(self, env_stub):
@@ -86,13 +86,15 @@ class TestKimiNormalizedRange:
         env_stub._convert_normalized_coordinates(tc)
         assert tc["arguments"]["coordinate"] == [SCREEN_W // 2, SCREEN_H // 2]
         assert tc["arguments"]["start_coordinate"] == [
-            int(0.1 * SCREEN_W), int(0.2 * SCREEN_H),
+            int(0.1 * SCREEN_W),
+            int(0.2 * SCREEN_H),
         ]
 
 
 # --------------------------------------------------------------------------- #
 # Qwen-VL [0, 1000] case — preserve existing behavior
 # --------------------------------------------------------------------------- #
+
 
 class TestQwenIntegerRange:
     def test_center_of_screen(self, env_stub):
@@ -106,7 +108,8 @@ class TestQwenIntegerRange:
         env_stub._convert_normalized_coordinates(tc)
         # 10/1000 → ~1% of screen
         assert tc["arguments"]["coordinate"] == [
-            int(10 / 1000 * SCREEN_W), int(10 / 1000 * SCREEN_H),
+            int(10 / 1000 * SCREEN_W),
+            int(10 / 1000 * SCREEN_H),
         ]
 
     def test_max_qwen_range(self, env_stub):
@@ -118,6 +121,7 @@ class TestQwenIntegerRange:
 # --------------------------------------------------------------------------- #
 # Pixel case (max > 1000) — pass through unchanged
 # --------------------------------------------------------------------------- #
+
 
 class TestPixelPassthrough:
     def test_above_qwen_range_is_pixel(self, env_stub):
@@ -142,13 +146,15 @@ class TestPixelPassthrough:
         env_stub._convert_normalized_coordinates(tc)
         # Expected: treated as Qwen → 330/1000*1366 = 450, 228/1000*768 = 175
         assert tc["arguments"]["coordinate"] == [
-            int(330 / 1000 * SCREEN_W), int(228 / 1000 * SCREEN_H),
+            int(330 / 1000 * SCREEN_W),
+            int(228 / 1000 * SCREEN_H),
         ]
 
 
 # --------------------------------------------------------------------------- #
 # Edge cases that must NOT scale
 # --------------------------------------------------------------------------- #
+
 
 class TestNoOpCases:
     def test_zero_zero_left_alone(self, env_stub):
@@ -195,6 +201,7 @@ class TestNoOpCases:
 # Back-compat: existing call sites use _convert_qwen_coordinates
 # --------------------------------------------------------------------------- #
 
+
 class TestBackCompatAlias:
     def test_old_name_still_works(self, env_stub):
         """env.py and any external caller using the old name must keep
@@ -203,5 +210,6 @@ class TestBackCompatAlias:
         env_stub._convert_qwen_coordinates(tc)
         # If the alias works, this gets scaled per the Kimi branch.
         assert tc["arguments"]["coordinate"] == [
-            int(0.273 * SCREEN_W), int(0.298 * SCREEN_H),
+            int(0.273 * SCREEN_W),
+            int(0.298 * SCREEN_H),
         ]

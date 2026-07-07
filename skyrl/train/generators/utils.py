@@ -723,9 +723,7 @@ def apply_chat_template_with_images(
     For VL models (with processor), extracts images and uses the processor to get
     correctly-sized token IDs (vision tokens expand based on image dimensions).
     """
-    has_processor = hasattr(processor_or_tokenizer, "image_processor") or hasattr(
-        processor_or_tokenizer, "tokenizer"
-    )
+    has_processor = hasattr(processor_or_tokenizer, "image_processor") or hasattr(processor_or_tokenizer, "tokenizer")
 
     if has_processor and is_multimodal_conversation(conversation):
         processor = processor_or_tokenizer

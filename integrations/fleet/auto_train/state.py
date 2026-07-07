@@ -91,9 +91,7 @@ class ProcessedState:
             "seeded_at": self._seeded_at,
         }
         body = json.dumps(payload, indent=2).encode("utf-8")
-        self._s3.put_object(
-            Bucket=self.bucket, Key=self.key, Body=body, ContentType="application/json"
-        )
+        self._s3.put_object(Bucket=self.bucket, Key=self.key, Body=body, ContentType="application/json")
 
     # per-dataset
     def is_seen(self, dataset_key: str) -> bool:

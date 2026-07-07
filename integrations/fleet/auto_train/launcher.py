@@ -28,18 +28,20 @@ def build_launch_command(
     extra_sky_args: list[str] | None = None,
 ) -> list[str]:
     if modality not in SUPPORTED_MODALITIES:
-        raise NotImplementedError(
-            f"modality {modality!r} not supported (dataset={dataset_key})"
-        )
+        raise NotImplementedError(f"modality {modality!r} not supported (dataset={dataset_key})")
 
     root = _repo_root()
     yaml_path = root / MODALITY_YAML_MAP[modality]
     launch_script = root / "scripts" / "fleet-launch.sh"
 
     cmd: list[str] = [
-        "bash", str(launch_script), str(yaml_path),
-        "--env", f"DATA_VERSION={dataset_key}",
-        "--env", f"MODALITY={modality}",
+        "bash",
+        str(launch_script),
+        str(yaml_path),
+        "--env",
+        f"DATA_VERSION={dataset_key}",
+        "--env",
+        f"MODALITY={modality}",
     ]
     for k, v in env_vars.items():
         cmd.extend(["--env", f"{k}={v}"])
@@ -103,9 +105,12 @@ def launch_training(
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         proc = subprocess.Popen(
-            cmd, cwd=str(_repo_root()),
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
+            cmd,
+            cwd=str(_repo_root()),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
         tail: list[str] = []
         for line in iter(proc.stdout.readline, ""):  # type: ignore[arg-type]
@@ -116,19 +121,24 @@ def launch_training(
                 tail.pop(0)
         proc.wait()
         if proc.returncode == 0:
-            logger.info("fleet-launch.sh succeeded for %s/%s (attempt %d)",
-                        dataset_key, modality, attempt)
+            logger.info("fleet-launch.sh succeeded for %s/%s (attempt %d)", dataset_key, modality, attempt)
             return True
         tail_text = "".join(tail)
         if "Git clone failed" in tail_text and attempt < max_attempts:
             logger.warning(
                 "fleet-launch.sh hit Git clone failure (attempt %d/%d) for %s/%s; retrying",
-                attempt, max_attempts, dataset_key, modality,
+                attempt,
+                max_attempts,
+                dataset_key,
+                modality,
             )
             continue
         logger.error(
             "fleet-launch.sh failed (exit=%d, attempt %d) for %s/%s",
-            proc.returncode, attempt, dataset_key, modality,
+            proc.returncode,
+            attempt,
+            dataset_key,
+            modality,
         )
         return False
     return False

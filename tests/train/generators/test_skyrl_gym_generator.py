@@ -100,6 +100,13 @@ def mock_env():
         observations=[{"role": "user", "content": "next"}], reward=1.0, done=True, metadata={}
     )
     mock_env_instance.close.return_value = None
+    # MagicMock auto-creates every attribute, so _env_init/_env_step/_env_close
+    # would prefer the *_async variants and await a MagicMock (TypeError, which
+    # the env-init guard converts into a zero-reward trajectory). Delete them so
+    # the sync path these tests were written for is used.
+    del mock_env_instance.init_async
+    del mock_env_instance.step_async
+    del mock_env_instance.close_async
     return mock_env_instance
 
 
@@ -375,6 +382,10 @@ def test_generator_output_concatenation():
         # optional but present in the signature
         "trajectory_ids",
         "is_last_step",
+        # fleet fork additions; both flow through concatenate_generator_outputs'
+        # additional-list-keys path
+        "env_metrics",
+        "is_hinted",
     ]
     assert set(GeneratorOutput.__annotations__.keys()) == set(expected_fields), (
         "GeneratorOutput fields are not what we expect. "
@@ -416,6 +427,10 @@ def test_generator_output_concatenation():
         "generate/max_num_tokens": 3,
         "generate/avg_num_tokens": 2.0,
         "generate/std_num_tokens": np.std([2, 2, 3, 1]).item(),
+        "generate/p50_num_tokens": np.percentile([2, 2, 3, 1], 50).item(),
+        "generate/p90_num_tokens": np.percentile([2, 2, 3, 1], 90).item(),
+        "generate/p95_num_tokens": np.percentile([2, 2, 3, 1], 95).item(),
+        "generate/p99_num_tokens": np.percentile([2, 2, 3, 1], 99).item(),
         "generate/avg_tokens_non_zero_rewards": 2.0,
         "generate/avg_tokens_zero_rewards": 0,
     }
