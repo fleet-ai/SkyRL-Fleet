@@ -1026,8 +1026,7 @@ async def collect_fleet_rollout(
         # raw observed reward — observability records what happened, training
         # decides what to learn from.)
         _verifier_failed = total_reward is None or (
-            getattr(env, "_verifier_error", None)
-            and str(getattr(env, "_verifier_error")).startswith("Verifier failed")
+            getattr(env, "_verifier_error", None) and str(getattr(env, "_verifier_error")).startswith("Verifier failed")
         )
         return RolloutOutput(
             prompt_ids=prompt_ids,
