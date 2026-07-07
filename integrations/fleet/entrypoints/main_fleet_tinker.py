@@ -169,7 +169,10 @@ class RolloutOutput(BaseModel):
     response_ids: List[int]
     logprobs: List[float]
     loss_mask: List[int]
-    reward: float
+    # None = verifier EXECUTION failed after retries (grade unknown, rollout
+    # must be EXCLUDED, not scored 0.0 — a regrade census found 23% of zeros
+    # were execution failures, some of them stable full passes).
+    reward: Optional[float]
     task_key: str
     env_key: str
     turns: int
@@ -1016,12 +1019,22 @@ async def collect_fleet_rollout(
             num_turns=env.turns,
         )
 
+        # A verifier-execution failure (env sets _verifier_error and the
+        # OpenEnv reward comes back None) means the grade is UNKNOWN. Carry
+        # reward=None so training excludes the rollout and eval reports it as
+        # verifier_failed instead of a false zero. (ATOF above still emits the
+        # raw observed reward — observability records what happened, training
+        # decides what to learn from.)
+        _verifier_failed = total_reward is None or (
+            getattr(env, "_verifier_error", None)
+            and str(getattr(env, "_verifier_error")).startswith("Verifier failed")
+        )
         return RolloutOutput(
             prompt_ids=prompt_ids,
             response_ids=all_response_ids,
             logprobs=all_logprobs,
             loss_mask=loss_mask,
-            reward=total_reward,
+            reward=None if _verifier_failed else total_reward,
             task_key=task_key,
             env_key=env_key,
             turns=env.turns,
@@ -1316,8 +1329,13 @@ async def main(
         if not all_eval_rollouts:
             logger.warning(f"step={step_index}: eval produced no valid rollouts")
             return None
-        eval_rewards = [r.reward for r in all_eval_rollouts]
-        eval_rollouts_dicts = [r.model_dump() for r in all_eval_rollouts]
+        # reward=None marks a verifier-execution failure: the grade is
+        # unknown, so those rollouts are excluded from every statistic and
+        # surfaced as their own count instead of polluting pass rates.
+        graded = [r for r in all_eval_rollouts if r.reward is not None]
+        n_verifier_failed = len(all_eval_rollouts) - len(graded)
+        eval_rewards = [r.reward for r in graded]
+        eval_rollouts_dicts = [r.model_dump() for r in graded]
         eval_pass_at_1 = compute_pass_at_n(eval_rollouts_dicts, eval_n_samples_per_prompt)
         eval_per_env = compute_per_env_metrics(eval_rollouts_dicts, eval_n_samples_per_prompt)
         eval_metrics = {
@@ -1325,7 +1343,8 @@ async def main(
             "eval/all/mean_positive_reward": (
                 np.mean([r for r in eval_rewards if r > 0]) if any(r > 0 for r in eval_rewards) else 0.0
             ),
-            "eval/num_samples": len(all_eval_rollouts),
+            "eval/num_samples": len(graded),
+            "eval/num_verifier_failed": n_verifier_failed,
         }
         for key, value in eval_per_env.items():
             eval_metrics[key.replace("reward/", "eval/")] = value
@@ -1609,7 +1628,7 @@ async def main(
         valid_rollouts = []
         invalid_rollouts = []
         for r in rollouts:
-            if r.response_ids and not r.error:
+            if r.response_ids and not r.error and r.reward is not None:
                 valid_rollouts.append(r)
             else:
                 invalid_rollouts.append(r)
