@@ -34,6 +34,9 @@ DEFAULT_IMAGE_BUCKET = "fleet-trajectory-artifacts"
 IMAGE_KEY_PREFIX = "skyrl"
 # Broker cap is 20MB; leave headroom for the event envelope and metadata.
 MAX_PAYLOAD_BYTES = 19_000_000
+# Bound on plugin.initialize(): a hung init must disable ATOF, not stall
+# training startup (drain_atof is bounded the same way).
+ATOF_INIT_TIMEOUT_S = 10.0
 
 _nemo_module: Any = None
 
@@ -320,22 +323,34 @@ def _initialization_errors(report: Any) -> Optional[List[Any]]:
     return [d for d in diagnostics if isinstance(d, dict) and d.get("level") == "error"] or None
 
 
-def _run_sync(value: Any) -> Any:
-    """Resolve plugin.initialize()'s awaitable from sync or async contexts."""
+def _run_sync(value: Any, timeout: Optional[float] = None) -> Any:
+    """Resolve plugin.initialize()'s awaitable from sync or async contexts, bounded.
+
+    Always resolves on a daemon thread: wait_for bounds a cancellable hang,
+    but a hang inside a blocking FFI call never reaches an await point, so
+    the join timeout is the real backstop (and the daemon flag keeps an
+    abandoned thread from blocking process exit). A timeout raises into
+    init_atof's except, which warns once and disables ATOF.
+    """
     if not inspect.isawaitable(value):
         return value
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(value)
+    if timeout is None:
+        timeout = ATOF_INIT_TIMEOUT_S
     result: Dict[str, Any] = {}
 
     def runner() -> None:
-        result["value"] = asyncio.run(value)
+        try:
+            result["value"] = asyncio.run(asyncio.wait_for(value, timeout))
+        except Exception as exc:
+            result["error"] = exc
 
-    thread = threading.Thread(target=runner, name="atof-init")
+    thread = threading.Thread(target=runner, name="atof-init", daemon=True)
     thread.start()
-    thread.join()
+    thread.join(timeout + 1.0)
+    if "error" in result:
+        raise result["error"]
+    if thread.is_alive():
+        raise TimeoutError(f"nemo_relay plugin.initialize did not return within {timeout}s")
     return result.get("value")
 
 

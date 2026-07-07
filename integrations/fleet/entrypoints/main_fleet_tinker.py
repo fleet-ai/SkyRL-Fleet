@@ -62,6 +62,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
+from integrations.fleet.atof_events import drain_atof, init_atof
+
 # Import shared metrics module for consistent metric calculation with SkyRL trainer
 from integrations.fleet.reward_metrics import (
     compute_pass_at_n as _compute_pass_at_n,
@@ -142,6 +144,22 @@ async def _env_close(env):
     if hasattr(env, "close_async"):
         return await env.close_async()
     return await _run_in_executor(env.close)
+
+
+def _atof_emit(emitter, method: str, **kwargs):
+    """Call an emitter hook without ever letting observability break a rollout.
+
+    A raised exception here would otherwise surface as a zero-reward
+    RolloutOutput via collect_single_rollout's catch-all, silently
+    corrupting training. Mirrors skyrl_gym_generator._atof_emit.
+    """
+    if emitter is None:
+        return None
+    try:
+        return getattr(emitter, method)(**kwargs)
+    except Exception as e:
+        logger.warning(f"ATOF emitter failed at {method}; continuing rollout: {e}")
+        return None
 
 
 class RolloutOutput(BaseModel):
@@ -702,6 +720,10 @@ async def collect_fleet_rollout(
     stop_sequences: List[str] = None,
     capture_messages: bool = False,
     screenshot_max_dim: int = 0,
+    atof_emitter=None,
+    global_step: Optional[int] = None,
+    phase: Optional[str] = None,
+    sample_idx: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Collect a single trajectory using Fleet environment and Tinker inference.
@@ -711,6 +733,8 @@ async def collect_fleet_rollout(
     Args:
         max_generate_length: Max tokens per generation step.
         max_input_length: Max context length before ending rollout (matching SkyRL).
+        atof_emitter: Optional AtofEmitter; when set, the rollout streams one
+            ATOF trace (global_step/phase/sample_idx stamped on every event).
     """
     rollout_start = time.time()
 
@@ -758,6 +782,20 @@ async def collect_fleet_rollout(
         chat_history, metadata = await asyncio.wait_for(_env_init(env, []), ENV_INIT_TIMEOUT_S)
         env_key = metadata.get("env_key", "unknown")
         env_tools = metadata.get("tools") or env.tools
+
+        # ATOF observability (no-op unless main() installed an emitter).
+        # pending_atof_messages tracks each turn's new input messages: the
+        # post-init history for turn 1, then only the latest observations.
+        atof_trace = _atof_emit(
+            atof_emitter,
+            "rollout_start",
+            task_key=task_key,
+            env_class="fleet_task",
+            global_step=global_step,
+            phase=phase,
+            sample_idx=sample_idx,
+        )
+        pending_atof_messages = chat_history
 
         # Tokenize initial prompt
         prompt_ids = tokenize_chat(tokenizer, chat_history, add_generation_prompt=True, tools=env_tools)
@@ -871,6 +909,15 @@ async def collect_fleet_rollout(
             # Decode output
             output_text = tokenizer.decode(output_ids, skip_special_tokens=True)
 
+            _atof_emit(
+                atof_emitter,
+                "llm_turn",
+                trace=atof_trace,
+                new_messages=pending_atof_messages,
+                response_text=output_text,
+                stop_reason=getattr(sequence, "stop_reason", None),
+            )
+
             # Collect trajectory data (assistant response tokens - trainable)
             all_response_ids.extend(output_ids)
             if output_logprobs:
@@ -891,6 +938,17 @@ async def collect_fleet_rollout(
             step_time = time.time() - step_start
             total_step_time += step_time
             total_tokens += len(output_ids)
+
+            _atof_emit(
+                atof_emitter,
+                "env_step",
+                trace=atof_trace,
+                action=output_text,
+                observations=step_output["observations"] or [],
+                reward=step_output["reward"],
+                done=step_output["done"],
+            )
+            pending_atof_messages = step_output["observations"] or []
 
             # Observation content for the training stream (loss-masked, no
             # image bytes; the model already SAW images via ImageChunks in the
@@ -945,6 +1003,19 @@ async def collect_fleet_rollout(
             except Exception as e:
                 logger.warning(f"capture_messages snapshot failed for {task_key}: {e}")
 
+        # Fold the tinker-specific tool counters into the final mark's counters.
+        if atof_trace is not None:
+            atof_trace.counters["tool_calls"] = env.tool_calls
+            atof_trace.counters["tool_errors"] = env.tool_errors
+        _atof_emit(
+            atof_emitter,
+            "rollout_end",
+            trace=atof_trace,
+            reward=total_reward,
+            stop_reason=stop_reason,
+            num_turns=env.turns,
+        )
+
         return RolloutOutput(
             prompt_ids=prompt_ids,
             response_ids=all_response_ids,
@@ -989,6 +1060,9 @@ async def collect_batch_rollouts(
     capture_messages: bool = False,
     on_rollout_complete: Optional[Callable[[RolloutOutput], None]] = None,
     screenshot_max_dim: int = 0,
+    atof_emitter=None,
+    global_step: Optional[int] = None,
+    phase: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Collect rollouts for a batch of tasks with limited concurrency.
 
@@ -1027,6 +1101,10 @@ async def collect_batch_rollouts(
                     stop_sequences=stop_sequences,
                     capture_messages=capture_messages,
                     screenshot_max_dim=screenshot_max_dim,
+                    atof_emitter=atof_emitter,
+                    global_step=global_step,
+                    phase=phase,
+                    sample_idx=sample_idx,
                 )
                 # Stamp the sample index so downstream dumpers can produce
                 # deterministic per-rollout filenames without tracking
@@ -1201,6 +1279,7 @@ async def main(
         eval_sampling_client,
         step_index: int,
         dump_label: Optional[str] = None,
+        atof_phase: Optional[str] = None,
     ) -> float | None:
         if not eval_dataset:
             return None
@@ -1229,6 +1308,9 @@ async def main(
                 capture_messages=dumper is not None,
                 on_rollout_complete=dumper,
                 screenshot_max_dim=screenshot_max_dim,
+                atof_emitter=atof_emitter,
+                global_step=step_index,
+                phase=atof_phase,
             )
             all_eval_rollouts.extend([r for r in eval_rollouts if not r.error])
         if not all_eval_rollouts:
@@ -1287,6 +1369,11 @@ async def main(
             "loss_fn": loss_fn,
         },
     )
+
+    # ATOF rollout observability. None unless SKYRL_ATOF_ENABLED=1 with the
+    # MSK env vars set; plain asyncio in the main process, so init here (no
+    # Ray, unlike the SkyRL entrypoints).
+    atof_emitter = init_atof(entrypoint="main_fleet_tinker", run_name=wandb_name, model=model_name)
 
     # Load datasets. Eval-only mode skips the training parquet entirely; only
     # eval_dataset_file is required to drive the held-out rollouts.
@@ -1374,7 +1461,7 @@ async def main(
         logger.info(f"eval-only: binding sampling_client to {from_checkpoint}")
         sampling_client = service_client.create_sampling_client(model_path=from_checkpoint)
         await _rotate_trace_job("eval_only")
-        eval_pass_rate = await _run_eval(sampling_client, step_index=0, dump_label="eval_only")
+        eval_pass_rate = await _run_eval(sampling_client, step_index=0, dump_label="eval_only", atof_phase="eval_only")
         logger.info(f"eval-only complete: pass_at_{eval_n_samples_per_prompt}={eval_pass_rate}")
         if results_out:
             import json as _json
@@ -1397,6 +1484,7 @@ async def main(
             with open(results_out, "w") as fh:
                 _json.dump(payload, fh, indent=2)
             logger.info(f"Wrote eval-only results to {results_out}")
+        drain_atof()
         wandb.finish()
         return
 
@@ -1443,7 +1531,7 @@ async def main(
         pre_sampling_path = training_client.save_weights_for_sampler(name="step_pretrain").result().path
         pre_sampling_client = service_client.create_sampling_client(model_path=pre_sampling_path)
         await _rotate_trace_job("eval_pre")
-        await _run_eval(pre_sampling_client, step_index=-1, dump_label="pre")
+        await _run_eval(pre_sampling_client, step_index=-1, dump_label="pre", atof_phase="eval_pre")
 
     # Training loop
     run_started = time.time()
@@ -1509,6 +1597,9 @@ async def main(
             stop_sequences=stop_sequences,
             max_concurrent=max_concurrent,
             screenshot_max_dim=screenshot_max_dim,
+            atof_emitter=atof_emitter,
+            global_step=step,
+            phase=f"train_step_{step}",
         )
 
         metrics["time/rollout"] = time.time() - rollout_start
@@ -1634,10 +1725,12 @@ async def main(
                 final_sampling_path = training_client.save_weights_for_sampler(name="step_final").result().path
                 eval_client = service_client.create_sampling_client(model_path=final_sampling_path)
                 await _rotate_trace_job("eval_final")
-                await _run_eval(eval_client, step_index=max_steps, dump_label="final")
+                await _run_eval(eval_client, step_index=max_steps, dump_label="final", atof_phase="eval_final")
             else:
                 await _rotate_trace_job(f"eval_step_{step}")
-                await _run_eval(sampling_client, step_index=step, dump_label=f"step_{step}")
+                await _run_eval(
+                    sampling_client, step_index=step, dump_label=f"step_{step}", atof_phase=f"eval_step_{step}"
+                )
 
     # Surface pre/post pass rates to disk for the launcher to read. The first
     # entry (pre-train if requested, otherwise step 0) is the baseline; the
@@ -1684,6 +1777,7 @@ async def main(
             _json.dump(payload, fh, indent=2)
         logger.info(f"Wrote eval results to {results_out}")
 
+    drain_atof()
     wandb.finish()
     logger.info("Training completed!")
 

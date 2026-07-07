@@ -1,5 +1,38 @@
 # Fleet Integration Changelog
 
+## 2026-07-07: Tinker harness — ATOF rollout observability (item 3)
+
+Scope: **Tinker harness only** (`main_fleet_tinker.py`).
+
+### What
+
+`collect_fleet_rollout()` emits the same one-trace-per-rollout event contract
+as the SkyRL generator hooks (#95): trace open after env init, an LLM event
+per turn (watermarked new messages + response + stop reason), a tool event
+per env step, and a final mark carrying total reward, turn count, and the
+tinker-specific `tool_calls`/`tool_errors` counters. `init_atof`/`drain_atof`
+live in `main()` (plain asyncio, no Ray — unlike the SkyRL entrypoints where
+init must happen inside the Ray task).
+
+Metadata mapping: `run_name` = the resolved `wandb_name`,
+`global_step` = train step / eval `step_index`, `phase` reuses the exact
+`_rotate_trace_job` labels (`train_step_N`, `eval_step_N`, `eval_pre`,
+`eval_final`, `eval_only`) — so the Tinker path gets the pre/final phase
+refinement the SkyRL path lists as a known gap. `sample_idx` = the existing
+per-task sample index.
+
+### Behavior guarantees
+
+- All hooks go through a module-level `_atof_emit()` that swallows
+  exceptions: collect_single_rollout's catch-all would otherwise convert an
+  observability bug into a zero-reward RolloutOutput.
+- `atof_emitter` defaults to None on both collect functions; unset env =
+  today's behavior exactly.
+- `_force_verifier`'s internal `<done>` step is not instrumented; its reward
+  and forced stop_reason land in the final mark.
+- A rollout that raises mid-loop ships its events but gets no final mark
+  (same accepted limitation as the SkyRL side).
+
 ## 2026-07-07: Launch scripts — ATOF enablement via `SKYRL_ATOF_ENABLED=1`
 
 Scope: **launch scripts only** (`fleet-common-setup.sh`, `fleet-common-run.sh`,

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 import sys
+import time
 import types
 
 import pytest
@@ -304,3 +306,41 @@ class TestDrain:
     def test_drain_noop_when_disabled(self, fake_nemo):
         drain_atof()
         assert fake_nemo.named("drain") == []
+
+
+class TestRunSyncTimeout:
+    """A hung plugin.initialize must disable ATOF, never stall startup."""
+
+    def test_non_awaitable_passes_through(self):
+        report = {"diagnostics": []}
+        assert atof_events._run_sync(report) is report
+
+    def test_awaitable_resolves(self):
+        async def initialize():
+            return {"diagnostics": []}
+
+        assert atof_events._run_sync(initialize(), timeout=1.0) == {"diagnostics": []}
+
+    def test_cancellable_hang_raises_timeout(self):
+        async def hang_at_await_point():
+            await asyncio.Event().wait()
+
+        with pytest.raises(asyncio.TimeoutError):
+            atof_events._run_sync(hang_at_await_point(), timeout=0.1)
+
+    def test_blocking_hang_raises_timeout(self):
+        # A hang inside a blocking call never reaches an await point, so
+        # wait_for can't cancel it; only the join bound catches it.
+        async def hang_without_await_point():
+            time.sleep(3)
+
+        with pytest.raises(TimeoutError):
+            atof_events._run_sync(hang_without_await_point(), timeout=0.1)
+
+    def test_hung_init_disables_atof(self, fake_nemo, msk_env, monkeypatch):
+        async def hang(config):
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(fake_nemo.plugin, "initialize", hang)
+        monkeypatch.setattr(atof_events, "ATOF_INIT_TIMEOUT_S", 0.1)
+        assert init_atof(entrypoint="e", run_name="r", model="m") is None
