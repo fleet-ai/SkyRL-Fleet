@@ -31,6 +31,15 @@ MSK_PLUGIN_KIND = "theseus-msk-atof-export"
 DEFAULT_TOPIC = "atof.received"
 DEFAULT_CLIENT_ID = "skyrl-nemo-relay"
 DEFAULT_IMAGE_BUCKET = "fleet-trajectory-artifacts"
+# Production MSK endpoint defaults so SKYRL_ATOF_ENABLED=1 is the only knob on
+# every path (SkyRL launch scripts, tinker scripts, auto-train workflow, direct
+# invocation). The env vars remain as overrides.
+DEFAULT_MSK_BROKERS = (
+    "b-1-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,"
+    "b-2-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,"
+    "b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198"
+)
+DEFAULT_TENANT_ID = "skyrl"
 IMAGE_KEY_PREFIX = "skyrl"
 # Broker cap is 20MB; leave headroom for the event envelope and metadata.
 MAX_PAYLOAD_BYTES = 19_000_000
@@ -292,11 +301,12 @@ def _component_config() -> Optional[Dict[str, Any]]:
             },
         }
 
-    brokers = os.environ.get("THESEUS_ATOF_MSK_BROKERS", "").strip()
-    tenant_id = os.environ.get("THESEUS_ATOF_TENANT_ID", "").strip()
+    brokers = os.environ.get("THESEUS_ATOF_MSK_BROKERS", DEFAULT_MSK_BROKERS).strip()
+    tenant_id = os.environ.get("THESEUS_ATOF_TENANT_ID", DEFAULT_TENANT_ID).strip()
     if not brokers or not tenant_id:
         logger.warning(
-            "ATOF disabled: SKYRL_ATOF_ENABLED=1 but THESEUS_ATOF_MSK_BROKERS/THESEUS_ATOF_TENANT_ID are not set"
+            "ATOF disabled: SKYRL_ATOF_ENABLED=1 but THESEUS_ATOF_MSK_BROKERS/THESEUS_ATOF_TENANT_ID are "
+            "explicitly empty"
         )
         return None
     return {
