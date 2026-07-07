@@ -1,5 +1,18 @@
 # Fleet Integration Changelog
 
+## 2026-07-07: Tinker run script — install nemo-relay wheel when ATOF is enabled
+
+Scope: `fleet-tinker-tool-use-run.sh`.
+
+The hosted trainer image (fleet-research-api Dockerfile) never runs
+`fleet-common-setup.sh`, so `SKYRL_ATOF_ENABLED=1` on the hosted path hit
+init_atof's fail-open "nemo_relay wheel not installed" warning and every
+run silently produced zero trace events. The run script now mirrors the
+setup script: when the flag is set and `nemo_relay` isn't importable, pull
+the wheel from `s3://fleet-nemo-relay-artifacts/wheels/latest/` and pip
+install it at job start (the Batch job has AWS creds; the image build does
+not). Install failure warns and continues — fail-open, matching init_atof.
+
 ## 2026-07-07: ATOF — production MSK broker/tenant defaults in code
 
 Scope: `atof_events.py`, `fleet-common-run.sh`.
