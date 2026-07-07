@@ -1,5 +1,20 @@
 # Fleet Integration Changelog
 
+## 2026-07-07: ATOF — production MSK broker/tenant defaults in code
+
+Scope: `atof_events.py`, `fleet-common-run.sh`.
+
+`SKYRL_ATOF_ENABLED=1` is now the only knob on every path: brokers and
+tenant_id default in `_component_config` (`DEFAULT_MSK_BROKERS`,
+`DEFAULT_TENANT_ID`), joining the existing bucket/topic/client_id defaults.
+The `THESEUS_ATOF_*` env vars remain as overrides; setting one explicitly
+empty still disables with a warning. The now-redundant gated exports in
+`fleet-common-run.sh` are removed (single source of truth for the broker
+list), keeping only the `export SKYRL_ATOF_ENABLED` so the flag reliably
+reaches Ray workers. This also removes the tinker-path failure mode where
+the flag was set but the run produced zero events because the broker vars
+weren't hand-exported.
+
 ## 2026-07-07: Tinker harness — ATOF rollout observability (item 3)
 
 Scope: **Tinker harness only** (`main_fleet_tinker.py`).

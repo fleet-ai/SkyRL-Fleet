@@ -123,9 +123,19 @@ class TestInit:
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
         assert fake_nemo.calls == []
 
-    def test_disabled_without_msk_vars(self, fake_nemo, monkeypatch):
+    def test_defaults_apply_without_msk_vars(self, fake_nemo, monkeypatch):
         monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
         monkeypatch.delenv("THESEUS_ATOF_MSK_BROKERS", raising=False)
+        monkeypatch.delenv("THESEUS_ATOF_TENANT_ID", raising=False)
+        assert init_atof(entrypoint="e", run_name="r", model="m") is not None
+        ((_, config),) = fake_nemo.named("initialize")
+        (component,) = config["components"]
+        assert component["config"]["brokers"] == atof_events.DEFAULT_MSK_BROKERS
+        assert component["config"]["tenant_id"] == atof_events.DEFAULT_TENANT_ID
+
+    def test_disabled_when_msk_vars_explicitly_empty(self, fake_nemo, monkeypatch):
+        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+        monkeypatch.setenv("THESEUS_ATOF_MSK_BROKERS", "")
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
         assert fake_nemo.calls == []
 
