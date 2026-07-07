@@ -89,6 +89,7 @@ def _make_env(max_turns: int = 50, modality: str = "tool_use") -> FleetTaskEnv:
     env._tool_error_messages = []
     env.context_manager = None
     env.enable_context_tools = False
+    env.screenshot_max_dim = 0
     env.task_config = {"env_key": "data-eng", "task_modality": modality}
     return env
 

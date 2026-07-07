@@ -30,7 +30,8 @@ include = ["skyrl_gym*"]
 
 [project.optional-dependencies]
 dev = [
-    "pytest"
+    "pytest",
+    "pytest-asyncio",
 ]
 fleet = [
     "openenv[fleet]",
