@@ -56,10 +56,21 @@ def _strip_hydra_prefixes(args: list[str]) -> list[str]:
 class FleetPPOExp(BasePPOExp):
     """Fleet-specific PPO experiment with S3 checkpoint management."""
 
+    atof_entrypoint = "main_fleet"
+
     def get_generator(self, cfg, tokenizer, inference_engine_client):
         generator = super().get_generator(cfg, tokenizer, inference_engine_client)
+        from integrations.fleet.atof_events import install_atof
         from integrations.fleet.trace_jobs import wrap_generator_for_fleet_traces
 
+        # Install on the inner generator before wrapping (the wrapper only
+        # delegates attribute reads).
+        install_atof(
+            generator,
+            entrypoint=self.atof_entrypoint,
+            run_name=cfg.trainer.run_name,
+            model=cfg.trainer.policy.model.path,
+        )
         return wrap_generator_for_fleet_traces(
             generator,
             run_name=cfg.trainer.run_name,
@@ -108,7 +119,12 @@ class FleetPPOExp(BasePPOExp):
         except Exception as e:
             logger.warning(f"Failed to setup checkpoint management: {e}")
 
-        asyncio.run(trainer.train())
+        from integrations.fleet.atof_events import drain_atof
+
+        try:
+            asyncio.run(trainer.train())
+        finally:
+            drain_atof()
 
         # Block until pending S3 uploads complete. Without this, the trainer's
         # final save_checkpoints() at end-of-training queues uploads to a
