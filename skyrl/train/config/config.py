@@ -850,12 +850,22 @@ class SkyRLTrainConfig(BaseConfig):
         # OmegaConf loads empty dicts from YAML as closed structs by default.
         OmegaConf.set_struct(base_cfg, False)
 
-        merged = OmegaConf.merge(base_cfg, overrides)
-        merged_dict = OmegaConf.to_container(merged, resolve=True)
-
-        if is_legacy_config(merged_dict):
+        # Translate legacy keys BEFORE merging. On the merged config an explicit
+        # override is indistinguishable from a base-YAML default, so translating
+        # afterwards lets one side's defaults clobber the other side's overrides
+        # (a new-format CLI override lost to the legacy flat default and vice
+        # versa). Translating each side first makes overrides always win.
+        # resolve=False: interpolations like ${trainer.max_prompt_length} must
+        # survive until after the merge so they resolve against overridden
+        # values, not the base defaults.
+        base_dict = OmegaConf.to_container(base_cfg, resolve=False)
+        overrides_dict = OmegaConf.to_container(overrides, resolve=False)
+        if is_legacy_config(base_dict) or is_legacy_config(overrides_dict):
             warn_legacy_config()
-            merged_dict = translate_legacy_config(merged_dict)
+        base_dict = translate_legacy_config(base_dict)
+        overrides_dict = translate_legacy_config(overrides_dict)
+        merged = OmegaConf.merge(OmegaConf.create(base_dict), OmegaConf.create(overrides_dict))
+        merged_dict = OmegaConf.to_container(merged, resolve=True)
 
         return build_nested_dataclass(cls, merged_dict)
 
