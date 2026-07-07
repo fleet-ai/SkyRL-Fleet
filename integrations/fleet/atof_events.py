@@ -40,6 +40,8 @@ DEFAULT_MSK_BROKERS = (
     "b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198"
 )
 DEFAULT_TENANT_ID = "skyrl"
+# hint_synthesizer.CATEGORY_LLM; only this category made a real LLM call.
+HINT_CATEGORY_LLM = "llm_synthesized"
 IMAGE_KEY_PREFIX = "skyrl"
 # Broker cap is 20MB; leave headroom for the event envelope and metadata.
 MAX_PAYLOAD_BYTES = 19_000_000
@@ -226,6 +228,77 @@ class AtofEmitter:
             self._nemo.scope.pop(trace.handle, output={"reward": reward})
         except Exception as exc:
             self._warn_once("rollout_end", exc)
+
+    def helper_llm_call(
+        self,
+        *,
+        name: str,
+        request: Dict[str, Any],
+        response: Dict[str, Any],
+        model: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit one standalone helper-LLM event (e.g. hint synthesis) as its own
+        mini-trace; every event the pipeline ships today is scope-attached."""
+        try:
+            meta = _drop_none(
+                {
+                    "producer_session_id": self._run_name,
+                    "trace_id": uuid.uuid4().hex,
+                    "entrypoint": self._entrypoint,
+                    "call_site": name,
+                    **(metadata or {}),
+                }
+            )
+            trace = RolloutTrace(handle=None, metadata=meta)
+            handle = self._nemo.scope.push(f"helper:{name}", self._nemo.ScopeType.Agent, metadata=meta)
+            self._nemo.llm.execute(
+                name,
+                self._nemo.LLMRequest({}, self._guard(trace, request)),
+                lambda _request: self._guard(trace, response),
+                handle=handle,
+                metadata=meta,
+                model_name=model or self._model,
+            )
+            self._nemo.scope.pop(handle, output={})
+        except Exception as exc:
+            self._warn_once("helper_llm_call", exc)
+
+    def hint_synthesis_events(
+        self,
+        *,
+        hint_requests: List[Dict[str, Any]],
+        hint_results: List[Any],
+        model: str,
+        global_step: Optional[int] = None,
+        phase: Optional[str] = None,
+    ) -> None:
+        """One helper_llm_call per LLM-synthesized hint; fallbacks made no call.
+
+        request mirrors what synthesize_hint sends (it slices task_prompt to
+        5000 chars); chat_history is deliberately excluded — it already ships
+        with the rollout events.
+        """
+        try:
+            for req, (hint_text, category) in zip(hint_requests, hint_results):
+                if category != HINT_CATEGORY_LLM:
+                    continue
+                self.helper_llm_call(
+                    name="hint_synthesis",
+                    request={
+                        "task_prompt": (req.get("task_prompt") or "")[:5000],
+                        "verifier_stdout": req.get("verifier_stdout"),
+                        "verifier_error": req.get("verifier_error"),
+                        "tool_error_messages": req.get("tool_error_messages"),
+                    },
+                    response={"hint": hint_text, "category": category},
+                    model=model,
+                    metadata=_drop_none(
+                        {"instance_id": req.get("instance_id"), "global_step": global_step, "phase": phase}
+                    ),
+                )
+        except Exception as exc:
+            self._warn_once("hint_synthesis_events", exc)
 
     def _offload_images(self, trace: RolloutTrace, messages: List[dict]) -> List[dict]:
         """Replace base64 image data URLs with content-addressed S3 URLs.

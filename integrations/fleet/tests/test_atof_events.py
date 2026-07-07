@@ -318,6 +318,44 @@ class TestDrain:
         assert fake_nemo.named("drain") == []
 
 
+class TestHelperLlmCall:
+    def test_emits_scoped_llm_event(self, fake_nemo):
+        emitter = make_emitter(fake_nemo)
+        emitter.helper_llm_call(
+            name="hint_synthesis",
+            request={"task_prompt": "do the thing"},
+            response={"hint": "try harder", "category": "llm_synthesized"},
+            model="openrouter/anthropic/claude-sonnet-4",
+            metadata={"instance_id": "i-1", "global_step": 7, "phase": "train_step_7"},
+        )
+        ((_, name, _scope_type, push_kwargs),) = fake_nemo.named("push")
+        assert name == "helper:hint_synthesis"
+        meta = push_kwargs["metadata"]
+        assert meta["call_site"] == "hint_synthesis"
+        assert meta["instance_id"] == "i-1"
+        assert meta["global_step"] == 7
+        assert meta["phase"] == "train_step_7"
+        assert meta["producer_session_id"] == "run-1"
+        ((_, llm_name, request, response, llm_kwargs),) = fake_nemo.named("llm")
+        assert llm_name == "hint_synthesis"
+        assert request == {"task_prompt": "do the thing"}
+        assert response == {"hint": "try harder", "category": "llm_synthesized"}
+        assert llm_kwargs["model_name"] == "openrouter/anthropic/claude-sonnet-4"
+        assert len(fake_nemo.named("pop")) == 1
+
+    def test_model_defaults_to_policy_model(self, fake_nemo):
+        emitter = make_emitter(fake_nemo)
+        emitter.helper_llm_call(name="hint_synthesis", request={}, response={})
+        ((_, _, _, _, llm_kwargs),) = fake_nemo.named("llm")
+        assert llm_kwargs["model_name"] == "Qwen/Qwen3.5-9B"
+
+    def test_fails_open(self, fake_nemo, monkeypatch):
+        emitter = make_emitter(fake_nemo)
+        monkeypatch.setattr(fake_nemo.scope, "push", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+        emitter.helper_llm_call(name="hint_synthesis", request={}, response={})
+        assert fake_nemo.named("llm") == []
+
+
 class TestRunSyncTimeout:
     """A hung plugin.initialize must disable ATOF, never stall startup."""
 

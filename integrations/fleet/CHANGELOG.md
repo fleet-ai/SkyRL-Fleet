@@ -1,5 +1,28 @@
 # Fleet Integration Changelog
 
+## 2026-07-07: ATOF phase 2 — hint-synthesis events (generator-side)
+
+Scope: `atof_events.py` (additive method), **core file edit**
+(`skyrl_gym_generator.py`, preserve on upstream merges).
+
+Hint synthesis is the one non-policy LLM callsite in training (litellm ->
+OpenRouter in `hint_synthesizer.synthesize_hint`, audited 2026-07-06). Each
+LLM-synthesized hint now emits one standalone `helper_llm_call` mini-trace
+(`call_site="hint_synthesis"`, hint model as model_name, instance_id +
+global_step/phase metadata). Fallback hints (static / llm_failed) made no
+LLM call and emit nothing.
+
+All shaping lives in the shared module (`AtofEmitter.hint_synthesis_events`
+looping requests x results); the core generator file carries exactly one
+`_atof_emit` call after `synthesize_hints_batch`, keeping the
+preserve-on-upstream-merge surface minimal. skyrl-gym untouched: request
+records the hint inputs the generator holds (task_prompt sliced to the same
+5000 chars synthesize_hint sends, verifier feedback; chat_history excluded —
+it already ships with the rollout). Tradeoff accepted: no token usage / raw
+OpenRouter response metadata; if per-call cost visibility is ever needed,
+thread an on_llm_call callback through hint_synthesizer instead. Fail-open
+at both layers, payloads size-guarded like rollout events.
+
 ## 2026-07-07: Tinker run script — install nemo-relay wheel when ATOF is enabled
 
 Scope: `fleet-tinker-tool-use-run.sh`.
