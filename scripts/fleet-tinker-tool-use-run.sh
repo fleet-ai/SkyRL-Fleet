@@ -60,6 +60,23 @@ MAX_SEQUENCE_LENGTH="${MAX_SEQUENCE_LENGTH:-131072}"
 # Screenshot compression (browser_use / computer_use). 0 = disabled.
 SCREENSHOT_MAX_DIM="${SCREENSHOT_MAX_DIM:-0}"
 
+# --- ATOF: nemo-relay wheel (rollout observability, off unless enabled) ---
+# Mirrors fleet-common-setup.sh. The hosted trainer image doesn't bake the
+# wheel (its build has no AWS creds), so install at job start where the Batch
+# job's AWS creds are available. Fail open like init_atof itself: a failed
+# install must not take down the training run.
+if [ "${SKYRL_ATOF_ENABLED:-}" = "1" ] && ! python -c 'import nemo_relay' 2>/dev/null; then
+    echo "Installing nemo-relay wheel for ATOF event emission..."
+    NEMO_WHEEL_DIR="$(mktemp -d)"
+    if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
+        && pip install --no-cache-dir "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
+        echo "nemo-relay installed."
+    else
+        echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
+    fi
+    rm -rf "$NEMO_WHEEL_DIR"
+fi
+
 EXTRA_ARGS=()
 if [ -n "${EVAL_DATASET_FILE:-}" ]; then
     EXTRA_ARGS+=(--eval-dataset-file "$EVAL_DATASET_FILE")
