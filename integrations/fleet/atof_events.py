@@ -87,6 +87,19 @@ def drain_atof(timeout: float = 5.0) -> None:
         logger.warning(f"ATOF drain failed ({type(exc).__name__}: {exc})")
 
 
+def install_atof(generator: Any, *, entrypoint: str, run_name: str, model: str) -> Optional["AtofEmitter"]:
+    """Init the runtime and install the emitter on a SkyRLGymGenerator.
+
+    Must be called with the inner generator, before any wrapper like
+    FleetTraceWrappedGenerator: the wrapper only delegates attribute reads,
+    so setting the attribute on it would install nothing.
+    """
+    emitter = init_atof(entrypoint=entrypoint, run_name=run_name, model=model)
+    if emitter is not None:
+        generator.atof_emitter = emitter
+    return emitter
+
+
 @dataclass
 class RolloutTrace:
     handle: Any

@@ -227,6 +227,8 @@ class NegotiationRayPPOTrainer(RayPPOTrainer):
 class NegotiationPPOExp(FleetPPOExp):
     """FleetPPOExp (S3 checkpoint management) wired to the negotiation trainer."""
 
+    atof_entrypoint = "main_negotiation"
+
     def get_trainer(
         self,
         cfg,

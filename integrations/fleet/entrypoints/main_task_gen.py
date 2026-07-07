@@ -30,6 +30,18 @@ logger = logging.getLogger(__name__)
 class FleetPPOExp(BasePPOExp):
     """Fleet-specific PPO experiment with S3 checkpoint management."""
 
+    def get_generator(self, cfg, tokenizer, inference_engine_client):
+        generator = super().get_generator(cfg, tokenizer, inference_engine_client)
+        from integrations.fleet.atof_events import install_atof
+
+        install_atof(
+            generator,
+            entrypoint="main_task_gen",
+            run_name=cfg.trainer.run_name,
+            model=cfg.trainer.policy.model.path,
+        )
+        return generator
+
     def run(self):
         trainer = self._setup_trainer()
 
@@ -60,7 +72,12 @@ class FleetPPOExp(BasePPOExp):
         except Exception as e:
             logger.warning(f"Failed to setup checkpoint management: {e}")
 
-        asyncio.run(trainer.train())
+        from integrations.fleet.atof_events import drain_atof
+
+        try:
+            asyncio.run(trainer.train())
+        finally:
+            drain_atof()
 
 
 @ray.remote(num_cpus=1)

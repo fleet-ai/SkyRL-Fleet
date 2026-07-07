@@ -73,8 +73,17 @@ class FleetEvalExp(BasePPOExp):
 
     def get_generator(self, cfg, tokenizer, inference_engine_client):
         generator = super().get_generator(cfg, tokenizer, inference_engine_client)
+        from integrations.fleet.atof_events import install_atof
         from integrations.fleet.trace_jobs import wrap_generator_for_fleet_traces
 
+        # Install on the inner generator before wrapping (the wrapper only
+        # delegates attribute reads).
+        install_atof(
+            generator,
+            entrypoint="main_eval",
+            run_name=cfg.trainer.run_name,
+            model=cfg.trainer.policy.model.path,
+        )
         return wrap_generator_for_fleet_traces(
             generator,
             run_name=cfg.trainer.run_name,
@@ -116,7 +125,12 @@ class FleetEvalExp(BasePPOExp):
             except Exception as e:
                 logger.warning(f"Failed to download checkpoint from S3: {e}")
 
-        asyncio.run(self._run_eval(trainer))
+        from integrations.fleet.atof_events import drain_atof
+
+        try:
+            asyncio.run(self._run_eval(trainer))
+        finally:
+            drain_atof()
 
     async def _run_eval(self, trainer):
         """Initialize weight sync, load policy weights, and run eval once."""
