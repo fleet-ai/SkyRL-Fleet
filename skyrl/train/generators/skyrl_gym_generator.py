@@ -1000,6 +1000,18 @@ class SkyRLGymGenerator(GeneratorInterface):
                 timeout=hint_timeout,
                 static_fallback_fn=FleetTaskEnv.build_hint_text,
             )
+            self._atof_emit(
+                "hint_synthesis_events",
+                hint_requests=hint_requests,
+                hint_results=hint_results,
+                model=hint_model,
+                global_step=batch_metadata.global_step if batch_metadata is not None else None,
+                phase=(
+                    f"{batch_metadata.training_phase}_step_{batch_metadata.global_step}"
+                    if batch_metadata is not None
+                    else None
+                ),
+            )
         else:
             hint_results = []
             for iid, best_orig_idx, best_output, _ in failed_groups:
