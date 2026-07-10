@@ -261,16 +261,23 @@ def compute_advantages_grpo(
 
 async def compute_kl_penalties(
     valid_rollouts: List["RolloutOutput"],
+    policy_client,
     ref_client,
     max_sequence_length: int,
 ) -> List[float]:
     """Mean per-token KL(policy || base) over each rollout's generated tokens.
 
-    k1 estimator: policy sampling logprob minus base logprob, averaged over
-    loss-masked response tokens. One prefill-only scoring pass per rollout on
-    the frozen base model — cheap next to generation. Fail-open: any scoring
-    error yields 0.0 for that rollout so a ref-side hiccup never poisons
-    training (mirrors the verifier None-semantics rationale).
+    k1 estimator with SYMMETRIC scoring: both logprob streams come from
+    compute_logprobs (one prefill pass on the current policy's sampler
+    weights, one on the frozen base). The rollout's own sampling logprobs are
+    deliberately NOT used — Tinker returns them under the sampling
+    temperature, while compute_logprobs scores untempered, and mixing the two
+    biases the estimate by ~KL(tempered||untempered) (measured ~+0.02 at
+    temp 0.9 even when policy == base). Symmetric scoring keeps the step-0
+    invariant exact: policy == base at LoRA init, so kl_mean must be ~0.
+
+    Fail-open: any scoring error yields 0.0 for that rollout so a scoring
+    hiccup never poisons training (mirrors the verifier None-semantics).
     """
     async def one(r):
         try:
@@ -278,19 +285,17 @@ async def compute_kl_penalties(
             prompt_len = len(r.prompt_ids)
             if prompt_len >= len(full):
                 return 0.0
-            ref_lp = await ref_client.compute_logprobs_async(
-                types.ModelInput.from_ints(full)
+            mi = types.ModelInput.from_ints(full)
+            pol_lp, ref_lp = await asyncio.gather(
+                policy_client.compute_logprobs_async(mi),
+                ref_client.compute_logprobs_async(mi),
             )
             vals = []
             for j in range(len(full) - prompt_len):
-                if (
-                    j < len(r.loss_mask)
-                    and r.loss_mask[j]
-                    and j < len(r.logprobs)
-                ):
-                    rl = ref_lp[prompt_len + j]
-                    if rl is not None:
-                        vals.append(r.logprobs[j] - rl)
+                if j < len(r.loss_mask) and r.loss_mask[j]:
+                    p, q = pol_lp[prompt_len + j], ref_lp[prompt_len + j]
+                    if p is not None and q is not None:
+                        vals.append(float(p) - float(q))
             return float(np.mean(vals)) if vals else 0.0
         except Exception as e:
             logger.warning(f"KL scoring failed for {r.task_key}: {e}; using 0.0")
@@ -1696,7 +1701,9 @@ async def main(
         # Compute GRPO advantages
         rewards = [r.reward for r in valid_rollouts]
         if kl_ref_client is not None:
-            kls = await compute_kl_penalties(valid_rollouts, kl_ref_client, max_sequence_length)
+            # policy_client = this step's sampler (the exact weights that
+            # generated these rollouts); scored symmetrically against base.
+            kls = await compute_kl_penalties(valid_rollouts, sampling_client, kl_ref_client, max_sequence_length)
             metrics["train/kl_mean"] = float(np.mean(kls))
             metrics["train/kl_max"] = float(np.max(kls))
             metrics["train/kl_min"] = float(np.min(kls))

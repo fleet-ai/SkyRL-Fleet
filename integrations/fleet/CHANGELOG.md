@@ -15,25 +15,38 @@ knob.
 
 ### How
 
-- `--kl-beta` (default 0 = exactly today's behavior). When set, a frozen
-  sampling client on the **pristine base model** scores every valid rollout's
-  full token sequence (one prefill pass; cheap next to generation).
-- Per-rollout KL = k1 estimator (policy sampling logprob − base logprob),
-  averaged over loss-masked response tokens only.
+- `--kl-beta` (default 0 = exactly today's behavior). When set, each valid
+  rollout's full token sequence is scored twice via `compute_logprobs`: once
+  on the step's own sampler weights (the exact policy that generated it) and
+  once on a frozen **pristine base model** client. Two prefill passes per
+  rollout, gathered concurrently; cheap next to generation.
+- Per-rollout KL = k1 estimator (policy logprob − base logprob), averaged
+  over loss-masked response tokens only. **Symmetric scoring is load-bearing**:
+  the rollout's own sampling logprobs are tempered (temp 0.9) while
+  compute_logprobs scores untempered — mixing them biases KL by
+  ~+0.02 even at policy == base (measured live). Both sides from
+  compute_logprobs makes the estimate exact.
 - Penalty applies in **reward space** (`r − β·KL`) before group-advantage
   computation — no loss-function changes; Tinker's `ppo` loss is untouched.
 - Ref is the base model, not current/resumed weights: resume legs stay
   anchored to the same policy as their original leg.
-- Fail-open: a ref-scoring error yields KL=0 for that rollout (a ref hiccup
+- Fail-open: a scoring error yields KL=0 for that rollout (a scoring hiccup
   must never poison training; mirrors verifier None-semantics).
 - W&B: `train/kl_mean|max|min`, `reward/mean_pre_kl`.
 - Run script maps `KL_BETA` env var to the flag.
 
+### Validated live against Tinker (2026-07-10)
+
+- Alignment: compute_logprobs entry `prompt_len + j` scores response token j
+  (offset 0 correct; ±1 offsets blow up the parity check).
+- Asymmetric estimator (sampling logprobs vs compute_logprobs) at
+  policy == base: mean +0.019 at temp 0.9 → rejected.
+- Symmetric estimator at policy == base: mean 0.000000 → shipped.
+
 ### Smoke expectation
 
 At step 0 the policy IS the base (LoRA zero-init), so `train/kl_mean` must be
-≈0 (small sampling-precision noise aside). A materially nonzero step-0 KL
-means logprob misalignment — abort and investigate, do not launch.
+≈0. A materially nonzero step-0 KL means misalignment — abort, do not launch.
 
 ## 2026-07-07: ATOF phase 2 — hint-synthesis events (generator-side)
 
