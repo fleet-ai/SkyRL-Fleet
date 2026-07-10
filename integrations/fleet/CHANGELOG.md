@@ -1,5 +1,40 @@
 # Fleet Integration Changelog
 
+## 2026-07-10: Tinker harness — optional KL(policy || base) anchor (`--kl-beta`)
+
+Scope: **Tinker harness only** (`main_fleet_tinker.py`, `fleet-tinker-tool-use-run.sh`).
+
+### Why
+
+Run `93ae9417` (Qwen3.6-35B-A3B, leverage177, lr 1e-5, 66 steps) degraded
+monotonically on its own training set (epoch means 0.590 → 0.490) and
+collapsed on claweval (29.3% → 18.3%), with damage concentrated on tasks the
+base already did well — the signature of unanchored policy churn. This adds
+the GRPO reference regularizer the original setup omitted, as an ablatable
+knob.
+
+### How
+
+- `--kl-beta` (default 0 = exactly today's behavior). When set, a frozen
+  sampling client on the **pristine base model** scores every valid rollout's
+  full token sequence (one prefill pass; cheap next to generation).
+- Per-rollout KL = k1 estimator (policy sampling logprob − base logprob),
+  averaged over loss-masked response tokens only.
+- Penalty applies in **reward space** (`r − β·KL`) before group-advantage
+  computation — no loss-function changes; Tinker's `ppo` loss is untouched.
+- Ref is the base model, not current/resumed weights: resume legs stay
+  anchored to the same policy as their original leg.
+- Fail-open: a ref-scoring error yields KL=0 for that rollout (a ref hiccup
+  must never poison training; mirrors verifier None-semantics).
+- W&B: `train/kl_mean|max|min`, `reward/mean_pre_kl`.
+- Run script maps `KL_BETA` env var to the flag.
+
+### Smoke expectation
+
+At step 0 the policy IS the base (LoRA zero-init), so `train/kl_mean` must be
+≈0 (small sampling-precision noise aside). A materially nonzero step-0 KL
+means logprob misalignment — abort and investigate, do not launch.
+
 ## 2026-07-07: ATOF phase 2 — hint-synthesis events (generator-side)
 
 Scope: `atof_events.py` (additive method), **core file edit**

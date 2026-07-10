@@ -104,6 +104,9 @@ fi
 if [ -n "${TIME_BUDGET_S:-}" ] && [ "${TIME_BUDGET_S:-0}" != "0" ]; then
     EXTRA_ARGS+=(--time-budget-s "$TIME_BUDGET_S")
 fi
+if [ -n "${KL_BETA:-}" ] && [ "${KL_BETA:-0}" != "0" ]; then
+    EXTRA_ARGS+=(--kl-beta "$KL_BETA")
+fi
 
 python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --model-name "$MODEL_NAME" \

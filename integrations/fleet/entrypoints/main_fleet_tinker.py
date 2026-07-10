@@ -259,6 +259,46 @@ def compute_advantages_grpo(
     return advantages
 
 
+async def compute_kl_penalties(
+    valid_rollouts: List["RolloutOutput"],
+    ref_client,
+    max_sequence_length: int,
+) -> List[float]:
+    """Mean per-token KL(policy || base) over each rollout's generated tokens.
+
+    k1 estimator: policy sampling logprob minus base logprob, averaged over
+    loss-masked response tokens. One prefill-only scoring pass per rollout on
+    the frozen base model — cheap next to generation. Fail-open: any scoring
+    error yields 0.0 for that rollout so a ref-side hiccup never poisons
+    training (mirrors the verifier None-semantics rationale).
+    """
+    async def one(r):
+        try:
+            full = (r.prompt_ids + r.response_ids)[:max_sequence_length]
+            prompt_len = len(r.prompt_ids)
+            if prompt_len >= len(full):
+                return 0.0
+            ref_lp = await ref_client.compute_logprobs_async(
+                types.ModelInput.from_ints(full)
+            )
+            vals = []
+            for j in range(len(full) - prompt_len):
+                if (
+                    j < len(r.loss_mask)
+                    and r.loss_mask[j]
+                    and j < len(r.logprobs)
+                ):
+                    rl = ref_lp[prompt_len + j]
+                    if rl is not None:
+                        vals.append(r.logprobs[j] - rl)
+            return float(np.mean(vals)) if vals else 0.0
+        except Exception as e:
+            logger.warning(f"KL scoring failed for {r.task_key}: {e}; using 0.0")
+            return 0.0
+
+    return list(await asyncio.gather(*[one(r) for r in valid_rollouts]))
+
+
 def compute_pass_at_n(rollouts: List[Dict[str, Any]], n_samples_per_prompt: int) -> float:
     """
     Compute pass@n metric using the shared metrics module.
@@ -1237,6 +1277,7 @@ async def main(
     load_state: str = None,
     start_step: int = 0,
     time_budget_s: int = 0,
+    kl_beta: float = 0.0,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1460,6 +1501,14 @@ async def main(
                 base_model=model_name, rank=lora_rank
             )
         adam_params = types.AdamParams(learning_rate=learning_rate, beta1=0.9, beta2=0.95, eps=1e-8)
+
+    # KL-to-base anchor (GRPO's optional reference regularizer). The ref is
+    # the pristine base model — NOT the current weights — so resume legs stay
+    # anchored to the same policy as their original leg.
+    kl_ref_client = None
+    if kl_beta > 0 and not eval_only:
+        kl_ref_client = service_client.create_sampling_client(base_model=model_name)
+        logger.info(f"KL anchor enabled: beta={kl_beta}, ref={model_name} (base weights)")
     # trust_remote_code is required for models like moonshotai/Kimi-K2.6 whose
     # tokenizer config references a custom processor class on the HF Hub.
     # Tinker exposes long-context PEFT variants with a `:peft:<context>` suffix
@@ -1646,6 +1695,13 @@ async def main(
 
         # Compute GRPO advantages
         rewards = [r.reward for r in valid_rollouts]
+        if kl_ref_client is not None:
+            kls = await compute_kl_penalties(valid_rollouts, kl_ref_client, max_sequence_length)
+            metrics["train/kl_mean"] = float(np.mean(kls))
+            metrics["train/kl_max"] = float(np.max(kls))
+            metrics["train/kl_min"] = float(np.min(kls))
+            metrics["reward/mean_pre_kl"] = float(np.mean(rewards))
+            rewards = [rw - kl_beta * k for rw, k in zip(rewards, kls)]
         advantages = compute_advantages_grpo(rewards, group_size=n_samples_per_prompt, normalize=True)
 
         # Compute all rollout metrics (convert to dicts for metrics functions)
@@ -1933,6 +1989,17 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--kl-beta",
+        type=float,
+        default=0.0,
+        help=(
+            "Coefficient for the KL(policy || base) penalty subtracted from "
+            "rewards before group-advantage computation; 0 disables. The "
+            "reference is always the pristine base model, scored via a frozen "
+            "sampling client (one prefill pass per rollout)."
+        ),
+    )
+    parser.add_argument(
         "--start-step",
         type=int,
         default=0,
@@ -2008,5 +2075,6 @@ if __name__ == "__main__":
             load_state=args.load_state,
             start_step=args.start_step,
             time_budget_s=args.time_budget_s,
+            kl_beta=args.kl_beta,
         )
     )
