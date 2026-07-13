@@ -1,5 +1,38 @@
 # Fleet Integration Changelog
 
+## 2026-07-13: Tinker GRPO — task-keyed advantage groups + temperature-consistent importance ratios
+
+Scope: `main_fleet_tinker.py` only.
+
+Two correctness fixes to the hosted-Tinker training loop:
+
+**1. Advantage groups keyed by task_key (was: positional slices).**
+`compute_advantages_grpo` sliced the valid-rollout list into contiguous
+chunks of `n_samples_per_prompt`. Collection order is task-major, but the
+valid-rollout filter (error / empty response / reward=None) removes entries
+before grouping — so one invalid rollout shifts every later group boundary
+and "group mean" becomes a mean over rollouts of DIFFERENT tasks. With
+verifier-execution failures excluded by design (23% of zeros in the regrade
+census), this fired routinely. New `compute_advantages_grpo_by_task` keys
+groups by the task that produced each rollout: invariant to filtering and
+ordering; normalization semantics unchanged (per-task centering, then one
+global normalize).
+
+**2. Behavior logprobs recomputed under the raw model when temperature != 1.**
+Sampling at T draws from q = softmax(logits/T) and Tinker records log q;
+the hosted ppo/importance-sampling loss scores its numerator under raw p.
+The ratio therefore starts at p/q != 1 before any update, with deviation
+growing ~(1/T - 1)*|logp| per token (T=0.9: a p=1% token carries ratio
+~1.7) — positive-advantage rare tokens get clipped, negative-advantage rare
+tokens over-penalized, a systematic anti-rare-token bias from step 0.
+`recompute_behavior_logprobs` runs one extra `forward(loss_fn=
+"cross_entropy")` under the pre-update weights and splices the raw-p
+logprobs into `loss_fn_inputs["logprobs"]` at loss positions, so the
+first-step ratio is exactly 1 and clipping responds only to genuine drift.
+Gated on `temperature != 1.0` (recorded and recomputed logprobs already
+match to ~2e-3 at T=1); opt out with `--no-fix-behavior-logprobs`. Emits
+`logprob_fix/{mean,max}_abs_delta` + `time/logprob_recompute` to wandb.
+
 ## 2026-07-07: ATOF phase 2 — hint-synthesis events (generator-side)
 
 Scope: `atof_events.py` (additive method), **core file edit**
