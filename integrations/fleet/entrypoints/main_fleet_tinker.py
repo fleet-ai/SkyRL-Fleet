@@ -259,6 +259,41 @@ def compute_advantages_grpo(
     return advantages
 
 
+def compute_advantages_grpo_by_task(
+    rewards: List[float],
+    task_keys: List[str],
+    normalize: bool = True,
+) -> List[float]:
+    """GRPO advantages with groups keyed by the task that produced each rollout.
+
+    Positional slicing (``compute_advantages_grpo`` with a fixed group_size)
+    silently mixes tasks whenever any rollout was filtered out upstream
+    (error / empty response / reward=None): every group boundary after the
+    gap shifts by one, so "group mean" becomes a mean over rollouts of
+    DIFFERENT tasks. Verifier-execution failures make such gaps routine (a
+    regrade census found 23% of zeros were execution failures), so this is
+    the default advantage estimator. Keying groups by task_key is invariant
+    to filtering and ordering.
+
+    Normalization matches ``compute_advantages_grpo``: mean-center within
+    each task's group, then normalize once across the whole batch.
+    """
+    groups: Dict[str, List[int]] = {}
+    for i, key in enumerate(task_keys):
+        groups.setdefault(key, []).append(i)
+
+    advantages = [0.0] * len(rewards)
+    for indices in groups.values():
+        group_mean = float(np.mean([rewards[i] for i in indices]))
+        for i in indices:
+            advantages[i] = rewards[i] - group_mean
+
+    if normalize:
+        advantages = normalize_advantages(advantages)
+
+    return advantages
+
+
 def compute_pass_at_n(rollouts: List[Dict[str, Any]], n_samples_per_prompt: int) -> float:
     """
     Compute pass@n metric using the shared metrics module.
@@ -468,6 +503,80 @@ def prepare_training_data(
         training_datums.append(datum)
 
     return training_datums, truncated_count
+
+
+def recompute_behavior_logprobs(
+    training_client: Any,
+    training_datums: List[types.Datum],
+) -> Tuple[List[types.Datum], Dict[str, float]]:
+    """Replace sampler-recorded logprobs with trainer-recomputed ones.
+
+    Sampling at temperature T != 1 draws from the tempered distribution
+    q = softmax(logits/T), and Tinker records log q(token). The hosted
+    ppo/importance-sampling loss computes its numerator under the raw model
+    p (no temperature exists at training time), so the importance ratio
+    starts at p/q = exp((1 - 1/T)*logp + log Z_T) != 1 before any update.
+    The deviation grows with token rarity (~0.11*|logp| at T=0.9; a p=1%
+    token carries ratio ~1.7): positive-advantage rare tokens get clipped
+    (gradient zeroed) while negative-advantage rare tokens are over-penalized
+    — a systematic anti-rare-token bias from step 0.
+
+    Fix: one extra ``forward(loss_fn="cross_entropy")`` under the current
+    (pre-update) weights returns per-target-token logprobs under raw p.
+    Splicing those into ``loss_fn_inputs["logprobs"]`` puts numerator and
+    denominator on the same distribution, so the first-step ratio is exactly
+    1 and clipping responds only to genuine policy drift.
+
+    Only positions with nonzero advantage are spliced (those are the only
+    positions that contribute to the loss); prompt/masked positions keep
+    their 0.0 placeholder.
+
+    Returns:
+        (new_datums, metrics): rebuilt datums plus observability stats on the
+        recorded-vs-recomputed logprob gap (this directly measures the
+        temperature artifact in production).
+    """
+    probe_datums = [
+        types.Datum(
+            model_input=d.model_input,
+            loss_fn_inputs={
+                "target_tokens": d.loss_fn_inputs["target_tokens"],
+                "weights": TensorData.from_torch(
+                    torch.ones(len(d.loss_fn_inputs["target_tokens"].to_torch()))
+                ),
+            },
+        )
+        for d in training_datums
+    ]
+    output = training_client.forward(probe_datums, loss_fn="cross_entropy").result()
+
+    new_datums: List[types.Datum] = []
+    deltas: List[torch.Tensor] = []
+    for datum, out in zip(training_datums, output.loss_fn_outputs):
+        recorded = datum.loss_fn_inputs["logprobs"].to_torch().float()
+        fresh = out["logprobs"].to_torch().float()
+        advantages = datum.loss_fn_inputs["advantages"].to_torch()
+        mask = advantages != 0
+        spliced = torch.where(mask, fresh, recorded)
+        if mask.any():
+            deltas.append((fresh[mask] - recorded[mask]).abs())
+        new_datums.append(
+            types.Datum(
+                model_input=datum.model_input,
+                loss_fn_inputs={
+                    "target_tokens": datum.loss_fn_inputs["target_tokens"],
+                    "logprobs": TensorData.from_torch(spliced),
+                    "advantages": datum.loss_fn_inputs["advantages"],
+                },
+            )
+        )
+
+    all_deltas = torch.cat(deltas) if deltas else torch.zeros(0)
+    stats = {
+        "logprob_fix/mean_abs_delta": float(all_deltas.mean()) if all_deltas.numel() else 0.0,
+        "logprob_fix/max_abs_delta": float(all_deltas.max()) if all_deltas.numel() else 0.0,
+    }
+    return new_datums, stats
 
 
 def tokenize_chat(
@@ -1237,6 +1346,7 @@ async def main(
     load_state: str = None,
     start_step: int = 0,
     time_budget_s: int = 0,
+    fix_behavior_logprobs: bool = True,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1644,9 +1754,12 @@ async def main(
             logger.warning(f"Step {step}: No valid rollouts, skipping")
             continue
 
-        # Compute GRPO advantages
+        # Compute GRPO advantages. Groups are keyed by task_key rather than
+        # positional slices: the valid-rollout filter above removes entries,
+        # and positional groups would mix tasks after any gap.
         rewards = [r.reward for r in valid_rollouts]
-        advantages = compute_advantages_grpo(rewards, group_size=n_samples_per_prompt, normalize=True)
+        task_keys = [r.task_key for r in valid_rollouts]
+        advantages = compute_advantages_grpo_by_task(rewards, task_keys, normalize=True)
 
         # Compute all rollout metrics (convert to dicts for metrics functions)
         rollout_metrics = compute_rollout_metrics(
@@ -1689,6 +1802,26 @@ async def main(
         if not training_datums:
             logger.warning(f"Step {step}: No valid training sequences after filtering, skipping")
             continue
+
+        # Temperature-consistent importance ratios: at T != 1 the sampler
+        # records logprobs under the tempered distribution while the hosted
+        # loss scores under the raw model, biasing the ratio by
+        # ~(1/T - 1)*|logp| per token. Recompute the denominators under the
+        # current weights so the ratio measures policy drift, not temperature.
+        # At T == 1 recorded and recomputed logprobs already agree (~2e-3),
+        # so the extra forward is skipped.
+        if fix_behavior_logprobs and temperature != 1.0:
+            recompute_start = time.time()
+            training_datums, logprob_stats = recompute_behavior_logprobs(
+                training_client, training_datums
+            )
+            metrics.update(logprob_stats)
+            metrics["time/logprob_recompute"] = time.time() - recompute_start
+            logger.info(
+                f"Step {step}: recomputed behavior logprobs "
+                f"(mean|Δ|={logprob_stats['logprob_fix/mean_abs_delta']:.4f}, "
+                f"max|Δ|={logprob_stats['logprob_fix/max_abs_delta']:.4f})"
+            )
 
         # Training step
         logger.info(f"Step {step}: Training on {len(training_datums)} sequences...")
@@ -1852,6 +1985,13 @@ if __name__ == "__main__":
     # <|tool_call_argument_begin|>, producing naked-format calls the parser
     # drops. Lowering both reduces format drift without making rollouts deterministic.
     parser.add_argument("--temperature", type=float, default=0.6, help="Sampling temperature")
+    parser.add_argument(
+        "--no-fix-behavior-logprobs",
+        dest="fix_behavior_logprobs",
+        action="store_false",
+        help="Disable recomputing behavior logprobs under the raw model when "
+        "sampling temperature != 1 (accepts temperature-biased importance ratios).",
+    )
     parser.add_argument("--top-p", type=float, default=0.95, help="Top-p (nucleus) sampling")
     parser.add_argument(
         "--stop-sequences",
@@ -1997,6 +2137,7 @@ if __name__ == "__main__":
             top_p=args.top_p,
             stop_sequences=stop_sequences,
             loss_fn=args.loss_fn,
+            fix_behavior_logprobs=args.fix_behavior_logprobs,
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
             save_state_every=args.save_state_every,
