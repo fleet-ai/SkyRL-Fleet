@@ -1713,16 +1713,29 @@ async def main(
     run_started = time.time()
     paused_at_step: int | None = None
     pause_state_path: str | None = None
-    # Trainer-side sequence cap: CLI override, or probed on a throwaway
-    # client (see discover_trainer_seqlen_cap — a rejected request poisons
-    # its TrainingClient, so this must be resolved before the real client
-    # sees any batch). Every step then pre-truncates to the cap.
+    # Trainer-side sequence cap: CLI override; else the `:peft:<N>` model-tag
+    # context declaration; else probed on a throwaway client (see
+    # discover_trainer_seqlen_cap — a rejected request poisons its
+    # TrainingClient, so this must be resolved before the real client sees
+    # any batch). Every step then pre-truncates to the cap.
     train_seqlen_cap = max_train_sequence_length
     if train_seqlen_cap is None:
-        probe_token_id = tokenizer.eos_token_id or 0
-        train_seqlen_cap = await discover_trainer_seqlen_cap(
-            service_client, model_name, lora_rank, max_sequence_length, probe_token_id
-        )
+        peft_ctx: Optional[int] = None
+        if ":peft:" in model_name:
+            try:
+                peft_ctx = int(model_name.rsplit(":peft:", 1)[1])
+            except ValueError:
+                peft_ctx = None
+        if peft_ctx is not None:
+            # The tag declares the trainer-side context window; no probe
+            # needed (a 131072-token probe forward on Kimi-K2.6 takes 10+
+            # minutes — pure startup waste for a model whose cap is known).
+            train_seqlen_cap = peft_ctx if peft_ctx < max_sequence_length else None
+        else:
+            probe_token_id = tokenizer.eos_token_id or 0
+            train_seqlen_cap = await discover_trainer_seqlen_cap(
+                service_client, model_name, lora_rank, max_sequence_length, probe_token_id
+            )
         if train_seqlen_cap is not None:
             logger.warning(
                 f"Trainer max sequence length for {model_name} is "
