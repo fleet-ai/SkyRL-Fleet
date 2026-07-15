@@ -417,6 +417,47 @@ def compute_rollout_metrics(
 _TRAINER_SEQLEN_CAP_RE = re.compile(r"exceeds max sequence length (\d+)")
 
 
+async def discover_trainer_seqlen_cap(
+    service_client: Any,
+    model_name: str,
+    lora_rank: int,
+    max_sequence_length: int,
+    probe_token_id: int,
+) -> Optional[int]:
+    """Probe Tinker's trainer-side max sequence length on a throwaway client.
+
+    Some models train at a shorter max sequence length than they sample at
+    (Qwen3.6-35B: 131072 sampling / 65536 training), so a config sized for
+    sampling can pass rollout collection and still be rejected by
+    forward/forward_backward. Crucially, a rejected request POISONS its
+    TrainingClient — Tinker refuses all further operations on it — so the cap
+    cannot be discovered by catch-and-retry on the real client (verified
+    empirically). Instead: one max_sequence_length-token forward on a
+    disposable client before training starts. Pass -> no cap (returns None);
+    rejection -> parse the cap from the error text. The real training client
+    never sees an oversized batch.
+    """
+    probe_client = await service_client.create_lora_training_client_async(
+        base_model=model_name, rank=lora_rank
+    )
+    tokens = [probe_token_id] * max_sequence_length
+    datum = types.Datum(
+        model_input=types.ModelInput.from_ints(tokens),
+        loss_fn_inputs={
+            "target_tokens": TensorData.from_torch(torch.tensor(tokens, dtype=torch.long)),
+            "weights": TensorData.from_torch(torch.zeros(len(tokens))),
+        },
+    )
+    try:
+        probe_client.forward([datum], loss_fn="cross_entropy").result()
+        return None
+    except tinker.RequestFailedError as e:
+        cap_match = _TRAINER_SEQLEN_CAP_RE.search(str(e))
+        if cap_match is None:
+            raise
+        return int(cap_match.group(1))
+
+
 def prepare_training_data(
     rollouts: List[Dict[str, Any]],
     advantages: List[float],
@@ -1672,13 +1713,23 @@ async def main(
     run_started = time.time()
     paused_at_step: int | None = None
     pause_state_path: str | None = None
-    # Trainer-side sequence cap. Tinker's sampling and training endpoints can
-    # enforce different max sequence lengths for the same model (Qwen3.6-35B
-    # samples at 131072 but trains at 65536), so a config that is valid for
-    # rollout collection can still crash forward/forward_backward the first
-    # time a long episode appears. Seeded from the CLI override and tightened
-    # automatically the first time the server rejects a batch.
+    # Trainer-side sequence cap: CLI override, or probed on a throwaway
+    # client (see discover_trainer_seqlen_cap — a rejected request poisons
+    # its TrainingClient, so this must be resolved before the real client
+    # sees any batch). Every step then pre-truncates to the cap.
     train_seqlen_cap = max_train_sequence_length
+    if train_seqlen_cap is None:
+        probe_token_id = tokenizer.eos_token_id or 0
+        train_seqlen_cap = await discover_trainer_seqlen_cap(
+            service_client, model_name, lora_rank, max_sequence_length, probe_token_id
+        )
+        if train_seqlen_cap is not None:
+            logger.warning(
+                f"Trainer max sequence length for {model_name} is "
+                f"{train_seqlen_cap} (< configured {max_sequence_length}); "
+                f"training batches will be truncated to the cap"
+            )
+            wandb.log({"seqlen_guard/trainer_cap": train_seqlen_cap}, commit=False)
 
     pbar = tqdm(range(start_step, max_steps), desc="Training", unit="step", initial=start_step, total=max_steps)
     for step in pbar:
@@ -1828,63 +1879,41 @@ async def main(
         # current weights so the ratio measures policy drift, not temperature.
         # At T == 1 recorded and recomputed logprobs already agree (~2e-3),
         # so the extra forward is skipped.
-        # One retry: if Tinker rejects the batch because the trainer's max
-        # sequence length is tighter than the configured max_sequence_length,
-        # learn the cap from the error text, re-truncate this batch, and go
-        # again. train_seqlen_cap persists, so every later step pre-truncates
-        # and never re-enters the error path. A failed first attempt may have
-        # already consumed its optim_step submission, but with no gradients
-        # accumulated that is a no-op; the retry applies exactly one update.
-        train_start = time.time()  # refined just before forward_backward; set here so the empty-retry path can't leave it unbound
-        for seqlen_attempt in (0, 1):
-            try:
-                if fix_behavior_logprobs and temperature != 1.0:
-                    recompute_start = time.time()
-                    training_datums, logprob_stats = recompute_behavior_logprobs(
-                        training_client, training_datums
-                    )
-                    metrics.update(logprob_stats)
-                    metrics["time/logprob_recompute"] = time.time() - recompute_start
-                    logger.info(
-                        f"Step {step}: recomputed behavior logprobs "
-                        f"(mean|Δ|={logprob_stats['logprob_fix/mean_abs_delta']:.4f}, "
-                        f"max|Δ|={logprob_stats['logprob_fix/max_abs_delta']:.4f})"
-                    )
-
-                # Training step
-                logger.info(f"Step {step}: Training on {len(training_datums)} sequences...")
-                train_start = time.time()
-                fwd_bwd_future = training_client.forward_backward(training_datums, loss_fn=loss_fn)
-                optim_step_future = training_client.optim_step(adam_params)
-
-                fwd_bwd_future.result()
-                optim_step_future.result()
-                break
-            except tinker.RequestFailedError as e:
-                cap_match = _TRAINER_SEQLEN_CAP_RE.search(str(e))
-                if cap_match is None or seqlen_attempt == 1:
-                    raise
-                train_seqlen_cap = int(cap_match.group(1))
-                logger.warning(
-                    f"Step {step}: trainer rejected batch — max trainable "
-                    f"sequence length is {train_seqlen_cap} (configured "
-                    f"max_sequence_length={max_sequence_length}); re-truncating "
-                    f"and retrying once"
+        try:
+            if fix_behavior_logprobs and temperature != 1.0:
+                recompute_start = time.time()
+                training_datums, logprob_stats = recompute_behavior_logprobs(
+                    training_client, training_datums
                 )
-                metrics["seqlen_guard/trainer_cap"] = train_seqlen_cap
-                training_datums, recap_truncated = prepare_training_data(
-                    rollouts=valid_rollouts,
-                    advantages=advantages,
-                    tokenizer=tokenizer,
-                    max_sequence_length=train_seqlen_cap,
+                metrics.update(logprob_stats)
+                metrics["time/logprob_recompute"] = time.time() - recompute_start
+                logger.info(
+                    f"Step {step}: recomputed behavior logprobs "
+                    f"(mean|Δ|={logprob_stats['logprob_fix/mean_abs_delta']:.4f}, "
+                    f"max|Δ|={logprob_stats['logprob_fix/max_abs_delta']:.4f})"
                 )
-                metrics["rollouts/truncated_overlong"] += recap_truncated
-                if not training_datums:
-                    logger.warning(
-                        f"Step {step}: no sequences fit under trainer cap "
-                        f"{train_seqlen_cap}, skipping step"
-                    )
-                    break
+
+            # Training step
+            logger.info(f"Step {step}: Training on {len(training_datums)} sequences...")
+            train_start = time.time()
+
+            fwd_bwd_future = training_client.forward_backward(training_datums, loss_fn=loss_fn)
+            optim_step_future = training_client.optim_step(adam_params)
+
+            fwd_bwd_future.result()
+            optim_step_future.result()
+        except tinker.RequestFailedError as e:
+            # A rejected request poisons the TrainingClient — no in-place
+            # recovery exists, so surface the actionable fix before dying.
+            if _TRAINER_SEQLEN_CAP_RE.search(str(e)):
+                logger.error(
+                    f"Step {step}: trainer rejected an overlong batch and the "
+                    f"training client is now poisoned. The startup probe "
+                    f"should have caught this; restart with "
+                    f"--max-train-sequence-length set to the cap in the error "
+                    f"above (and --load-state on the last checkpoint)."
+                )
+            raise
 
         metrics["time/train"] = time.time() - train_start
         metrics["time/total"] = time.time() - step_start

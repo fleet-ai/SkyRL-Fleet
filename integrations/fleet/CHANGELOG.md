@@ -13,22 +13,29 @@ kills the whole run the first time an episode exceeds the trainer cap
 `recompute_behavior_logprobs`'s forward probe — `forward_backward` would hit
 the same wall).
 
+Key constraint (verified empirically against live Tinker): a rejected
+request POISONS its TrainingClient — Tinker refuses all further operations
+on it ("create a new TrainingClient from a checkpoint if you wish to
+continue"). So catch-and-retry on the real client is impossible; the cap
+must be resolved before the training client ever sees an oversized batch.
+
 Fix, two layers:
 
 1. `--max-train-sequence-length` (optional): when set, batches are truncated
    to `min(max_sequence_length, max_train_sequence_length)` in
    `prepare_training_data`, so overlong episodes are truncated instead of
    fatal.
-2. Auto-discovery: the recompute + forward_backward block retries once on a
-   `RequestFailedError` matching "exceeds max sequence length N" — the cap N
-   is parsed from the error, the batch is re-truncated to it, and the cap
-   persists so all later steps pre-truncate without re-entering the error
-   path. New wandb metric `seqlen_guard/trainer_cap` records the discovered
-   cap; re-truncations add to `rollouts/truncated_overlong`.
+2. Startup probe (`discover_trainer_seqlen_cap`): when the flag is unset, a
+   single max_sequence_length-token `forward` runs on a DISPOSABLE LoRA
+   client before training. Pass -> no cap; rejection -> cap parsed from the
+   error text and applied as the pre-truncation bound for every step. The
+   poisoned probe client is simply discarded. Logged to wandb as
+   `seqlen_guard/trainer_cap`.
 
-A failed first attempt may have already submitted its `optim_step`, but with
-no gradients accumulated that is a no-op; the retry applies exactly one
-update.
+If a mid-run rejection still somehow occurs, the step logs an actionable
+error (restart with `--max-train-sequence-length` + `--load-state`) before
+re-raising — the client is poisoned at that point and no in-place recovery
+exists.
 
 ## 2026-07-13: Tinker GRPO — task-keyed advantage groups + temperature-consistent importance ratios
 
