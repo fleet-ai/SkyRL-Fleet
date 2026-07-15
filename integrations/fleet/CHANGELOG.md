@@ -1,5 +1,35 @@
 # Fleet Integration Changelog
 
+## 2026-07-15: Tinker GRPO — trainer-side sequence-length guard
+
+Scope: `main_fleet_tinker.py` only.
+
+Tinker's sampling and training endpoints can enforce different max sequence
+lengths for the same model: Qwen3.6-35B-A3B samples at 131072 but rejects
+training-side requests (`forward`, `forward_backward`) above 65536. A config
+sized for the sampling limit therefore passes rollout collection and then
+kills the whole run the first time an episode exceeds the trainer cap
+(observed: lev177 run dead at step 8/60 on a 77192-token episode, inside
+`recompute_behavior_logprobs`'s forward probe — `forward_backward` would hit
+the same wall).
+
+Fix, two layers:
+
+1. `--max-train-sequence-length` (optional): when set, batches are truncated
+   to `min(max_sequence_length, max_train_sequence_length)` in
+   `prepare_training_data`, so overlong episodes are truncated instead of
+   fatal.
+2. Auto-discovery: the recompute + forward_backward block retries once on a
+   `RequestFailedError` matching "exceeds max sequence length N" — the cap N
+   is parsed from the error, the batch is re-truncated to it, and the cap
+   persists so all later steps pre-truncate without re-entering the error
+   path. New wandb metric `seqlen_guard/trainer_cap` records the discovered
+   cap; re-truncations add to `rollouts/truncated_overlong`.
+
+A failed first attempt may have already submitted its `optim_step`, but with
+no gradients accumulated that is a no-op; the retry applies exactly one
+update.
+
 ## 2026-07-13: Tinker GRPO — task-keyed advantage groups + temperature-consistent importance ratios
 
 Scope: `main_fleet_tinker.py` only.

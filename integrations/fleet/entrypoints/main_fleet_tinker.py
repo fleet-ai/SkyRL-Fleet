@@ -41,6 +41,7 @@ import io
 import logging
 import os
 import random
+import re
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -409,6 +410,11 @@ def compute_rollout_metrics(
     metrics["rollout/min_duration"] = np.min(durations)
 
     return metrics
+
+
+# Tinker's error text when the training endpoint rejects a datum longer than
+# the model's trainer-side max sequence length. The captured group is the cap.
+_TRAINER_SEQLEN_CAP_RE = re.compile(r"exceeds max sequence length (\d+)")
 
 
 def prepare_training_data(
@@ -1347,6 +1353,7 @@ async def main(
     start_step: int = 0,
     time_budget_s: int = 0,
     fix_behavior_logprobs: bool = True,
+    max_train_sequence_length: Optional[int] = None,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1665,6 +1672,14 @@ async def main(
     run_started = time.time()
     paused_at_step: int | None = None
     pause_state_path: str | None = None
+    # Trainer-side sequence cap. Tinker's sampling and training endpoints can
+    # enforce different max sequence lengths for the same model (Qwen3.6-35B
+    # samples at 131072 but trains at 65536), so a config that is valid for
+    # rollout collection can still crash forward/forward_backward the first
+    # time a long episode appears. Seeded from the CLI override and tightened
+    # automatically the first time the server rejects a batch.
+    train_seqlen_cap = max_train_sequence_length
+
     pbar = tqdm(range(start_step, max_steps), desc="Training", unit="step", initial=start_step, total=max_steps)
     for step in pbar:
         # Cloud Run job executions hard-cap at 24h; a run projected past the
@@ -1788,11 +1803,14 @@ async def main(
         metrics["throughput/tokens_per_sec_effective"] = sum(tokens) / sum(durations) if sum(durations) > 0 else 0
 
         # Prepare training data (DAPO filtering + truncation + datum creation)
+        effective_max_len = max_sequence_length
+        if train_seqlen_cap is not None:
+            effective_max_len = min(effective_max_len, train_seqlen_cap)
         training_datums, truncated_count = prepare_training_data(
             rollouts=valid_rollouts,
             advantages=advantages,
             tokenizer=tokenizer,
-            max_sequence_length=max_sequence_length,
+            max_sequence_length=effective_max_len,
         )
 
         metrics["rollouts/truncated_overlong"] = truncated_count
@@ -1810,28 +1828,63 @@ async def main(
         # current weights so the ratio measures policy drift, not temperature.
         # At T == 1 recorded and recomputed logprobs already agree (~2e-3),
         # so the extra forward is skipped.
-        if fix_behavior_logprobs and temperature != 1.0:
-            recompute_start = time.time()
-            training_datums, logprob_stats = recompute_behavior_logprobs(
-                training_client, training_datums
-            )
-            metrics.update(logprob_stats)
-            metrics["time/logprob_recompute"] = time.time() - recompute_start
-            logger.info(
-                f"Step {step}: recomputed behavior logprobs "
-                f"(mean|Δ|={logprob_stats['logprob_fix/mean_abs_delta']:.4f}, "
-                f"max|Δ|={logprob_stats['logprob_fix/max_abs_delta']:.4f})"
-            )
+        # One retry: if Tinker rejects the batch because the trainer's max
+        # sequence length is tighter than the configured max_sequence_length,
+        # learn the cap from the error text, re-truncate this batch, and go
+        # again. train_seqlen_cap persists, so every later step pre-truncates
+        # and never re-enters the error path. A failed first attempt may have
+        # already consumed its optim_step submission, but with no gradients
+        # accumulated that is a no-op; the retry applies exactly one update.
+        train_start = time.time()  # refined just before forward_backward; set here so the empty-retry path can't leave it unbound
+        for seqlen_attempt in (0, 1):
+            try:
+                if fix_behavior_logprobs and temperature != 1.0:
+                    recompute_start = time.time()
+                    training_datums, logprob_stats = recompute_behavior_logprobs(
+                        training_client, training_datums
+                    )
+                    metrics.update(logprob_stats)
+                    metrics["time/logprob_recompute"] = time.time() - recompute_start
+                    logger.info(
+                        f"Step {step}: recomputed behavior logprobs "
+                        f"(mean|Δ|={logprob_stats['logprob_fix/mean_abs_delta']:.4f}, "
+                        f"max|Δ|={logprob_stats['logprob_fix/max_abs_delta']:.4f})"
+                    )
 
-        # Training step
-        logger.info(f"Step {step}: Training on {len(training_datums)} sequences...")
-        train_start = time.time()
+                # Training step
+                logger.info(f"Step {step}: Training on {len(training_datums)} sequences...")
+                train_start = time.time()
+                fwd_bwd_future = training_client.forward_backward(training_datums, loss_fn=loss_fn)
+                optim_step_future = training_client.optim_step(adam_params)
 
-        fwd_bwd_future = training_client.forward_backward(training_datums, loss_fn=loss_fn)
-        optim_step_future = training_client.optim_step(adam_params)
-
-        fwd_bwd_future.result()
-        optim_step_future.result()
+                fwd_bwd_future.result()
+                optim_step_future.result()
+                break
+            except tinker.RequestFailedError as e:
+                cap_match = _TRAINER_SEQLEN_CAP_RE.search(str(e))
+                if cap_match is None or seqlen_attempt == 1:
+                    raise
+                train_seqlen_cap = int(cap_match.group(1))
+                logger.warning(
+                    f"Step {step}: trainer rejected batch — max trainable "
+                    f"sequence length is {train_seqlen_cap} (configured "
+                    f"max_sequence_length={max_sequence_length}); re-truncating "
+                    f"and retrying once"
+                )
+                metrics["seqlen_guard/trainer_cap"] = train_seqlen_cap
+                training_datums, recap_truncated = prepare_training_data(
+                    rollouts=valid_rollouts,
+                    advantages=advantages,
+                    tokenizer=tokenizer,
+                    max_sequence_length=train_seqlen_cap,
+                )
+                metrics["rollouts/truncated_overlong"] += recap_truncated
+                if not training_datums:
+                    logger.warning(
+                        f"Step {step}: no sequences fit under trainer cap "
+                        f"{train_seqlen_cap}, skipping step"
+                    )
+                    break
 
         metrics["time/train"] = time.time() - train_start
         metrics["time/total"] = time.time() - step_start
@@ -1992,6 +2045,15 @@ if __name__ == "__main__":
         help="Disable recomputing behavior logprobs under the raw model when "
         "sampling temperature != 1 (accepts temperature-biased importance ratios).",
     )
+    parser.add_argument(
+        "--max-train-sequence-length",
+        type=int,
+        default=None,
+        help="Trainer-side sequence cap for models whose Tinker training "
+        "endpoint enforces a shorter max sequence length than sampling "
+        "supports (e.g. Qwen3.6-35B: 131072 sampling / 65536 training). "
+        "Discovered automatically from the server error when unset.",
+    )
     parser.add_argument("--top-p", type=float, default=0.95, help="Top-p (nucleus) sampling")
     parser.add_argument(
         "--stop-sequences",
@@ -2138,6 +2200,7 @@ if __name__ == "__main__":
             stop_sequences=stop_sequences,
             loss_fn=args.loss_fn,
             fix_behavior_logprobs=args.fix_behavior_logprobs,
+            max_train_sequence_length=args.max_train_sequence_length,
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
             save_state_every=args.save_state_every,
