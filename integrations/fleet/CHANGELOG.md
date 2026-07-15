@@ -1,5 +1,42 @@
 # Fleet Integration Changelog
 
+## 2026-07-15: Tinker GRPO — trainer-side sequence-length guard
+
+Scope: `main_fleet_tinker.py` only.
+
+Tinker's sampling and training endpoints can enforce different max sequence
+lengths for the same model: Qwen3.6-35B-A3B samples at 131072 but rejects
+training-side requests (`forward`, `forward_backward`) above 65536. A config
+sized for the sampling limit therefore passes rollout collection and then
+kills the whole run the first time an episode exceeds the trainer cap
+(observed: lev177 run dead at step 8/60 on a 77192-token episode, inside
+`recompute_behavior_logprobs`'s forward probe — `forward_backward` would hit
+the same wall).
+
+Key constraint (verified empirically against live Tinker): a rejected
+request POISONS its TrainingClient — Tinker refuses all further operations
+on it ("create a new TrainingClient from a checkpoint if you wish to
+continue"). So catch-and-retry on the real client is impossible; the cap
+must be resolved before the training client ever sees an oversized batch.
+
+Fix, two layers:
+
+1. `--max-train-sequence-length` (optional): when set, batches are truncated
+   to `min(max_sequence_length, max_train_sequence_length)` in
+   `prepare_training_data`, so overlong episodes are truncated instead of
+   fatal.
+2. Startup probe (`discover_trainer_seqlen_cap`): when the flag is unset, a
+   single max_sequence_length-token `forward` runs on a DISPOSABLE LoRA
+   client before training. Pass -> no cap; rejection -> cap parsed from the
+   error text and applied as the pre-truncation bound for every step. The
+   poisoned probe client is simply discarded. Logged to wandb as
+   `seqlen_guard/trainer_cap`.
+
+If a mid-run rejection still somehow occurs, the step logs an actionable
+error (restart with `--max-train-sequence-length` + `--load-state`) before
+re-raising — the client is poisoned at that point and no in-place recovery
+exists.
+
 ## 2026-07-13: Tinker GRPO — task-keyed advantage groups + temperature-consistent importance ratios
 
 Scope: `main_fleet_tinker.py` only.

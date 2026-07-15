@@ -41,6 +41,7 @@ import io
 import logging
 import os
 import random
+import re
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -409,6 +410,52 @@ def compute_rollout_metrics(
     metrics["rollout/min_duration"] = np.min(durations)
 
     return metrics
+
+
+# Tinker's error text when the training endpoint rejects a datum longer than
+# the model's trainer-side max sequence length. The captured group is the cap.
+_TRAINER_SEQLEN_CAP_RE = re.compile(r"exceeds max sequence length (\d+)")
+
+
+async def discover_trainer_seqlen_cap(
+    service_client: Any,
+    model_name: str,
+    lora_rank: int,
+    max_sequence_length: int,
+    probe_token_id: int,
+) -> Optional[int]:
+    """Probe Tinker's trainer-side max sequence length on a throwaway client.
+
+    Some models train at a shorter max sequence length than they sample at
+    (Qwen3.6-35B: 131072 sampling / 65536 training), so a config sized for
+    sampling can pass rollout collection and still be rejected by
+    forward/forward_backward. Crucially, a rejected request POISONS its
+    TrainingClient — Tinker refuses all further operations on it — so the cap
+    cannot be discovered by catch-and-retry on the real client (verified
+    empirically). Instead: one max_sequence_length-token forward on a
+    disposable client before training starts. Pass -> no cap (returns None);
+    rejection -> parse the cap from the error text. The real training client
+    never sees an oversized batch.
+    """
+    probe_client = await service_client.create_lora_training_client_async(
+        base_model=model_name, rank=lora_rank
+    )
+    tokens = [probe_token_id] * max_sequence_length
+    datum = types.Datum(
+        model_input=types.ModelInput.from_ints(tokens),
+        loss_fn_inputs={
+            "target_tokens": TensorData.from_torch(torch.tensor(tokens, dtype=torch.long)),
+            "weights": TensorData.from_torch(torch.zeros(len(tokens))),
+        },
+    )
+    try:
+        probe_client.forward([datum], loss_fn="cross_entropy").result()
+        return None
+    except tinker.RequestFailedError as e:
+        cap_match = _TRAINER_SEQLEN_CAP_RE.search(str(e))
+        if cap_match is None:
+            raise
+        return int(cap_match.group(1))
 
 
 def prepare_training_data(
@@ -1347,6 +1394,7 @@ async def main(
     start_step: int = 0,
     time_budget_s: int = 0,
     fix_behavior_logprobs: bool = True,
+    max_train_sequence_length: Optional[int] = None,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1665,6 +1713,24 @@ async def main(
     run_started = time.time()
     paused_at_step: int | None = None
     pause_state_path: str | None = None
+    # Trainer-side sequence cap: CLI override, or probed on a throwaway
+    # client (see discover_trainer_seqlen_cap — a rejected request poisons
+    # its TrainingClient, so this must be resolved before the real client
+    # sees any batch). Every step then pre-truncates to the cap.
+    train_seqlen_cap = max_train_sequence_length
+    if train_seqlen_cap is None:
+        probe_token_id = tokenizer.eos_token_id or 0
+        train_seqlen_cap = await discover_trainer_seqlen_cap(
+            service_client, model_name, lora_rank, max_sequence_length, probe_token_id
+        )
+        if train_seqlen_cap is not None:
+            logger.warning(
+                f"Trainer max sequence length for {model_name} is "
+                f"{train_seqlen_cap} (< configured {max_sequence_length}); "
+                f"training batches will be truncated to the cap"
+            )
+            wandb.log({"seqlen_guard/trainer_cap": train_seqlen_cap}, commit=False)
+
     pbar = tqdm(range(start_step, max_steps), desc="Training", unit="step", initial=start_step, total=max_steps)
     for step in pbar:
         # Cloud Run job executions hard-cap at 24h; a run projected past the
@@ -1788,11 +1854,14 @@ async def main(
         metrics["throughput/tokens_per_sec_effective"] = sum(tokens) / sum(durations) if sum(durations) > 0 else 0
 
         # Prepare training data (DAPO filtering + truncation + datum creation)
+        effective_max_len = max_sequence_length
+        if train_seqlen_cap is not None:
+            effective_max_len = min(effective_max_len, train_seqlen_cap)
         training_datums, truncated_count = prepare_training_data(
             rollouts=valid_rollouts,
             advantages=advantages,
             tokenizer=tokenizer,
-            max_sequence_length=max_sequence_length,
+            max_sequence_length=effective_max_len,
         )
 
         metrics["rollouts/truncated_overlong"] = truncated_count
@@ -1810,28 +1879,41 @@ async def main(
         # current weights so the ratio measures policy drift, not temperature.
         # At T == 1 recorded and recomputed logprobs already agree (~2e-3),
         # so the extra forward is skipped.
-        if fix_behavior_logprobs and temperature != 1.0:
-            recompute_start = time.time()
-            training_datums, logprob_stats = recompute_behavior_logprobs(
-                training_client, training_datums
-            )
-            metrics.update(logprob_stats)
-            metrics["time/logprob_recompute"] = time.time() - recompute_start
-            logger.info(
-                f"Step {step}: recomputed behavior logprobs "
-                f"(mean|Δ|={logprob_stats['logprob_fix/mean_abs_delta']:.4f}, "
-                f"max|Δ|={logprob_stats['logprob_fix/max_abs_delta']:.4f})"
-            )
+        try:
+            if fix_behavior_logprobs and temperature != 1.0:
+                recompute_start = time.time()
+                training_datums, logprob_stats = recompute_behavior_logprobs(
+                    training_client, training_datums
+                )
+                metrics.update(logprob_stats)
+                metrics["time/logprob_recompute"] = time.time() - recompute_start
+                logger.info(
+                    f"Step {step}: recomputed behavior logprobs "
+                    f"(mean|Δ|={logprob_stats['logprob_fix/mean_abs_delta']:.4f}, "
+                    f"max|Δ|={logprob_stats['logprob_fix/max_abs_delta']:.4f})"
+                )
 
-        # Training step
-        logger.info(f"Step {step}: Training on {len(training_datums)} sequences...")
-        train_start = time.time()
+            # Training step
+            logger.info(f"Step {step}: Training on {len(training_datums)} sequences...")
+            train_start = time.time()
 
-        fwd_bwd_future = training_client.forward_backward(training_datums, loss_fn=loss_fn)
-        optim_step_future = training_client.optim_step(adam_params)
+            fwd_bwd_future = training_client.forward_backward(training_datums, loss_fn=loss_fn)
+            optim_step_future = training_client.optim_step(adam_params)
 
-        fwd_bwd_future.result()
-        optim_step_future.result()
+            fwd_bwd_future.result()
+            optim_step_future.result()
+        except tinker.RequestFailedError as e:
+            # A rejected request poisons the TrainingClient — no in-place
+            # recovery exists, so surface the actionable fix before dying.
+            if _TRAINER_SEQLEN_CAP_RE.search(str(e)):
+                logger.error(
+                    f"Step {step}: trainer rejected an overlong batch and the "
+                    f"training client is now poisoned. The startup probe "
+                    f"should have caught this; restart with "
+                    f"--max-train-sequence-length set to the cap in the error "
+                    f"above (and --load-state on the last checkpoint)."
+                )
+            raise
 
         metrics["time/train"] = time.time() - train_start
         metrics["time/total"] = time.time() - step_start
@@ -1992,6 +2074,15 @@ if __name__ == "__main__":
         help="Disable recomputing behavior logprobs under the raw model when "
         "sampling temperature != 1 (accepts temperature-biased importance ratios).",
     )
+    parser.add_argument(
+        "--max-train-sequence-length",
+        type=int,
+        default=None,
+        help="Trainer-side sequence cap for models whose Tinker training "
+        "endpoint enforces a shorter max sequence length than sampling "
+        "supports (e.g. Qwen3.6-35B: 131072 sampling / 65536 training). "
+        "Discovered automatically from the server error when unset.",
+    )
     parser.add_argument("--top-p", type=float, default=0.95, help="Top-p (nucleus) sampling")
     parser.add_argument(
         "--stop-sequences",
@@ -2138,6 +2229,7 @@ if __name__ == "__main__":
             stop_sequences=stop_sequences,
             loss_fn=args.loss_fn,
             fix_behavior_logprobs=args.fix_behavior_logprobs,
+            max_train_sequence_length=args.max_train_sequence_length,
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
             save_state_every=args.save_state_every,
