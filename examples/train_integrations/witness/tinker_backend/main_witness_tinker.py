@@ -151,6 +151,27 @@ def _solved_level_steps(game_id: str, gm, max_levels: int) -> List[int]:
         return []
 
 
+def _level_detail(game_id: str, gm, max_levels: int) -> List[List[int]]:
+    """Per-level [level_index(0-based), completed(0/1), actions_taken] using the SAME dedup + level cap
+    as the arc scorer — dumped into the eval JSON so evals are RE-SCORABLE offline under any baseline
+    convention (baseline = k×optimal etc.) without re-running rollouts. Join with bench.catalog baselines."""
+    try:
+        from bench.catalog import load_game_info
+        gi = load_game_info(game_id)
+        n = min(gi.scoreable_levels, max_levels, len(gi.baseline_actions))
+        by_idx: Dict[int, Any] = {}
+        for lm in (getattr(gm, "level_metrics", None) or []):
+            if lm.level_index not in by_idx or lm.completed:
+                by_idx[lm.level_index] = lm
+        out = []
+        for L in range(n):
+            lm = by_idx.get(L)
+            out.append([L, int(bool(lm.completed)) if lm else 0, int(lm.actions_taken) if lm else 0])
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
 class WitnessTrajectory(BaseModel):
     """One witness game rollout = a list of per-ORAI-call (prompt, response, logprobs) + a return."""
     calls: List[Dict[str, Any]]      # each: {prompt_ids, response_ids, logprobs}
@@ -163,6 +184,7 @@ class WitnessTrajectory(BaseModel):
     completed_levels: int = 0        # genuine levels won (_levels_genuine; skip-path excluded)
     arc_score: float = 0.0           # ARC-AGI-3 RHAE per-game format score (0–115), official scorer
     solved_level_steps: List[int] = []  # actions_taken per SOLVED level → 'avg steps per solved level'
+    level_detail: List[List[int]] = []  # [lvl_idx, completed, actions] per level (scorer's view) → re-scorable evals
     seeded: bool = False             # rollout started from a Go-Explore frontier snapshot
     stop_reason: str = "stop"
     duration: float = 0.0
@@ -264,7 +286,8 @@ async def collect_witness_rollout(
                              total_gen_time=gen_time, total_tokens=total_tokens,
                              wins=wins, seeded=start_snapshot is not None,
                              reward_breakdown=rbd, game_steps=last_step, completed_levels=completed,
-                             arc_score=arc, solved_level_steps=sls)
+                             arc_score=arc, solved_level_steps=sls,
+                             level_detail=_level_detail(game_id, _gm, _ml))
 
 
 async def collect_batch(game_ids, agent_config, sampling_client, tokenizer, n_samples_per_prompt,
@@ -388,10 +411,11 @@ def _compute_eval_metrics(ev, egroups):
         by_g.setdefault(getattr(t, "task_key", "?"), []).append(t)
     # RHAE per game: mean-of-N (smooth training signal) AND best-of-N (= official ARC-AGI-3 per-game
     # aggregation, arc_agi.scorecard.EnvironmentScoreList.score = max over runs). Report BOTH — ~free.
-    game_arc_mean, game_arc_best, game_lv_best = {}, {}, {}
+    game_arc_mean, game_arc_best, game_lv_best, arcs_by_game = {}, {}, {}, {}
     for g, ts in by_g.items():
         lv = [t.completed_levels for t in ts]
         arc = [t.arc_score for t in ts]
+        arcs_by_game[g] = arc
         game_arc_mean[g] = float(np.mean(arc)); game_arc_best[g] = float(np.max(arc)); game_lv_best[g] = float(np.max(lv))
         metrics[f"eval/{g}/avg_reward"]           = float(np.mean([t.reward for t in ts]))
         metrics[f"eval/{g}/avg_completed_levels"] = float(np.mean(lv))            # mean-of-N seeds
@@ -401,11 +425,22 @@ def _compute_eval_metrics(ev, egroups):
         metrics[f"eval/{g}/avg_steps_per_solved_level"] = _steps_per_solved(ts)
         metrics[f"eval/{g}/arc_meanN"] = game_arc_mean[g]
         metrics[f"eval/{g}/arc_bestN"] = game_arc_best[g]
+        metrics[f"eval/{g}/arc_std"] = float(np.std(arc, ddof=1)) if len(arc) > 1 else 0.0  # seed-to-seed std of this game's RHAE
     # official aggregation = per-game score THEN mean across games (arc_agi: avg_score = mean over envs)
     metrics["eval/arc_meanN"] = float(np.mean(list(game_arc_mean.values()))) if game_arc_mean else 0.0
     metrics["eval/arc_bestN"] = float(np.mean(list(game_arc_best.values()))) if game_arc_best else 0.0  # OFFICIAL
     metrics["eval/avg_completed_levels_bestN"] = float(np.mean(list(game_lv_best.values()))) if game_lv_best else 0.0
     metrics["eval/avg_arc_agi_3_format_score"] = metrics["eval/arc_meanN"]  # legacy alias (= mean-of-N)
+    # seed-to-seed std of the GROUP RHAE (per-seed group score = mean over the group's games of that seed's
+    # arc; std over seeds) → error bars on the reported means. SEM = arc_std / sqrt(n_seed). ALWAYS report std.
+    def _group_arc_std(gnames):
+        cols = [arcs_by_game[g] for g in gnames if g in arcs_by_game]
+        nmin = min((len(c) for c in cols), default=0)
+        if not cols or nmin < 2:
+            return 0.0
+        per_seed = [float(np.mean([c[s] for c in cols])) for s in range(nmin)]
+        return float(np.std(per_seed, ddof=1))
+    metrics["eval/arc_std"] = _group_arc_std(list(arcs_by_game))
     # respective aggregates for named held-out subgroups (composites vs variants, etc.)
     for _lab, _set in egroups.items():
         gts = [t for t in ev if getattr(t, "task_key", "?") in _set]
@@ -419,10 +454,11 @@ def _compute_eval_metrics(ev, egroups):
         metrics[f"eval/{_lab}/avg_steps_per_solved_level"] = _steps_per_solved(gts)
         metrics[f"eval/{_lab}/arc_meanN"] = float(np.mean([game_arc_mean[g] for g in gn])) if gn else 0.0
         metrics[f"eval/{_lab}/arc_bestN"] = float(np.mean([game_arc_best[g] for g in gn])) if gn else 0.0
+        metrics[f"eval/{_lab}/arc_std"] = _group_arc_std(gn)
         metrics[f"eval/{_lab}/avg_completed_levels_bestN"] = float(np.mean([game_lv_best[g] for g in gn])) if gn else 0.0
         metrics[f"eval/{_lab}/avg_arc_agi_3_format_score"] = metrics[f"eval/{_lab}/arc_meanN"]  # legacy alias
     eval_str = (f" eval/lvls(mean/best)={metrics['eval/avg_completed_levels']:.2f}/{metrics['eval/avg_completed_levels_bestN']:.2f}"
-                f" arc(mean/best)={metrics['eval/arc_meanN']:.1f}/{metrics['eval/arc_bestN']:.1f}"
+                f" arc(mean/best/std)={metrics['eval/arc_meanN']:.1f}/{metrics['eval/arc_bestN']:.1f}/{metrics['eval/arc_std']:.1f}"
                 f" steps/lvl={metrics['eval/avg_steps_per_level']:.0f}"
                 f" steps/solved={metrics['eval/avg_steps_per_solved_level']:.0f}(n={len(ev)})")
     for _lab in egroups:
@@ -436,7 +472,8 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
                max_sequence_length, n_samples_per_prompt, eval_every, seed, wandb_project, wandb_name,
                temperature, top_p, stop_sequences, loss_fn, inject_mode, agent_config_path,
                max_orai_steps, seed_mode="off", seed_frac=0.0, max_concurrent=8, save_every=5,
-               eval_groups="", wandb_run_id="", start_step=0, eval_n_samples=5):
+               eval_groups="", wandb_run_id="", start_step=0, eval_n_samples=5, eval_seed_base=7_000_000,
+               eval_greedy=True, eval_max_orai_steps=250):
     set_seed(seed)
     games = [g.strip() for g in game_ids.split(",") if g.strip()]
     vals = [g.strip() for g in val_game_ids.split(",") if g.strip()]
@@ -557,12 +594,24 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
         eval_str = ""
         if eval_every > 0 and vals and step % eval_every == 0:
             ev = await collect_batch(vals, agent_config, sampling_client, tokenizer, eval_n_samples,
-                                     seed_base=7_000_000, max_concurrent=max_concurrent,
-                                     inject_mode="off", inject_p=0.0, **common)
+                                     seed_base=eval_seed_base, max_concurrent=max_concurrent,
+                                     inject_mode="off", inject_p=0.0, **{**common, "max_orai_steps": eval_max_orai_steps})
             ev = [t for t in ev if t.calls and not t.error]
             if ev:
                 em, eval_str = _compute_eval_metrics(ev, egroups)
                 metrics.update(em)
+            # GREEDY eval: 1 deterministic rollout/game (temperature 0). Near-reproducible (seed is a
+            # no-op for witness games; only continuous-batching FP wobbles), so it's a clean low-variance
+            # tracking signal — complements the noisy 5-seed sampled mean/Bo5. Logged under eval/greedy/*.
+            if eval_greedy:
+                evg = await collect_batch(vals, agent_config, sampling_client, tokenizer, 1,
+                                          seed_base=eval_seed_base, max_concurrent=max_concurrent,
+                                          inject_mode="off", inject_p=0.0, **{**common, "temperature": 0.0, "max_orai_steps": eval_max_orai_steps})
+                evg = [t for t in evg if t.calls and not t.error]
+                if evg:
+                    emg, _gs = _compute_eval_metrics(evg, egroups)
+                    metrics.update({k.replace("eval/", "eval/greedy/", 1): v for k, v in emg.items()})
+                    eval_str += f" | greedy_arc={emg.get('eval/arc_meanN', 0.0):.1f}"
 
         wandb.log(metrics, step=step, commit=True)
         print(f"[step {step}] reward={metrics['reward/avg_raw_reward']:.3f} "
@@ -578,20 +627,36 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
         final_path = training_client.save_weights_for_sampler(name=f"step_{final_step:06d}").result().path
         final_sampling = service_client.create_sampling_client(model_path=final_path)
         ev = await collect_batch(vals, agent_config, final_sampling, tokenizer, eval_n_samples,
-                                 seed_base=7_000_000, max_concurrent=max_concurrent,
-                                 inject_mode="off", inject_p=0.0, **common)
+                                 seed_base=eval_seed_base, max_concurrent=max_concurrent,
+                                 inject_mode="off", inject_p=0.0, **{**common, "max_orai_steps": eval_max_orai_steps})
         ev = [t for t in ev if t.calls and not t.error]
         if ev:
             em, eval_str = _compute_eval_metrics(ev, egroups)
+            evg = []
+            if eval_greedy:      # greedy (temp 0, 1 rollout/game) → eval/greedy/* in the dumped JSON too
+                evg = await collect_batch(vals, agent_config, final_sampling, tokenizer, 1,
+                                          seed_base=eval_seed_base, max_concurrent=max_concurrent,
+                                          inject_mode="off", inject_p=0.0, **{**common, "temperature": 0.0, "max_orai_steps": eval_max_orai_steps})
+                evg = [t for t in evg if t.calls and not t.error]
+                if evg:
+                    emg, _gs = _compute_eval_metrics(evg, egroups)
+                    em.update({k.replace("eval/", "eval/greedy/", 1): v for k, v in emg.items()})
             em["step"] = final_step
             wandb.log(em, step=final_step, commit=True)
             # dump the final-eval metrics to a JSON so eval-only runs (MAX_STEPS=0) are trivially
             # collectable without the wandb API — one self-contained file per run.
             try:
                 import json as _json
+                # "detail"/"greedy_detail": per-rollout per-level [lvl_idx, completed, actions] (scorer's
+                # deduped view) → the eval is RE-SCORABLE offline under any baseline convention (k×optimal
+                # sensitivity, human recalibration) without re-running rollouts.
+                _detail = [{"game": t.task_key, "arc": t.arc_score, "levels": t.level_detail} for t in ev]
+                _gdetail = [{"game": t.task_key, "arc": t.arc_score, "levels": t.level_detail} for t in evg]
                 with open(f"eval_metrics_{wandb_name}.json", "w") as _f:
                     _json.dump({"run": wandb_name, "model": model_name, "ckpt": load_checkpoint_path,
-                                "step": final_step, "eval_n_samples": eval_n_samples, "metrics": em}, _f, indent=2)
+                                "step": final_step, "eval_n_samples": eval_n_samples,
+                                "eval_seed_base": eval_seed_base, "metrics": em,
+                                "detail": _detail, "greedy_detail": _gdetail}, _f, indent=2)
                 print(f"[step {final_step}] eval metrics -> eval_metrics_{wandb_name}.json", flush=True)
             except Exception as _e:  # noqa: BLE001
                 print(f"[eval-dump] failed: {_e}", flush=True)
@@ -623,6 +688,18 @@ if __name__ == "__main__":
     p.add_argument("--eval-n-samples", type=int, default=5,
                    help="rollouts per held-out game at eval, averaged for smoother curves (default 5; "
                         "fixed seed set across steps → comparable, consistent with the frontier-model eval)")
+    p.add_argument("--eval-seed-base", type=int, default=7_000_000,
+                   help="base seed for held-out eval instances (seed = base + game/sample idx). Default "
+                        "7_000_000 (constant, comparable across steps). Set to 7_000_000+step to replicate "
+                        "the OLD in-RL eval seed convention for a like-for-like comparison.")
+    p.add_argument("--eval-max-orai-steps", type=int, default=250,
+                   help="ORAI-call cap for EVAL rollouts (in-loop, final, greedy) — decoupled from the "
+                        "training rollout cap (--max-orai-steps, recipe 150). 250 = the unified eval "
+                        "budget, matched by evaluate.py --max-orai-calls for API models (2026-07-02).")
+    p.add_argument("--eval-greedy", type=int, default=1,
+                   help="also run a greedy (temperature 0) 1-rollout/game eval each cadence + final, logged "
+                        "under eval/greedy/* — a near-deterministic low-variance tracking signal alongside "
+                        "the sampled mean/Bo5. 1=on (default), 0=off.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--wandb-project", default="arc-agi-3")
     p.add_argument("--wandb-name", default=None)
@@ -657,4 +734,6 @@ if __name__ == "__main__":
         agent_config_path=a.agent_config_path, max_orai_steps=a.max_orai_steps,
         seed_mode=a.seed_mode, seed_frac=a.seed_frac, max_concurrent=a.max_concurrent,
         save_every=a.save_every, eval_groups=a.eval_groups,
-        wandb_run_id=a.wandb_run_id, start_step=a.start_step, eval_n_samples=a.eval_n_samples))
+        wandb_run_id=a.wandb_run_id, start_step=a.start_step, eval_n_samples=a.eval_n_samples,
+        eval_seed_base=a.eval_seed_base, eval_greedy=bool(a.eval_greedy),
+        eval_max_orai_steps=a.eval_max_orai_steps))
