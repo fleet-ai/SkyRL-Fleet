@@ -1395,6 +1395,7 @@ async def main(
     time_budget_s: int = 0,
     fix_behavior_logprobs: bool = True,
     max_train_sequence_length: Optional[int] = None,
+    binary_reward: bool = False,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1824,6 +1825,18 @@ async def main(
         # positional slices: the valid-rollout filter above removes entries,
         # and positional groups would mix tasks after any gap.
         rewards = [r.reward for r in valid_rollouts]
+        if binary_reward:
+            # MUST-conjunction shaping: the verifier's returned reward is the
+            # MUST-criteria fraction (NICE criteria are logged only), so
+            # thresholding at 1.0 scores "every MUST criterion passed" as 1
+            # and anything less as 0. Partial-credit rewards carry the
+            # judge's per-criterion noise (Opus self-disagreement is
+            # ~0.09/grade) straight into the advantages; a binary signal only
+            # flips when the judge flips an entire conjunction. Raw
+            # partial-credit mean stays logged for cross-run comparability;
+            # held-out evals are never shaped.
+            metrics["reward/raw_partial_mean"] = float(np.mean(rewards))
+            rewards = [1.0 if x >= 0.999 else 0.0 for x in rewards]
         task_keys = [r.task_key for r in valid_rollouts]
         advantages = compute_advantages_grpo_by_task(rewards, task_keys, normalize=True)
 
@@ -2075,6 +2088,13 @@ if __name__ == "__main__":
         "sampling temperature != 1 (accepts temperature-biased importance ratios).",
     )
     parser.add_argument(
+        "--binary-reward",
+        action="store_true",
+        help="Train on MUST-conjunction rewards: threshold the verifier's "
+        "partial-credit reward at 1.0 (all MUST criteria passed) before "
+        "computing advantages. Held-out evals stay unshaped.",
+    )
+    parser.add_argument(
         "--max-train-sequence-length",
         type=int,
         default=None,
@@ -2230,6 +2250,7 @@ if __name__ == "__main__":
             loss_fn=args.loss_fn,
             fix_behavior_logprobs=args.fix_behavior_logprobs,
             max_train_sequence_length=args.max_train_sequence_length,
+            binary_reward=args.binary_reward,
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
             save_state_every=args.save_state_every,
