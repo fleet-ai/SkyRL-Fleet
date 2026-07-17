@@ -416,6 +416,49 @@ def compute_rollout_metrics(
 # the model's trainer-side max sequence length. The captured group is the cap.
 _TRAINER_SEQLEN_CAP_RE = re.compile(r"exceeds max sequence length (\d+)")
 
+# The openclaw verifier template's judge-call kwargs. Injecting model=... here
+# forces every judge call in the verifier onto a specific model; validated
+# across 90 re-grades in the Sonnet-vs-Opus judge ablation (2026-07-15).
+_JUDGE_MODEL_NEEDLE = "base_kwargs = dict(submission=raw,"
+
+
+def inject_judge_model(tasks_file: str, judge_model: str) -> str:
+    """Rewrite tasks_file with every verifier's judge forced onto judge_model.
+
+    The trainer executes verifier code shipped in the tasks file (OpenEnv
+    passes it as verifier_func), so this is a pure client-side override: no
+    task cloning, no server-side default change. Verifiers without the
+    template needle are left unmodified (logged); they grade on the server
+    default. Returns the rewritten file's path; the original is untouched.
+    """
+    import json
+
+    with open(tasks_file) as f:
+        data = json.load(f)
+    tasks = data.get("tasks") if isinstance(data, dict) else data
+    hit = miss = 0
+    for t in tasks:
+        field = "verifier_code" if t.get("verifier_code") else (
+            "verifier_func" if t.get("verifier_func") else None
+        )
+        code = t.get(field) if field else None
+        if code and _JUDGE_MODEL_NEEDLE in code:
+            t[field] = code.replace(
+                _JUDGE_MODEL_NEEDLE,
+                f'base_kwargs = dict(model="{judge_model}", submission=raw,',
+            )
+            hit += 1
+        elif code:
+            miss += 1
+    out_path = f"{tasks_file}.judge-{judge_model.replace('/', '_')}.json"
+    with open(out_path, "w") as f:
+        json.dump(data, f)
+    logger.info(
+        f"judge_model={judge_model}: injected into {hit} verifiers"
+        + (f", {miss} lacked the template needle (server default applies)" if miss else "")
+    )
+    return out_path
+
 
 async def discover_trainer_seqlen_cap(
     service_client: Any,
@@ -1396,6 +1439,7 @@ async def main(
     fix_behavior_logprobs: bool = True,
     max_train_sequence_length: Optional[int] = None,
     binary_reward: bool = False,
+    judge_model: Optional[str] = None,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1415,6 +1459,10 @@ async def main(
     full chat transcript via `RolloutOutput.messages`.
     """
     set_seed(seed)
+    if judge_model and tasks_file:
+        # Applies to BOTH training and held-out evals (same tasks file), so a
+        # run's train signal and eval numbers are graded by the same judge.
+        tasks_file = inject_judge_model(tasks_file, judge_model)
     eval_entries: list[dict] = []  # populated by _run_eval below; sourced for results_out
     state_checkpoints: list[dict] = []  # path + step of every save_state call
 
@@ -2088,6 +2136,15 @@ if __name__ == "__main__":
         "sampling temperature != 1 (accepts temperature-biased importance ratios).",
     )
     parser.add_argument(
+        "--judge-model",
+        type=str,
+        default=None,
+        help="Force every verifier's judge call onto this model (e.g. "
+        "claude-sonnet-5) via a client-side rewrite of the tasks file. "
+        "Applies to training and held-out evals alike; verifiers without "
+        "the standard judge template keep the server default.",
+    )
+    parser.add_argument(
         "--binary-reward",
         action="store_true",
         help="Train on MUST-conjunction rewards: threshold the verifier's "
@@ -2251,6 +2308,7 @@ if __name__ == "__main__":
             fix_behavior_logprobs=args.fix_behavior_logprobs,
             max_train_sequence_length=args.max_train_sequence_length,
             binary_reward=args.binary_reward,
+            judge_model=args.judge_model,
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
             save_state_every=args.save_state_every,

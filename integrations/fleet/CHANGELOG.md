@@ -1,8 +1,17 @@
 # Fleet Integration Changelog
 
-## 2026-07-17: Tinker GRPO — optional MUST-conjunction (binary) training rewards
+## 2026-07-17: Tinker GRPO — optional MUST-conjunction (binary) training rewards + request-level judge model
 
 Scope: `main_fleet_tinker.py`, `fleet-tinker-tool-use-run.sh`.
+
+Also in this change: `--judge-model <model>` (env: `JUDGE_MODEL`) forces
+every verifier's judge call onto a specific model via a client-side rewrite
+of the tasks file (the trainer executes verifier code it ships, so no task
+cloning or server-side default change is needed). The injection point is the
+openclaw verifier template's `base_kwargs = dict(submission=raw,` line,
+validated across 90 re-grades in the Sonnet-vs-Opus judge ablation; smoked
+against all 177 lev177 verifiers (177/177 injected). Applies to training
+and held-out evals alike so both are graded by the same judge.
 
 Five clean flat runs (two models, LRs 5e-7..2.5e-5, holdout evals unmoved)
 plus the judge self-agreement measurement (Opus regrade disagreement
