@@ -104,6 +104,12 @@ fi
 if [ -n "${TIME_BUDGET_S:-}" ] && [ "${TIME_BUDGET_S:-0}" != "0" ]; then
     EXTRA_ARGS+=(--time-budget-s "$TIME_BUDGET_S")
 fi
+if [ "${BINARY_REWARD:-0}" = "1" ]; then
+    EXTRA_ARGS+=(--binary-reward)
+fi
+if [ -n "${JUDGE_MODEL:-}" ]; then
+    EXTRA_ARGS+=(--judge-model "$JUDGE_MODEL")
+fi
 
 python -m integrations.fleet.entrypoints.main_fleet_tinker \
     --model-name "$MODEL_NAME" \

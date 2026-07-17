@@ -1,5 +1,34 @@
 # Fleet Integration Changelog
 
+## 2026-07-17: Tinker GRPO — optional MUST-conjunction (binary) training rewards + request-level judge model
+
+Scope: `main_fleet_tinker.py`, `fleet-tinker-tool-use-run.sh`.
+
+Also in this change: `--judge-model <model>` (env: `JUDGE_MODEL`) forces
+every verifier's judge call onto a specific model via a client-side rewrite
+of the tasks file (the trainer executes verifier code it ships, so no task
+cloning or server-side default change is needed). The injection point is the
+openclaw verifier template's `base_kwargs = dict(submission=raw,` line,
+validated across 90 re-grades in the Sonnet-vs-Opus judge ablation; smoked
+against all 177 lev177 verifiers (177/177 injected). Applies to training
+and held-out evals alike so both are graded by the same judge.
+
+Five clean flat runs (two models, LRs 5e-7..2.5e-5, holdout evals unmoved)
+plus the judge self-agreement measurement (Opus regrade disagreement
+mean |d| = 0.092 per transcript) point at the reward signal: partial-credit
+rewards inject per-criterion judge noise directly into GRPO advantages,
+and within-task reward variance is dominated by it.
+
+`--binary-reward` (wired as `BINARY_REWARD=1` through the run script)
+thresholds the verifier's partial-credit reward at 1.0 before advantage
+computation. Because the returned reward is the MUST-criteria fraction
+(NICE criteria are logged only), this is exactly "all MUST criteria
+passed" conjunction scoring — the signal only flips when the judge flips
+an entire conjunction, not any single criterion. The raw partial-credit
+mean stays logged (`reward/raw_partial_mean`) and held-out evals are
+never shaped, so cross-run comparisons stay in the same units. Default
+off; no behavior change unless the flag is set.
+
 ## 2026-07-15: Tinker GRPO — trainer-side sequence-length guard
 
 Scope: `main_fleet_tinker.py` only.
