@@ -1,4 +1,4 @@
-"""Entrypoint wiring for ATOF: env set -> emitter installed, env unset -> untouched.
+"""Entrypoint wiring for ATOF: default -> emitter installed, opt-out -> untouched.
 
 Uses the real install path end to end (real init_atof, real SkyRLGymGenerator,
 the real exp get_generator methods). The only stand-in is the FakeNemo module
@@ -21,7 +21,7 @@ from skyrl.train.generators.skyrl_gym_generator import SkyRLGymGenerator
 
 @pytest.fixture
 def enabled_env(monkeypatch):
-    monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+    monkeypatch.delenv("SKYRL_ATOF_ENABLED", raising=False)
     monkeypatch.setenv("THESEUS_ATOF_MSK_BROKERS", "b-1:9198")
     monkeypatch.setenv("THESEUS_ATOF_TENANT_ID", "skyrl")
     monkeypatch.setitem(sys.modules, "nemo_relay", FakeNemo())
@@ -29,7 +29,7 @@ def enabled_env(monkeypatch):
 
 @pytest.fixture
 def disabled_env(monkeypatch):
-    monkeypatch.delenv("SKYRL_ATOF_ENABLED", raising=False)
+    monkeypatch.setenv("SKYRL_ATOF_ENABLED", "0")
 
 
 @pytest.fixture

@@ -105,10 +105,8 @@ fi
 # ATOF event emission (must be exported before `ray start`; Ray workers
 # inherit env from the raylet, and the emitter initializes inside Ray tasks).
 # Broker/tenant defaults live in atof_events.py; THESEUS_ATOF_* env vars
-# override them when explicitly set on the launch.
-if [ "${SKYRL_ATOF_ENABLED:-}" = "1" ]; then
-  export SKYRL_ATOF_ENABLED
-fi
+# override them when explicitly set on the launch. Set the flag to 0 to opt out.
+export SKYRL_ATOF_ENABLED="${SKYRL_ATOF_ENABLED:-1}"
 
 TMP_DIR="${CKPT_ROOT}/skyrl-tmp"
 mkdir -p "$TMP_DIR"

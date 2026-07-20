@@ -34,6 +34,7 @@
 #   TEMPERATURE                 (default: 0.6  — Kimi K2.6 recommended)
 #   TOP_P                       (default: 0.95 — Kimi K2.6 recommended)
 #   STOP_SEQUENCES              (default: [])
+#   SKYRL_ATOF_ENABLED          (default: 1; set to 0 to disable NeMo ATOF)
 #   ROLLOUT_DUMP_DIR            (default: unset → no per-rollout JSON dumps;
 #                                when set, every rollout streams to
 #                                <dir>/eval_only/<task>__s<N>.json on completion)
@@ -44,6 +45,7 @@ set -euo pipefail
 export TINKER_API_KEY="${TINKER_API_KEY:?Set TINKER_API_KEY}"
 export TINKER_API_URL="${TINKER_API_URL:-}"
 export FLEET_API_KEY="${FLEET_API_KEY:?Set FLEET_API_KEY}"
+export SKYRL_ATOF_ENABLED="${SKYRL_ATOF_ENABLED:-1}"
 # WANDB_API_KEY is optional for eval-only; if absent and WANDB_MODE not set,
 # wandb will prompt and crash. Default to disabled when key is missing.
 if [ -z "${WANDB_API_KEY:-}" ] && [ -z "${WANDB_MODE:-}" ]; then
@@ -68,6 +70,18 @@ MAX_CONCURRENT="${MAX_CONCURRENT:-8}"
 TEMPERATURE="${TEMPERATURE:-0.6}"
 TOP_P="${TOP_P:-0.95}"
 STOP_SEQUENCES="${STOP_SEQUENCES:-[]}"
+
+if [ "$SKYRL_ATOF_ENABLED" = "1" ] && ! python -c 'import nemo_relay' 2>/dev/null; then
+    echo "Installing nemo-relay wheel for ATOF event emission..."
+    NEMO_WHEEL_DIR="$(mktemp -d)"
+    if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
+        && pip install --no-cache-dir "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
+        echo "nemo-relay installed."
+    else
+        echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
+    fi
+    rm -rf "$NEMO_WHEEL_DIR"
+fi
 
 EXTRA_ARGS=()
 if [ -n "${WANDB_NAME:-}" ]; then

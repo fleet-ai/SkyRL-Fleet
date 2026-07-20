@@ -2,8 +2,8 @@
 
 Streams rollout trajectories (LLM turns, env steps, rewards) through the
 NeMo Relay runtime to the Fleet event pipeline (MSK -> ClickPipes ->
-ClickHouse). Off unless SKYRL_ATOF_ENABLED=1; init and every emit fail open
-so training behavior is never affected.
+ClickHouse). Enabled by default; set SKYRL_ATOF_ENABLED=0 to opt out. Init and
+every emit fail open so training behavior is never affected.
 
 Images never go inline: they upload to S3 keyed by content hash and events
 carry the object URL. A payload that would exceed the Kafka broker cap
@@ -31,9 +31,8 @@ MSK_PLUGIN_KIND = "theseus-msk-atof-export"
 DEFAULT_TOPIC = "atof.received"
 DEFAULT_CLIENT_ID = "skyrl-nemo-relay"
 DEFAULT_IMAGE_BUCKET = "fleet-trajectory-artifacts"
-# Production MSK endpoint defaults so SKYRL_ATOF_ENABLED=1 is the only knob on
-# every path (SkyRL launch scripts, tinker scripts, auto-train workflow, direct
-# invocation). The env vars remain as overrides.
+# Production MSK endpoint defaults keep every SkyRL path aligned. The env vars
+# remain as overrides.
 DEFAULT_MSK_BROKERS = (
     "b-1-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,"
     "b-2-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,"
@@ -55,14 +54,13 @@ _nemo_module: Any = None
 def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEmitter"]:
     """Start the NeMo runtime and return an emitter, or None (disabled/failed).
 
-    Requires SKYRL_ATOF_ENABLED=1 plus either the MSK env vars
-    (THESEUS_ATOF_MSK_BROKERS, THESEUS_ATOF_TENANT_ID) or
-    SKYRL_ATOF_FILE_DIR for local file output. Any failure logs one warning
-    and returns None.
+    Enabled unless SKYRL_ATOF_ENABLED=0. Uses either the MSK env vars
+    (THESEUS_ATOF_MSK_BROKERS, THESEUS_ATOF_TENANT_ID) or SKYRL_ATOF_FILE_DIR
+    for local file output. Any failure logs one warning and returns None.
     """
     global _nemo_module
 
-    if os.environ.get("SKYRL_ATOF_ENABLED") != "1":
+    if os.environ.get("SKYRL_ATOF_ENABLED", "1") != "1":
         return None
 
     component = _component_config()

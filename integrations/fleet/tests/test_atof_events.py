@@ -118,13 +118,18 @@ def data_image_message(image_bytes=b"png-bytes"):
 
 
 class TestInit:
-    def test_disabled_without_flag(self, fake_nemo, msk_env, monkeypatch):
+    def test_enabled_without_flag(self, fake_nemo, msk_env, monkeypatch):
         monkeypatch.delenv("SKYRL_ATOF_ENABLED")
+        assert init_atof(entrypoint="e", run_name="r", model="m") is not None
+        assert len(fake_nemo.named("initialize")) == 1
+
+    def test_disabled_with_zero(self, fake_nemo, msk_env, monkeypatch):
+        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "0")
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
         assert fake_nemo.calls == []
 
     def test_defaults_apply_without_msk_vars(self, fake_nemo, monkeypatch):
-        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+        monkeypatch.delenv("SKYRL_ATOF_ENABLED", raising=False)
         monkeypatch.delenv("THESEUS_ATOF_MSK_BROKERS", raising=False)
         monkeypatch.delenv("THESEUS_ATOF_TENANT_ID", raising=False)
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
