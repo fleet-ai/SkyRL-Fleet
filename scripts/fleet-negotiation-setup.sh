@@ -9,7 +9,8 @@
 # So this installs only the venv + deps and pre-downloads the model weights.
 #
 # Required env vars: WANDB_API_KEY, OPENROUTER_API_KEY
-# Optional: MODEL_PATH (pre-download), AWS_*, SKYRL_ATOF_ENABLED (default: 1)
+# Optional: MODEL_PATH (pre-download), AWS_* (only if you want S3 checkpoints),
+#           SKYRL_ATOF_ENABLED (default: 1)
 set -euo pipefail
 
 OPENENV_BRANCH=""   # accepted for parity with fleet-common-setup; unused (no Fleet env)
