@@ -1,5 +1,14 @@
 # Fleet Integration Changelog
 
+## 2026-07-20: NeMo ATOF enabled by default
+
+Scope: shared ATOF setup, native SkyRL launch scripts, Tinker launch scripts,
+and production task configs.
+
+Both native SkyRL and Tinker now install and start the NeMo ATOF exporter by
+default. Set `SKYRL_ATOF_ENABLED=0` to opt out. Exporter setup and event sends
+remain fail-open, so an ATOF failure does not stop training.
+
 ## 2026-07-17: Tinker GRPO — optional MUST-conjunction (binary) training rewards + request-level judge model
 
 Scope: `main_fleet_tinker.py`, `fleet-tinker-tool-use-run.sh`.

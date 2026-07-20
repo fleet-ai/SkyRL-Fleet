@@ -69,7 +69,7 @@ envs:
   S3_DATASET_BUCKET: "fleet-internal-datasets"
   S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
-  SKYRL_ATOF_ENABLED: "0"
+  SKYRL_ATOF_ENABLED: "1"
 
 setup: |
   bash scripts/fleet-common-setup.sh \
