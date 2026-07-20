@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parents[3]
-DEFAULT_ON = 'export SKYRL_ATOF_ENABLED="${SKYRL_ATOF_ENABLED:-1}"'
+DEFAULT_ON = "export SKYRL_ATOF_ENABLED=1"
 RELAY_INSTALLERS = [
     "scripts/fleet-common-setup.sh",
     "scripts/fleet-negotiation-setup.sh",

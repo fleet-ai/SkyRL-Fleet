@@ -5,8 +5,8 @@
 Scope: shared ATOF setup, native and negotiation SkyRL launch scripts, and
 Tinker launch scripts.
 
-Both native SkyRL and Tinker now install and start the NeMo ATOF exporter by
-default across all task configs. Set `SKYRL_ATOF_ENABLED=0` to opt out.
+Both native SkyRL and Tinker now install and start the NeMo ATOF exporter
+across all task configs. Launchers always set `SKYRL_ATOF_ENABLED=1`.
 Exporter setup and event sends remain fail-open, so an ATOF failure does not
 stop training.
 

@@ -9,8 +9,7 @@
 # So this installs only the venv + deps and pre-downloads the model weights.
 #
 # Required env vars: WANDB_API_KEY, OPENROUTER_API_KEY
-# Optional: MODEL_PATH (pre-download), AWS_* (only if you want S3 checkpoints),
-#           SKYRL_ATOF_ENABLED (default: 1)
+# Optional: MODEL_PATH (pre-download), AWS_* (only if you want S3 checkpoints)
 set -euo pipefail
 
 OPENENV_BRANCH=""   # accepted for parity with fleet-common-setup; unused (no Fleet env)
@@ -95,18 +94,16 @@ uv pip install "litellm>=1.75.5"
 uv pip install datasets
 
 # --- ATOF: nemo-relay wheel (rollout observability, enabled by default) ---
-export SKYRL_ATOF_ENABLED="${SKYRL_ATOF_ENABLED:-1}"
-if [ "$SKYRL_ATOF_ENABLED" = "1" ]; then
-  echo "Installing nemo-relay wheel for ATOF event emission..."
-  NEMO_WHEEL_DIR="$(mktemp -d)"
-  if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
-    && uv pip install "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
-    echo "nemo-relay installed."
-  else
-    echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
-  fi
-  rm -rf "$NEMO_WHEEL_DIR"
+export SKYRL_ATOF_ENABLED=1
+echo "Installing nemo-relay wheel for ATOF event emission..."
+NEMO_WHEEL_DIR="$(mktemp -d)"
+if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
+  && uv pip install "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
+  echo "nemo-relay installed."
+else
+  echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
 fi
+rm -rf "$NEMO_WHEEL_DIR"
 
 # --- Extra setup hook (Qwen3.5-specific deps: transformers 5.3.0, causal-conv1d,
 # CUDA toolkit, and ~/.cuda_env which the run script sources via --cuda-env) ---
