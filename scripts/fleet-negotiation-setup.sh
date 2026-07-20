@@ -93,6 +93,18 @@ uv pip install "litellm>=1.75.5"
 # datasets: required by skyrl-gym negotiation prepare_dataset.py (head-node dataset gen).
 uv pip install datasets
 
+# --- ATOF: nemo-relay wheel (rollout observability, enabled by default) ---
+export SKYRL_ATOF_ENABLED=1
+echo "Installing nemo-relay wheel for ATOF event emission..."
+NEMO_WHEEL_DIR="$(mktemp -d)"
+if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
+  && uv pip install "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
+  echo "nemo-relay installed."
+else
+  echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
+fi
+rm -rf "$NEMO_WHEEL_DIR"
+
 # --- Extra setup hook (Qwen3.5-specific deps: transformers 5.3.0, causal-conv1d,
 # CUDA toolkit, and ~/.cuda_env which the run script sources via --cuda-env) ---
 if [ -n "$EXTRA_SETUP" ]; then

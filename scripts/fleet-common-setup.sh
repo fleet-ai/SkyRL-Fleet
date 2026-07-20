@@ -122,18 +122,16 @@ uv pip install wandb boto3 awscli
 uv pip install "litellm>=1.75.5" "fleet-python<=0.2.119" logfire "mcp>=1.0.0"
 
 # --- ATOF: nemo-relay wheel (rollout observability, enabled by default) ---
-export SKYRL_ATOF_ENABLED="${SKYRL_ATOF_ENABLED:-1}"
-if [ "$SKYRL_ATOF_ENABLED" = "1" ]; then
-  echo "Installing nemo-relay wheel for ATOF event emission..."
-  NEMO_WHEEL_DIR="$(mktemp -d)"
-  if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
-    && uv pip install "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
-    echo "nemo-relay installed."
-  else
-    echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
-  fi
-  rm -rf "$NEMO_WHEEL_DIR"
+export SKYRL_ATOF_ENABLED=1
+echo "Installing nemo-relay wheel for ATOF event emission..."
+NEMO_WHEEL_DIR="$(mktemp -d)"
+if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
+  && uv pip install "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
+  echo "nemo-relay installed."
+else
+  echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
 fi
+rm -rf "$NEMO_WHEEL_DIR"
 
 # --- Extra pip packages (installed before extra-setup to avoid dependency downgrades) ---
 if [ -n "$EXTRA_PIP" ]; then

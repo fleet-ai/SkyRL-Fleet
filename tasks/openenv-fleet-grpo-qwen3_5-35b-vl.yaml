@@ -64,7 +64,6 @@ envs:
   S3_DATASET_BUCKET: "fleet-internal-datasets"
   S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
   S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
-  SKYRL_ATOF_ENABLED: "1"
   # TP=2 -> 16 engines (each uses 2 GPUs) to match 32 policy GPUs with colocate_all
   NUM_INFERENCE_ENGINES: 16
 

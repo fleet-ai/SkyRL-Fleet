@@ -2,12 +2,13 @@
 
 ## 2026-07-20: NeMo ATOF enabled by default
 
-Scope: shared ATOF setup, native SkyRL launch scripts, Tinker launch scripts,
-and production task configs.
+Scope: shared ATOF setup, native and negotiation SkyRL launch scripts, and
+Tinker launch scripts.
 
-Both native SkyRL and Tinker now install and start the NeMo ATOF exporter by
-default. Set `SKYRL_ATOF_ENABLED=0` to opt out. Exporter setup and event sends
-remain fail-open, so an ATOF failure does not stop training.
+Both native SkyRL and Tinker now install and start the NeMo ATOF exporter
+across all task configs. Launchers always set `SKYRL_ATOF_ENABLED=1`.
+Exporter setup and event sends remain fail-open, so an ATOF failure does not
+stop training.
 
 ## 2026-07-17: Tinker GRPO — optional MUST-conjunction (binary) training rewards + request-level judge model
 
