@@ -7,8 +7,8 @@ calls, helper and judge calls, and negotiation evals.
 
 Every Fleet setup path now installs both `nemo-relay` and
 `nemo-relay-runtime` from the same published wheel set. Runtime launchers set
-the shared MSK, tenant, topic, client, region, and enable values before Ray or
-Tinker starts.
+the shared MSK, tenant, topic, client, region, and `NEMO_RELAY_ENABLED=1`
+before Ray or Tinker starts.
 
 Repo-owned LLM provider calls run through `nemo-relay-runtime` around the real
 provider callback. This includes native multi-turn and batched policy calls,
@@ -23,7 +23,8 @@ Scope: shared ATOF setup, native and negotiation SkyRL launch scripts, and
 Tinker launch scripts.
 
 Both native SkyRL and Tinker now install and start the NeMo ATOF exporter
-across all task configs. Launchers always set `SKYRL_ATOF_ENABLED=1`.
+across all task configs. Runtime launchers always set
+`NEMO_RELAY_ENABLED=1`.
 Exporter setup and event sends remain fail-open, so an ATOF failure does not
 stop training.
 
@@ -154,7 +155,7 @@ at both layers, payloads size-guarded like rollout events.
 Scope: `fleet-tinker-tool-use-run.sh`.
 
 The hosted trainer image (fleet-research-api Dockerfile) never runs
-`fleet-common-setup.sh`, so `SKYRL_ATOF_ENABLED=1` on the hosted path hit
+`fleet-common-setup.sh`, so `NEMO_RELAY_ENABLED=1` on the hosted path hit
 init_atof's fail-open "nemo_relay wheel not installed" warning and every
 run silently produced zero trace events. The run script now mirrors the
 setup script: when the flag is set and `nemo_relay` isn't importable, pull
@@ -166,13 +167,13 @@ not). Install failure warns and continues — fail-open, matching init_atof.
 
 Scope: `atof_events.py`, `fleet-common-run.sh`.
 
-`SKYRL_ATOF_ENABLED=1` is now the only knob on every path: brokers and
+`NEMO_RELAY_ENABLED=1` is now the only knob on every path: brokers and
 tenant_id default in `_component_config` (`DEFAULT_MSK_BROKERS`,
 `DEFAULT_TENANT_ID`), joining the existing bucket/topic/client_id defaults.
 The `THESEUS_ATOF_*` env vars remain as overrides; setting one explicitly
 empty still disables with a warning. The now-redundant gated exports in
 `fleet-common-run.sh` are removed (single source of truth for the broker
-list), keeping only the `export SKYRL_ATOF_ENABLED` so the flag reliably
+list), keeping only the `export NEMO_RELAY_ENABLED` so the flag reliably
 reaches Ray workers. This also removes the tinker-path failure mode where
 the flag was set but the run produced zero events because the broker vars
 weren't hand-exported.
@@ -210,7 +211,7 @@ per-task sample index.
 - A rollout that raises mid-loop ships its events but gets no final mark
   (same accepted limitation as the SkyRL side).
 
-## 2026-07-07: Launch scripts — ATOF enablement via `SKYRL_ATOF_ENABLED=1`
+## 2026-07-07: Launch scripts — ATOF enablement via `NEMO_RELAY_ENABLED=1`
 
 Scope: **launch scripts only** (`fleet-common-setup.sh`, `fleet-common-run.sh`,
 the five fleet-training task YAMLs).
@@ -218,7 +219,7 @@ the five fleet-training task YAMLs).
 ### What
 
 Enabling ATOF on any fleet-training run is now one flag:
-`--env SKYRL_ATOF_ENABLED=1` (declared as `"0"` in the openenv-fleet YAMLs).
+`--env NEMO_RELAY_ENABLED=1`.
 
 - Setup: downloads the nemo-relay wheel from
   `s3://fleet-nemo-relay-artifacts/wheels/latest/` into a `mktemp -d` dir

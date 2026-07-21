@@ -44,9 +44,7 @@ set -euo pipefail
 export TINKER_API_KEY="${TINKER_API_KEY:?Set TINKER_API_KEY}"
 export TINKER_API_URL="${TINKER_API_URL:-}"
 export FLEET_API_KEY="${FLEET_API_KEY:?Set FLEET_API_KEY}"
-export SKYRL_ATOF_ENABLED=1
 export NEMO_RELAY_ENABLED=1
-export THESEUS_ATOF_ENABLED=1
 export THESEUS_ATOF_MSK_BROKERS="${THESEUS_ATOF_MSK_BROKERS:-b-1-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-2-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198}"
 export THESEUS_ATOF_TENANT_ID="${THESEUS_ATOF_TENANT_ID:-skyrl}"
 export THESEUS_ATOF_MSK_TOPIC="${THESEUS_ATOF_MSK_TOPIC:-atof.received}"

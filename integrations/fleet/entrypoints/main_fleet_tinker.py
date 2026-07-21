@@ -1623,7 +1623,7 @@ async def main(
         },
     )
 
-    # ATOF rollout observability. None unless SKYRL_ATOF_ENABLED=1 with the
+    # ATOF rollout observability. None unless NEMO_RELAY_ENABLED=1 with the
     # MSK env vars set; plain asyncio in the main process, so init here (no
     # Ray, unlike the SkyRL entrypoints).
     atof_emitter = init_atof(entrypoint="main_fleet_tinker", run_name=wandb_name, model=model_name)

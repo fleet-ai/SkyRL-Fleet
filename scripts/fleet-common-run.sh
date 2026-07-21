@@ -106,9 +106,7 @@ fi
 # inherit env from the raylet, and the emitter initializes inside Ray tasks).
 # Broker/tenant defaults live in atof_events.py; THESEUS_ATOF_* env vars
 # override them when explicitly set on the launch.
-export SKYRL_ATOF_ENABLED=1
 export NEMO_RELAY_ENABLED=1
-export THESEUS_ATOF_ENABLED=1
 export THESEUS_ATOF_MSK_BROKERS="${THESEUS_ATOF_MSK_BROKERS:-b-1-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-2-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198}"
 export THESEUS_ATOF_TENANT_ID="${THESEUS_ATOF_TENANT_ID:-skyrl}"
 export THESEUS_ATOF_MSK_TOPIC="${THESEUS_ATOF_MSK_TOPIC:-atof.received}"

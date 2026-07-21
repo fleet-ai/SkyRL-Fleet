@@ -2,7 +2,7 @@
 
 Streams rollout trajectories (LLM turns, env steps, rewards) through the
 NeMo Relay runtime to the Fleet event pipeline (MSK -> ClickPipes ->
-ClickHouse). Enabled by default; set SKYRL_ATOF_ENABLED=0 to opt out. Init and
+ClickHouse). Enabled by default; set NEMO_RELAY_ENABLED=0 to opt out. Init and
 every emit fail open so training behavior is never affected.
 
 Images never go inline: they upload to S3 keyed by content hash and events
@@ -52,13 +52,13 @@ _nemo_module: Any = None
 def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEmitter"]:
     """Start the NeMo runtime and return an emitter, or None (disabled/failed).
 
-    Enabled unless SKYRL_ATOF_ENABLED=0. Uses either the MSK env vars
+    Enabled unless NEMO_RELAY_ENABLED=0. Uses either the MSK env vars
     (THESEUS_ATOF_MSK_BROKERS, THESEUS_ATOF_TENANT_ID) or SKYRL_ATOF_FILE_DIR
     for local file output. Any failure logs one warning and returns None.
     """
     global _nemo_module
 
-    if os.environ.get("SKYRL_ATOF_ENABLED", "1") != "1":
+    if os.environ.get("NEMO_RELAY_ENABLED", "1").strip().lower() in {"0", "false", "f", "no", "n", "off"}:
         return None
 
     component = _component_config()
@@ -73,8 +73,6 @@ def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEm
         os.environ.setdefault("THESEUS_ATOF_MSK_TOPIC", config["topic"])
         os.environ.setdefault("THESEUS_ATOF_MSK_CLIENT_ID", config["client_id"])
         os.environ.setdefault("AWS_REGION", config["region"])
-        os.environ["NEMO_RELAY_ENABLED"] = "1"
-        os.environ["THESEUS_ATOF_ENABLED"] = "1"
         try:
             from nemo_relay_runtime import get_nemo_runtime
 
@@ -328,7 +326,7 @@ def _component_config() -> Optional[Dict[str, Any]]:
     tenant_id = os.environ.get("THESEUS_ATOF_TENANT_ID", DEFAULT_TENANT_ID).strip()
     if not brokers or not tenant_id:
         logger.warning(
-            "ATOF disabled: SKYRL_ATOF_ENABLED=1 but THESEUS_ATOF_MSK_BROKERS/THESEUS_ATOF_TENANT_ID are "
+            "ATOF disabled: NEMO_RELAY_ENABLED=1 but THESEUS_ATOF_MSK_BROKERS/THESEUS_ATOF_TENANT_ID are "
             "explicitly empty"
         )
         return None

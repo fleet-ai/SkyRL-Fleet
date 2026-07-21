@@ -122,7 +122,6 @@ uv pip install wandb boto3 awscli
 uv pip install "litellm>=1.75.5" "fleet-python<=0.2.119" logfire "mcp>=1.0.0"
 
 # --- ATOF: nemo-relay wheel (rollout observability, enabled by default) ---
-export SKYRL_ATOF_ENABLED=1
 echo "Installing nemo-relay wheel for ATOF event emission..."
 NEMO_WHEEL_DIR="$(mktemp -d)"
 if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \

@@ -110,7 +110,7 @@ def fake_nemo(monkeypatch):
 
 @pytest.fixture
 def msk_env(monkeypatch):
-    monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+    monkeypatch.setenv("NEMO_RELAY_ENABLED", "1")
     monkeypatch.setenv("THESEUS_ATOF_MSK_BROKERS", "b-1:9198")
     monkeypatch.setenv("THESEUS_ATOF_TENANT_ID", "skyrl")
 
@@ -126,17 +126,18 @@ def data_image_message(image_bytes=b"png-bytes"):
 
 class TestInit:
     def test_enabled_without_flag(self, fake_nemo, msk_env, monkeypatch):
-        monkeypatch.delenv("SKYRL_ATOF_ENABLED")
+        monkeypatch.delenv("NEMO_RELAY_ENABLED")
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
         assert os.environ["SKYRL_ATOF_PRODUCER_SESSION_ID"] == "r"
 
-    def test_disabled_with_zero(self, fake_nemo, msk_env, monkeypatch):
-        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "0")
+    @pytest.mark.parametrize("value", ["0", "false", "off"])
+    def test_disabled_with_falsey_value(self, fake_nemo, msk_env, monkeypatch, value):
+        monkeypatch.setenv("NEMO_RELAY_ENABLED", value)
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
         assert fake_nemo.calls == []
 
     def test_defaults_apply_without_msk_vars(self, fake_nemo, monkeypatch):
-        monkeypatch.delenv("SKYRL_ATOF_ENABLED", raising=False)
+        monkeypatch.delenv("NEMO_RELAY_ENABLED", raising=False)
         monkeypatch.delenv("THESEUS_ATOF_MSK_BROKERS", raising=False)
         monkeypatch.delenv("THESEUS_ATOF_TENANT_ID", raising=False)
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
@@ -144,7 +145,7 @@ class TestInit:
         assert os.environ["THESEUS_ATOF_TENANT_ID"] == atof_events.DEFAULT_TENANT_ID
 
     def test_disabled_when_msk_vars_explicitly_empty(self, fake_nemo, monkeypatch):
-        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+        monkeypatch.setenv("NEMO_RELAY_ENABLED", "1")
         monkeypatch.setenv("THESEUS_ATOF_MSK_BROKERS", "")
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
         assert fake_nemo.calls == []
@@ -164,10 +165,9 @@ class TestInit:
         assert os.environ["THESEUS_ATOF_TENANT_ID"] == "skyrl"
         assert os.environ["THESEUS_ATOF_MSK_TOPIC"] == "atof.received"
         assert os.environ["NEMO_RELAY_ENABLED"] == "1"
-        assert os.environ["THESEUS_ATOF_ENABLED"] == "1"
 
     def test_file_exporter_mode(self, fake_nemo, monkeypatch, tmp_path):
-        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+        monkeypatch.setenv("NEMO_RELAY_ENABLED", "1")
         monkeypatch.setenv("SKYRL_ATOF_FILE_DIR", str(tmp_path))
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
         ((_, config),) = fake_nemo.named("initialize")
