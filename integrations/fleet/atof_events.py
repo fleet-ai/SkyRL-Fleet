@@ -64,7 +64,7 @@ def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEm
     component = _component_config()
     if component is None:
         return None
-    os.environ["SKYRL_ATOF_PRODUCER_SESSION_ID"] = run_name
+    os.environ["SKYRL_ATOF_RUN_NAME"] = run_name
 
     if component["kind"] == MSK_PLUGIN_KIND:
         config = component["config"]
@@ -161,10 +161,20 @@ class AtofEmitter:
         sample_idx: Optional[int],
     ) -> Optional[RolloutTrace]:
         try:
+            session_key = "\x1f".join(
+                (
+                    self._run_name,
+                    self._entrypoint,
+                    str(task_key or ""),
+                    str(phase or ""),
+                    "" if global_step is None else str(global_step),
+                )
+            )
             metadata = _drop_none(
                 {
-                    "producer_session_id": self._run_name,
+                    "producer_session_id": uuid.uuid5(uuid.NAMESPACE_URL, session_key).hex,
                     "trace_id": uuid.uuid4().hex,
+                    "run_name": self._run_name,
                     "entrypoint": self._entrypoint,
                     "model": self._model,
                     "task_key": task_key,
@@ -183,10 +193,12 @@ class AtofEmitter:
     def llm_call_metadata(self, **metadata: Any) -> Dict[str, Any]:
         """Build metadata for an LLM call that has no rollout scope."""
         try:
+            trace_id = uuid.uuid4().hex
             return _drop_none(
                 {
-                    "producer_session_id": self._run_name,
-                    "trace_id": uuid.uuid4().hex,
+                    "producer_session_id": trace_id,
+                    "trace_id": trace_id,
+                    "run_name": self._run_name,
                     "entrypoint": self._entrypoint,
                     "model": self._model,
                     **metadata,

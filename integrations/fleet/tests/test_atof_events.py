@@ -128,7 +128,7 @@ class TestInit:
     def test_enabled_without_flag(self, fake_nemo, msk_env, monkeypatch):
         monkeypatch.delenv("NEMO_RELAY_ENABLED")
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
-        assert os.environ["SKYRL_ATOF_PRODUCER_SESSION_ID"] == "r"
+        assert os.environ["SKYRL_ATOF_RUN_NAME"] == "r"
 
     @pytest.mark.parametrize("value", ["0", "false", "off"])
     def test_disabled_with_falsey_value(self, fake_nemo, msk_env, monkeypatch, value):
@@ -185,13 +185,47 @@ class TestEmit:
         assert name == "rollout:task-9"
         assert scope_type == "agent"
         metadata = kwargs["metadata"]
-        assert metadata["producer_session_id"] == "run-1"
+        assert metadata["producer_session_id"] != "run-1"
+        assert metadata["run_name"] == "run-1"
         assert metadata["global_step"] == 7
         assert metadata["phase"] == "train_step_7"
         assert metadata["entrypoint"] == "main_fleet"
         assert metadata["model"] == "Qwen/Qwen3.5-9B"
         assert len(metadata["trace_id"]) == 32
         assert trace.metadata is metadata
+
+    def test_rollouts_group_samples_by_task_session(self, fake_nemo):
+        emitter = make_emitter(fake_nemo)
+        traces = [
+            emitter.rollout_start(
+                task_key=f"task-{task_index}",
+                env_class="fleet_task",
+                global_step=7,
+                phase="train_step_7",
+                sample_idx=sample_idx,
+            )
+            for task_index in range(4)
+            for sample_idx in range(2)
+        ]
+
+        sessions_by_task = {}
+        trace_ids = set()
+        for trace in traces:
+            metadata = trace.metadata
+            sessions_by_task.setdefault(metadata["task_key"], set()).add(metadata["producer_session_id"])
+            trace_ids.add(metadata["trace_id"])
+
+        assert len(sessions_by_task) == 4
+        assert all(len(session_ids) == 1 for session_ids in sessions_by_task.values())
+        assert len({next(iter(session_ids)) for session_ids in sessions_by_task.values()}) == 4
+        assert len(trace_ids) == 8
+
+    def test_standalone_llm_call_uses_its_own_session(self, fake_nemo):
+        metadata = make_emitter(fake_nemo).llm_call_metadata(call_site="judge")
+
+        assert metadata["producer_session_id"] == metadata["trace_id"]
+        assert metadata["producer_session_id"] != "run-1"
+        assert metadata["run_name"] == "run-1"
 
     def test_llm_request_payload(self, fake_nemo):
         emitter = make_emitter(fake_nemo)

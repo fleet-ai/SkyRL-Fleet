@@ -81,7 +81,7 @@ def _llm_judge(question: str, student: str, reference: str, verbose: bool = Fals
             ),
             call_site="skyrl_agent.verifier.stem",
             metadata={
-                "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
             },
             project_response=http_response_to_json,
         )

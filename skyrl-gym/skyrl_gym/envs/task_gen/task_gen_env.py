@@ -702,7 +702,7 @@ class TaskGenEnv(BaseTextEnv):
                     ),
                     call_site="skyrl_gym.task_gen.judge",
                     metadata={
-                        "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                        "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
                         "env_key": self.env_key,
                     },
                     name="litellm.chat.completions",

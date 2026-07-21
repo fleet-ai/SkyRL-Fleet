@@ -476,7 +476,7 @@ class NegotiationEnv(BaseTextEnv):
                         ),
                         call_site="skyrl_gym.negotiation.opponent",
                         metadata={
-                            "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                            "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
                         },
                         name="litellm.chat.completions",
                     )
