@@ -890,7 +890,26 @@ def call_openrouter(
         completion_kwargs["tools"] = tools
         completion_kwargs["tool_choice"] = "auto"
 
-    response = litellm.completion(**completion_kwargs)
+    observed_request = {key: value for key, value in completion_kwargs.items() if key != "api_key"}
+    try:
+        from nemo_relay_runtime import orchestrated_openai_chat_call_sync
+    except ImportError:
+        response = litellm.completion(**completion_kwargs)
+    else:
+        response = orchestrated_openai_chat_call_sync(
+            request=observed_request,
+            invoke=lambda effective_request: litellm.completion(
+                **dict(effective_request),
+                api_key=api_key,
+            ),
+            call_site="integrations.fleet.task_gen_baseline.openrouter",
+            metadata={
+                "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                "attempt": attempt,
+                "turn": turn,
+            },
+            name="litellm.chat.completions",
+        )
     message = response.choices[0].message
     content = message.content or ""
     try:

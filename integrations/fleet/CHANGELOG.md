@@ -1,12 +1,30 @@
 # Fleet Integration Changelog
 
+## 2026-07-20: Route SkyRL LLM calls through the shared NeMo runtime
+
+Scope: Fleet wheel setup, native and Tinker policy calls, SkyRL-Agent policy
+calls, helper and judge calls, and negotiation evals.
+
+Every Fleet setup path now installs both `nemo-relay` and
+`nemo-relay-runtime` from the same published wheel set. Runtime launchers set
+the shared MSK, tenant, topic, client, region, and `NEMO_RELAY_ENABLED=1`
+before Ray or Tinker starts.
+
+Repo-owned LLM provider calls run through `nemo-relay-runtime` around the real
+provider callback. This includes native multi-turn and batched policy calls,
+Tinker policy calls, SkyRL-Agent ReAct calls, hint and negotiation helpers,
+task generation, judges, and negotiation evals. If either wheel, exporter
+setup, or send fails, the shared runtime calls the provider directly so
+training continues.
+
 ## 2026-07-20: NeMo ATOF enabled by default
 
 Scope: shared ATOF setup, native and negotiation SkyRL launch scripts, and
 Tinker launch scripts.
 
 Both native SkyRL and Tinker now install and start the NeMo ATOF exporter
-across all task configs. Launchers always set `SKYRL_ATOF_ENABLED=1`.
+across all task configs. Runtime launchers always set
+`NEMO_RELAY_ENABLED=1`.
 Exporter setup and event sends remain fail-open, so an ATOF failure does not
 stop training.
 
@@ -137,7 +155,7 @@ at both layers, payloads size-guarded like rollout events.
 Scope: `fleet-tinker-tool-use-run.sh`.
 
 The hosted trainer image (fleet-research-api Dockerfile) never runs
-`fleet-common-setup.sh`, so `SKYRL_ATOF_ENABLED=1` on the hosted path hit
+`fleet-common-setup.sh`, so `NEMO_RELAY_ENABLED=1` on the hosted path hit
 init_atof's fail-open "nemo_relay wheel not installed" warning and every
 run silently produced zero trace events. The run script now mirrors the
 setup script: when the flag is set and `nemo_relay` isn't importable, pull
@@ -149,13 +167,13 @@ not). Install failure warns and continues — fail-open, matching init_atof.
 
 Scope: `atof_events.py`, `fleet-common-run.sh`.
 
-`SKYRL_ATOF_ENABLED=1` is now the only knob on every path: brokers and
+`NEMO_RELAY_ENABLED=1` is now the only knob on every path: brokers and
 tenant_id default in `_component_config` (`DEFAULT_MSK_BROKERS`,
 `DEFAULT_TENANT_ID`), joining the existing bucket/topic/client_id defaults.
 The `THESEUS_ATOF_*` env vars remain as overrides; setting one explicitly
 empty still disables with a warning. The now-redundant gated exports in
 `fleet-common-run.sh` are removed (single source of truth for the broker
-list), keeping only the `export SKYRL_ATOF_ENABLED` so the flag reliably
+list), keeping only the `export NEMO_RELAY_ENABLED` so the flag reliably
 reaches Ray workers. This also removes the tinker-path failure mode where
 the flag was set but the run produced zero events because the broker vars
 weren't hand-exported.
@@ -193,7 +211,7 @@ per-task sample index.
 - A rollout that raises mid-loop ships its events but gets no final mark
   (same accepted limitation as the SkyRL side).
 
-## 2026-07-07: Launch scripts — ATOF enablement via `SKYRL_ATOF_ENABLED=1`
+## 2026-07-07: Launch scripts — ATOF enablement via `NEMO_RELAY_ENABLED=1`
 
 Scope: **launch scripts only** (`fleet-common-setup.sh`, `fleet-common-run.sh`,
 the five fleet-training task YAMLs).
@@ -201,7 +219,7 @@ the five fleet-training task YAMLs).
 ### What
 
 Enabling ATOF on any fleet-training run is now one flag:
-`--env SKYRL_ATOF_ENABLED=1` (declared as `"0"` in the openenv-fleet YAMLs).
+`--env NEMO_RELAY_ENABLED=1`.
 
 - Setup: downloads the nemo-relay wheel from
   `s3://fleet-nemo-relay-artifacts/wheels/latest/` into a `mktemp -d` dir
@@ -245,8 +263,8 @@ input messages + response + stop reason), a tool event per env step
 - All emitter calls go through `_atof_emit()`, which swallows exceptions: an
   observability bug must never surface as a zero-reward trajectory via
   generate()'s catch-all (that would silently corrupt training signal).
-- The batched single-turn path (`generate_batched`) is not instrumented; all
-  fleet training paths use `agent_loop`.
+- The batched single-turn path (`generate_batched`) emits one LLM event for
+  each real batched provider call.
 
 ## 2026-07-05: Tinker harness — resume from saved state (`--load-state` + `--start-step`)
 

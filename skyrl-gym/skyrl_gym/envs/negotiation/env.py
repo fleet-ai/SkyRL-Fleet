@@ -462,7 +462,25 @@ class NegotiationEnv(BaseTextEnv):
 
         for attempt in range(self.opponent_max_retries + 1):
             try:
-                resp = await asyncio.wait_for(acompletion(**kwargs), timeout=self.opponent_timeout)
+                try:
+                    from nemo_relay_runtime import orchestrated_openai_chat_call_async
+                except ImportError:
+                    call = acompletion(**kwargs)
+                else:
+                    observed_request = {key: value for key, value in kwargs.items() if key != "api_key"}
+                    call = orchestrated_openai_chat_call_async(
+                        request=observed_request,
+                        invoke=lambda effective_request: acompletion(
+                            **dict(effective_request),
+                            **({"api_key": kwargs["api_key"]} if "api_key" in kwargs else {}),
+                        ),
+                        call_site="skyrl_gym.negotiation.opponent",
+                        metadata={
+                            "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                        },
+                        name="litellm.chat.completions",
+                    )
+                resp = await asyncio.wait_for(call, timeout=self.opponent_timeout)
                 self._record_opponent_usage(resp)
                 choices = getattr(resp, "choices", None)
                 if not choices:

@@ -1,11 +1,9 @@
 """ATOF hooks in the Tinker rollout path (item 3 of the ATOF orchestration).
 
 Behavioral tests drive the real collect_fleet_rollout / collect_batch_rollouts
-with a fake env + sampling client and a recording emitter, asserting the same
-event contract the SkyRL generator emits (test_atof_wiring.py covers that
-side): one rollout_start, an llm_turn per turn whose new_messages watermark is
-the post-init history for turn 1 and only the latest observations afterwards,
-an env_step per step, and a final mark with the tinker tool counters folded in.
+with a fake env + sampling client and a recording emitter. Provider calls run
+through the shared NeMo helper while rollout and environment marks stay on the
+SkyRL emitter.
 
 AST contract tests (test_main_fleet_tinker_rollout_dump.py style) pin the
 main() wiring: init_atof after wandb setup, drain_atof on both exits, and
@@ -21,6 +19,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import sys
+import types
 from pathlib import Path
 
 # Make sure skyrl-gym is importable for the parent module.
@@ -129,19 +128,23 @@ class FakeEnv:
 class FakeTrace:
     def __init__(self):
         self.counters = {}
+        self.metadata = {"producer_session_id": "run-1", "trace_id": "trace-1"}
 
 
 class RecordingEmitter:
     def __init__(self):
         self.calls = []
+        self.requests = []
         self.trace = FakeTrace()
 
     def rollout_start(self, **kwargs):
         self.calls.append(("rollout_start", kwargs))
         return self.trace
 
-    def llm_turn(self, **kwargs):
-        self.calls.append(("llm_turn", kwargs))
+    def llm_request(self, trace, *, new_messages):
+        request = {"messages": new_messages}
+        self.requests.append(request)
+        return request
 
     def env_step(self, **kwargs):
         self.calls.append(("env_step", kwargs))
@@ -183,16 +186,23 @@ def run_rollout(monkeypatch, **kwargs):
 # --------------------------------------------------------------------------- #
 
 
-def test_hooks_emit_full_trace(monkeypatch):
+def test_provider_calls_are_orchestrated_with_rollout_metadata(monkeypatch):
+    orchestrated_calls = []
+    runtime = types.ModuleType("nemo_relay_runtime")
+
+    async def orchestrated_llm_call_async(**kwargs):
+        orchestrated_calls.append(kwargs)
+        return await kwargs["invoke"](kwargs["request"])
+
+    runtime.orchestrated_llm_call_async = orchestrated_llm_call_async
+    monkeypatch.setitem(sys.modules, "nemo_relay_runtime", runtime)
     emitter = RecordingEmitter()
     rollout = run_rollout(monkeypatch, atof_emitter=emitter, global_step=7, phase="train_step_7", sample_idx=3)
 
     methods = [name for name, _ in emitter.calls]
     assert methods == [
         "rollout_start",
-        "llm_turn",
         "env_step",
-        "llm_turn",
         "env_step",
         "rollout_end",
     ]
@@ -206,27 +216,24 @@ def test_hooks_emit_full_trace(monkeypatch):
         "sample_idx": 3,
     }
 
-    # Watermark: turn 1 sees the post-init history, turn 2 only step-1 obs.
-    turn1 = emitter.calls[1][1]
-    assert turn1["trace"] is emitter.trace
-    assert turn1["new_messages"] == FakeEnv.initial_history
-    assert turn1["response_text"] == "act1"
-    assert turn1["stop_reason"] == "stop"
-    turn2 = emitter.calls[3][1]
-    assert turn2["new_messages"] == FakeEnv.step1_obs
-    assert turn2["response_text"] == "act2"
+    assert [call["request"]["messages"] for call in orchestrated_calls] == [
+        FakeEnv.initial_history,
+        FakeEnv.step1_obs,
+    ]
+    assert all(call["metadata"] is emitter.trace.metadata for call in orchestrated_calls)
+    assert all(call["name"] == "tinker-policy" for call in orchestrated_calls)
 
-    step1 = emitter.calls[2][1]
+    step1 = emitter.calls[1][1]
     assert step1["action"] == "act1"
     assert step1["observations"] == FakeEnv.step1_obs
     assert step1["reward"] == 0.0
     assert step1["done"] is False
-    step2 = emitter.calls[4][1]
+    step2 = emitter.calls[2][1]
     assert step2["observations"] == []
     assert step2["reward"] == 1.0
     assert step2["done"] is True
 
-    end = emitter.calls[5][1]
+    end = emitter.calls[3][1]
     assert end["reward"] == 1.0
     assert end["num_turns"] == 2
     # Tinker tool counters folded into the final mark's counters.

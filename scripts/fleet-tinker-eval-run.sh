@@ -44,7 +44,12 @@ set -euo pipefail
 export TINKER_API_KEY="${TINKER_API_KEY:?Set TINKER_API_KEY}"
 export TINKER_API_URL="${TINKER_API_URL:-}"
 export FLEET_API_KEY="${FLEET_API_KEY:?Set FLEET_API_KEY}"
-export SKYRL_ATOF_ENABLED=1
+export NEMO_RELAY_ENABLED=1
+export THESEUS_ATOF_MSK_BROKERS="${THESEUS_ATOF_MSK_BROKERS:-b-1-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-2-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198,b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198}"
+export THESEUS_ATOF_TENANT_ID="${THESEUS_ATOF_TENANT_ID:-skyrl}"
+export THESEUS_ATOF_MSK_TOPIC="${THESEUS_ATOF_MSK_TOPIC:-atof.received}"
+export THESEUS_ATOF_MSK_CLIENT_ID="${THESEUS_ATOF_MSK_CLIENT_ID:-skyrl-nemo-relay}"
+export AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 # WANDB_API_KEY is optional for eval-only; if absent and WANDB_MODE not set,
 # wandb will prompt and crash. Default to disabled when key is missing.
 if [ -z "${WANDB_API_KEY:-}" ] && [ -z "${WANDB_MODE:-}" ]; then
@@ -70,14 +75,16 @@ TEMPERATURE="${TEMPERATURE:-0.6}"
 TOP_P="${TOP_P:-0.95}"
 STOP_SEQUENCES="${STOP_SEQUENCES:-[]}"
 
-if ! python -c 'import nemo_relay' 2>/dev/null; then
-    echo "Installing nemo-relay wheel for ATOF event emission..."
+if ! python -c 'import nemo_relay, nemo_relay_runtime' 2>/dev/null; then
+    echo "Installing NeMo wheels for ATOF event emission..."
     NEMO_WHEEL_DIR="$(mktemp -d)"
     if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
-        && pip install --no-cache-dir "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
-        echo "nemo-relay installed."
+        && pip install --no-cache-dir \
+            "$NEMO_WHEEL_DIR"/nemo_relay-*.whl \
+            "$NEMO_WHEEL_DIR"/nemo_relay_runtime-*.whl; then
+        echo "nemo-relay and nemo-relay-runtime installed."
     else
-        echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
+        echo "WARNING: NeMo wheel install failed; ATOF will be disabled (fail-open)." >&2
     fi
     rm -rf "$NEMO_WHEEL_DIR"
 fi

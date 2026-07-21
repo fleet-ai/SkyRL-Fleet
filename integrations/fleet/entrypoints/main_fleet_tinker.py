@@ -438,9 +438,7 @@ def inject_judge_model(tasks_file: str, judge_model: str) -> str:
     tasks = data.get("tasks") if isinstance(data, dict) else data
     hit = miss = 0
     for t in tasks:
-        field = "verifier_code" if t.get("verifier_code") else (
-            "verifier_func" if t.get("verifier_func") else None
-        )
+        field = "verifier_code" if t.get("verifier_code") else ("verifier_func" if t.get("verifier_func") else None)
         code = t.get(field) if field else None
         if code and _JUDGE_MODEL_NEEDLE in code:
             t[field] = code.replace(
@@ -480,9 +478,7 @@ async def discover_trainer_seqlen_cap(
     rejection -> parse the cap from the error text. The real training client
     never sees an oversized batch.
     """
-    probe_client = await service_client.create_lora_training_client_async(
-        base_model=model_name, rank=lora_rank
-    )
+    probe_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
     tokens = [probe_token_id] * max_sequence_length
     datum = types.Datum(
         model_input=types.ModelInput.from_ints(tokens),
@@ -631,9 +627,7 @@ def recompute_behavior_logprobs(
             model_input=d.model_input,
             loss_fn_inputs={
                 "target_tokens": d.loss_fn_inputs["target_tokens"],
-                "weights": TensorData.from_torch(
-                    torch.ones(len(d.loss_fn_inputs["target_tokens"].to_torch()))
-                ),
+                "weights": TensorData.from_torch(torch.ones(len(d.loss_fn_inputs["target_tokens"].to_torch()))),
             },
         )
         for d in training_datums
@@ -1072,12 +1066,49 @@ async def collect_fleet_rollout(
             sampling_params = types.SamplingParams(**sampling_params_kwargs)
 
             try:
-                result = await asyncio.wait_for(
-                    sampling_client.sample_async(
+                if atof_trace is None:
+                    sample_call = sampling_client.sample_async(
                         prompt=types.ModelInput(chunks=prompt_chunks),
                         num_samples=1,
                         sampling_params=sampling_params,
-                    ),
+                    )
+                else:
+                    try:
+                        from nemo_relay_runtime import orchestrated_llm_call_async
+                    except ImportError:
+                        sample_call = sampling_client.sample_async(
+                            prompt=types.ModelInput(chunks=prompt_chunks),
+                            num_samples=1,
+                            sampling_params=sampling_params,
+                        )
+                    else:
+                        request = _atof_emit(
+                            atof_emitter,
+                            "llm_request",
+                            trace=atof_trace,
+                            new_messages=pending_atof_messages,
+                        ) or {"messages": []}
+                        request["sampling_params"] = sampling_params_kwargs
+                        sample_call = orchestrated_llm_call_async(
+                            name="tinker-policy",
+                            request=request,
+                            metadata=atof_trace.metadata,
+                            model_name=getattr(tokenizer, "name_or_path", None),
+                            invoke=lambda _request: sampling_client.sample_async(
+                                prompt=types.ModelInput(chunks=prompt_chunks),
+                                num_samples=1,
+                                sampling_params=sampling_params,
+                            ),
+                            project_response=lambda sample_result: {
+                                "content": tokenizer.decode(
+                                    sample_result.sequences[0].tokens,
+                                    skip_special_tokens=True,
+                                ),
+                                "stop_reason": getattr(sample_result.sequences[0], "stop_reason", None),
+                            },
+                        )
+                result = await asyncio.wait_for(
+                    sample_call,
                     TINKER_SAMPLE_TIMEOUT_S,
                 )
             except asyncio.TimeoutError:
@@ -1110,15 +1141,6 @@ async def collect_fleet_rollout(
 
             # Decode output
             output_text = tokenizer.decode(output_ids, skip_special_tokens=True)
-
-            _atof_emit(
-                atof_emitter,
-                "llm_turn",
-                trace=atof_trace,
-                new_messages=pending_atof_messages,
-                response_text=output_text,
-                stop_reason=getattr(sequence, "stop_reason", None),
-            )
 
             # Collect trajectory data (assistant response tokens - trainable)
             all_response_ids.extend(output_ids)
@@ -1595,7 +1617,7 @@ async def main(
         },
     )
 
-    # ATOF rollout observability. None unless SKYRL_ATOF_ENABLED=1 with the
+    # ATOF rollout observability. None unless NEMO_RELAY_ENABLED=1 with the
     # MSK env vars set; plain asyncio in the main process, so init here (no
     # Ray, unlike the SkyRL entrypoints).
     atof_emitter = init_atof(entrypoint="main_fleet_tinker", run_name=wandb_name, model=model_name)
@@ -1943,9 +1965,7 @@ async def main(
         try:
             if fix_behavior_logprobs and temperature != 1.0:
                 recompute_start = time.time()
-                training_datums, logprob_stats = recompute_behavior_logprobs(
-                    training_client, training_datums
-                )
+                training_datums, logprob_stats = recompute_behavior_logprobs(training_client, training_datums)
                 metrics.update(logprob_stats)
                 metrics["time/logprob_recompute"] = time.time() - recompute_start
                 logger.info(

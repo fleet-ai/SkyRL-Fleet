@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import sys
 import time
 import types
@@ -13,7 +14,6 @@ import pytest
 from integrations.fleet import atof_events
 from integrations.fleet.atof_events import (
     MAX_PAYLOAD_BYTES,
-    MSK_PLUGIN_KIND,
     AtofEmitter,
     drain_atof,
     init_atof,
@@ -93,17 +93,24 @@ class FakeS3:
         self.uploads.append((Bucket, Key, Body))
 
 
+def install_fake_runtime(monkeypatch, runtime=object()):
+    module = types.ModuleType("nemo_relay_runtime")
+    module.get_nemo_runtime = lambda: runtime
+    monkeypatch.setitem(sys.modules, "nemo_relay_runtime", module)
+
+
 @pytest.fixture
 def fake_nemo(monkeypatch):
     fake = FakeNemo()
     monkeypatch.setitem(sys.modules, "nemo_relay", fake)
+    install_fake_runtime(monkeypatch)
     monkeypatch.setattr(atof_events, "_nemo_module", None)
     return fake
 
 
 @pytest.fixture
 def msk_env(monkeypatch):
-    monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+    monkeypatch.setenv("NEMO_RELAY_ENABLED", "1")
     monkeypatch.setenv("THESEUS_ATOF_MSK_BROKERS", "b-1:9198")
     monkeypatch.setenv("THESEUS_ATOF_TENANT_ID", "skyrl")
 
@@ -119,27 +126,26 @@ def data_image_message(image_bytes=b"png-bytes"):
 
 class TestInit:
     def test_enabled_without_flag(self, fake_nemo, msk_env, monkeypatch):
-        monkeypatch.delenv("SKYRL_ATOF_ENABLED")
+        monkeypatch.delenv("NEMO_RELAY_ENABLED")
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
-        assert len(fake_nemo.named("initialize")) == 1
+        assert os.environ["SKYRL_ATOF_PRODUCER_SESSION_ID"] == "r"
 
-    def test_disabled_with_zero(self, fake_nemo, msk_env, monkeypatch):
-        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "0")
+    @pytest.mark.parametrize("value", ["0", "false", "off"])
+    def test_disabled_with_falsey_value(self, fake_nemo, msk_env, monkeypatch, value):
+        monkeypatch.setenv("NEMO_RELAY_ENABLED", value)
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
         assert fake_nemo.calls == []
 
     def test_defaults_apply_without_msk_vars(self, fake_nemo, monkeypatch):
-        monkeypatch.delenv("SKYRL_ATOF_ENABLED", raising=False)
+        monkeypatch.delenv("NEMO_RELAY_ENABLED", raising=False)
         monkeypatch.delenv("THESEUS_ATOF_MSK_BROKERS", raising=False)
         monkeypatch.delenv("THESEUS_ATOF_TENANT_ID", raising=False)
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
-        ((_, config),) = fake_nemo.named("initialize")
-        (component,) = config["components"]
-        assert component["config"]["brokers"] == atof_events.DEFAULT_MSK_BROKERS
-        assert component["config"]["tenant_id"] == atof_events.DEFAULT_TENANT_ID
+        assert os.environ["THESEUS_ATOF_MSK_BROKERS"] == atof_events.DEFAULT_MSK_BROKERS
+        assert os.environ["THESEUS_ATOF_TENANT_ID"] == atof_events.DEFAULT_TENANT_ID
 
     def test_disabled_when_msk_vars_explicitly_empty(self, fake_nemo, monkeypatch):
-        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+        monkeypatch.setenv("NEMO_RELAY_ENABLED", "1")
         monkeypatch.setenv("THESEUS_ATOF_MSK_BROKERS", "")
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
         assert fake_nemo.calls == []
@@ -148,35 +154,26 @@ class TestInit:
         monkeypatch.setitem(sys.modules, "nemo_relay", None)
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
 
-    def test_disabled_on_error_diagnostics(self, msk_env, monkeypatch):
-        fake = FakeNemo(diagnostics=[{"level": "error", "message": "bad brokers"}])
-        monkeypatch.setitem(sys.modules, "nemo_relay", fake)
+    def test_disabled_when_shared_runtime_init_fails(self, fake_nemo, msk_env, monkeypatch):
+        install_fake_runtime(monkeypatch, runtime=None)
         assert init_atof(entrypoint="e", run_name="r", model="m") is None
 
-    def test_msk_component_config(self, fake_nemo, msk_env):
+    def test_msk_runtime_config(self, fake_nemo, msk_env):
         emitter = init_atof(entrypoint="main_fleet", run_name="run-1", model="m")
         assert isinstance(emitter, AtofEmitter)
-        ((_, config),) = fake_nemo.named("initialize")
-        (component,) = config["components"]
-        assert component["kind"] == MSK_PLUGIN_KIND
-        assert component["config"]["brokers"] == "b-1:9198"
-        assert component["config"]["tenant_id"] == "skyrl"
-        assert component["config"]["topic"] == "atof.received"
-        assert component["config"]["fail_open"] is True
+        assert os.environ["THESEUS_ATOF_MSK_BROKERS"] == "b-1:9198"
+        assert os.environ["THESEUS_ATOF_TENANT_ID"] == "skyrl"
+        assert os.environ["THESEUS_ATOF_MSK_TOPIC"] == "atof.received"
+        assert os.environ["NEMO_RELAY_ENABLED"] == "1"
 
     def test_file_exporter_mode(self, fake_nemo, monkeypatch, tmp_path):
-        monkeypatch.setenv("SKYRL_ATOF_ENABLED", "1")
+        monkeypatch.setenv("NEMO_RELAY_ENABLED", "1")
         monkeypatch.setenv("SKYRL_ATOF_FILE_DIR", str(tmp_path))
         assert init_atof(entrypoint="e", run_name="r", model="m") is not None
         ((_, config),) = fake_nemo.named("initialize")
         (component,) = config["components"]
         assert component["kind"] == "observability"
         assert component["config"]["atof"]["output_directory"] == str(tmp_path)
-
-    def test_warning_diagnostics_do_not_disable(self, msk_env, monkeypatch):
-        fake = FakeNemo(diagnostics=[{"level": "warning", "message": "meh"}])
-        monkeypatch.setitem(sys.modules, "nemo_relay", fake)
-        assert init_atof(entrypoint="e", run_name="r", model="m") is not None
 
 
 class TestEmit:
@@ -196,18 +193,11 @@ class TestEmit:
         assert len(metadata["trace_id"]) == 32
         assert trace.metadata is metadata
 
-    def test_llm_turn_payloads(self, fake_nemo):
+    def test_llm_request_payload(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
         trace = emitter.rollout_start(task_key="t", env_class="fleet_task", global_step=1, phase="p", sample_idx=0)
         messages = [{"role": "user", "content": "solve it"}]
-        emitter.llm_turn(trace, new_messages=messages, response_text="done", stop_reason="stop")
-        ((_, name, request, response, kwargs),) = fake_nemo.named("llm")
-        assert name == "skyrl-policy"
-        assert request == {"messages": messages}
-        assert response == {"content": "done", "stop_reason": "stop"}
-        assert kwargs["handle"] == "handle-1"
-        assert kwargs["model_name"] == "Qwen/Qwen3.5-9B"
-        assert kwargs["metadata"]["trace_id"] == trace.metadata["trace_id"]
+        assert emitter.llm_request(trace, new_messages=messages) == {"messages": messages}
 
     def test_env_step_payloads(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
@@ -235,16 +225,15 @@ class TestEmit:
 
     def test_none_trace_is_noop(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
-        emitter.llm_turn(None, new_messages=[], response_text="", stop_reason=None)
         emitter.env_step(None, action="", observations=[], reward=0.0, done=False)
         emitter.rollout_end(None, reward=0.0, stop_reason=None, num_turns=0)
         assert fake_nemo.calls == []
 
-    def test_emit_failure_is_swallowed_and_counted(self, fake_nemo, monkeypatch):
+    def test_llm_request_failure_is_swallowed_and_counted(self, fake_nemo, monkeypatch):
         emitter = make_emitter(fake_nemo)
         trace = emitter.rollout_start(task_key="t", env_class="fleet_task", global_step=1, phase="p", sample_idx=0)
-        monkeypatch.setattr(fake_nemo.llm, "execute", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-        emitter.llm_turn(trace, new_messages=[], response_text="x", stop_reason=None)
+        monkeypatch.setattr(emitter, "_offload_images", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+        assert emitter.llm_request(trace, new_messages=[]) == {"messages": "[ATOF request capture failed]"}
         assert trace.counters["emit_errors"] == 1
 
 
@@ -258,11 +247,10 @@ class TestImages:
         sha = hashlib.sha256(image_bytes).hexdigest()
         messages = [data_image_message(image_bytes), data_image_message(image_bytes)]
 
-        emitter.llm_turn(trace, new_messages=messages, response_text="ok", stop_reason="stop")
+        request = emitter.llm_request(trace, new_messages=messages)
         emitter._image_pool.shutdown(wait=True)
 
         expected_url = f"s3://fleet-trajectory-artifacts/skyrl/run-1/{sha}"
-        ((_, _, request, _, _),) = fake_nemo.named("llm")
         for message in request["messages"]:
             assert message["content"][0]["image_url"]["url"] == expected_url
         assert s3.uploads == [("fleet-trajectory-artifacts", f"skyrl/run-1/{sha}", image_bytes)]
@@ -280,10 +268,10 @@ class TestImages:
         emitter = make_emitter(fake_nemo)
         trace = emitter.rollout_start(task_key="t", env_class="fleet_task", global_step=1, phase="p", sample_idx=0)
 
-        emitter.llm_turn(trace, new_messages=[data_image_message()], response_text="ok", stop_reason="stop")
+        request = emitter.llm_request(trace, new_messages=[data_image_message()])
         emitter._image_pool.shutdown(wait=True)
 
-        assert len(fake_nemo.named("llm")) == 1
+        assert request["messages"][0]["content"][0]["image_url"]["url"].startswith("s3://")
         assert trace.counters["image_upload_failures"] == 1
 
     def test_plain_text_messages_not_copied(self, fake_nemo):
@@ -323,46 +311,8 @@ class TestDrain:
         assert fake_nemo.named("drain") == []
 
 
-class TestHelperLlmCall:
-    def test_emits_scoped_llm_event(self, fake_nemo):
-        emitter = make_emitter(fake_nemo)
-        emitter.helper_llm_call(
-            name="hint_synthesis",
-            request={"task_prompt": "do the thing"},
-            response={"hint": "try harder", "category": "llm_synthesized"},
-            model="openrouter/anthropic/claude-sonnet-4",
-            metadata={"instance_id": "i-1", "global_step": 7, "phase": "train_step_7"},
-        )
-        ((_, name, _scope_type, push_kwargs),) = fake_nemo.named("push")
-        assert name == "helper:hint_synthesis"
-        meta = push_kwargs["metadata"]
-        assert meta["call_site"] == "hint_synthesis"
-        assert meta["instance_id"] == "i-1"
-        assert meta["global_step"] == 7
-        assert meta["phase"] == "train_step_7"
-        assert meta["producer_session_id"] == "run-1"
-        ((_, llm_name, request, response, llm_kwargs),) = fake_nemo.named("llm")
-        assert llm_name == "hint_synthesis"
-        assert request == {"task_prompt": "do the thing"}
-        assert response == {"hint": "try harder", "category": "llm_synthesized"}
-        assert llm_kwargs["model_name"] == "openrouter/anthropic/claude-sonnet-4"
-        assert len(fake_nemo.named("pop")) == 1
-
-    def test_model_defaults_to_policy_model(self, fake_nemo):
-        emitter = make_emitter(fake_nemo)
-        emitter.helper_llm_call(name="hint_synthesis", request={}, response={})
-        ((_, _, _, _, llm_kwargs),) = fake_nemo.named("llm")
-        assert llm_kwargs["model_name"] == "Qwen/Qwen3.5-9B"
-
-    def test_fails_open(self, fake_nemo, monkeypatch):
-        emitter = make_emitter(fake_nemo)
-        monkeypatch.setattr(fake_nemo.scope, "push", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-        emitter.helper_llm_call(name="hint_synthesis", request={}, response={})
-        assert fake_nemo.named("llm") == []
-
-
 class TestRunSyncTimeout:
-    """A hung plugin.initialize must disable ATOF, never stall startup."""
+    """The local file exporter must not stall startup."""
 
     def test_non_awaitable_passes_through(self):
         report = {"diagnostics": []}
@@ -390,10 +340,11 @@ class TestRunSyncTimeout:
         with pytest.raises(TimeoutError):
             atof_events._run_sync(hang_without_await_point(), timeout=0.1)
 
-    def test_hung_init_disables_atof(self, fake_nemo, msk_env, monkeypatch):
+    def test_hung_file_exporter_init_disables_atof(self, fake_nemo, monkeypatch, tmp_path):
         async def hang(config):
             await asyncio.Event().wait()
 
+        monkeypatch.setenv("SKYRL_ATOF_FILE_DIR", str(tmp_path))
         monkeypatch.setattr(fake_nemo.plugin, "initialize", hang)
         monkeypatch.setattr(atof_events, "ATOF_INIT_TIMEOUT_S", 0.1)
         assert init_atof(entrypoint="e", run_name="r", model="m") is None

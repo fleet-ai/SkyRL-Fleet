@@ -81,7 +81,19 @@ async def chat(
         kwargs["temperature"] = temperature
     for attempt in range(retries):
         try:
-            resp = await client.chat.completions.create(**kwargs)
+            try:
+                from nemo_relay_runtime import orchestrated_openai_chat_call_async
+            except ImportError:
+                resp = await client.chat.completions.create(**kwargs)
+            else:
+                resp = await orchestrated_openai_chat_call_async(
+                    request=kwargs,
+                    invoke=lambda effective_request: client.chat.completions.create(**dict(effective_request)),
+                    call_site="skyrl_gym.negotiation.eval",
+                    metadata={
+                        "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                    },
+                )
             # Some providers (via OpenRouter) occasionally return 200 with empty
             # `choices` or null content; treat as an empty turn rather than crashing.
             if not getattr(resp, "choices", None):

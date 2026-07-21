@@ -529,7 +529,30 @@ class SkyRLGymGenerator(GeneratorInterface):
                 sampling_params=sampling_params,
                 multi_modal_data=mm_data,
             )
-            engine_output = await self.inference_engine_client.generate(engine_input)
+            if atof_trace is None:
+                engine_output = await self.inference_engine_client.generate(engine_input)
+            else:
+                try:
+                    from nemo_relay_runtime import orchestrated_llm_call_async
+                except ImportError:
+                    engine_output = await self.inference_engine_client.generate(engine_input)
+                else:
+                    observed_request = self._atof_emit(
+                        "llm_request",
+                        trace=atof_trace,
+                        new_messages=pending_atof_messages,
+                    ) or {"messages": []}
+                    engine_output = await orchestrated_llm_call_async(
+                        name="skyrl-policy",
+                        request=observed_request,
+                        metadata=atof_trace.metadata,
+                        model_name=self.model_name,
+                        invoke=lambda _request: self.inference_engine_client.generate(engine_input),
+                        project_response=lambda result: {
+                            "content": result["responses"][0],
+                            "stop_reason": result["stop_reasons"][0],
+                        },
+                    )
             output = engine_output["responses"][0]
             output_ids = engine_output["response_ids"][0]
             stop_reason = engine_output["stop_reasons"][0]
@@ -559,14 +582,6 @@ class SkyRLGymGenerator(GeneratorInterface):
                     if response_logprobs is not None:
                         response_logprobs.append(0.0)
                     added_eos = True
-
-            self._atof_emit(
-                "llm_turn",
-                trace=atof_trace,
-                new_messages=pending_atof_messages,
-                response_text=output,
-                stop_reason=stop_reason,
-            )
 
             # 2. Environment step
             env_step_output: BaseTextEnvStepOutput = await self._env_step(env, output)
@@ -999,18 +1014,14 @@ class SkyRLGymGenerator(GeneratorInterface):
                 model=hint_model,
                 timeout=hint_timeout,
                 static_fallback_fn=FleetTaskEnv.build_hint_text,
-            )
-            self._atof_emit(
-                "hint_synthesis_events",
-                hint_requests=hint_requests,
-                hint_results=hint_results,
-                model=hint_model,
-                global_step=batch_metadata.global_step if batch_metadata is not None else None,
-                phase=(
-                    f"{batch_metadata.training_phase}_step_{batch_metadata.global_step}"
-                    if batch_metadata is not None
-                    else None
-                ),
+                nemo_metadata={
+                    "global_step": batch_metadata.global_step if batch_metadata is not None else None,
+                    "phase": (
+                        f"{batch_metadata.training_phase}_step_{batch_metadata.global_step}"
+                        if batch_metadata is not None
+                        else None
+                    ),
+                },
             )
         else:
             hint_results = []
@@ -1108,6 +1119,7 @@ class SkyRLGymGenerator(GeneratorInterface):
         env_extras: List[Dict[str, Any]],
         max_tokens: int,
         sampling_params: Optional[Dict[str, Any]] = None,
+        batch_metadata: Optional[BatchMetadata] = None,
     ) -> GeneratorOutput:
         """
         Single-turn batched generation (can use the synchronous offline engine)
@@ -1141,7 +1153,38 @@ class SkyRLGymGenerator(GeneratorInterface):
             return_dict=False,
         )
         engine_input = InferenceEngineInput(prompt_token_ids=prompt_token_ids, sampling_params=sampling_params)
-        engine_output = await self.inference_engine_client.generate(engine_input)
+        atof_metadata = self._atof_emit(
+            "llm_call_metadata",
+            call_site="skyrl-policy-batch",
+            batch_size=len(init_prompts),
+            task_keys=[extra.get("task_key") for extra in env_extras],
+            env_classes=env_classes,
+            global_step=batch_metadata.global_step if batch_metadata is not None else None,
+            phase=(
+                f"{batch_metadata.training_phase}_step_{batch_metadata.global_step}"
+                if batch_metadata is not None
+                else None
+            ),
+        )
+        if not atof_metadata:
+            engine_output = await self.inference_engine_client.generate(engine_input)
+        else:
+            try:
+                from nemo_relay_runtime import orchestrated_llm_call_async
+            except ImportError:
+                engine_output = await self.inference_engine_client.generate(engine_input)
+            else:
+                engine_output = await orchestrated_llm_call_async(
+                    name="skyrl-policy-batch",
+                    request={"messages": init_prompts, "sampling_params": sampling_params or {}},
+                    metadata=atof_metadata,
+                    model_name=self.model_name,
+                    invoke=lambda _request: self.inference_engine_client.generate(engine_input),
+                    project_response=lambda result: {
+                        "content": result["responses"],
+                        "stop_reason": result["stop_reasons"],
+                    },
+                )
         outputs = engine_output["responses"]
         responses = engine_output["response_ids"]
         stop_reasons = engine_output["stop_reasons"]
@@ -1229,7 +1272,14 @@ class SkyRLGymGenerator(GeneratorInterface):
         max_input_length = self.generator_cfg.max_input_length
 
         if self.batched:
-            return await self.generate_batched(prompts, env_classes, env_extras, max_tokens, sampling_params)
+            return await self.generate_batched(
+                prompts,
+                env_classes,
+                env_extras,
+                max_tokens,
+                sampling_params,
+                batch_metadata,
+            )
 
         # Async agent loop to generate trajectories in parallel.
         # Use asyncio.wait() instead of gather() so individual trajectory failures

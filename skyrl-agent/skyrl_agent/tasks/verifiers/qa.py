@@ -13,11 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
+import random
 import re
 import string
-import random
+
 import litellm
-import json
 
 JUDGE_PROMPT_BROWSECOMP_OFFICIAL = """Judge whether the following [response] to [question] is correct or not based on the precise and unambiguous [correct_answer] below.
 
@@ -248,12 +250,24 @@ def compute_score_browsecomp(solution_str, ground_truth, question):
             question=question, response=solution_str, correct_answer=ground_truth["target"]
         )
         print(f"Prompt for judge model: {prompt}")
-        response = litellm.completion(
+        request = dict(
             model="gpt-4o-2024-08-06",
             messages=[{"role": "user", "content": prompt}],
             num_retries=5,
             response_format=extracted_answer_format_for_confidence,
         )
+        try:
+            from nemo_relay_runtime import orchestrated_openai_chat_call_sync
+        except ImportError:
+            response = litellm.completion(**request)
+        else:
+            response = orchestrated_openai_chat_call_sync(
+                request=request,
+                invoke=lambda effective_request: litellm.completion(**dict(effective_request)),
+                call_site="skyrl_agent.verifier.browsecomp",
+                metadata={"producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID")},
+                name="litellm.chat.completions",
+            )
         print(f"Response from judge model: {response}")
         raw_content = response.choices[0].message["content"]
         raw_judge = json.loads(raw_content)
@@ -273,12 +287,24 @@ def compute_score_ruler(solution_str, ground_truth, question):
             question=question, response=solution_str, correct_answer=ground_truth
         )
         print(f"Prompt for judge model: {prompt}")
-        response = litellm.completion(
+        request = dict(
             model="gpt-5-nano",
             messages=[{"role": "user", "content": prompt}],
             num_retries=1,
             response_format=ruler_answer_format,
         )
+        try:
+            from nemo_relay_runtime import orchestrated_openai_chat_call_sync
+        except ImportError:
+            response = litellm.completion(**request)
+        else:
+            response = orchestrated_openai_chat_call_sync(
+                request=request,
+                invoke=lambda effective_request: litellm.completion(**dict(effective_request)),
+                call_site="skyrl_agent.verifier.ruler",
+                metadata={"producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID")},
+                name="litellm.chat.completions",
+            )
         print(f"Response from judge model: {response}")
         raw_content = response.choices[0].message["content"]
         print(f"Raw content from judge model: {raw_content}")

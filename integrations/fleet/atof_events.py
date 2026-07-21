@@ -2,7 +2,7 @@
 
 Streams rollout trajectories (LLM turns, env steps, rewards) through the
 NeMo Relay runtime to the Fleet event pipeline (MSK -> ClickPipes ->
-ClickHouse). Enabled by default; set SKYRL_ATOF_ENABLED=0 to opt out. Init and
+ClickHouse). Enabled by default; set NEMO_RELAY_ENABLED=0 to opt out. Init and
 every emit fail open so training behavior is never affected.
 
 Images never go inline: they upload to S3 keyed by content hash and events
@@ -39,8 +39,6 @@ DEFAULT_MSK_BROKERS = (
     "b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198"
 )
 DEFAULT_TENANT_ID = "skyrl"
-# hint_synthesizer.CATEGORY_LLM; only this category made a real LLM call.
-HINT_CATEGORY_LLM = "llm_synthesized"
 IMAGE_KEY_PREFIX = "skyrl"
 # Broker cap is 20MB; leave headroom for the event envelope and metadata.
 MAX_PAYLOAD_BYTES = 19_000_000
@@ -54,35 +52,52 @@ _nemo_module: Any = None
 def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEmitter"]:
     """Start the NeMo runtime and return an emitter, or None (disabled/failed).
 
-    Enabled unless SKYRL_ATOF_ENABLED=0. Uses either the MSK env vars
+    Enabled unless NEMO_RELAY_ENABLED=0. Uses either the MSK env vars
     (THESEUS_ATOF_MSK_BROKERS, THESEUS_ATOF_TENANT_ID) or SKYRL_ATOF_FILE_DIR
     for local file output. Any failure logs one warning and returns None.
     """
     global _nemo_module
 
-    if os.environ.get("SKYRL_ATOF_ENABLED", "1") != "1":
+    if os.environ.get("NEMO_RELAY_ENABLED", "1").strip().lower() in {"0", "false", "f", "no", "n", "off"}:
         return None
 
     component = _component_config()
     if component is None:
         return None
+    os.environ["SKYRL_ATOF_PRODUCER_SESSION_ID"] = run_name
 
-    try:
-        import nemo_relay
-    except ImportError as exc:
-        logger.warning(f"ATOF disabled: nemo_relay wheel not installed ({exc})")
-        return None
+    if component["kind"] == MSK_PLUGIN_KIND:
+        config = component["config"]
+        os.environ.setdefault("THESEUS_ATOF_MSK_BROKERS", config["brokers"])
+        os.environ.setdefault("THESEUS_ATOF_TENANT_ID", config["tenant_id"])
+        os.environ.setdefault("THESEUS_ATOF_MSK_TOPIC", config["topic"])
+        os.environ.setdefault("THESEUS_ATOF_MSK_CLIENT_ID", config["client_id"])
+        os.environ.setdefault("AWS_REGION", config["region"])
+        try:
+            from nemo_relay_runtime import get_nemo_runtime
 
-    try:
-        report = _run_sync(nemo_relay.plugin.initialize({"version": 1, "components": [component]}))
-    except Exception as exc:
-        logger.warning(f"ATOF disabled: plugin initialization failed ({type(exc).__name__}: {exc})")
-        return None
+            if get_nemo_runtime() is None:
+                return None
+            import nemo_relay
+        except ImportError as exc:
+            logger.warning(f"ATOF disabled: NeMo wheels not installed ({exc})")
+            return None
+        except Exception as exc:
+            logger.warning(f"ATOF disabled: shared runtime initialization failed ({type(exc).__name__}: {exc})")
+            return None
+    else:
+        try:
+            import nemo_relay
 
-    errors = _initialization_errors(report)
-    if errors:
-        logger.warning(f"ATOF disabled: plugin configuration errors {errors}")
-        return None
+            report = _run_sync(nemo_relay.plugin.initialize({"version": 1, "components": [component]}))
+        except Exception as exc:
+            logger.warning(f"ATOF disabled: plugin initialization failed ({type(exc).__name__}: {exc})")
+            return None
+
+        errors = _initialization_errors(report)
+        if errors:
+            logger.warning(f"ATOF disabled: plugin configuration errors {errors}")
+            return None
 
     _nemo_module = nemo_relay
     logger.info(f"ATOF enabled: exporter={component['kind']} run={run_name}")
@@ -165,25 +180,32 @@ class AtofEmitter:
             self._warn_once("rollout_start", exc)
             return None
 
-    def llm_turn(
-        self, trace: Optional[RolloutTrace], *, new_messages: List[dict], response_text: str, stop_reason: Optional[str]
-    ) -> None:
-        if trace is None:
-            return
+    def llm_call_metadata(self, **metadata: Any) -> Dict[str, Any]:
+        """Build metadata for an LLM call that has no rollout scope."""
         try:
-            request = self._guard(trace, {"messages": self._offload_images(trace, new_messages)})
-            response = self._guard(trace, {"content": response_text, "stop_reason": stop_reason})
-            self._nemo.llm.execute(
-                "skyrl-policy",
-                self._nemo.LLMRequest({}, request),
-                lambda _request: response,
-                handle=trace.handle,
-                metadata=trace.metadata,
-                model_name=self._model,
+            return _drop_none(
+                {
+                    "producer_session_id": self._run_name,
+                    "trace_id": uuid.uuid4().hex,
+                    "entrypoint": self._entrypoint,
+                    "model": self._model,
+                    **metadata,
+                }
             )
         except Exception as exc:
+            self._warn_once("llm_call_metadata", exc)
+            return {}
+
+    def llm_request(self, trace: Optional[RolloutTrace], *, new_messages: List[dict]) -> Dict[str, Any]:
+        """Build the bounded request recorded around a real provider call."""
+        if trace is None:
+            return {"messages": new_messages}
+        try:
+            return self._guard(trace, {"messages": self._offload_images(trace, new_messages)})
+        except Exception as exc:
             trace.counters["emit_errors"] += 1
-            self._warn_once("llm_turn", exc)
+            self._warn_once("llm_request", exc)
+            return {"messages": "[ATOF request capture failed]"}
 
     def env_step(
         self, trace: Optional[RolloutTrace], *, action: str, observations: List[dict], reward: float, done: bool
@@ -226,77 +248,6 @@ class AtofEmitter:
             self._nemo.scope.pop(trace.handle, output={"reward": reward})
         except Exception as exc:
             self._warn_once("rollout_end", exc)
-
-    def helper_llm_call(
-        self,
-        *,
-        name: str,
-        request: Dict[str, Any],
-        response: Dict[str, Any],
-        model: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Emit one standalone helper-LLM event (e.g. hint synthesis) as its own
-        mini-trace; every event the pipeline ships today is scope-attached."""
-        try:
-            meta = _drop_none(
-                {
-                    "producer_session_id": self._run_name,
-                    "trace_id": uuid.uuid4().hex,
-                    "entrypoint": self._entrypoint,
-                    "call_site": name,
-                    **(metadata or {}),
-                }
-            )
-            trace = RolloutTrace(handle=None, metadata=meta)
-            handle = self._nemo.scope.push(f"helper:{name}", self._nemo.ScopeType.Agent, metadata=meta)
-            self._nemo.llm.execute(
-                name,
-                self._nemo.LLMRequest({}, self._guard(trace, request)),
-                lambda _request: self._guard(trace, response),
-                handle=handle,
-                metadata=meta,
-                model_name=model or self._model,
-            )
-            self._nemo.scope.pop(handle, output={})
-        except Exception as exc:
-            self._warn_once("helper_llm_call", exc)
-
-    def hint_synthesis_events(
-        self,
-        *,
-        hint_requests: List[Dict[str, Any]],
-        hint_results: List[Any],
-        model: str,
-        global_step: Optional[int] = None,
-        phase: Optional[str] = None,
-    ) -> None:
-        """One helper_llm_call per LLM-synthesized hint; fallbacks made no call.
-
-        request mirrors what synthesize_hint sends (it slices task_prompt to
-        5000 chars); chat_history is deliberately excluded — it already ships
-        with the rollout events.
-        """
-        try:
-            for req, (hint_text, category) in zip(hint_requests, hint_results):
-                if category != HINT_CATEGORY_LLM:
-                    continue
-                self.helper_llm_call(
-                    name="hint_synthesis",
-                    request={
-                        "task_prompt": (req.get("task_prompt") or "")[:5000],
-                        "verifier_stdout": req.get("verifier_stdout"),
-                        "verifier_error": req.get("verifier_error"),
-                        "tool_error_messages": req.get("tool_error_messages"),
-                    },
-                    response={"hint": hint_text, "category": category},
-                    model=model,
-                    metadata=_drop_none(
-                        {"instance_id": req.get("instance_id"), "global_step": global_step, "phase": phase}
-                    ),
-                )
-        except Exception as exc:
-            self._warn_once("hint_synthesis_events", exc)
 
     def _offload_images(self, trace: RolloutTrace, messages: List[dict]) -> List[dict]:
         """Replace base64 image data URLs with content-addressed S3 URLs.
@@ -376,7 +327,7 @@ def _component_config() -> Optional[Dict[str, Any]]:
     tenant_id = os.environ.get("THESEUS_ATOF_TENANT_ID", DEFAULT_TENANT_ID).strip()
     if not brokers or not tenant_id:
         logger.warning(
-            "ATOF disabled: SKYRL_ATOF_ENABLED=1 but THESEUS_ATOF_MSK_BROKERS/THESEUS_ATOF_TENANT_ID are "
+            "ATOF disabled: NEMO_RELAY_ENABLED=1 but THESEUS_ATOF_MSK_BROKERS/THESEUS_ATOF_TENANT_ID are "
             "explicitly empty"
         )
         return None

@@ -1,14 +1,16 @@
-from skyrl_agent.tools.base import BaseTool, register_tool
+import copy
 import json
+import os
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Union
+
 import requests
-from skyrl_agent.tools.prompt import EXTRACTOR_PROMPT
-import os
 from openai import OpenAI
-import random
+
+from skyrl_agent.tools.base import BaseTool, register_tool
 from skyrl_agent.tools.cache import WebPageCache
-import copy
+from skyrl_agent.tools.prompt import EXTRACTOR_PROMPT
 
 
 @register_tool("web_browser")
@@ -86,7 +88,7 @@ class WebBrowser(BaseTool):
         - Drop leading 'www.' when host already has multiple labels (e.g., www.pmc.ncbi.nlm.nih.gov → pmc.ncbi.nlm.nih.gov).
         """
         try:
-            from urllib.parse import urlparse, parse_qs, unquote, urlunparse
+            from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 
             u = (url or "").strip()
             if not u:
@@ -458,13 +460,29 @@ class WebBrowser(BaseTool):
             local_shrink = 2
             while True:
                 try:
-                    resp = client.chat.completions.create(
+                    request = dict(
                         model=summary_model,
                         messages=local_msgs,
                         stop=["\n<tool_response>", "<tool_response>"],
                         temperature=0,
                         user=(str(self._trajectory_id) if getattr(self, "_trajectory_id", None) else None),
                     )
+                    try:
+                        from nemo_relay_runtime import (
+                            orchestrated_openai_chat_call_sync,
+                        )
+                    except ImportError:
+                        resp = client.chat.completions.create(**request)
+                    else:
+                        resp = orchestrated_openai_chat_call_sync(
+                            request=request,
+                            invoke=lambda effective_request: client.chat.completions.create(**dict(effective_request)),
+                            call_site="skyrl_agent.web_browser.chunk_summary",
+                            metadata={
+                                "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                                "trajectory_id": getattr(self, "_trajectory_id", None),
+                            },
+                        )
                     cont = resp.choices[0].message.content
                     return _normalize_json_str(cont or "")
                 except Exception as ie:
@@ -487,13 +505,27 @@ class WebBrowser(BaseTool):
 
         for attempt in range(max_tries):
             try:
-                chat_response = client.chat.completions.create(
+                request = dict(
                     model=summary_model,
                     messages=msgs_local,
                     stop=["\n<tool_response>", "<tool_response>"],
                     temperature=0,
                     user=(str(self._trajectory_id) if getattr(self, "_trajectory_id", None) else None),
                 )
+                try:
+                    from nemo_relay_runtime import orchestrated_openai_chat_call_sync
+                except ImportError:
+                    chat_response = client.chat.completions.create(**request)
+                else:
+                    chat_response = orchestrated_openai_chat_call_sync(
+                        request=request,
+                        invoke=lambda effective_request: client.chat.completions.create(**dict(effective_request)),
+                        call_site="skyrl_agent.web_browser.summary",
+                        metadata={
+                            "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                            "trajectory_id": getattr(self, "_trajectory_id", None),
+                        },
+                    )
                 content = chat_response.choices[0].message.content
                 if content:
                     try:

@@ -7,6 +7,7 @@ build_hint_text() on failure.
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -146,6 +147,7 @@ async def synthesize_hint(
     model: str = "openrouter/anthropic/claude-sonnet-4",
     timeout: float = 30.0,
     static_fallback_fn=None,
+    nemo_metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str]:
     """Synthesize a hint from a failed trajectory using an LLM via litellm.
 
@@ -175,19 +177,32 @@ async def synthesize_hint(
 
 Based on the trajectory and feedback above, provide 2-5 sentences of specific, actionable guidance for the agent's next attempt."""
 
+    request = {
+        "model": model,
+        "max_tokens": 300,
+        "temperature": 0.3,
+        "messages": [
+            {"role": "system", "content": HINT_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+    }
     try:
-        response = await asyncio.wait_for(
-            acompletion(
-                model=model,
-                max_tokens=300,
-                temperature=0.3,
-                messages=[
-                    {"role": "system", "content": HINT_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_message},
-                ],
-            ),
-            timeout=timeout,
-        )
+        try:
+            from nemo_relay_runtime import orchestrated_openai_chat_call_async
+        except ImportError:
+            call = acompletion(**request)
+        else:
+            call = orchestrated_openai_chat_call_async(
+                request=request,
+                invoke=lambda effective_request: acompletion(**dict(effective_request)),
+                call_site="skyrl_gym.fleet_task.hint_synthesis",
+                metadata={
+                    "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                    **(nemo_metadata or {}),
+                },
+                name="litellm.chat.completions",
+            )
+        response = await asyncio.wait_for(call, timeout=timeout)
         hint_text = response.choices[0].message.content.strip()
         if hint_text:
             return hint_text, CATEGORY_LLM
@@ -210,6 +225,7 @@ async def synthesize_hints_batch(
     timeout: float = 30.0,
     max_concurrency: int = 20,
     static_fallback_fn=None,
+    nemo_metadata: Optional[Dict[str, Any]] = None,
 ) -> List[Tuple[str, str]]:
     """Synthesize hints for a batch of failed trajectories concurrently.
 
@@ -246,6 +262,7 @@ async def synthesize_hints_batch(
                 model=model,
                 timeout=timeout,
                 static_fallback_fn=static_fallback_fn,
+                nemo_metadata={**(nemo_metadata or {}), "instance_id": req.get("instance_id")},
             )
 
     results = await asyncio.gather(*[_synth(req) for req in hint_requests])
