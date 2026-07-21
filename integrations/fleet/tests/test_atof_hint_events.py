@@ -1,98 +1,81 @@
-"""Hint-synthesis events in the shared ATOF module (phase 2).
-
-The generator's _run_hint_augmentation calls
-emitter.hint_synthesis_events(...) through _atof_emit; all shaping lives
-here in atof_events so the core generator file carries one call only.
-"""
+"""NeMo orchestration for hint-synthesis provider calls."""
 
 from __future__ import annotations
 
-import pytest
+import asyncio
+import sys
+import types
 
-from integrations.fleet.tests.test_atof_events import FakeNemo, make_emitter
-
-HINT_MODEL = "openrouter/anthropic/claude-sonnet-4"
-
-
-@pytest.fixture
-def fake_nemo():
-    return FakeNemo()
+from skyrl_gym.envs.fleet_task import hint_synthesizer
 
 
-def hint_fixtures():
-    hint_requests = [
-        {
-            "task_prompt": "book a flight",
-            "verifier_stdout": "0/3 checks",
-            "verifier_error": None,
-            "tool_error_messages": ["timeout"],
-            "instance_id": "i-1",
-        },
-        {
-            "task_prompt": "send an email",
-            "verifier_stdout": None,
-            "verifier_error": "crash",
-            "tool_error_messages": None,
-            "instance_id": "i-2",
-        },
-    ]
-    hint_results = [
-        ("focus on the date picker", "llm_synthesized"),
-        ("The previous attempt failed.", "llm_failed_static_fallback"),
-    ]
-    return hint_requests, hint_results
+def _response(text: str):
+    message = types.SimpleNamespace(content=text)
+    choice = types.SimpleNamespace(message=message)
+    return types.SimpleNamespace(choices=[choice])
 
 
-def test_emits_one_event_per_llm_synthesized_hint(fake_nemo):
-    emitter = make_emitter(fake_nemo)
-    hint_requests, hint_results = hint_fixtures()
-
-    emitter.hint_synthesis_events(
-        hint_requests=hint_requests,
-        hint_results=hint_results,
-        model=HINT_MODEL,
-        global_step=7,
-        phase="train_step_7",
-    )
-
-    # Only the llm_synthesized hint emits; fallbacks made no LLM call.
-    ((_, name, _scope_type, push_kwargs),) = fake_nemo.named("push")
-    assert name == "helper:hint_synthesis"
-    meta = push_kwargs["metadata"]
-    assert meta["call_site"] == "hint_synthesis"
-    assert meta["instance_id"] == "i-1"
-    assert meta["global_step"] == 7
-    assert meta["phase"] == "train_step_7"
-    ((_, _, request, response, llm_kwargs),) = fake_nemo.named("llm")
-    assert request == {
+def _hint_kwargs():
+    return {
         "task_prompt": "book a flight",
+        "chat_history": [],
         "verifier_stdout": "0/3 checks",
         "verifier_error": None,
         "tool_error_messages": ["timeout"],
+        "model": "openrouter/anthropic/claude-sonnet-4",
+        "nemo_metadata": {"instance_id": "i-1", "global_step": 7},
     }
-    assert response == {"hint": "focus on the date picker", "category": "llm_synthesized"}
-    assert llm_kwargs["model_name"] == HINT_MODEL
-    assert len(fake_nemo.named("pop")) == 1
 
 
-def test_none_step_phase_dropped_from_metadata(fake_nemo):
-    emitter = make_emitter(fake_nemo)
-    hint_requests, hint_results = hint_fixtures()
+def test_hint_provider_call_runs_through_shared_runtime(monkeypatch):
+    provider_requests = []
+    litellm = types.ModuleType("litellm")
 
-    emitter.hint_synthesis_events(hint_requests=hint_requests, hint_results=hint_results, model=HINT_MODEL)
+    async def acompletion(**request):
+        provider_requests.append(request)
+        return _response("Use the date picker.")
 
-    ((_, _, _, push_kwargs),) = fake_nemo.named("push")
-    meta = push_kwargs["metadata"]
-    assert "global_step" not in meta
-    assert "phase" not in meta
-    assert meta["instance_id"] == "i-1"
+    litellm.acompletion = acompletion
+    monkeypatch.setitem(sys.modules, "litellm", litellm)
+
+    orchestrated_calls = []
+    runtime = types.ModuleType("nemo_relay_runtime")
+
+    async def orchestrated_openai_chat_call_async(**kwargs):
+        orchestrated_calls.append(kwargs)
+        return await kwargs["invoke"](kwargs["request"])
+
+    runtime.orchestrated_openai_chat_call_async = orchestrated_openai_chat_call_async
+    monkeypatch.setitem(sys.modules, "nemo_relay_runtime", runtime)
+    monkeypatch.setenv("SKYRL_ATOF_PRODUCER_SESSION_ID", "run-1")
+
+    result = asyncio.run(hint_synthesizer.synthesize_hint(**_hint_kwargs()))
+
+    assert result == ("Use the date picker.", hint_synthesizer.CATEGORY_LLM)
+    assert len(provider_requests) == 1
+    assert len(orchestrated_calls) == 1
+    call = orchestrated_calls[0]
+    assert call["call_site"] == "skyrl_gym.fleet_task.hint_synthesis"
+    assert call["metadata"] == {
+        "producer_session_id": "run-1",
+        "instance_id": "i-1",
+        "global_step": 7,
+    }
 
 
-def test_malformed_results_fail_open(fake_nemo):
-    emitter = make_emitter(fake_nemo)
-    emitter.hint_synthesis_events(
-        hint_requests=[{"task_prompt": "x"}],
-        hint_results=["not-a-tuple"],
-        model=HINT_MODEL,
-    )
-    assert fake_nemo.named("llm") == []
+def test_hint_call_falls_back_when_runtime_wheel_is_missing(monkeypatch):
+    calls = []
+    litellm = types.ModuleType("litellm")
+
+    async def acompletion(**request):
+        calls.append(request)
+        return _response("Try another route.")
+
+    litellm.acompletion = acompletion
+    monkeypatch.setitem(sys.modules, "litellm", litellm)
+    monkeypatch.setitem(sys.modules, "nemo_relay_runtime", None)
+
+    result = asyncio.run(hint_synthesizer.synthesize_hint(**_hint_kwargs()))
+
+    assert result == ("Try another route.", hint_synthesizer.CATEGORY_LLM)
+    assert len(calls) == 1

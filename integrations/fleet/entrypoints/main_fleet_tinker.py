@@ -1072,12 +1072,49 @@ async def collect_fleet_rollout(
             sampling_params = types.SamplingParams(**sampling_params_kwargs)
 
             try:
-                result = await asyncio.wait_for(
-                    sampling_client.sample_async(
+                if atof_trace is None:
+                    sample_call = sampling_client.sample_async(
                         prompt=types.ModelInput(chunks=prompt_chunks),
                         num_samples=1,
                         sampling_params=sampling_params,
-                    ),
+                    )
+                else:
+                    try:
+                        from nemo_relay_runtime import orchestrated_llm_call_async
+                    except ImportError:
+                        sample_call = sampling_client.sample_async(
+                            prompt=types.ModelInput(chunks=prompt_chunks),
+                            num_samples=1,
+                            sampling_params=sampling_params,
+                        )
+                    else:
+                        request = _atof_emit(
+                            atof_emitter,
+                            "llm_request",
+                            trace=atof_trace,
+                            new_messages=pending_atof_messages,
+                        ) or {"messages": []}
+                        request["sampling_params"] = sampling_params_kwargs
+                        sample_call = orchestrated_llm_call_async(
+                            name="tinker-policy",
+                            request=request,
+                            metadata=atof_trace.metadata,
+                            model_name=getattr(tokenizer, "name_or_path", None),
+                            invoke=lambda _request: sampling_client.sample_async(
+                                prompt=types.ModelInput(chunks=prompt_chunks),
+                                num_samples=1,
+                                sampling_params=sampling_params,
+                            ),
+                            project_response=lambda sample_result: {
+                                "content": tokenizer.decode(
+                                    sample_result.sequences[0].tokens,
+                                    skip_special_tokens=True,
+                                ),
+                                "stop_reason": getattr(sample_result.sequences[0], "stop_reason", None),
+                            },
+                        )
+                result = await asyncio.wait_for(
+                    sample_call,
                     TINKER_SAMPLE_TIMEOUT_S,
                 )
             except asyncio.TimeoutError:
@@ -1110,15 +1147,6 @@ async def collect_fleet_rollout(
 
             # Decode output
             output_text = tokenizer.decode(output_ids, skip_special_tokens=True)
-
-            _atof_emit(
-                atof_emitter,
-                "llm_turn",
-                trace=atof_trace,
-                new_messages=pending_atof_messages,
-                response_text=output_text,
-                stop_reason=getattr(sequence, "stop_reason", None),
-            )
 
             # Collect trajectory data (assistant response tokens - trainable)
             all_response_ids.extend(output_ids)

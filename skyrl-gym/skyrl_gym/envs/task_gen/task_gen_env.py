@@ -680,13 +680,33 @@ class TaskGenEnv(BaseTextEnv):
         try:
             import litellm
 
-            response = litellm.completion(
-                model=f"openrouter/{self.judge_model}",
-                messages=[{"role": "user", "content": judge_prompt}],
-                temperature=0,
-                max_tokens=10,
-                api_key=self.openrouter_api_key,
-            )
+            provider_request = {
+                "model": f"openrouter/{self.judge_model}",
+                "messages": [{"role": "user", "content": judge_prompt}],
+                "temperature": 0,
+                "max_tokens": 10,
+            }
+            try:
+                from nemo_relay_runtime import orchestrated_openai_chat_call_sync
+            except ImportError:
+                response = litellm.completion(
+                    **provider_request,
+                    api_key=self.openrouter_api_key,
+                )
+            else:
+                response = orchestrated_openai_chat_call_sync(
+                    request=provider_request,
+                    invoke=lambda effective_request: litellm.completion(
+                        **dict(effective_request),
+                        api_key=self.openrouter_api_key,
+                    ),
+                    call_site="skyrl_gym.task_gen.judge",
+                    metadata={
+                        "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                        "env_key": self.env_key,
+                    },
+                    name="litellm.chat.completions",
+                )
             answer = response.choices[0].message.content.strip().upper()
             accepted = "ACCEPT" in answer and "REJECT" not in answer
             logger.info(f"LLM classifier [{self.env_key}]: {answer} -> " f"{'ACCEPT' if accepted else 'REJECT'}")

@@ -12,6 +12,11 @@ RELAY_INSTALLERS = [
     "scripts/fleet-tinker-tool-use-run.sh",
     "scripts/fleet-tinker-eval-run.sh",
 ]
+RUNTIME_LAUNCHERS = [
+    "scripts/fleet-common-run.sh",
+    "scripts/fleet-tinker-tool-use-run.sh",
+    "scripts/fleet-tinker-eval-run.sh",
+]
 
 
 @pytest.mark.parametrize(
@@ -32,7 +37,17 @@ def test_launchers_enable_atof_by_default(script):
 def test_setup_paths_install_nemo_relay(script):
     source = (REPO_ROOT / script).read_text()
     assert "fleet-nemo-relay-artifacts/wheels/latest" in source
-    assert "nemo_relay" in source
+    assert '"$NEMO_WHEEL_DIR"/nemo_relay-*.whl' in source
+    assert '"$NEMO_WHEEL_DIR"/nemo_relay_runtime-*.whl' in source
+
+
+@pytest.mark.parametrize("script", RUNTIME_LAUNCHERS)
+def test_runtime_launchers_export_shared_nemo_config(script):
+    source = (REPO_ROOT / script).read_text()
+    assert "export NEMO_RELAY_ENABLED=1" in source
+    assert "export THESEUS_ATOF_ENABLED=1" in source
+    assert "THESEUS_ATOF_MSK_BROKERS" in source
+    assert 'THESEUS_ATOF_TENANT_ID="${THESEUS_ATOF_TENANT_ID:-skyrl}"' in source
 
 
 def test_task_configs_inherit_shared_atof_default():

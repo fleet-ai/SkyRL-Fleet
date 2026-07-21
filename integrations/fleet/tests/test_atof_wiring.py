@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from integrations.fleet.atof_events import AtofEmitter
-from integrations.fleet.tests.test_atof_events import FakeNemo
+from integrations.fleet.tests.test_atof_events import FakeNemo, install_fake_runtime
 from integrations.fleet.trace_jobs import FleetTraceWrappedGenerator
 from skyrl.train.generators.skyrl_gym_generator import SkyRLGymGenerator
 
@@ -25,6 +25,7 @@ def enabled_env(monkeypatch):
     monkeypatch.setenv("THESEUS_ATOF_MSK_BROKERS", "b-1:9198")
     monkeypatch.setenv("THESEUS_ATOF_TENANT_ID", "skyrl")
     monkeypatch.setitem(sys.modules, "nemo_relay", FakeNemo())
+    install_fake_runtime(monkeypatch)
 
 
 @pytest.fixture

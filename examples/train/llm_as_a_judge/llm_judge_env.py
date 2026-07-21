@@ -1,8 +1,10 @@
-from typing import Any, Dict, Optional
-from openai import OpenAI
 import os
 import re
 from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
+from openai import OpenAI
+
 from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput
 
 PROMPT = """
@@ -61,9 +63,22 @@ class GSM8kLLMJudgeEnv(BaseTextEnv):
         message = PROMPT + f"\n\nGOLD SOLUTION:\n{self.ground_truth}\n\nPREDICTED SOLUTION:\n{action}\n\nAnswer:"
 
         try:
-            response = self.llm_judge_client.chat.completions.create(
-                model=self.model, messages=[{"role": "user", "content": message}]
-            )
+            request = {"model": self.model, "messages": [{"role": "user", "content": message}]}
+            try:
+                from nemo_relay_runtime import orchestrated_openai_chat_call_sync
+            except ImportError:
+                response = self.llm_judge_client.chat.completions.create(**request)
+            else:
+                response = orchestrated_openai_chat_call_sync(
+                    request=request,
+                    invoke=lambda effective_request: self.llm_judge_client.chat.completions.create(
+                        **dict(effective_request)
+                    ),
+                    call_site="examples.gsm8k_llm_judge",
+                    metadata={
+                        "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                    },
+                )
             reply = response.choices[0].message.content.strip()
 
             # Try to parse score from "### Final Score: x"

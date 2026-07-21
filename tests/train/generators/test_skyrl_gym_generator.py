@@ -2,6 +2,8 @@
 uv run --extra dev --isolated pytest tests/train/generators/test_skyrl_gym_generator.py
 """
 
+import sys
+import types
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1659,10 +1661,21 @@ class RecordingAtofEmitter:
 
     def rollout_start(self, **kwargs):
         self._record("rollout_start", kwargs)
-        return "trace-1"
+        return types.SimpleNamespace(
+            metadata={"producer_session_id": "run-1", "trace_id": "trace-1"},
+        )
 
-    def llm_turn(self, **kwargs):
-        self._record("llm_turn", kwargs)
+    def llm_request(self, **kwargs):
+        self._record("llm_request", kwargs)
+        return {"messages": kwargs["new_messages"]}
+
+    def llm_call_metadata(self, **kwargs):
+        self._record("llm_call_metadata", kwargs)
+        return {
+            "producer_session_id": "run-1",
+            "trace_id": "trace-batch",
+            **kwargs,
+        }
 
     def env_step(self, **kwargs):
         self._record("env_step", kwargs)
@@ -1676,8 +1689,62 @@ class RecordingAtofEmitter:
 
 @pytest.mark.asyncio
 @patch("skyrl_gym.make")
-async def test_agent_loop_atof_hooks_emit_sequence(mock_make, mock_tokenizer, mock_llm, generator_cfg, mock_env_cfg):
-    """A two-turn rollout emits start, two turns, two env steps, and a final mark."""
+async def test_generate_batched_orchestrates_provider_call(
+    mock_make, mock_tokenizer, mock_llm, mock_env, generator_cfg, mock_env_cfg, monkeypatch
+):
+    from skyrl.train.generators.base import BatchMetadata
+
+    mock_make.return_value = mock_env
+    mock_env.init.return_value = ([{"role": "user", "content": "Initial input"}], {})
+    generator = SkyRLGymGenerator(
+        generator_cfg=generator_cfg,
+        skyrl_gym_cfg=mock_env_cfg,
+        inference_engine_client=mock_llm,
+        tokenizer=mock_tokenizer,
+        model_name="model-1",
+    )
+    emitter = RecordingAtofEmitter()
+    generator.atof_emitter = emitter
+    orchestrated_calls = []
+    runtime = types.ModuleType("nemo_relay_runtime")
+
+    async def orchestrated_llm_call_async(**kwargs):
+        orchestrated_calls.append(kwargs)
+        return await kwargs["invoke"](kwargs["request"])
+
+    runtime.orchestrated_llm_call_async = orchestrated_llm_call_async
+    monkeypatch.setitem(sys.modules, "nemo_relay_runtime", runtime)
+
+    output = await generator.generate_batched(
+        [[{"role": "user", "content": "What is 3 + 5?"}]],
+        [mock_env_cfg.env_class],
+        [{"answer": "8", "task_key": "task-8"}],
+        max_tokens=8,
+        batch_metadata=BatchMetadata(global_step=4, training_phase="train"),
+    )
+
+    assert output["response_ids"][0] == MOCK_LLM_OUTPUT_IDS
+    (metadata_call,) = emitter.named("llm_call_metadata")
+    assert metadata_call == {
+        "call_site": "skyrl-policy-batch",
+        "batch_size": 1,
+        "task_keys": ["task-8"],
+        "env_classes": [mock_env_cfg.env_class],
+        "global_step": 4,
+        "phase": "train_step_4",
+    }
+    (provider_call,) = orchestrated_calls
+    assert provider_call["name"] == "skyrl-policy-batch"
+    assert provider_call["metadata"]["producer_session_id"] == "run-1"
+    assert provider_call["metadata"]["trace_id"] == "trace-batch"
+
+
+@pytest.mark.asyncio
+@patch("skyrl_gym.make")
+async def test_agent_loop_atof_hooks_emit_sequence(
+    mock_make, mock_tokenizer, mock_llm, generator_cfg, mock_env_cfg, monkeypatch
+):
+    """A two-turn rollout orchestrates both providers and emits its marks."""
     from skyrl.train.generators.base import BatchMetadata, TrajectoryID
 
     generator_cfg.batched = False
@@ -1706,6 +1773,15 @@ async def test_agent_loop_atof_hooks_emit_sequence(mock_make, mock_tokenizer, mo
     generator.base_conversation_token_ids = []
     emitter = RecordingAtofEmitter()
     generator.atof_emitter = emitter
+    orchestrated_calls = []
+    runtime = types.ModuleType("nemo_relay_runtime")
+
+    async def orchestrated_llm_call_async(**kwargs):
+        orchestrated_calls.append(kwargs)
+        return await kwargs["invoke"](kwargs["request"])
+
+    runtime.orchestrated_llm_call_async = orchestrated_llm_call_async
+    monkeypatch.setitem(sys.modules, "nemo_relay_runtime", runtime)
 
     output = await generator.agent_loop(
         [{"role": "user", "content": "What is 2 + 2?"}],
@@ -1724,18 +1800,18 @@ async def test_agent_loop_atof_hooks_emit_sequence(mock_make, mock_tokenizer, mo
     assert start["phase"] == "train_step_7"
     assert start["sample_idx"] == 3
 
-    turns = emitter.named("llm_turn")
-    assert len(turns) == 2
-    assert all(t["trace"] == "trace-1" for t in turns)
-    assert turns[0]["new_messages"] == [{"role": "user", "content": "Initial input"}]
-    assert turns[1]["new_messages"] == obs_turn_1
-    assert all(t["response_text"] == "mocked output" for t in turns)
-    assert all(t["stop_reason"] == "stop" for t in turns)
+    requests = emitter.named("llm_request")
+    assert len(requests) == 2
+    assert requests[0]["new_messages"] == [{"role": "user", "content": "Initial input"}]
+    assert requests[1]["new_messages"] == obs_turn_1
+    assert len(orchestrated_calls) == 2
+    assert all(call["name"] == "skyrl-policy" for call in orchestrated_calls)
+    assert all(call["metadata"]["trace_id"] == "trace-1" for call in orchestrated_calls)
 
     steps = emitter.named("env_step")
     assert len(steps) == 2
     assert steps[0] == {
-        "trace": "trace-1",
+        "trace": requests[0]["trace"],
         "action": "mocked output",
         "observations": obs_turn_1,
         "reward": 0.5,
@@ -1744,14 +1820,14 @@ async def test_agent_loop_atof_hooks_emit_sequence(mock_make, mock_tokenizer, mo
     assert steps[1]["reward"] == 1.0 and steps[1]["done"] is True and steps[1]["observations"] == []
 
     (end,) = emitter.named("rollout_end")
-    assert end == {"trace": "trace-1", "reward": 1.5, "stop_reason": "stop", "num_turns": 2}
+    assert end == {"trace": requests[0]["trace"], "reward": 1.5, "stop_reason": "stop", "num_turns": 2}
 
     # Hook order: start, then (turn, step) pairs, then end.
     assert [m for m, _ in emitter.calls] == [
         "rollout_start",
-        "llm_turn",
+        "llm_request",
         "env_step",
-        "llm_turn",
+        "llm_request",
         "env_step",
         "rollout_end",
     ]
@@ -1828,4 +1904,4 @@ async def test_agent_loop_raising_emitter_does_not_break_rollout(
     assert (output.reward if isinstance(output.reward, float) else sum(output.reward)) == 1.0
     assert output.stop_reason == "stop"
     # Every hook site was attempted despite raising each time.
-    assert [m for m, _ in emitter.calls] == ["rollout_start", "llm_turn", "env_step", "rollout_end"]
+    assert [m for m, _ in emitter.calls] == ["rollout_start", "env_step", "rollout_end"]

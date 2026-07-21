@@ -10,8 +10,9 @@ Prerequisite:
 
 import os
 import re
-import requests
 from typing import Tuple
+
+import requests
 
 # # ------------ Prompt template ------------------------------------------------
 # JUDGE_TEMPLATE = """\
@@ -63,7 +64,27 @@ def _llm_judge(question: str, student: str, reference: str, verbose: bool = Fals
         "temperature": 0.0,
     }
 
-    resp = requests.post(url, json=payload, timeout=120)
+    try:
+        from nemo_relay_runtime import (
+            http_response_to_json,
+            orchestrated_openai_chat_call_sync,
+        )
+    except ImportError:
+        resp = requests.post(url, json=payload, timeout=120)
+    else:
+        resp = orchestrated_openai_chat_call_sync(
+            request=payload,
+            invoke=lambda effective_request: requests.post(
+                url,
+                json=dict(effective_request),
+                timeout=120,
+            ),
+            call_site="skyrl_agent.verifier.stem",
+            metadata={
+                "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+            },
+            project_response=http_response_to_json,
+        )
     resp.raise_for_status()
     data = resp.json()
 

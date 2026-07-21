@@ -1,5 +1,22 @@
 # Fleet Integration Changelog
 
+## 2026-07-20: Route SkyRL LLM calls through the shared NeMo runtime
+
+Scope: Fleet wheel setup, native and Tinker policy calls, SkyRL-Agent policy
+calls, helper and judge calls, and negotiation evals.
+
+Every Fleet setup path now installs both `nemo-relay` and
+`nemo-relay-runtime` from the same published wheel set. Runtime launchers set
+the shared MSK, tenant, topic, client, region, and enable values before Ray or
+Tinker starts.
+
+Repo-owned LLM provider calls run through `nemo-relay-runtime` around the real
+provider callback. This includes native multi-turn and batched policy calls,
+Tinker policy calls, SkyRL-Agent ReAct calls, hint and negotiation helpers,
+task generation, judges, and negotiation evals. If either wheel, exporter
+setup, or send fails, the shared runtime calls the provider directly so
+training continues.
+
 ## 2026-07-20: NeMo ATOF enabled by default
 
 Scope: shared ATOF setup, native and negotiation SkyRL launch scripts, and
@@ -245,8 +262,8 @@ input messages + response + stop reason), a tool event per env step
 - All emitter calls go through `_atof_emit()`, which swallows exceptions: an
   observability bug must never surface as a zero-reward trajectory via
   generate()'s catch-all (that would silently corrupt training signal).
-- The batched single-turn path (`generate_batched`) is not instrumented; all
-  fleet training paths use `agent_loop`.
+- The batched single-turn path (`generate_batched`) emits one LLM event for
+  each real batched provider call.
 
 ## 2026-07-05: Tinker harness — resume from saved state (`--load-state` + `--start-step`)
 

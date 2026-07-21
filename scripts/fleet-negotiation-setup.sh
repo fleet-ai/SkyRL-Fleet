@@ -98,10 +98,12 @@ export SKYRL_ATOF_ENABLED=1
 echo "Installing nemo-relay wheel for ATOF event emission..."
 NEMO_WHEEL_DIR="$(mktemp -d)"
 if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
-  && uv pip install "$NEMO_WHEEL_DIR"/nemo_relay-*.whl; then
-  echo "nemo-relay installed."
+  && uv pip install \
+    "$NEMO_WHEEL_DIR"/nemo_relay-*.whl \
+    "$NEMO_WHEEL_DIR"/nemo_relay_runtime-*.whl; then
+  echo "nemo-relay and nemo-relay-runtime installed."
 else
-  echo "WARNING: nemo-relay wheel install failed; ATOF will be disabled (fail-open)." >&2
+  echo "WARNING: NeMo wheel install failed; ATOF will be disabled (fail-open)." >&2
 fi
 rm -rf "$NEMO_WHEEL_DIR"
 

@@ -51,7 +51,21 @@ async def chat(client, model, messages, temperature, max_tokens=256, retries=4, 
 
     for attempt in range(retries):
         try:
-            resp = await client.chat.completions.create(**kwargs)
+            try:
+                from nemo_relay_runtime import orchestrated_openai_chat_call_async
+            except ImportError:
+                resp = await client.chat.completions.create(**kwargs)
+            else:
+                resp = await orchestrated_openai_chat_call_async(
+                    request=kwargs,
+                    invoke=lambda effective_request: client.chat.completions.create(
+                        **dict(effective_request)
+                    ),
+                    call_site="skyrl_gym.negotiation.eval.tom",
+                    metadata={
+                        "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                    },
+                )
             if not getattr(resp, "choices", None):
                 return ""
             return (resp.choices[0].message.content or "").strip()
