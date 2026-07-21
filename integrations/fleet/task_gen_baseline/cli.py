@@ -904,7 +904,7 @@ def call_openrouter(
             ),
             call_site="integrations.fleet.task_gen_baseline.openrouter",
             metadata={
-                "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
                 "attempt": attempt,
                 "turn": turn,
             },

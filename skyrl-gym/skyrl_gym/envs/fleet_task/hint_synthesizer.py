@@ -197,7 +197,7 @@ Based on the trajectory and feedback above, provide 2-5 sentences of specific, a
                 invoke=lambda effective_request: acompletion(**dict(effective_request)),
                 call_site="skyrl_gym.fleet_task.hint_synthesis",
                 metadata={
-                    "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                    "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
                     **(nemo_metadata or {}),
                 },
                 name="litellm.chat.completions",

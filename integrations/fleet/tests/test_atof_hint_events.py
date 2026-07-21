@@ -47,7 +47,7 @@ def test_hint_provider_call_runs_through_shared_runtime(monkeypatch):
 
     runtime.orchestrated_openai_chat_call_async = orchestrated_openai_chat_call_async
     monkeypatch.setitem(sys.modules, "nemo_relay_runtime", runtime)
-    monkeypatch.setenv("SKYRL_ATOF_PRODUCER_SESSION_ID", "run-1")
+    monkeypatch.setenv("SKYRL_ATOF_RUN_NAME", "run-1")
 
     result = asyncio.run(hint_synthesizer.synthesize_hint(**_hint_kwargs()))
 
@@ -57,7 +57,7 @@ def test_hint_provider_call_runs_through_shared_runtime(monkeypatch):
     call = orchestrated_calls[0]
     assert call["call_site"] == "skyrl_gym.fleet_task.hint_synthesis"
     assert call["metadata"] == {
-        "producer_session_id": "run-1",
+        "run_name": "run-1",
         "instance_id": "i-1",
         "global_step": 7,
     }

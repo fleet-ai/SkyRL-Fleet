@@ -122,7 +122,7 @@ class ReActAgent:
             name="skyrl-agent-policy",
             request=request,
             metadata={
-                "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
                 "trace_id": str(self.trajectory_id) if self.trajectory_id is not None else None,
                 "instance_id": self.instance_id,
                 "agent_id": self.agent_id,

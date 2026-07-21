@@ -479,7 +479,7 @@ class WebBrowser(BaseTool):
                             invoke=lambda effective_request: client.chat.completions.create(**dict(effective_request)),
                             call_site="skyrl_agent.web_browser.chunk_summary",
                             metadata={
-                                "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                                "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
                                 "trajectory_id": getattr(self, "_trajectory_id", None),
                             },
                         )
@@ -522,7 +522,7 @@ class WebBrowser(BaseTool):
                         invoke=lambda effective_request: client.chat.completions.create(**dict(effective_request)),
                         call_site="skyrl_agent.web_browser.summary",
                         metadata={
-                            "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
+                            "run_name": os.environ.get("SKYRL_ATOF_RUN_NAME"),
                             "trajectory_id": getattr(self, "_trajectory_id", None),
                         },
                     )

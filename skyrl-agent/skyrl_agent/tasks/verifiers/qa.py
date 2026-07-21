@@ -265,7 +265,7 @@ def compute_score_browsecomp(solution_str, ground_truth, question):
                 request=request,
                 invoke=lambda effective_request: litellm.completion(**dict(effective_request)),
                 call_site="skyrl_agent.verifier.browsecomp",
-                metadata={"producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID")},
+                metadata={"run_name": os.environ.get("SKYRL_ATOF_RUN_NAME")},
                 name="litellm.chat.completions",
             )
         print(f"Response from judge model: {response}")
@@ -302,7 +302,7 @@ def compute_score_ruler(solution_str, ground_truth, question):
                 request=request,
                 invoke=lambda effective_request: litellm.completion(**dict(effective_request)),
                 call_site="skyrl_agent.verifier.ruler",
-                metadata={"producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID")},
+                metadata={"run_name": os.environ.get("SKYRL_ATOF_RUN_NAME")},
                 name="litellm.chat.completions",
             )
         print(f"Response from judge model: {response}")
