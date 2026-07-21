@@ -128,9 +128,7 @@ class ReActAgent:
                 "agent_id": self.agent_id,
             },
             model_name=getattr(self.infer_engine, "model_name", None),
-            invoke=lambda effective_request: self.infer_engine.async_generate_ids(
-                **dict(effective_request)
-            ),
+            invoke=lambda effective_request: self.infer_engine.async_generate_ids(**dict(effective_request)),
             project_response=lambda result: result,
         )
 

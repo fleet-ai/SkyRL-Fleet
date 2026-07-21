@@ -438,9 +438,7 @@ def inject_judge_model(tasks_file: str, judge_model: str) -> str:
     tasks = data.get("tasks") if isinstance(data, dict) else data
     hit = miss = 0
     for t in tasks:
-        field = "verifier_code" if t.get("verifier_code") else (
-            "verifier_func" if t.get("verifier_func") else None
-        )
+        field = "verifier_code" if t.get("verifier_code") else ("verifier_func" if t.get("verifier_func") else None)
         code = t.get(field) if field else None
         if code and _JUDGE_MODEL_NEEDLE in code:
             t[field] = code.replace(
@@ -480,9 +478,7 @@ async def discover_trainer_seqlen_cap(
     rejection -> parse the cap from the error text. The real training client
     never sees an oversized batch.
     """
-    probe_client = await service_client.create_lora_training_client_async(
-        base_model=model_name, rank=lora_rank
-    )
+    probe_client = await service_client.create_lora_training_client_async(base_model=model_name, rank=lora_rank)
     tokens = [probe_token_id] * max_sequence_length
     datum = types.Datum(
         model_input=types.ModelInput.from_ints(tokens),
@@ -631,9 +627,7 @@ def recompute_behavior_logprobs(
             model_input=d.model_input,
             loss_fn_inputs={
                 "target_tokens": d.loss_fn_inputs["target_tokens"],
-                "weights": TensorData.from_torch(
-                    torch.ones(len(d.loss_fn_inputs["target_tokens"].to_torch()))
-                ),
+                "weights": TensorData.from_torch(torch.ones(len(d.loss_fn_inputs["target_tokens"].to_torch()))),
             },
         )
         for d in training_datums
@@ -1971,9 +1965,7 @@ async def main(
         try:
             if fix_behavior_logprobs and temperature != 1.0:
                 recompute_start = time.time()
-                training_datums, logprob_stats = recompute_behavior_logprobs(
-                    training_client, training_datums
-                )
+                training_datums, logprob_stats = recompute_behavior_logprobs(training_client, training_datums)
                 metrics.update(logprob_stats)
                 metrics["time/logprob_recompute"] = time.time() - recompute_start
                 logger.info(

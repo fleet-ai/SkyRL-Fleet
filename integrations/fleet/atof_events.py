@@ -88,6 +88,7 @@ def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEm
     else:
         try:
             import nemo_relay
+
             report = _run_sync(nemo_relay.plugin.initialize({"version": 1, "components": [component]}))
         except Exception as exc:
             logger.warning(f"ATOF disabled: plugin initialization failed ({type(exc).__name__}: {exc})")

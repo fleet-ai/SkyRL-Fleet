@@ -175,6 +175,7 @@ class TestInit:
         assert component["kind"] == "observability"
         assert component["config"]["atof"]["output_directory"] == str(tmp_path)
 
+
 class TestEmit:
     def test_rollout_start_stamps_metadata(self, fake_nemo):
         trace = make_emitter(fake_nemo).rollout_start(

@@ -476,9 +476,7 @@ class WebBrowser(BaseTool):
                     else:
                         resp = orchestrated_openai_chat_call_sync(
                             request=request,
-                            invoke=lambda effective_request: client.chat.completions.create(
-                                **dict(effective_request)
-                            ),
+                            invoke=lambda effective_request: client.chat.completions.create(**dict(effective_request)),
                             call_site="skyrl_agent.web_browser.chunk_summary",
                             metadata={
                                 "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
@@ -521,9 +519,7 @@ class WebBrowser(BaseTool):
                 else:
                     chat_response = orchestrated_openai_chat_call_sync(
                         request=request,
-                        invoke=lambda effective_request: client.chat.completions.create(
-                            **dict(effective_request)
-                        ),
+                        invoke=lambda effective_request: client.chat.completions.create(**dict(effective_request)),
                         call_site="skyrl_agent.web_browser.summary",
                         metadata={
                             "producer_session_id": os.environ.get("SKYRL_ATOF_PRODUCER_SESSION_ID"),
