@@ -1,0 +1,1221 @@
+{
+  "config": {
+    "model": "c2b_90",
+    "base_url": "http://10.66.0.11:8000/v1",
+    "opponent_model": "openai/gpt-5.5",
+    "opponent_base_url": "https://openrouter.ai/api/v1",
+    "opponent_persona": null,
+    "n": 36,
+    "full_suite": false,
+    "games": [
+      "resource_exchange",
+      "ultimatum",
+      "sell_buy"
+    ],
+    "seed": 1,
+    "temperature": 0.0,
+    "opponent_temperature": 0.7,
+    "max_tokens": 1024,
+    "no_think": true,
+    "vary_sell_buy": true,
+    "vary_amount": false,
+    "concurrency": 8,
+    "elapsed_s": 74.09,
+    "timestamp": "2026-06-15T02:32:01.183094+00:00",
+    "provenance": "Reconstructed from arXiv:2402.05863 + the public NegotiationArena repo."
+  },
+  "metrics": {
+    "overall": {
+      "n": 36,
+      "n_deals": 26,
+      "deal_rate": 0.7222,
+      "mean_focal_payoff": 11.2778,
+      "mean_opp_payoff": 24.4167,
+      "n_decisive": 24,
+      "focal_win_rate": 0.0417,
+      "mean_n_turns": 3.9444,
+      "format_violation_rate": 0.3333,
+      "n_errors": 0,
+      "mean_sale_price": 51.4,
+      "anchoring_spearman": 0.9412,
+      "mean_proposer_share": 0.4244
+    },
+    "by_game": {
+      "resource_exchange": {
+        "n": 12,
+        "n_deals": 7,
+        "deal_rate": 0.5833,
+        "mean_focal_payoff": -1.1667,
+        "mean_opp_payoff": 1.1667,
+        "n_decisive": 7,
+        "focal_win_rate": 0.0,
+        "mean_n_turns": 3.8333,
+        "format_violation_rate": 0.1667,
+        "n_errors": 0,
+        "mean_sale_price": null,
+        "anchoring_spearman": null,
+        "mean_proposer_share": null
+      },
+      "ultimatum": {
+        "n": 12,
+        "n_deals": 9,
+        "deal_rate": 0.75,
+        "mean_focal_payoff": 31.8333,
+        "mean_opp_payoff": 43.1667,
+        "n_decisive": 7,
+        "focal_win_rate": 0.1429,
+        "mean_n_turns": 3.5,
+        "format_violation_rate": 0.3333,
+        "n_errors": 0,
+        "mean_sale_price": null,
+        "anchoring_spearman": null,
+        "mean_proposer_share": 0.4244
+      },
+      "sell_buy": {
+        "n": 12,
+        "n_deals": 10,
+        "deal_rate": 0.8333,
+        "mean_focal_payoff": 3.1667,
+        "mean_opp_payoff": 28.9167,
+        "n_decisive": 10,
+        "focal_win_rate": 0.0,
+        "mean_n_turns": 4.5,
+        "format_violation_rate": 0.5,
+        "n_errors": 0,
+        "mean_sale_price": 51.4,
+        "anchoring_spearman": 0.9412,
+        "mean_proposer_share": null
+      }
+    },
+    "by_focal_role": {
+      "player_1": {
+        "n": 6,
+        "n_deals": 1,
+        "deal_rate": 0.1667,
+        "mean_focal_payoff": -0.3333,
+        "mean_opp_payoff": 0.3333,
+        "n_decisive": 1,
+        "focal_win_rate": 0.0,
+        "mean_n_turns": 5.3333,
+        "format_violation_rate": 0.3333,
+        "n_errors": 0,
+        "mean_sale_price": null,
+        "anchoring_spearman": null,
+        "mean_proposer_share": null
+      },
+      "player_2": {
+        "n": 6,
+        "n_deals": 6,
+        "deal_rate": 1.0,
+        "mean_focal_payoff": -2.0,
+        "mean_opp_payoff": 2.0,
+        "n_decisive": 6,
+        "focal_win_rate": 0.0,
+        "mean_n_turns": 2.3333,
+        "format_violation_rate": 0.0,
+        "n_errors": 0,
+        "mean_sale_price": null,
+        "anchoring_spearman": null,
+        "mean_proposer_share": null
+      },
+      "proposer": {
+        "n": 6,
+        "n_deals": 3,
+        "deal_rate": 0.5,
+        "mean_focal_payoff": 25.3333,
+        "mean_opp_payoff": 24.6667,
+        "n_decisive": 1,
+        "focal_win_rate": 1.0,
+        "mean_n_turns": 3.1667,
+        "format_violation_rate": 0.6667,
+        "n_errors": 0,
+        "mean_sale_price": null,
+        "anchoring_spearman": null,
+        "mean_proposer_share": 0.5067
+      },
+      "responder": {
+        "n": 6,
+        "n_deals": 6,
+        "deal_rate": 1.0,
+        "mean_focal_payoff": 38.3333,
+        "mean_opp_payoff": 61.6667,
+        "n_decisive": 6,
+        "focal_win_rate": 0.0,
+        "mean_n_turns": 3.8333,
+        "format_violation_rate": 0.0,
+        "n_errors": 0,
+        "mean_sale_price": null,
+        "anchoring_spearman": null,
+        "mean_proposer_share": 0.3833
+      },
+      "seller": {
+        "n": 6,
+        "n_deals": 4,
+        "deal_rate": 0.6667,
+        "mean_focal_payoff": 2.8333,
+        "mean_opp_payoff": 24.5,
+        "n_decisive": 4,
+        "focal_win_rate": 0.0,
+        "mean_n_turns": 2.6667,
+        "format_violation_rate": 0.6667,
+        "n_errors": 0,
+        "mean_sale_price": 30.75,
+        "anchoring_spearman": 0.9487,
+        "mean_proposer_share": null
+      },
+      "buyer": {
+        "n": 6,
+        "n_deals": 6,
+        "deal_rate": 1.0,
+        "mean_focal_payoff": 3.5,
+        "mean_opp_payoff": 33.3333,
+        "n_decisive": 6,
+        "focal_win_rate": 0.0,
+        "mean_n_turns": 6.3333,
+        "format_violation_rate": 0.3333,
+        "n_errors": 0,
+        "mean_sale_price": 65.1667,
+        "anchoring_spearman": 0.6669,
+        "mean_proposer_share": null
+      }
+    }
+  },
+  "games": [
+    {
+      "episode_id": "resource_exchange-player_1-0000",
+      "game": "resource_exchange",
+      "focal_seat": 0,
+      "focal_role": "player_1",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 5
+        },
+        "1": {
+          "Y": 3
+        }
+      },
+      "focal_payoff": -2.0,
+      "opp_payoff": 2.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_1-0001",
+      "game": "resource_exchange",
+      "focal_seat": 0,
+      "focal_role": "player_1",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": false,
+      "termination": "FormatError",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "invalid_action"
+      ],
+      "n_turns": 3,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_1-0002",
+      "game": "resource_exchange",
+      "focal_seat": 0,
+      "focal_role": "player_1",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": false,
+      "termination": "FormatError",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "insufficient_resources"
+      ],
+      "n_turns": 3,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_1-0003",
+      "game": "resource_exchange",
+      "focal_seat": 0,
+      "focal_role": "player_1",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": false,
+      "termination": "Timeout",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 8,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_1-0004",
+      "game": "resource_exchange",
+      "focal_seat": 0,
+      "focal_role": "player_1",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": false,
+      "termination": "Timeout",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 8,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_1-0005",
+      "game": "resource_exchange",
+      "focal_seat": 0,
+      "focal_role": "player_1",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": false,
+      "termination": "Timeout",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 8,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_2-0000",
+      "game": "resource_exchange",
+      "focal_seat": 1,
+      "focal_role": "player_2",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 2
+        },
+        "1": {
+          "Y": 4
+        }
+      },
+      "focal_payoff": -2.0,
+      "opp_payoff": 2.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_2-0001",
+      "game": "resource_exchange",
+      "focal_seat": 1,
+      "focal_role": "player_2",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "Y": 3
+        }
+      },
+      "focal_payoff": -2.0,
+      "opp_payoff": 2.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_2-0002",
+      "game": "resource_exchange",
+      "focal_seat": 1,
+      "focal_role": "player_2",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 3
+        },
+        "1": {
+          "Y": 5
+        }
+      },
+      "focal_payoff": -2.0,
+      "opp_payoff": 2.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_2-0003",
+      "game": "resource_exchange",
+      "focal_seat": 1,
+      "focal_role": "player_2",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 3
+        },
+        "1": {
+          "Y": 5
+        }
+      },
+      "focal_payoff": -2.0,
+      "opp_payoff": 2.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_2-0004",
+      "game": "resource_exchange",
+      "focal_seat": 1,
+      "focal_role": "player_2",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 2
+        },
+        "1": {
+          "Y": 4
+        }
+      },
+      "focal_payoff": -2.0,
+      "opp_payoff": 2.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "resource_exchange-player_2-0005",
+      "game": "resource_exchange",
+      "focal_seat": 1,
+      "focal_role": "player_2",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1,
+          "Y": 0
+        },
+        "1": {
+          "X": 0,
+          "Y": 3
+        }
+      },
+      "focal_payoff": -2.0,
+      "opp_payoff": 2.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 4,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-proposer-0000",
+      "game": "ultimatum",
+      "focal_seat": 0,
+      "focal_role": "proposer",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": false,
+      "termination": "FormatError",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-proposer-0001",
+      "game": "ultimatum",
+      "focal_seat": 0,
+      "focal_role": "proposer",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 50
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 50.0,
+      "opp_payoff": 50.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": 50.0,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 5,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-proposer-0002",
+      "game": "ultimatum",
+      "focal_seat": 0,
+      "focal_role": "proposer",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": false,
+      "termination": "FormatError",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-proposer-0003",
+      "game": "ultimatum",
+      "focal_seat": 0,
+      "focal_role": "proposer",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": false,
+      "termination": "FormatError",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer",
+        "insufficient_resources",
+        "illegal_ultimatum_trade"
+      ],
+      "n_turns": 1,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-proposer-0004",
+      "game": "ultimatum",
+      "focal_seat": 0,
+      "focal_role": "proposer",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 48
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 52.0,
+      "opp_payoff": 48.0,
+      "decisive": true,
+      "focal_win": true,
+      "sale_price": null,
+      "proposer_give": 48.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 4,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-proposer-0005",
+      "game": "ultimatum",
+      "focal_seat": 0,
+      "focal_role": "proposer",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 50
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 50.0,
+      "opp_payoff": 50.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": 50.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 5,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-responder-0000",
+      "game": "ultimatum",
+      "focal_seat": 1,
+      "focal_role": "responder",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 40
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 40.0,
+      "opp_payoff": 60.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": 40.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 5,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-responder-0001",
+      "game": "ultimatum",
+      "focal_seat": 1,
+      "focal_role": "responder",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 40
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 40.0,
+      "opp_payoff": 60.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": 40.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 5,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-responder-0002",
+      "game": "ultimatum",
+      "focal_seat": 1,
+      "focal_role": "responder",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 30
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 30.0,
+      "opp_payoff": 70.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": 30.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-responder-0003",
+      "game": "ultimatum",
+      "focal_seat": 1,
+      "focal_role": "responder",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 40
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 40.0,
+      "opp_payoff": 60.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": 40.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 5,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-responder-0004",
+      "game": "ultimatum",
+      "focal_seat": 1,
+      "focal_role": "responder",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 40
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 40.0,
+      "opp_payoff": 60.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": 40.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 3,
+      "error": null
+    },
+    {
+      "episode_id": "ultimatum-responder-0005",
+      "game": "ultimatum",
+      "focal_seat": 1,
+      "focal_role": "responder",
+      "seller_cost": null,
+      "buyer_willingness": null,
+      "amount_to_split": 100,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "Dollars": 40
+        },
+        "1": {
+          "Dollars": 0
+        }
+      },
+      "focal_payoff": 40.0,
+      "opp_payoff": 60.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": null,
+      "proposer_give": 40.0,
+      "focal_opening_price": null,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 3,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-seller-0000",
+      "game": "sell_buy",
+      "focal_seat": 0,
+      "focal_role": "seller",
+      "seller_cost": 26,
+      "buyer_willingness": 79,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {},
+        "1": {
+          "ZUP": 30
+        }
+      },
+      "focal_payoff": 4.0,
+      "opp_payoff": 49.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 30.0,
+      "proposer_give": null,
+      "focal_opening_price": 30.0,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-seller-0001",
+      "game": "sell_buy",
+      "focal_seat": 0,
+      "focal_role": "seller",
+      "seller_cost": 20,
+      "buyer_willingness": 69,
+      "amount_to_split": null,
+      "deal": false,
+      "termination": "FormatError",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-seller-0002",
+      "game": "sell_buy",
+      "focal_seat": 0,
+      "focal_role": "seller",
+      "seller_cost": 21,
+      "buyer_willingness": 65,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 25
+        }
+      },
+      "focal_payoff": 4.0,
+      "opp_payoff": 40.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 25.0,
+      "proposer_give": null,
+      "focal_opening_price": 25.0,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-seller-0003",
+      "game": "sell_buy",
+      "focal_seat": 0,
+      "focal_role": "seller",
+      "seller_cost": 26,
+      "buyer_willingness": 61,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 28
+        }
+      },
+      "focal_payoff": 2.0,
+      "opp_payoff": 33.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 28.0,
+      "proposer_give": null,
+      "focal_opening_price": 30.0,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 4,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-seller-0004",
+      "game": "sell_buy",
+      "focal_seat": 0,
+      "focal_role": "seller",
+      "seller_cost": 24,
+      "buyer_willingness": 73,
+      "amount_to_split": null,
+      "deal": false,
+      "termination": "FormatError",
+      "accepted_trade": null,
+      "focal_payoff": 0.0,
+      "opp_payoff": 0.0,
+      "decisive": false,
+      "focal_win": null,
+      "sale_price": null,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 2,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-seller-0005",
+      "game": "sell_buy",
+      "focal_seat": 0,
+      "focal_role": "seller",
+      "seller_cost": 33,
+      "buyer_willingness": 65,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 40
+        }
+      },
+      "focal_payoff": 7.0,
+      "opp_payoff": 25.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 40.0,
+      "proposer_give": null,
+      "focal_opening_price": 45.0,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 4,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-buyer-0000",
+      "game": "sell_buy",
+      "focal_seat": 1,
+      "focal_role": "buyer",
+      "seller_cost": 37,
+      "buyer_willingness": 61,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 61
+        }
+      },
+      "focal_payoff": 0.0,
+      "opp_payoff": 24.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 61.0,
+      "proposer_give": null,
+      "focal_opening_price": 55.0,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 5,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-buyer-0001",
+      "game": "sell_buy",
+      "focal_seat": 1,
+      "focal_role": "buyer",
+      "seller_cost": 34,
+      "buyer_willingness": 79,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 76
+        }
+      },
+      "focal_payoff": 3.0,
+      "opp_payoff": 42.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 76.0,
+      "proposer_give": null,
+      "focal_opening_price": null,
+      "format_violation": true,
+      "violation_tags": [
+        "format_missing_answer"
+      ],
+      "n_turns": 4,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-buyer-0002",
+      "game": "sell_buy",
+      "focal_seat": 1,
+      "focal_role": "buyer",
+      "seller_cost": 26,
+      "buyer_willingness": 72,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 56
+        }
+      },
+      "focal_payoff": 16.0,
+      "opp_payoff": 30.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 56.0,
+      "proposer_give": null,
+      "focal_opening_price": 50.0,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 8,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-buyer-0003",
+      "game": "sell_buy",
+      "focal_seat": 1,
+      "focal_role": "buyer",
+      "seller_cost": 38,
+      "buyer_willingness": 66,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 66
+        }
+      },
+      "focal_payoff": 0.0,
+      "opp_payoff": 28.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 66.0,
+      "proposer_give": null,
+      "focal_opening_price": 58.0,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 7,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-buyer-0004",
+      "game": "sell_buy",
+      "focal_seat": 1,
+      "focal_role": "buyer",
+      "seller_cost": 27,
+      "buyer_willingness": 64,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 64
+        }
+      },
+      "focal_payoff": 0.0,
+      "opp_payoff": 37.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 64.0,
+      "proposer_give": null,
+      "focal_opening_price": 62.0,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 6,
+      "error": null
+    },
+    {
+      "episode_id": "sell_buy-buyer-0005",
+      "game": "sell_buy",
+      "focal_seat": 1,
+      "focal_role": "buyer",
+      "seller_cost": 29,
+      "buyer_willingness": 70,
+      "amount_to_split": null,
+      "deal": true,
+      "termination": "Agreement",
+      "accepted_trade": {
+        "0": {
+          "X": 1
+        },
+        "1": {
+          "ZUP": 68
+        }
+      },
+      "focal_payoff": 2.0,
+      "opp_payoff": 39.0,
+      "decisive": true,
+      "focal_win": false,
+      "sale_price": 68.0,
+      "proposer_give": null,
+      "focal_opening_price": 58.0,
+      "format_violation": false,
+      "violation_tags": [],
+      "n_turns": 8,
+      "error": null
+    }
+  ]
+}

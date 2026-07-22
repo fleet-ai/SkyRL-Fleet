@@ -52,6 +52,8 @@ def make_row(sc, idx: int, dataset: str, split: str, protocol: str, max_turns: i
         you_block, them_block = prompts.ASK_ONLY_BLOCK, ""
     elif elicit == "can_ask":
         you_block, them_block = prompts.CAN_ASK_BLOCK, prompts.CAN_ASK_BLOCK
+    elif elicit == "can_ask_modified":
+        you_block, them_block = prompts.CAN_ASK_MODIFIED, prompts.CAN_ASK_MODIFIED
     else:
         you_block, them_block = "", ""
 
@@ -113,10 +115,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--elicit",
         default="none",
-        choices=["none", "two_sided", "one_sided", "can_ask"],
+        choices=["none", "two_sided", "one_sided", "can_ask", "can_ask_modified"],
         help=(
             "Preference-elicitation arm: none | two_sided (both ask+tell) | one_sided (policy probes "
-            "only) | can_ask (both sides may ask AND answer truthfully -- mutual disclosure, recover-Nash test)."
+            "only) | can_ask (both sides may ask AND answer truthfully -- mutual disclosure, recover-Nash test) "
+            "| can_ask_modified (both sides may ask; each side may CHOOSE if/how to reveal its own values -- "
+            "CAN_ASK_MODIFIED block on BOTH prompts)."
         ),
     )
     parser.add_argument(

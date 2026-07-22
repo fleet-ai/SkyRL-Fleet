@@ -89,6 +89,12 @@ export OPPONENT_BASE_URL="${OPPONENT_BASE_URL:-}"
 # negotiates harder and actively exploits any preference/value the policy leaks
 # (punishes the over-disclosure pathology). Pair with a capable opponent (gpt-5.5).
 export OPPONENT_AGGRESSIVE="${OPPONENT_AGGRESSIVE:-false}"
+# Opponent-first arm: when true, the opponent ("them") OPENS the negotiation and the
+# policy plays SECOND. The opponent's opening message (generated at episode init)
+# becomes the policy's first user turn, replacing OPENING_USER_MSG. It does NOT consume
+# a policy turn, so the policy keeps its full MAX_TURNS budget. Works with both external
+# and self-play opponents. Default false = standard policy-first game.
+export OPPONENT_FIRST="${OPPONENT_FIRST:-false}"
 # Self-play arm (item 3): point the env-played opponent at the LIVE training policy's
 # own HTTP endpoint, so the policy negotiates against an up-to-date copy of ITSELF
 # (true self-play — the opponent weights advance every step). No external API/cost.
@@ -190,7 +196,7 @@ export VLLM_GDN_PREFILL_BACKEND=triton
 
 source .venv/bin/activate
 
-DATA_DIR="${HOME}/data/fleet/negotiation"
+DATA_DIR="${NEG_DATA_DIR:-${HOME}/data/fleet/negotiation}"
 EXTRA_VAL_ARGS=()
 _dnd_val="'${DATA_DIR}/validation.parquet'"
 _extra_val=""
@@ -226,8 +232,9 @@ case "${NEGOTIATION_ELICIT:-none}" in
   two_sided) ELICIT_ARGS=(--elicit two_sided) ;;
   one_sided) ELICIT_ARGS=(--elicit one_sided) ;;
   can_ask) ELICIT_ARGS=(--elicit can_ask) ;;
+  can_ask_modified) ELICIT_ARGS=(--elicit can_ask_modified) ;;
   none) ;;
-  *) echo "WARN: NEGOTIATION_ELICIT='${NEGOTIATION_ELICIT}' unsupported (use none|two_sided|one_sided|can_ask); treating as none" ;;
+  *) echo "WARN: NEGOTIATION_ELICIT='${NEGOTIATION_ELICIT}' unsupported (use none|two_sided|one_sided|can_ask|can_ask_modified); treating as none" ;;
 esac
 python3 skyrl-gym/skyrl_gym/envs/negotiation/prepare_dataset.py \
   --output_dir "$DATA_DIR" \
@@ -302,7 +309,7 @@ if [ "$ENABLE_THINKING" = "true" ]; then
   export NEGOTIATION_THINK_GATE_MIN="${NEGOTIATION_THINK_GATE_MIN:-16}"
   THINK_ARGS=(
     generator.chat_template.source=name
-    generator.chat_template.name_or_path=qwen3_without_thinking
+    generator.chat_template.name_or_path=${NEGOTIATION_CHAT_TEMPLATE:-qwen3_without_thinking}
     'generator.sampling_params.stop=["</propose>","</deal>","<accept>"]'
     'generator.eval_sampling_params.stop=["</propose>","</deal>","<accept>"]'
     # The qwen3_without_thinking custom template retokenizes the chat history each
@@ -322,6 +329,13 @@ if [ "$ENABLE_THINKING" = "true" ]; then
     # and value_leak_msgs so this is visible during training, not only in post-hoc eval.
     environment.skyrl_gym.negotiation.empty_think_penalty=${EMPTY_THINK_PENALTY:--0.02}
     environment.skyrl_gym.negotiation.value_leak_penalty=${VALUE_LEAK_PENALTY:--0.05}
+    # Penalty arm (think-gate ALTERNATIVE): instead of constrained decoding, tax every
+    # turn that opens an action tag (<propose>/<accept>/<deal>) before </think>. Default
+    # 0 leaves the gate arm unchanged. To run the elicitation/penalty arm in parallel,
+    # launch with the gate OFF and a large penalty, e.g.:
+    #   NEGOTIATION_THINK_GATE=0 ACTION_BEFORE_THINK_PENALTY=-0.1 ...
+    # The env logs environment/action_before_think_rate so the effect is visible live.
+    environment.skyrl_gym.negotiation.action_before_think_penalty=${ACTION_BEFORE_THINK_PENALTY:-0}
   )
 else
   THINK_ARGS=(
@@ -340,6 +354,27 @@ TUNE_ARGS=()
 [ -n "${KL_LOSS_COEF_FINAL:-}" ]  && TUNE_ARGS+=("trainer.algorithm.kl_loss_coef=$KL_LOSS_COEF_FINAL")
 [ -n "${ENTROPY_COEF_FINAL:-}" ]  && TUNE_ARGS+=("trainer.algorithm.entropy_loss_coef=$ENTROPY_COEF_FINAL")
 [ -n "${MAX_GRAD_NORM_FINAL:-}" ] && TUNE_ARGS+=("trainer.policy.optimizer_config.max_grad_norm=$MAX_GRAD_NORM_FINAL")
+
+# Optimizer arm: GRPO (default) vs DAPO. Set ALGORITHM=dapo to swap the GRPO update for
+# the canonical SkyRL DAPO recipe (examples/train/algorithms/dapo): clip-higher (decoupled
+# eps_clip_low/high), dual-clip policy loss, dynamic-sampling filter, token-mean loss, and
+# KL off (set USE_KL_LOSS=false at launch). Everything else (reward shaping, env, data, lr,
+# grad clip, entropy floor) stays identical to the GRPO baseline so this isolates the
+# optimizer change. We keep the negotiation length/repetition penalties as-is and only
+# inherit apply_overlong_filtering (already on via STABILITY_ARGS) -- not a faithful DAPO
+# overlong-shaping arm.
+DAPO_ARGS=()
+if [ "${ALGORITHM:-grpo}" = "dapo" ]; then
+  DAPO_ARGS=(
+    trainer.algorithm.policy_loss_type=dual_clip
+    trainer.algorithm.eps_clip_low=${EPS_CLIP_LOW:-0.2}
+    trainer.algorithm.eps_clip_high=${EPS_CLIP_HIGH:-0.28}
+    trainer.algorithm.clip_ratio_c=${CLIP_RATIO_C:-10.0}
+    trainer.algorithm.loss_reduction=${LOSS_REDUCTION:-token_mean}
+    trainer.algorithm.dynamic_sampling.type=${DYNAMIC_SAMPLING_TYPE:-filter}
+    trainer.algorithm.dynamic_sampling.max_sample_batches=${DYNAMIC_SAMPLING_MAX_SAMPLE_BATCHES:-30}
+  )
+fi
 
 # Opponent endpoint override: when OPPONENT_BASE_URL is set, route the env-played
 # opponent at a self-hosted OpenAI-compatible vLLM server (the hosted 35B endpoint)
@@ -368,6 +403,7 @@ bash scripts/fleet-common-run.sh \
   environment.skyrl_gym.negotiation.opponent_no_think=$OPPONENT_NO_THINK \
   environment.skyrl_gym.negotiation.opponent_max_tokens=$OPPONENT_MAX_TOKENS \
   environment.skyrl_gym.negotiation.opponent_aggressive=$OPPONENT_AGGRESSIVE \
+  environment.skyrl_gym.negotiation.opponent_first=$OPPONENT_FIRST \
   environment.skyrl_gym.negotiation.opponent_price_per_mtok_in=$OPPONENT_PRICE_IN \
   environment.skyrl_gym.negotiation.opponent_price_per_mtok_out=$OPPONENT_PRICE_OUT \
   "environment.skyrl_gym.negotiation.transcript_dir=${TRANSCRIPT_DIR:+$TRANSCRIPT_DIR/$RUN_NAME}" \
@@ -379,7 +415,7 @@ bash scripts/fleet-common-run.sh \
   generator.inference_engine_tensor_parallel_size=2 \
   trainer.epochs=${NUM_EPOCHS} \
   trainer.eval_batch_size=8 \
-  trainer.eval_before_train=true \
+  trainer.eval_before_train=${EVAL_BEFORE_TRAIN:-true} \
   trainer.eval_interval=10 \
   trainer.update_epochs_per_batch=1 \
   trainer.train_batch_size=${TRAIN_BATCH_SIZE:-16} \
@@ -394,8 +430,16 @@ bash scripts/fleet-common-run.sh \
   trainer.max_prompt_length=4096 \
   generator.max_input_length=$MAX_INPUT_LENGTH \
   generator.sampling_params.max_generate_length=$MAX_GENERATE_LENGTH \
-  generator.sampling_params.temperature=0.9 \
-  generator.sampling_params.top_p=0.95 \
+  generator.sampling_params.temperature=${SAMPLING_TEMPERATURE:-1.0} \
+  generator.sampling_params.top_p=${SAMPLING_TOP_P:-0.95} \
+  generator.sampling_params.top_k=${SAMPLING_TOP_K:-20} \
+  generator.sampling_params.min_p=${SAMPLING_MIN_P:-0.0} \
+  generator.sampling_params.presence_penalty=${SAMPLING_PRESENCE_PENALTY:-1.5} \
+  generator.eval_sampling_params.temperature=${EVAL_SAMPLING_TEMPERATURE:-1.0} \
+  generator.eval_sampling_params.top_p=${SAMPLING_TOP_P:-0.95} \
+  generator.eval_sampling_params.top_k=${SAMPLING_TOP_K:-20} \
+  generator.eval_sampling_params.min_p=${SAMPLING_MIN_P:-0.0} \
+  generator.eval_sampling_params.presence_penalty=${SAMPLING_PRESENCE_PENALTY:-1.5} \
   generator.length_penalty_coef=$LENGTH_PENALTY_COEF \
   generator.length_penalty_alpha=$LENGTH_PENALTY_ALPHA \
   generator.length_penalty_fn=$LENGTH_PENALTY_FN \
@@ -406,12 +450,12 @@ bash scripts/fleet-common-run.sh \
   generator.repetition_min_frac=$REPETITION_MIN_FRAC \
   generator.sampling_params.repetition_penalty=$DECODE_REPETITION_PENALTY \
   trainer.policy.optimizer_config.lr=5.0e-7 \
-  trainer.algorithm.use_kl_loss=true \
+  trainer.algorithm.use_kl_loss=${USE_KL_LOSS:-true} \
   trainer.algorithm.zero_variance_filter=true \
   generator.max_turns=$MAX_TURNS \
   generator.backend=$INFERENCE_BACKEND \
-  generator.inference_engine.enable_http_endpoint=true \
-  generator.inference_engine.served_model_name=policy \
+  generator.enable_http_endpoint=true \
+  generator.served_model_name=policy \
   generator.run_engines_locally=true \
   generator.weight_sync_backend=nccl \
   generator.async_engine=true \
@@ -427,12 +471,13 @@ bash scripts/fleet-common-run.sh \
   trainer.project_name="fleet-negotiation-grpo" \
   trainer.run_name="$RUN_NAME" \
   trainer.resume_mode=latest \
-  trainer.ckpt_path="$HOME/ckpts/fleet_${MODEL_TAG}_35b_negotiation" \
-  trainer.export_path="$HOME/exports" \
+  trainer.ckpt_path="${NEG_CKPT_PATH:-$HOME/ckpts/fleet_${MODEL_TAG}_35b_negotiation}" \
+  trainer.export_path="${NEG_EXPORT_PATH:-$HOME/exports}" \
   trainer.dump_data_batch=true \
   ${STABILITY_ARGS[@]+"${STABILITY_ARGS[@]}"} \
   ${THINK_ARGS[@]+"${THINK_ARGS[@]}"} \
   ${PARETO_ARGS[@]+"${PARETO_ARGS[@]}"} \
   ${TUNE_ARGS[@]+"${TUNE_ARGS[@]}"} \
+  ${DAPO_ARGS[@]+"${DAPO_ARGS[@]}"} \
   ${OPPONENT_ARGS[@]+"${OPPONENT_ARGS[@]}"} \
   "$@"

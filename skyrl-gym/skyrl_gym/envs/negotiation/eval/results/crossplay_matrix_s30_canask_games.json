@@ -1,0 +1,1697 @@
+{
+  "config": {
+    "dataset": "dnd",
+    "split": "val",
+    "n": 16,
+    "max_turns": 6,
+    "seed": 1,
+    "protocol": "single",
+    "elicit": "can_ask",
+    "policy_only": true,
+    "match_train_sampling": true,
+    "sampling": {
+      "shared_temperature": 0.7,
+      "shared_max_tokens": 2000,
+      "policy_idx": 5,
+      "stop_tags": [
+        "</propose>",
+        "</deal>",
+        "<accept>"
+      ],
+      "per_model": [
+        {
+          "label": "GPT-5.5",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Opus-4.8",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Gemini-3.1-Pro",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Llama-3.3-70B",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Qwen3.5-9B",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": {
+            "reasoning": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "label": "SelfPlay-canask-s30",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": {
+            "stop": [
+              "</propose>",
+              "</deal>",
+              "<accept>"
+            ],
+            "include_stop_str_in_output": true,
+            "presence_penalty": 1.5
+          }
+        }
+      ]
+    },
+    "models": [
+      {
+        "slug": "openai/gpt-5.5",
+        "label": "GPT-5.5",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "anthropic/claude-opus-4.8",
+        "label": "Opus-4.8",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "google/gemini-3.1-pro-preview",
+        "label": "Gemini-3.1-Pro",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "meta-llama/llama-3.3-70b-instruct",
+        "label": "Llama-3.3-70B",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "qwen/qwen3.5-9b",
+        "label": "Qwen3.5-9B",
+        "no_think": true,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "qwen35-policy",
+        "label": "SelfPlay-canask-s30",
+        "no_think": false,
+        "base_url": "http://10.66.0.6:6479/v1"
+      }
+    ]
+  },
+  "games": [
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "GPT-5.5",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Opus-4.8",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Gemini-3.1-Pro",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Llama-3.3-70B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "Qwen3.5-9B",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "GPT-5.5",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Opus-4.8",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Gemini-3.1-Pro",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Llama-3.3-70B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "Qwen3.5-9B",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    },
+    {
+      "opener": "SelfPlay-canask-s30",
+      "partner": "SelfPlay-canask-s30",
+      "error": "Connection error.",
+      "agreed": false,
+      "you_norm": 0.0,
+      "them_norm": 0.0,
+      "reason": "error"
+    }
+  ]
+}

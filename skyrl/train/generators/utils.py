@@ -64,6 +64,11 @@ def _validate_template_file_path(file_path: str) -> str:
 
 
 CUSTOM_CHAT_TEMPLATES = {
+    # Qwen3.5-aligned: qwen3_without_thinking (strip non-last-turn thinking + {% generation %}
+    # tags) PLUS the native Qwen3.5 generation-prompt "<think>\n" injection, so the policy
+    # generates in-distribution. Pair with NEGOTIATION_THINK_GATE=0. See
+    # fleet-research/threads/negotiation/debug_logs/think-template-mismatch-0619.md
+    "qwen35_strip_thinking": "{% for message in messages %}{% if (message['role'] != 'assistant') %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% elif (message['role'] == 'assistant')%}{{'<|im_start|>' + message['role'] + '\n'}}{% generation %}{% set full_content = message['content'] %}{% set mycontent = message['content'] %}{% set is_last_message = loop.last and messages[-1]['role'] == 'assistant' %}{% if '</think>' in full_content and not is_last_message %}{% set mycontent = full_content.split('</think>')[-1].lstrip('\n') %}{% endif %}{{mycontent + '<|im_end|>'}}{% endgeneration %}{{'\n'}}{% endif %}{% endfor %}{% if add_generation_prompt %}{{'<|im_start|>assistant\n'}}{% if enable_thinking is defined and enable_thinking is false %}{{'<think>\n\n</think>\n\n'}}{% else %}{{'<think>\n'}}{% endif %}{% endif %}",
     # chat template for qwen3 that preserves thinking tokens
     "qwen3_with_thinking": (
         "{% for message in messages %}"

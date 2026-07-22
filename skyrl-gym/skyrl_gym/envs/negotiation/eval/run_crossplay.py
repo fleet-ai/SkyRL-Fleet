@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -43,6 +44,54 @@ MODELS = [
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 
+# A thinking <think> block must never re-enter a model's own multi-turn context
+# (matches training's qwen3_without_thinking template + the value-inference probe).
+# Parse the action tag from the FULL reply, but feed back only the stripped text.
+_THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+# Protocol action tags used as generation stop sequences (matches the training rollout).
+_STOP_TAGS = {"single": ["</propose>", "</deal>", "<accept>"], "dual": ["</deal>"]}
+
+
+def _strip_think(text: str) -> str:
+    return _THINK_RE.sub("", text or "")
+
+
+def _build_sampling(url: str, no_think: bool, *, temperature, max_tokens,
+                    presence_penalty=None, stop_tags=None):
+    """Per-model sampling config: {temperature, max_tokens, extra_body}. The no-think
+    body, optional presence_penalty, and protocol stop tags are folded into extra_body."""
+    extra: dict = {}
+    if no_think:
+        extra.update(_no_think_body(url))
+    # Action tags as stop sequences are ONLY safe on the local vLLM, where
+    # include_stop_str_in_output keeps the matched tag in the output. OpenRouter
+    # providers (Anthropic/Google/Meta observed) strip the matched stop string AND
+    # ignore include_stop_str_in_output, which deletes the </propose>/<accept> tag and
+    # makes every deal fail to parse (cells collapse to 0.0). So for OpenRouter seats we
+    # use NO stop tags: the model emits the full message and parsing scans all of it.
+    if stop_tags and "openrouter" not in url:
+        extra["stop"] = list(stop_tags)
+        extra["include_stop_str_in_output"] = True
+    if presence_penalty is not None:
+        extra["presence_penalty"] = presence_penalty
+    return {"temperature": temperature, "max_tokens": max_tokens, "extra_body": (extra or None)}
+
+
+def _elicit_blocks(elicit: str):
+    """Map an elicitation mode to (seat_A_block, seat_B_block), mirroring
+    prepare_dataset.make_row so eval prompts match training exactly."""
+    if elicit == "two_sided":
+        return prompts.PROACTIVE_BLOCK, prompts.PROACTIVE_BLOCK
+    if elicit == "one_sided":
+        return prompts.ASK_ONLY_BLOCK, ""
+    if elicit == "can_ask":
+        return prompts.CAN_ASK_BLOCK, prompts.CAN_ASK_BLOCK
+    if elicit == "can_ask_modified":
+        return prompts.CAN_ASK_MODIFIED, prompts.CAN_ASK_MODIFIED
+    if elicit == "deception":
+        return prompts.DECEPTION, prompts.DECEPTION
+    return "", ""
+
 
 def _no_think_body(base_url: str):
     """No-think payload differs by backend: OpenRouter honours {"reasoning": ...};
@@ -52,47 +101,74 @@ def _no_think_body(base_url: str):
     return {"chat_template_kwargs": {"enable_thinking": False}}
 
 
-async def play_dual_pair(client_a, client_b, sc, model_a, nt_a, url_a, model_b, nt_b, url_b,
-                         max_turns, temperature, max_tokens):
-    """Dual-tag game with independent no_think per seat. Seat A holds you_values,
-    opens; seat B holds them_values. Returns the game.Outcome dict."""
+async def play_pair(client_a, client_b, sc, model_a, nt_a, url_a, model_b, nt_b, url_b,
+                    samp_a, samp_b, max_turns, protocol, you_block="", them_block=""):
+    """One negotiation between seat A (you_values, opens) and seat B (them_values),
+    under `protocol` ("dual" = both submit <deal>; "single" = one <propose>, other
+    <accept>). `samp_a`/`samp_b` are per-model sampling dicts from _build_sampling so
+    each side can be sampled to match its own training/rollout distribution.
+
+    Returns the game.Outcome dict (+ num_turns). <think> blocks are parsed for tags
+    but stripped before re-entering the multi-turn context (matches training)."""
     items = list(sc.item_names)
-    body_a = _no_think_body(url_a) if nt_a else None
-    body_b = _no_think_body(url_b) if nt_b else None
+    counts = list(sc.counts)
+    n = len(counts)
     sys_a = run_eval._maybe_no_think(
-        prompts.build_system_prompt(items, list(sc.counts), list(sc.you_values), max_turns, protocol="dual"), nt_a)
+        prompts.build_system_prompt(items, counts, list(sc.you_values), max_turns,
+                                    protocol=protocol, elicit_block=you_block), nt_a)
     sys_b = run_eval._maybe_no_think(
-        prompts.build_system_prompt(items, list(sc.counts), list(sc.them_values), max_turns, protocol="dual"), nt_b)
+        prompts.build_system_prompt(items, counts, list(sc.them_values), max_turns,
+                                    protocol=protocol, elicit_block=them_block), nt_b)
 
     hist_a = [{"role": "system", "content": sys_a},
               {"role": "user", "content": prompts.OPENING_USER_MSG}]
     hist_b = [{"role": "system", "content": sys_b}]
 
     last = {"a": None, "b": None}
+    pending = None            # single-protocol: most recent valid offer {"by","keep"}
+    you_take = them_take = None
     count = {"a": 0, "b": 0}
     speaker = "a"
     nturns = 0
     while True:
         if speaker == "a":
-            text = await run_eval.chat(client_a, model_a, hist_a, temperature, max_tokens, extra_body=body_a)
-            hist_a.append({"role": "assistant", "content": text})
-            hist_b.append({"role": "user", "content": text})
-            last["a"] = game.parse_deal(text, items)
+            text = await run_eval.chat(client_a, model_a, hist_a, samp_a["temperature"],
+                                       samp_a["max_tokens"], extra_body=samp_a["extra_body"])
+            stripped = _strip_think(text)
+            hist_a.append({"role": "assistant", "content": stripped})
+            hist_b.append({"role": "user", "content": stripped})
             count["a"] += 1
         else:
-            text = await run_eval.chat(client_b, model_b, hist_b, temperature, max_tokens, extra_body=body_b)
-            hist_b.append({"role": "assistant", "content": text})
-            hist_a.append({"role": "user", "content": text})
-            last["b"] = game.parse_deal(text, items)
+            text = await run_eval.chat(client_b, model_b, hist_b, samp_b["temperature"],
+                                       samp_b["max_tokens"], extra_body=samp_b["extra_body"])
+            stripped = _strip_think(text)
+            hist_b.append({"role": "assistant", "content": stripped})
+            hist_a.append({"role": "user", "content": stripped})
             count["b"] += 1
         nturns += 1
-        if last["a"] is not None and last["b"] is not None:
-            break
+
+        if protocol == "dual":
+            last[speaker] = game.parse_deal(text, items)
+            if last["a"] is not None and last["b"] is not None:
+                break
+        else:  # single-proposer
+            if game.has_accept(text) and pending and pending["by"] != speaker:
+                keep = pending["keep"]
+                other = [counts[i] - keep[i] for i in range(n)]
+                you_take, them_take = (keep, other) if pending["by"] == "a" else (other, keep)
+                break
+            prop = game.parse_proposal(text, items)
+            if prop is not None:
+                pending = {"by": speaker, "keep": [min(counts[i], max(0, prop[i])) for i in range(n)]}
+
         if count["a"] >= max_turns and count["b"] >= max_turns:
             break
         speaker = "b" if speaker == "a" else "a"
 
-    outcome = game.evaluate(list(sc.counts), list(sc.you_values), list(sc.them_values), last["a"], last["b"])
+    if protocol == "dual":
+        outcome = game.evaluate(counts, list(sc.you_values), list(sc.them_values), last["a"], last["b"])
+    else:
+        outcome = game.evaluate(counts, list(sc.you_values), list(sc.them_values), you_take, them_take)
     d = outcome.to_dict()
     d["num_turns"] = nturns
     return d
@@ -112,21 +188,39 @@ async def main_async(args):
     clients = {url: run_eval.make_client(url) for url in {m[3] for m in models}}
     sem = asyncio.Semaphore(args.concurrency)
     M = len(models)
+    you_block, them_block = _elicit_blocks(args.elicit)
+
+    # Per-model sampling. With --match-train-sampling the POLICY model (the trained
+    # checkpoint added via --policy-model, always last) is sampled to match the
+    # selfplay-canask training rollout (temp 1.0 / max_tokens 8192 / presence_penalty
+    # 1.5); every other model stays neutral (temp 1.0, max_tokens 8192). Both get the
+    # protocol's action-tag stop sequences so each turn terminates cleanly, as in training.
+    policy_idx = (len(models) - 1) if args.policy_model else None
+    stop_tags = _STOP_TAGS.get(args.protocol) if args.match_train_sampling else None
+    samplings = []
+    for i, (s, l, nt, url) in enumerate(models):
+        if args.match_train_sampling:
+            pp = 1.5 if i == policy_idx else None
+            samplings.append(_build_sampling(url, nt, temperature=1.0, max_tokens=8192,
+                                             presence_penalty=pp, stop_tags=stop_tags))
+        else:
+            samplings.append(_build_sampling(url, nt, temperature=args.temperature,
+                                             max_tokens=args.max_tokens))
 
     async def one(ai, bi, sc):
         sa, la, nta, ua = models[ai]
         sb, lb, ntb, ub = models[bi]
         async with sem:
             try:
-                return await play_dual_pair(clients[ua], clients[ub], sc, sa, nta, ua, sb, ntb, ub,
-                                            args.max_turns, args.temperature, args.max_tokens)
+                return await play_pair(clients[ua], clients[ub], sc, sa, nta, ua, sb, ntb, ub,
+                                       samplings[ai], samplings[bi], args.max_turns, args.protocol,
+                                       you_block=you_block, them_block=them_block)
             except Exception as e:  # noqa: BLE001
                 return {"error": str(e), "agreed": False, "you_norm": 0.0, "them_norm": 0.0,
                         "reason": "error"}
 
     # --policy-only: only compute the policy's row + column (policy vs each frontier,
     # both seats), skipping the frontier x frontier block to save API cost.
-    policy_idx = (len(models) - 1) if args.policy_model else None
     def _wanted(ai, bi):
         if not args.policy_only or policy_idx is None:
             return True
@@ -151,7 +245,9 @@ async def main_async(args):
     for (ai, bi), r in zip(index, flat):
         cells[(ai, bi)].append(r)
 
-    you_outcome = [[None] * M for _ in range(M)]   # seat A normalized outcome
+    you_outcome = [[None] * M for _ in range(M)]   # seat A normalized outcome (no-deal=0)
+    them_outcome = [[None] * M for _ in range(M)]   # seat B normalized outcome (no-deal=0)
+    nash = [[None] * M for _ in range(M)]           # you_norm * them_norm (no-deal=0)
     agree = [[None] * M for _ in range(M)]
     joint = [[None] * M for _ in range(M)]
     for ai in range(M):
@@ -161,6 +257,8 @@ async def main_async(args):
             if n == 0:
                 continue
             you_outcome[ai][bi] = round(sum((r["you_norm"] if r.get("agreed") else 0.0) for r in rs) / n, 4)
+            them_outcome[ai][bi] = round(sum((r.get("them_norm", 0.0) if r.get("agreed") else 0.0) for r in rs) / n, 4)
+            nash[ai][bi] = round(sum((r.get("nash_product", 0.0) if r.get("agreed") else 0.0) for r in rs) / n, 4)
             agree[ai][bi] = round(sum(1 for r in rs if r.get("agreed")) / n, 4)
             ja = [r.get("joint_efficiency", 0.0) for r in rs if r.get("agreed")]
             joint[ai][bi] = round(sum(ja) / len(ja), 4) if ja else 0.0
@@ -168,18 +266,31 @@ async def main_async(args):
     labels = [m[1] for m in models]
     payload = {
         "config": {"dataset": args.dataset, "split": args.split, "n": len(scs),
-                   "max_turns": args.max_turns, "seed": args.seed, "protocol": "dual",
+                   "max_turns": args.max_turns, "seed": args.seed, "protocol": args.protocol,
+                   "elicit": args.elicit, "policy_only": args.policy_only,
+                   "match_train_sampling": args.match_train_sampling,
+                   "sampling": {"shared_temperature": args.temperature, "shared_max_tokens": args.max_tokens,
+                                "policy_idx": policy_idx, "stop_tags": stop_tags,
+                                "per_model": [{"label": models[i][1], **samplings[i]} for i in range(M)]},
                    "models": [{"slug": m[0], "label": m[1], "no_think": m[2], "base_url": m[3]} for m in models]},
         "labels": labels,
         "seatA_outcome": you_outcome,
+        "seatB_outcome": them_outcome,
+        "nash": nash,
         "agreement": agree,
         "joint_efficiency": joint,
     }
-    out = RESULTS / "crossplay_matrix.json"
+    out = RESULTS / f"{args.out_prefix}.json"
     out.write_text(json.dumps(payload, indent=2))
     print(f"wrote {out}")
 
-    render_heatmap(payload)
+    # Per-game sidecar so them_score / nash / pareto / per-scenario detail are never lost.
+    games = [{"opener": labels[ai], "partner": labels[bi], **r} for (ai, bi), r in zip(index, flat)]
+    games_out = RESULTS / f"{args.out_prefix}_games.json"
+    games_out.write_text(json.dumps({"config": payload["config"], "games": games}, indent=2))
+    print(f"wrote {games_out}")
+
+    render_heatmap(payload, args.out_prefix)
 
     if args.probe:
         await run_exploitation_probe(args)
@@ -214,7 +325,7 @@ async def run_exploitation_probe(args):
         seed=args.seed, protocol="dual")
 
 
-def render_heatmap(payload):
+def render_heatmap(payload, out_prefix="crossplay_matrix"):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -237,7 +348,7 @@ def render_heatmap(payload):
     ax.set_yticklabels([f"{l}  (μ={rm:.2f})" for l, rm in zip(labels, rowmeans)], fontsize=8)
     ax.set_xlabel("Partner (seat B)")
     ax.set_ylabel("Opener (seat A) — score is for this side")
-    title = (f"Cross-play seat-A outcome reward · dual · {payload['config']['dataset']}/"
+    title = (f"Cross-play seat-A outcome reward · {payload['config'].get('protocol', 'dual')} · {payload['config']['dataset']}/"
              f"{payload['config']['split']} · n={payload['config']['n']}/cell\n"
              f"row μ = how well the opener does vs the field (higher = stronger)")
     ax.set_title(title, fontsize=10)
@@ -252,7 +363,7 @@ def render_heatmap(payload):
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label("seat-A normalized outcome (no-deal=0)")
     fig.tight_layout()
-    p = RESULTS / "crossplay_heatmap.png"
+    p = RESULTS / f"{out_prefix}_heatmap.png"
     fig.savefig(p, dpi=150, bbox_inches="tight")
     print(f"wrote {p}")
 
@@ -262,12 +373,25 @@ def parse_args():
     ap.add_argument("--dataset", default="dnd")
     ap.add_argument("--split", default="val")
     ap.add_argument("--n", type=int, default=6, help="scenarios per cell")
+    ap.add_argument("--protocol", default="dual", choices=["dual", "single"],
+                    help="single = single-proposer (<propose>/<accept>); matches the selfplay training distribution")
+    ap.add_argument("--match-train-sampling", action="store_true",
+                    help="policy seat uses selfplay-canask training sampling (temp 1.0 / max_tokens 8192 / "
+                         "presence_penalty 1.5); all seats get protocol stop tags. Others stay neutral (temp 1.0).")
     ap.add_argument("--max-turns", type=int, default=6)
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--max-tokens", type=int, default=2000)
     ap.add_argument("--concurrency", type=int, default=12)
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--render-only", action="store_true", help="re-render heatmap from crossplay_matrix.json")
+    ap.add_argument("--elicit", default="none",
+                    choices=["none", "two_sided", "one_sided", "can_ask", "can_ask_modified", "deception"],
+                    help="value-elicitation block injected into the system prompts (matches training "
+                         "NEGOTIATION_ELICIT; injected on BOTH seats). can_ask -> CAN_ASK_BLOCK; "
+                         "can_ask_modified -> CAN_ASK_MODIFIED (may choose if/how to reveal own values); "
+                         "deception -> DECEPTION (no obligation to be truthful about own values)")
+    ap.add_argument("--out-prefix", default="crossplay_matrix",
+                    help="basename for results/<prefix>.json and results/<prefix>_heatmap.png")
+    ap.add_argument("--render-only", action="store_true", help="re-render heatmap from results/<out-prefix>.json")
     # Exploitation probe (run_probe.py) — companion diagnostic for periodic eval.
     ap.add_argument("--probe", action="store_true",
                     help="also run the exploitation probe vs a scripted conceder (see run_probe.py)")
@@ -289,6 +413,6 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     if args.render_only:
-        render_heatmap(json.loads((RESULTS / "crossplay_matrix.json").read_text()))
+        render_heatmap(json.loads((RESULTS / f"{args.out_prefix}.json").read_text()), args.out_prefix)
     else:
         asyncio.run(main_async(args))

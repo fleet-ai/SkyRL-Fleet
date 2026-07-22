@@ -62,7 +62,7 @@ envs:
   # the opponent pricing. OPPONENT_MODEL below is left as the gpt-5.5 default for
   # provenance; SELF_PLAY=true overrides it at launch.
   SELF_PLAY: "true"
-  OPPONENT_MODEL: "openrouter/openai/gpt-5.5"
+  OPPONENT_MnODEL: "openrouter/openai/gpt-5.5"
   OPPONENT_AGGRESSIVE: "false"
   # Self-play opponent THINKS like the policy. Its <think> is stripped before it
   # enters the opponent's history or the policy's observation (env._step_single), so

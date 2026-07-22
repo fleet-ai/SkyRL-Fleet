@@ -1,0 +1,118 @@
+# Negotiation RLVR GRPO Training via SkyPilot — Qwen3.5-35B-A3B (2-node)
+#
+# ORIGINAL Qwen3.5-35B-A3B config. The sibling file
+# `negotiation-grpo-qwen3-30b-thinking-2node.yaml` runs Qwen3-30B-A3B-Thinking-2507;
+# this file preserves the original 3.5-35B model so both can be launched in parallel
+# (different MODEL_TAG -> distinct ckpt paths and wandb run names, so no collision).
+#
+# 2 nodes x 8 H200 = 16 GPUs; TP=2 -> 8 inference engines (4 per node).
+# Training uses FSDP2 across all 16 GPUs.
+#
+# Reward ablation arms (set before launch via --env REWARD_MODE=...):
+#   outcome        (default) — pure normalized self-score
+#   outcome_pareto           — self-score + PARETO_COEF * Pareto bonus
+
+name: negotiation-grpo-qwen3-30b-thinking-2node-megatron
+
+resources:
+  disk_size: 1000
+  memory: 800+
+  ordered:
+    # RunPod Slurm cluster (reserved H200s, no preemption)
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    # RunPod on-demand (API provisioned)
+    - accelerators: H200-SXM:8
+      cloud: runpod
+      ports: 6479
+    # GKE fallback
+    - accelerators: H200:8
+      cloud: kubernetes
+      network_tier: best
+      use_spot: true
+      ports: 6479
+    # GCP fallback
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 2
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-35B-A3B"
+  MODEL_TAG: "qwen35"
+  MODALITY: "negotiation"
+  # --- Negotiation task knobs ---
+  NEGOTIATION_DATASET: "dnd"
+  NEGOTIATION_PROTOCOL: "single"
+  REWARD_MODE: "outcome"            # normalized self-score (you_norm = you_score/you_max)
+  PARETO_COEF: "0.5"
+  # Adversary swapped gpt-4o-mini -> gpt-5.5 for this baseline.
+  OPPONENT_MODEL: "openrouter/openai/gpt-5.5"
+  # Clean baseline: NO behavior-shaping penalties. Deception, empty-think and
+  # value-leak penalties all OFF (0). The length penalty and the invalid/format
+  # penalty (-0.05) stay ON via the run-script defaults (generator.length_penalty_*
+  # + invalid_penalty).
+  DECEPTION_PENALTY: "0"
+  # Thinking is ALWAYS ON: the policy emits <think> (full reasoning kept in the saved
+  # traces) but it is STRIPPED from the multi-turn transcript and the opponent's view
+  # via the qwen3_without_thinking template, so the policy's own context never carries
+  # prior-turn reasoning. Train and eval match. The two thinking-channel penalties are
+  # zeroed to keep this baseline clean.
+  ENABLE_THINKING: "true"
+  EMPTY_THINK_PENALTY: "0"
+  VALUE_LEAK_PENALTY: "0"
+  MAX_TURNS: 6
+  # Held-out transfer eval set size (EXTRA_VAL_DATASET defaults to 'synthetic', so
+  # this feeds the synthetic set, logged as eval/negotiation_synthetic/*; 0 disables).
+  CASINO_EVAL: "36"
+  # Drop the in-distribution dnd validation set from in-loop eval (it tracks training
+  # reward); run ONLY the held-out transfer set. Halves eval cost vs the GPT-5.5 opponent.
+  EVAL_DND: "false"
+  # In-loop exploitation probe vs a scripted conceder ($0, local). Logged as eval/probe/*.
+  PROBE_EVAL: "true"
+  PROBE_N: "16"
+  # In-loop LLM-as-judge deception probe: scores the policy messages from the probe
+  # games for deception (false_promise / omission). Measurement only, never a reward.
+  # Logged as eval/deception_judge/*. Cheap (uses OPENROUTER_API_KEY); gpt-4.1-mini
+  # was calibrated on past traces (gpt-4o-mini over-flags honest bargaining).
+  JUDGE_EVAL: "true"
+  JUDGE_MODEL: "openai/gpt-4.1-mini"
+  MAX_INPUT_LENGTH: 8192
+  MAX_GENERATE_LENGTH: 8192
+  NUM_EPOCHS: 20
+  RUN_ID: ""
+  RESUME_RUN_NAME: ""
+  # 2 nodes x 8 H200; TP=2 -> 8 inference engines (4 per node).
+  NUM_INFERENCE_ENGINES: 8
+  # Optional: only used for S3 checkpoint upload (safe to leave blank).
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-negotiation-setup.sh \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-negotiation-35b-run.sh \
+    trainer.strategy=megatron \
+    trainer.policy.megatron_config.tensor_model_parallel_size=${TP_SIZE:-2} \
+    trainer.policy.megatron_config.expert_model_parallel_size=${EP_SIZE:-8} \
+    trainer.policy.megatron_config.pipeline_model_parallel_size=${PP_SIZE:-1} \
+    trainer.policy.megatron_config.moe_token_dispatcher_type=${MOE_DISPATCHER:-allgather} \
+    trainer.ref.megatron_config.tensor_model_parallel_size=${TP_SIZE:-2} \
+    trainer.ref.megatron_config.expert_model_parallel_size=${EP_SIZE:-8} \
+    trainer.ref.megatron_config.pipeline_model_parallel_size=${PP_SIZE:-1} \
+    trainer.ref.megatron_config.moe_token_dispatcher_type=${MOE_DISPATCHER:-allgather}

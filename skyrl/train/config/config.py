@@ -405,6 +405,7 @@ class FullyAsyncConfig(BaseConfig):
 class SamplingParams(BaseConfig):
     max_generate_length: int = 1024
     repetition_penalty: float = 1.0
+    presence_penalty: float = 0.0
     temperature: float = 1.0
     top_p: float = 1.0
     min_p: float = 0.0

@@ -22,6 +22,7 @@ def get_vllm_sampling_params(sampling_params: Union[SamplingParams, DictConfig])
         "include_stop_str_in_output": True,
         "max_tokens": sampling_params.max_generate_length,
         "temperature": sampling_params.temperature,
+        "presence_penalty": sampling_params.presence_penalty,
         "top_p": sampling_params.top_p,
         "top_k": sampling_params.top_k,
         "min_p": sampling_params.min_p,

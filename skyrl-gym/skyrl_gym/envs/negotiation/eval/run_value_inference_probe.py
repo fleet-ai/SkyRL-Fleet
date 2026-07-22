@@ -87,6 +87,18 @@ def _no_think_body(base_url: str):
     return {"chat_template_kwargs": {"enable_thinking": False}}
 
 
+def _elicit_blocks(elicit: str):
+    """Map an elicitation mode to (policy_block, opponent_block), mirroring
+    prepare_dataset.make_row so eval prompts match training exactly."""
+    if elicit == "two_sided":
+        return prompts.PROACTIVE_BLOCK, prompts.PROACTIVE_BLOCK
+    if elicit == "one_sided":
+        return prompts.ASK_ONLY_BLOCK, ""
+    if elicit == "can_ask":
+        return prompts.CAN_ASK_BLOCK, prompts.CAN_ASK_BLOCK
+    return "", ""
+
+
 def _estimate_example(item_names) -> str:
     return "{" + ", ".join(f'"{n}": 0' for n in item_names) + "}"
 
@@ -201,25 +213,54 @@ async def _elicit(client, model, base_hist, items, body, temperature, max_tokens
 
 async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_think, pol_url,
                           opp_model, opp_no_think, opp_url, sc, max_turns, temperature,
-                          max_tokens, est_max_tokens, protocol, opp_proactive):
+                          max_tokens, est_max_tokens, protocol, opp_proactive,
+                          pol_block=None, opp_block=None,
+                          pol_temperature=None, pol_max_tokens=None, pol_presence_penalty=None,
+                          opp_temperature=None, opp_max_tokens=None, stop_tags=None):
     items = list(sc.item_names)
     counts = list(sc.counts)
     n = len(counts)
     body_pol = _no_think_body(pol_url) if policy_no_think else None
     body_opp = _no_think_body(opp_url) if opp_no_think else None
 
+    # Per-seat sampling: the policy seat is sampled to match the training rollout
+    # distribution (temperature / max_tokens / presence_penalty / stop tags) when
+    # provided; the opponent seat stays neutral. None -> fall back to the shared value.
+    pol_temp = pol_temperature if pol_temperature is not None else temperature
+    opp_temp = opp_temperature if opp_temperature is not None else temperature
+    pol_mt = pol_max_tokens or max_tokens
+    opp_mt = opp_max_tokens or max_tokens
+    pol_extra = dict(body_pol or {})
+    opp_extra = dict(body_opp or {})
+    # Action tags are only safe as stop sequences on the local vLLM, where
+    # include_stop_str_in_output keeps the matched tag. OpenRouter providers strip the
+    # matched stop string and ignore that flag, deleting the </propose>/<accept> tag and
+    # breaking parsing/acceptance. So apply stop tags ONLY to locally-served seats;
+    # OpenRouter seats emit the full message and parsing scans all of it.
+    if stop_tags and "openrouter" not in pol_url:
+        pol_extra["stop"] = list(stop_tags)
+        pol_extra["include_stop_str_in_output"] = True
+    if stop_tags and "openrouter" not in opp_url:
+        opp_extra["stop"] = list(stop_tags)
+        opp_extra["include_stop_str_in_output"] = True
+    if pol_presence_penalty is not None:
+        pol_extra["presence_penalty"] = pol_presence_penalty
+    pol_extra = pol_extra or None
+    opp_extra = opp_extra or None
+
     sys_a = run_eval._maybe_no_think(
-        prompts.build_system_prompt(items, counts, list(sc.you_values), max_turns, protocol=protocol),
+        prompts.build_system_prompt(items, counts, list(sc.you_values), max_turns,
+                                    protocol=protocol, elicit_block=pol_block),
         policy_no_think)
     sys_b = run_eval._maybe_no_think(
         prompts.build_system_prompt(items, counts, list(sc.them_values), max_turns,
-                                    protocol=protocol, proactive=opp_proactive),
+                                    protocol=protocol, proactive=opp_proactive, elicit_block=opp_block),
         opp_no_think)
 
     # PRIOR belief: only the policy's own values + the pool are known yet.
     prior_hist = [{"role": "system", "content": sys_a}]
     prior_est, prior_raw = await _elicit(
-        client_pol, policy_model, prior_hist, items, body_pol, temperature, est_max_tokens)
+        client_pol, policy_model, prior_hist, items, pol_extra, pol_temp, est_max_tokens)
 
     # Play the negotiation. hist_a is the policy's own view (branched for the posterior).
     hist_a = [{"role": "system", "content": sys_a},
@@ -235,13 +276,13 @@ async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_thi
 
     while True:
         if speaker == "a":
-            text = await run_eval.chat(client_pol, policy_model, hist_a, temperature, max_tokens, extra_body=body_pol)
+            text = await run_eval.chat(client_pol, policy_model, hist_a, pol_temp, pol_mt, extra_body=pol_extra)
             stripped = _strip_think(text)
             hist_a.append({"role": "assistant", "content": stripped})
             hist_b.append({"role": "user", "content": stripped})
             cnt["a"] += 1
         else:
-            text = await run_eval.chat(client_opp, opp_model, hist_b, temperature, max_tokens, extra_body=body_opp)
+            text = await run_eval.chat(client_opp, opp_model, hist_b, opp_temp, opp_mt, extra_body=opp_extra)
             stripped = _strip_think(text)
             hist_b.append({"role": "assistant", "content": stripped})
             hist_a.append({"role": "user", "content": stripped})
@@ -273,9 +314,13 @@ async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_thi
 
     # POSTERIOR belief: branch off the policy's post-game history.
     post_est, post_raw = await _elicit(
-        client_pol, policy_model, hist_a, items, body_pol, temperature, est_max_tokens)
+        client_pol, policy_model, hist_a, items, pol_extra, pol_temp, est_max_tokens)
 
     them_values = list(sc.them_values)
+    # Turn-by-turn transcript from the policy's view: after the opening nudge
+    # (hist_a[1]), "assistant" turns are the policy and "user" turns the opponent.
+    dialogue = [{"speaker": "policy" if m["role"] == "assistant" else "opponent",
+                 "text": m["content"]} for m in hist_a[2:]]
     return {
         "outcome": outcome.to_dict(),
         "item_names": items,
@@ -289,6 +334,7 @@ async def play_value_game(client_pol, client_opp, *, policy_model, policy_no_thi
         "prior_raw": prior_raw,
         "post_raw": post_raw,
         "num_turns": nturns,
+        "dialogue": dialogue,
     }
 
 
@@ -344,7 +390,9 @@ def _delta_models(policy_agg, base_agg):
 async def run_value_inference(participants, *, opponent, dataset="dnd", split="val", n=16,
                               max_turns=6, temperature=0.7, max_tokens=2000, est_max_tokens=512,
                               concurrency=12, seed=1, protocol="dual", opp_proactive=False,
-                              out_prefix="value_inference_probe", write=True):
+                              elicit="none", out_prefix="value_inference_probe", write=True,
+                              pol_temperature=None, pol_max_tokens=None, pol_presence_penalty=None,
+                              opp_temperature=None, opp_max_tokens=None, stop_tags=None):
     """Run the value-inference probe for each participant against a fixed opponent.
 
     ``participants`` is a list of dicts ``{slug, label, no_think, base_url, role}``
@@ -363,6 +411,7 @@ async def run_value_inference(participants, *, opponent, dataset="dnd", split="v
         clients.setdefault(p["base_url"], run_eval.make_client(p["base_url"]))
 
     sem = asyncio.Semaphore(concurrency)
+    pol_block, opp_block = (None, None) if elicit == "none" else _elicit_blocks(elicit)
 
     async def one(p, sc):
         async with sem:
@@ -373,7 +422,12 @@ async def run_value_inference(participants, *, opponent, dataset="dnd", split="v
                     opp_model=opponent["slug"], opp_no_think=opponent["no_think"],
                     opp_url=opponent["base_url"], sc=sc, max_turns=max_turns,
                     temperature=temperature, max_tokens=max_tokens, est_max_tokens=est_max_tokens,
-                    protocol=protocol, opp_proactive=opp_proactive)
+                    protocol=protocol, opp_proactive=opp_proactive,
+                    pol_block=pol_block, opp_block=opp_block,
+                    pol_temperature=pol_temperature, pol_max_tokens=pol_max_tokens,
+                    pol_presence_penalty=pol_presence_penalty,
+                    opp_temperature=opp_temperature, opp_max_tokens=opp_max_tokens,
+                    stop_tags=stop_tags)
             except Exception as e:  # noqa: BLE001
                 return {"error": str(e),
                         "outcome": game.evaluate(list(sc.counts), list(sc.you_values),
@@ -383,7 +437,7 @@ async def run_value_inference(participants, *, opponent, dataset="dnd", split="v
                         "prior_estimate": None, "post_estimate": None,
                         "prior_scores": score_estimate(None, list(sc.them_values)),
                         "post_scores": score_estimate(None, list(sc.them_values)),
-                        "num_turns": 0}
+                        "num_turns": 0, "dialogue": []}
 
     print(f"running {len(participants)} models x {len(scs)} scenarios vs opponent "
           f"{opponent['label']} ({protocol} protocol)...", flush=True)
@@ -406,7 +460,14 @@ async def run_value_inference(participants, *, opponent, dataset="dnd", split="v
     payload = {
         "config": {"dataset": dataset, "split": split, "n": len(scs), "max_turns": max_turns,
                    "seed": seed, "protocol": protocol, "opponent": opponent,
-                   "opp_proactive": opp_proactive, "participants": participants},
+                   "opp_proactive": opp_proactive, "elicit": elicit, "participants": participants,
+                   "sampling": {
+                       "shared_temperature": temperature, "shared_max_tokens": max_tokens,
+                       "est_max_tokens": est_max_tokens,
+                       "policy_temperature": pol_temperature, "policy_max_tokens": pol_max_tokens,
+                       "policy_presence_penalty": pol_presence_penalty,
+                       "opponent_temperature": opp_temperature, "opponent_max_tokens": opp_max_tokens,
+                       "stop_tags": stop_tags}},
         "policy_label": policy_label,
         "base_label": base_label,
         "per_model": {lbl: {"config": d["config"], "aggregate": d["aggregate"]}
@@ -528,17 +589,62 @@ def parse_args():
     ap.add_argument("--base-think", dest="base_no_think", action="store_false")
     # Frontier reference pool.
     ap.add_argument("--reference", action="store_true", help="also measure the frontier reference pool")
+    ap.add_argument("--elicit", default="none", choices=["none", "two_sided", "one_sided", "can_ask"],
+                    help="value-elicitation block injected into the system prompts (matches training "
+                         "NEGOTIATION_ELICIT; can_ask -> CAN_ASK_BLOCK on policy AND opponent)")
+    ap.add_argument("--out-prefix", default="value_inference_probe",
+                    help="basename for results/<prefix>.json and results/<prefix>.png")
     ap.add_argument("--render-only", action="store_true",
-                    help="re-render the bar chart from value_inference_probe.json")
+                    help="re-render the bar chart from results/<out-prefix>.json")
+    # Sampling parity with the training rollout distribution. --match-train-sampling
+    # sets the policy seat to the selfplay-canask training sampling (temp=1.0,
+    # max_tokens=8192, presence_penalty=1.5) + protocol stop tags, and the opponent
+    # seat to neutral-but-matched (temp=1.0, max_tokens=8192). Granular flags override.
+    ap.add_argument("--match-train-sampling", action="store_true",
+                    help="reproduce the selfplay-canask training rollout sampling on the policy seat")
+    ap.add_argument("--policy-temperature", type=float, default=None)
+    ap.add_argument("--policy-max-tokens", type=int, default=None)
+    ap.add_argument("--policy-presence-penalty", type=float, default=None)
+    ap.add_argument("--opponent-temperature", type=float, default=None)
+    ap.add_argument("--opponent-max-tokens", type=int, default=None)
+    ap.add_argument("--no-stop-tags", dest="stop_tags", action="store_false", default=None,
+                    help="disable protocol stop tags even under --match-train-sampling")
+    ap.add_argument("--stop-tags", dest="stop_tags", action="store_true", default=None,
+                    help="force protocol stop tags on both seats")
     return ap.parse_args()
+
+
+# Training rollout sampling for the selfplay-canask-0621 run (see
+# scripts/fleet-negotiation-35b-run.sh): temperature 1.0, max_generate_length 8192,
+# presence_penalty 1.5, and the single-protocol action-tag stop set.
+TRAIN_STOP_TAGS = {"single": ["</propose>", "</deal>", "<accept>"], "dual": ["</deal>"]}
+
+
+def resolve_sampling(args):
+    """Map CLI flags -> per-seat sampling kwargs for run_value_inference. Granular
+    flags win; --match-train-sampling fills the rest with the training defaults."""
+    m = args.match_train_sampling
+    pol_temp = args.policy_temperature if args.policy_temperature is not None else (1.0 if m else None)
+    pol_mt = args.policy_max_tokens if args.policy_max_tokens is not None else (8192 if m else None)
+    pol_pp = args.policy_presence_penalty if args.policy_presence_penalty is not None else (1.5 if m else None)
+    opp_temp = args.opponent_temperature if args.opponent_temperature is not None else (1.0 if m else None)
+    opp_mt = args.opponent_max_tokens if args.opponent_max_tokens is not None else (8192 if m else None)
+    if args.stop_tags is None:
+        stop = TRAIN_STOP_TAGS.get(args.protocol) if m else None
+    elif args.stop_tags:
+        stop = TRAIN_STOP_TAGS.get(args.protocol)
+    else:
+        stop = None
+    return dict(pol_temperature=pol_temp, pol_max_tokens=pol_mt, pol_presence_penalty=pol_pp,
+                opp_temperature=opp_temp, opp_max_tokens=opp_mt, stop_tags=stop)
 
 
 def main():
     args = parse_args()
     if args.render_only:
-        payload = json.loads((RESULTS / "value_inference_probe.json").read_text())
+        payload = json.loads((RESULTS / f"{args.out_prefix}.json").read_text())
         payload.pop("per_model_runs", None)
-        render(payload)
+        render(payload, args.out_prefix)
         return
     participants = build_participants(args)
     opponent = {"slug": args.opponent_model, "label": args.opponent_label,
@@ -548,7 +654,8 @@ def main():
         participants, opponent=opponent, dataset=args.dataset, split=args.split, n=args.n,
         max_turns=args.max_turns, temperature=args.temperature, max_tokens=args.max_tokens,
         est_max_tokens=args.est_max_tokens, concurrency=args.concurrency, seed=args.seed,
-        protocol=args.protocol, opp_proactive=args.opponent_proactive))
+        protocol=args.protocol, opp_proactive=args.opponent_proactive,
+        elicit=args.elicit, out_prefix=args.out_prefix, **resolve_sampling(args)))
 
 
 if __name__ == "__main__":

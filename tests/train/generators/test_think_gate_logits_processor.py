@@ -1,14 +1,18 @@
 """Unit tests for the negotiation think-gate masking logic (research_logs/
-think-close-debugging-0618.md, Fix 3). Pure-function tests: no vLLM / no GPU."""
+think-close-debugging-0618.md + debug_logs/think-template-mismatch-0619.md). Pure-function
+tests: no vLLM / no GPU.
+
+SLIMMED gate: the opening <think> is injected by the qwen35_strip_thinking chat template
+(prompt side), so generation starts INSIDE the think block. The gate no longer forces
+<think>; it only enforces the close (min-think floor + no action/EOS until </think>)."""
 
 import torch
 
 from skyrl.backends.skyrl_train.inference_engines.vllm.think_gate_logits_processor import (
     apply_think_gate,
+    build_think_gate_extra_args,
 )
 
-# Toy vocab id assignments for the test.
-THINK_OPEN = 1
 THINK_CLOSE = 2
 LT = 3  # leading token of <propose>/<accept>/<deal>
 EOS = 4
@@ -18,7 +22,6 @@ MIN_THINK = 16
 
 
 def _fresh_logits():
-    # Distinct finite values so we can tell which entries got masked to -inf.
     return torch.arange(VOCAB, dtype=torch.float32)
 
 
@@ -26,7 +29,6 @@ def _gate(output_ids, logits, closed_flag):
     return apply_think_gate(
         output_ids,
         logits,
-        think_open_id=THINK_OPEN,
         think_close_id=THINK_CLOSE,
         block_ids=[LT],
         eos_ids=[EOS, IM_END],
@@ -35,77 +37,92 @@ def _gate(output_ids, logits, closed_flag):
     )
 
 
-def test_first_token_forced_to_think_open():
-    logits = _fresh_logits()
-    out = _gate([], logits, [False])
-    # Only <think> is sampleable.
-    assert out[THINK_OPEN].item() == 0.0
-    for tid in range(VOCAB):
-        if tid != THINK_OPEN:
-            assert out[tid].item() == float("-inf")
-    assert int(torch.argmax(out).item()) == THINK_OPEN
+def test_first_step_no_force_open():
+    # n==0: the gate no longer forces <think> (the template injects it). Think is open, so
+    # the close is masked by the floor and action/eos are masked, but reasoning may start.
+    out = _gate([], _fresh_logits(), [False])
+    assert out[THINK_CLOSE].item() == float("-inf")  # floor: 0 < MIN_THINK
+    assert out[LT].item() == float("-inf")
+    assert out[EOS].item() == float("-inf")
+    assert out[9].item() != float("-inf")  # free to begin reasoning
 
 
 def test_close_blocked_before_min_think_floor():
-    # 1 forced <think> + 5 content tokens => 5 < 16, close must be masked.
-    output_ids = [THINK_OPEN] + [9] * 5
-    out = _gate(output_ids, _fresh_logits(), [False])
+    # 5 content tokens < 16 -> close masked; action + turn-end masked while open.
+    out = _gate([9] * 5, _fresh_logits(), [False])
     assert out[THINK_CLOSE].item() == float("-inf")
-    # action-start and turn-end are masked while open
     assert out[LT].item() == float("-inf")
     assert out[EOS].item() == float("-inf")
     assert out[IM_END].item() == float("-inf")
-    # ordinary content tokens stay sampleable
     assert out[9].item() != float("-inf")
 
 
 def test_close_allowed_after_min_think_floor():
-    # 1 forced <think> + 16 content tokens => think_len == 16 >= 16, close allowed.
-    output_ids = [THINK_OPEN] + [9] * MIN_THINK
-    out = _gate(output_ids, _fresh_logits(), [False])
+    # 16 content tokens -> close allowed; actions/eos still blocked until close is emitted.
+    out = _gate([9] * MIN_THINK, _fresh_logits(), [False])
     assert out[THINK_CLOSE].item() != float("-inf")
-    # but actions/eos still blocked until the close is actually emitted
     assert out[LT].item() == float("-inf")
     assert out[EOS].item() == float("-inf")
 
 
-def test_gate_inert_after_close():
-    closed = [False]
-    # The step where </think> is the newest token flips the flag and stops masking.
-    out = _gate([THINK_OPEN] + [9] * MIN_THINK + [THINK_CLOSE], _fresh_logits(), closed)
-    assert closed[0] is True
-    assert torch.equal(out, _fresh_logits())  # nothing masked
-    # Subsequent steps (message + action) are fully unconstrained.
-    out2 = _gate([THINK_OPEN] + [9] * MIN_THINK + [THINK_CLOSE, 9, LT], _fresh_logits(), closed)
-    assert out2[LT].item() != float("-inf")
-    assert out2[EOS].item() != float("-inf")
-
-
 def test_action_cannot_start_inside_open_think():
-    # The core bug: <propose> emitted inside an unclosed <think>. The gate forbids the
-    # action's leading token until </think> is emitted.
-    output_ids = [THINK_OPEN] + [9] * (MIN_THINK + 3)  # past the floor, still open
-    out = _gate(output_ids, _fresh_logits(), [False])
+    out = _gate([9] * (MIN_THINK + 3), _fresh_logits(), [False])
     assert out[LT].item() == float("-inf")  # cannot start <propose>/<accept>/<deal>
     assert out[THINK_CLOSE].item() != float("-inf")  # must close first
 
 
-def test_full_turn_trajectory_is_well_formed():
-    # Walk a turn step-by-step; assert the only reachable structure is
-    # <think> (>=16) </think> ... <action>.
+def test_gate_inert_after_close():
     closed = [False]
-    # step 0 -> forced think
-    assert int(torch.argmax(_gate([], _fresh_logits(), closed)).item()) == THINK_OPEN
-    seq = [THINK_OPEN]
-    # below floor: close masked until MIN_THINK content tokens follow <think>.
+    out = _gate([9] * MIN_THINK + [THINK_CLOSE], _fresh_logits(), closed)
+    assert closed[0] is True
+    assert torch.equal(out, _fresh_logits())  # nothing masked
+    out2 = _gate([9] * MIN_THINK + [THINK_CLOSE, 9, LT], _fresh_logits(), closed)
+    assert out2[LT].item() != float("-inf")
+    assert out2[EOS].item() != float("-inf")
+
+
+def test_full_turn_trajectory_is_well_formed():
+    closed = [False]
+    seq = []
     for _ in range(MIN_THINK):
         out = _gate(seq, _fresh_logits(), closed)
         assert out[THINK_CLOSE].item() == float("-inf")
         seq.append(9)
-    # at floor (MIN_THINK content tokens): close now permitted
     out = _gate(seq, _fresh_logits(), closed)
     assert out[THINK_CLOSE].item() != float("-inf")
     seq.append(THINK_CLOSE)
-    # after close: free
     out = _gate(seq, _fresh_logits(), closed)
     assert torch.equal(out, _fresh_logits())
+
+
+# Regression: build_think_gate_extra_args must mask context-merged action-start tokens
+# (the 2026-06-19 bug — see debug_logs/think-template-mismatch-0619.md).
+class _FakeTokenizer:
+    eos_token_id = 4
+    _vocab = {
+        "<think>": 1, "</think>": 2, "<|im_end|>": 5, "<": 3,
+        " <": 30, "。<": 31, "><": 32, "abc": 10, "prop": 11,
+    }
+    _dec = {v: k for k, v in _vocab.items()}
+
+    def get_vocab(self):
+        return dict(self._vocab)
+
+    def decode(self, ids):
+        return "".join(self._dec.get(int(i), "") for i in ids)
+
+    def encode(self, text, add_special_tokens=False):
+        if text in self._vocab:
+            return [self._vocab[text]]
+        if text in ("<propose>", "<accept>", "<deal>"):
+            return [3, 11]
+        raise AssertionError(f"unexpected encode({text!r})")
+
+
+def test_build_extra_args_masks_context_merged_lt_tokens():
+    cfg = build_think_gate_extra_args(_FakeTokenizer(), min_think_tokens=16)
+    block = set(cfg["block_ids"])
+    assert 3 in block, "isolated '<' must be blocked"
+    assert {30, 31, 32} <= block, "context-merged '<' tokens must be blocked"
+    assert cfg["think_close_id"] not in block
+    assert 10 not in block and 11 not in block

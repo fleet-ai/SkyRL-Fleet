@@ -1,0 +1,77 @@
+# Self-hosted negotiation OPPONENT endpoint — Qwen3.5-35B-A3B (1 dedicated node)
+#
+# Hosts the same 35B model we train against as an OpenAI-compatible vLLM endpoint,
+# so GRPO training drives the opponent ("them") side against our own GPUs instead
+# of paying OpenRouter (GPT-4o-mini) per call. Topology: dp=8, tp=1, fp8 on 8x H200.
+#
+# Launch (dedicate node 0):
+#   bash scripts/fleet-launch.sh --skip-liveness -- \
+#     tasks/negotiation-opponent-serve-35b-1node.yaml \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" --keep-cluster
+#
+# Pinning to "node 0": this SkyPilot version rejects per-task sbatch_options, so pin
+# via ~/.sky/config.yaml slurm.cluster_configs.<cluster>.sbatch_options.nodelist
+# (same mechanism as negotiation-grpo-qwen3_5-35b-2node-pin34.yaml). Set the nodelist
+# to the node you are dedicating to hosting and the training job to the others.
+#
+# Once up, point training at it (in the training task env):
+#   OPPONENT_MODEL=openai/qwen35-opponent
+#   OPPONENT_BASE_URL=http://<this-node-ip>:6479/v1
+# The endpoint listens on the exposed port 6479.
+
+name: negotiation-opponent-serve-qwen3-5-35b
+
+resources:
+  disk_size: 1000
+  memory: 800+
+  ordered:
+    # RunPod Slurm cluster (reserved H200s, no preemption)
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    # RunPod on-demand (API provisioned)
+    - accelerators: H200-SXM:8
+      cloud: runpod
+      ports: 6479
+    # GKE fallback
+    - accelerators: H200:8
+      cloud: kubernetes
+      network_tier: best
+      use_spot: true
+      ports: 6479
+    # GCP fallback
+    - accelerators: H200:8
+      cloud: gcp
+      use_spot: true
+      ports: 6479
+      image_id: projects/deeplearning-platform-release/global/images/common-cu128-ubuntu-2204-nvidia-570-v20260305
+
+num_nodes: 1
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-35B-A3B"
+  MODEL_TAG: "qwen35"
+  MODALITY: "negotiation"
+  # --- Opponent serve knobs (consumed by fleet-negotiation-opponent-serve.sh) ---
+  # Host a trained export instead of the base model by setting this to its dir.
+  OPPONENT_SERVE_MODEL: ""
+  OPPONENT_SERVED_NAME: "qwen35-opponent"
+  OPPONENT_SERVE_PORT: "6479"
+  OPPONENT_DP_SIZE: "8"
+  OPPONENT_TP_SIZE: "1"
+  OPPONENT_QUANTIZATION: "fp8"
+  OPPONENT_MAX_MODEL_LEN: "12288"
+  OPPONENT_GPU_MEM_UTIL: "0.85"
+  # Optional bearer token; empty = no auth.
+  OPPONENT_API_KEY: ""
+
+setup: |
+  bash scripts/fleet-negotiation-setup.sh \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-negotiation-opponent-serve.sh

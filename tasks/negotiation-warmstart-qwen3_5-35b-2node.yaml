@@ -1,0 +1,60 @@
+# SFT warm-start ablation RL launcher, 2-node 35B.
+#
+# Set ARM=baseline for the cold-start control, or ARM=warm with SFT_DATASET/SFT_CKPT
+# for a prepared SFT checkpoint. Node pinning is controlled by ~/.sky/config.yaml.
+
+name: negotiation-warmstart-qwen3-5-35b-2node
+
+resources:
+  disk_size: 1000
+  memory: 800+
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 2
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_TAG: "qwen35"
+  MODALITY: "negotiation"
+  ARM: "baseline"
+  SFT_DATASET: "casino"
+  NEGOTIATION_DATASET: "dnd"
+  NEGOTIATION_PROTOCOL: "single"
+  REWARD_MODE: "outcome"
+  DECEPTION_PENALTY: "0"
+  VALUE_LEAK_PENALTY: "0"
+  EMPTY_THINK_PENALTY: "0"
+  PARETO_COEF: "0.5"
+  OPPONENT_MODEL: "openrouter/openai/gpt-4o-mini"
+  ENABLE_THINKING: "true"
+  MAX_TURNS: 6
+  MAX_INPUT_LENGTH: 8192
+  MAX_GENERATE_LENGTH: 8192
+  NUM_EPOCHS: 20
+  MAX_VAL: 64
+  EXTRA_VAL_DATASET: "synthetic"
+  EXTRA_VAL_N: 64
+  NUM_INFERENCE_ENGINES: 8
+  SKIP_IB_INTERSECTION: "1"
+  NCCL_DEBUG: "INFO"
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+
+setup: |
+  bash scripts/fleet-negotiation-setup.sh \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  unset NCCL_IB_HCA
+  bash scripts/fleet-negotiation-warmstart-run.sh

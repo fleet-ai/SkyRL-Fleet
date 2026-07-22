@@ -1,0 +1,369 @@
+{
+  "config": {
+    "dataset": "dnd",
+    "split": "val",
+    "n": 16,
+    "max_turns": 6,
+    "seed": 1,
+    "protocol": "single",
+    "elicit": "can_ask",
+    "policy_only": true,
+    "match_train_sampling": true,
+    "sampling": {
+      "shared_temperature": 0.7,
+      "shared_max_tokens": 2000,
+      "policy_idx": 5,
+      "stop_tags": [
+        "</propose>",
+        "</deal>",
+        "<accept>"
+      ],
+      "per_model": [
+        {
+          "label": "GPT-5.5",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Opus-4.8",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Gemini-3.1-Pro",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Llama-3.3-70B",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Qwen3.5-9B",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": {
+            "reasoning": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "label": "Enf-pen-canask-s30",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": {
+            "stop": [
+              "</propose>",
+              "</deal>",
+              "<accept>"
+            ],
+            "include_stop_str_in_output": true,
+            "presence_penalty": 1.5
+          }
+        }
+      ]
+    },
+    "models": [
+      {
+        "slug": "openai/gpt-5.5",
+        "label": "GPT-5.5",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "anthropic/claude-opus-4.8",
+        "label": "Opus-4.8",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "google/gemini-3.1-pro-preview",
+        "label": "Gemini-3.1-Pro",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "meta-llama/llama-3.3-70b-instruct",
+        "label": "Llama-3.3-70B",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "qwen/qwen3.5-9b",
+        "label": "Qwen3.5-9B",
+        "no_think": true,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "qwen35-policy",
+        "label": "Enf-pen-canask-s30",
+        "no_think": false,
+        "base_url": "http://10.66.0.5:6479/v1"
+      }
+    ]
+  },
+  "labels": [
+    "GPT-5.5",
+    "Opus-4.8",
+    "Gemini-3.1-Pro",
+    "Llama-3.3-70B",
+    "Qwen3.5-9B",
+    "Enf-pen-canask-s30"
+  ],
+  "seatA_outcome": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.7
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.625
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6937
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.5625
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.5375
+    ],
+    [
+      0.6813,
+      0.6,
+      0.525,
+      0.4062,
+      0.5625,
+      0.1187
+    ]
+  ],
+  "seatB_outcome": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.675
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6562
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6687
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6312
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6562
+    ],
+    [
+      0.7812,
+      0.5312,
+      0.5687,
+      0.4188,
+      0.4625,
+      0.2062
+    ]
+  ],
+  "nash": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.4781
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.4263
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.4512
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.38
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.3588
+    ],
+    [
+      0.5287,
+      0.3594,
+      0.3606,
+      0.2606,
+      0.2794,
+      0.0981
+    ]
+  ],
+  "agreement": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      1.0
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      1.0
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      1.0
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9375
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      1.0
+    ],
+    [
+      1.0,
+      1.0,
+      1.0,
+      0.6875,
+      0.875,
+      0.3125
+    ]
+  ],
+  "joint_efficiency": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9151
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8341
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8981
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8591
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.7814
+    ],
+    [
+      0.9689,
+      0.7454,
+      0.7317,
+      0.7719,
+      0.7785,
+      0.6579
+    ]
+  ]
+}

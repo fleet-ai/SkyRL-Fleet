@@ -50,7 +50,6 @@ def apply_think_gate(
     output_ids: Sequence[int],
     logits: torch.Tensor,
     *,
-    think_open_id: int,
     think_close_id: int,
     block_ids: Sequence[int],
     eos_ids: Sequence[int],
@@ -77,20 +76,13 @@ def apply_think_gate(
     """
     n = len(output_ids)
 
-    # Step 0: force the turn to open with <think>. Set it as the only sampleable token
-    # (finite logit while everything else is -inf) regardless of its prior value, so an
-    # earlier processor (min_p, etc.) can't have masked it out from under us.
-    if n == 0:
-        logits.fill_(_NEG_INF)
-        logits[think_open_id] = 0.0
-        return logits
-
     # Already closed earlier this turn -> gate is inert.
     if closed_flag[0]:
         return logits
-    # We are called before every decode step, so the close token shows up as the most
-    # recent output token exactly once; detecting it there is O(1).
-    if output_ids[-1] == think_close_id:
+    # The opening <think> is injected by the chat template (qwen35_strip_thinking) into the
+    # PROMPT, so generation starts INSIDE the think block -- we no longer force <think>, only
+    # enforce the close. The close token shows up as the most recent output token exactly once.
+    if n > 0 and output_ids[-1] == think_close_id:
         closed_flag[0] = True
         return logits
 
@@ -100,9 +92,9 @@ def apply_think_gate(
     for tid in block_ids:
         logits[tid] = _NEG_INF
 
-    # Forbid closing think until the content floor is met. output_ids[0] is the forced
-    # <think>, so tokens of actual think content == n - 1.
-    if (n - 1) < min_think_tokens:
+    # Forbid closing think until the content floor is met. Generation starts inside the
+    # prompt-injected think block, so all n output tokens so far are think content.
+    if n < min_think_tokens:
         logits[think_close_id] = _NEG_INF
 
     return logits
@@ -125,6 +117,46 @@ def _encode_single_id(tokenizer, text: str) -> int:
     return ids[0]
 
 
+def _action_start_block_ids(tokenizer, exclude_ids: Sequence[int]) -> set:
+    """Every token id whose decoded form ENDS WITH ``<`` — the set of tokens that can
+    begin an action tag (``<propose>`` / ``<accept>`` / ``<deal>``) in any context.
+
+    Why not just ``encode("<propose>")[0]`` (the original approach, which was the bug):
+    an action tag is always a ``<`` followed by a *separate* content token (``prop`` /
+    ``accept`` / ``deal``), but BPE merges that ``<`` with whatever character precedes
+    it. So the real leading token is context-dependent — ``<`` (id 27) after a newline,
+    but `` <``, ``。<``, ``><`` etc. after a space / CJK char / ``>``. Encoding the tag
+    in isolation only yields the bare ``<`` and misses every merged variant, so actions
+    leaked inside an open ``<think>`` (think-close-debugging-0618.md). Every variant ends
+    with ``<``, so masking all such tokens blocks the action start in all contexts.
+    ``</think>``/``<think>`` end with ``>`` so they are never in this set, but we exclude
+    them defensively (the close must stay sampleable).
+    """
+    excl = {int(x) for x in exclude_ids}
+    block = set()
+    try:
+        vocab = tokenizer.get_vocab()  # {raw_token: id}; byte-level BPE maps 0x3C -> '<'
+    except Exception:
+        vocab = None
+    # Fast path: prefilter on the raw token string (dict scan, no per-id decode), then
+    # decode-verify the few candidates. Fall back to a full decode scan if get_vocab is
+    # unavailable or the raw keys don't surface '<' as expected.
+    candidates = [int(tid) for raw, tid in vocab.items() if isinstance(raw, str) and raw.endswith("<")] if vocab else []
+    if not candidates and vocab:
+        candidates = [int(tid) for tid in vocab.values()]
+    if not candidates:
+        candidates = list(range(int(getattr(tokenizer, "vocab_size", 0)) or len(tokenizer)))
+    for tid in candidates:
+        if tid in excl:
+            continue
+        try:
+            if tokenizer.decode([tid]).endswith("<"):
+                block.add(tid)
+        except Exception:
+            continue
+    return block
+
+
 def build_think_gate_extra_args(tokenizer, min_think_tokens: int = 16) -> Dict[str, object]:
     """Resolve the token ids the gate needs from ``tokenizer`` and package them for
     ``SamplingParams.extra_args[EXTRA_ARGS_KEY]``.
@@ -135,9 +167,15 @@ def build_think_gate_extra_args(tokenizer, min_think_tokens: int = 16) -> Dict[s
     think_open_id = _encode_single_id(tokenizer, "<think>")
     think_close_id = _encode_single_id(tokenizer, "</think>")
 
-    # Action tags are domain strings (not special tokens) and all start with "<"; mask
-    # whatever token they begin with so an action cannot start before </think>.
-    block_ids = sorted({_encode_first_id(tokenizer, t) for t in ("<propose>", "<accept>", "<deal>")})
+    # Mask every token that can *start* an action tag in any context (all tokens whose
+    # decoded form ends with "<"), not just the isolated "<" — see _action_start_block_ids.
+    # Union the isolated-encoding leading tokens as a floor in case a tokenizer surfaces a
+    # start token that doesn't end with "<".
+    block_ids = _action_start_block_ids(tokenizer, exclude_ids=(think_open_id, think_close_id))
+    block_ids |= {_encode_first_id(tokenizer, t) for t in ("<propose>", "<accept>", "<deal>")}
+    block_ids.discard(think_open_id)
+    block_ids.discard(think_close_id)
+    block_ids = sorted(block_ids)
 
     eos_ids = set()
     if getattr(tokenizer, "eos_token_id", None) is not None:
@@ -184,7 +222,6 @@ try:  # pragma: no cover - exercised only inside the vLLM engine process
             cfg = (params.extra_args or {}).get(EXTRA_ARGS_KEY) if params.extra_args else None
             if not cfg:
                 return None
-            think_open_id = int(cfg["think_open_id"])
             think_close_id = int(cfg["think_close_id"])
             block_ids = [int(x) for x in cfg["block_ids"]]
             eos_ids = [int(x) for x in cfg["eos_ids"]]
@@ -195,7 +232,6 @@ try:  # pragma: no cover - exercised only inside the vLLM engine process
                 return apply_think_gate(
                     output_ids,
                     logits,
-                    think_open_id=think_open_id,
                     think_close_id=think_close_id,
                     block_ids=block_ids,
                     eos_ids=eos_ids,

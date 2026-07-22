@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 # can finish at once; the lock keeps each episode's JSON line intact on disk.
 _TRANSCRIPT_LOCK = threading.Lock()
 
-_THINK_RE = re.compile(r"<think>.*?</think>|<think>.*", re.DOTALL)
+_THINK_RE = re.compile(r"<think>.*?</think>|<think>.*|^.*?</think>", re.DOTALL)
 
 
 def _strip_think(text: str) -> str:
@@ -124,6 +124,12 @@ _TRAILING_THINK_RE = re.compile(r"<think>(.*)\Z", re.DOTALL)
 # Action tags are not "reasoning prose" — strip them before measuring open chatter.
 _ACTION_TAG_RE = re.compile(r"<propose>.*?</propose>|<deal>.*?</deal>|</?accept>", re.DOTALL | re.IGNORECASE)
 
+# Opening action tag (<propose>/<deal>/<accept>). Matches only the OPENING form ("<" +
+# name), so "</propose>" / "</think>" never trip it. Used by _action_before_think_close
+# to detect an action emitted while the <think> block is still open — the soft,
+# reward-shaped analogue of the constrained-decoding think gate's block_ids masking.
+_ACTION_OPEN_RE = re.compile(r"<(?:propose|deal|accept)\b", re.IGNORECASE)
+
 # Minimum chars of free-text (non-think, non-action) prose that counts as the policy
 # reasoning "in the open" rather than ordinary bargaining. Set high enough that a
 # normal one-line offer ("you take the books, I'll keep the hat") does NOT trip it —
@@ -145,10 +151,17 @@ _VALUE_LEAK_RE = re.compile(
 
 
 def _think_content(text: str) -> str:
-    """Return the text inside the policy's <think> block (closed or stop-truncated)."""
+    """Return the text inside the policy's <think> block (closed or stop-truncated).
+
+    Also handles the Qwen3.5-template case where the opening <think> is injected by the
+    chat template (prompt side), so the message starts mid-think and only carries the
+    closing </think>: the reasoning is everything up to the first </think>.
+    """
     m = _THINK_CONTENT_RE.search(text)
     if m:
         return m.group(1)
+    if "<think>" not in text and "</think>" in text:
+        return text.split("</think>", 1)[0]
     m2 = _TRAILING_THINK_RE.search(text)
     return m2.group(1) if m2 else ""
 
@@ -170,6 +183,23 @@ def _classify_think(action: str, visible: str) -> Tuple[bool, bool]:
 def _leaks_values(visible: str) -> bool:
     """True if the opponent-facing prose discloses the policy's own item valuations."""
     return bool(_VALUE_LEAK_RE.search(visible))
+
+
+def _action_before_think_close(action: str) -> bool:
+    """True if the policy emits an action tag before it closes <think>.
+
+    The opening <think> is injected by the chat template (prompt side), so generation
+    starts INSIDE the think block; the region "before the close" is everything up to the
+    first </think> (or the whole message if </think> was never emitted). An opening action
+    tag (<propose>/<deal>/<accept>) in that region means the policy began proposing /
+    accepting while its private reasoning was still open — the exact pathology the
+    constrained-decoding think gate masks (block_ids + EOS until </think>). This is the
+    soft, reward-shaped detector for the penalty arm (gate OFF, penalty ON): instead of
+    masking the action-start tokens, we let the turn proceed and tax it in _resolve.
+    """
+    close = action.find("</think>")
+    region = action if close == -1 else action[:close]
+    return bool(_ACTION_OPEN_RE.search(region))
 
 
 def _cfg_get(env_config: Any, key: str, default: Any) -> Any:
@@ -237,10 +267,22 @@ class NegotiationEnv(BaseTextEnv):
         #   deception_penalty) so a leak on the deal-closing turn is still penalized.
         self.empty_think_penalty: float = float(_cfg_get(env_config, "empty_think_penalty", 0.0))
         self.value_leak_penalty: float = float(_cfg_get(env_config, "value_leak_penalty", 0.0))
+        # action_before_think_penalty: per policy message that emits an action tag
+        #   (<propose>/<deal>/<accept>) BEFORE </think> — the soft, reward-shaped
+        #   alternative to the constrained-decoding think gate (NEGOTIATION_THINK_GATE).
+        #   Run this arm with the gate OFF and a (large) negative penalty here to test
+        #   whether reward shaping alone teaches the model to close <think> before acting.
+        #   Default 0 = off, so gate-arm runs are unaffected. Applied to the FINAL reward
+        #   (like the other think-channel penalties) so a violation on the deal-closing
+        #   turn is still penalized.
+        self.action_before_think_penalty: float = float(
+            _cfg_get(env_config, "action_before_think_penalty", 0.0)
+        )
         self.you_msgs: int = 0
         self.think_nonempty_msgs: int = 0
         self.empty_think_msgs: int = 0
         self.value_leak_msgs: int = 0
+        self.action_before_think_msgs: int = 0
         # Turns whose action carries a properly CLOSED <think>...</think>. Under the
         # constrained-decoding think gate (research_logs/think-close-debugging-0618.md,
         # Fix 3) this should be ~100%; tracked unconditionally so the rate is a live
@@ -281,6 +323,12 @@ class NegotiationEnv(BaseTextEnv):
         # (e.g. gpt-5.5 = 5.0 in / 30.0 out; gpt-4o-mini = 0.15 in / 0.60 out).
         self.opponent_price_in: float = float(_cfg_get(env_config, "opponent_price_per_mtok_in", 0.0))
         self.opponent_price_out: float = float(_cfg_get(env_config, "opponent_price_per_mtok_out", 0.0))
+        # Opponent-first arm: when true, the opponent ("them") opens the negotiation
+        # and its first message becomes the policy's first user turn (the policy now
+        # plays second). Default false = the standard policy-first game. The opening
+        # is generated at episode init (see init_async); it does NOT consume a policy
+        # turn, so the policy still gets its full max_turns budget.
+        self.opponent_first: bool = bool(_cfg_get(env_config, "opponent_first", False))
 
         # --- Opponent system prompt: reuse the one baked into the dataset if
         # present (guarantees it matches what was shown to the policy), else
@@ -295,7 +343,9 @@ class NegotiationEnv(BaseTextEnv):
             them_sys = them_sys + "\n\n" + prompts.ADVERSARY_AGGRESSIVE_BLOCK
         if self.opponent_no_think:
             them_sys = them_sys + "\n\n" + NO_THINK_TOKEN
-        # The opponent never speaks first ("them" waits for the opener).
+        # In the default (policy-first) game the opponent waits for the opener. In the
+        # opponent_first arm, init_async seeds an opening instruction and generates the
+        # opponent's first message before the policy ever acts (see init_async).
         self.them_history: ConversationType = [{"role": "system", "content": them_sys}]
 
         # --- Episode state ---
@@ -333,9 +383,57 @@ class NegotiationEnv(BaseTextEnv):
 
     # ------------------------------------------------------------------ init
     def init(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
-        # The policy's full opening prompt (system + opening user msg) is built
-        # in prepare_dataset.py and passed through unchanged. "You" speaks first.
-        return prompt, {}
+        # Sync entry point for non-async callers (e.g. eval harnesses). The
+        # generator prefers init_async (see SkyRLGymGenerator._env_init), which is
+        # required for the opponent_first arm since it makes an async LLM call.
+        return asyncio.run(self.init_async(prompt))
+
+    async def init_async(self, prompt: ConversationType) -> Tuple[ConversationType, Dict[str, Any]]:
+        # Default (policy-first): the dataset prompt (system + OPENING_USER_MSG) is
+        # used unchanged — "you" speaks first.
+        if not self.opponent_first:
+            return prompt, {}
+
+        # Opponent-first arm: the opponent ("them") opens the negotiation cold, and
+        # its opening message replaces the policy's OPENING_USER_MSG so the policy
+        # now responds second. We seed the opponent with the same opening instruction
+        # the policy normally gets, then generate its first message — mirroring how a
+        # normal opponent reply is produced in _step_single/_step_dual.
+        self.them_history.append({"role": "user", "content": prompts.OPENING_USER_MSG})
+        them_raw = await self._opponent_reply()
+        them_text = _strip_think(them_raw)
+        if not them_text:
+            # Opponent failed/empty (e.g. API error): fall back to a neutral opener so
+            # the policy still has a well-formed message to respond to.
+            them_text = "Let's divide the items. What split do you propose?"
+            them_raw = them_raw or them_text
+        # The opponent's opening is its first ("assistant") turn in its own history,
+        # and the first entry in the inspection transcript.
+        self.them_history.append({"role": "assistant", "content": them_text})
+        self.transcript.append({"speaker": "them", "text": them_raw})
+
+        # Register any opening offer so the policy can accept/counter it on turn 1,
+        # exactly as _step_single/_step_dual do for subsequent opponent replies.
+        if self.protocol == "dual":
+            them_deal = game.parse_deal(them_text, self.item_names)
+            if them_deal is not None:
+                self.them_deal = them_deal
+        else:
+            them_prop = game.parse_proposal(them_text, self.item_names)
+            if them_prop is not None:
+                keep = [min(self.counts[i], max(0, them_prop[i])) for i in range(self.n_items)]
+                self.pending = {"by": "them", "keep": keep}
+
+        # Replace the policy prompt's opening user message with the opponent's actual
+        # opener (build a new list; do not mutate the caller's prompt in place).
+        new_prompt: ConversationType = list(prompt)
+        for i in range(len(new_prompt) - 1, -1, -1):
+            if new_prompt[i].get("role") == "user":
+                new_prompt[i] = {"role": "user", "content": them_text}
+                break
+        else:
+            new_prompt.append({"role": "user", "content": them_text})
+        return new_prompt, {}
 
     # --------------------------------------------------------------- opponent
     async def _opponent_reply(self) -> str:
@@ -421,10 +519,12 @@ class NegotiationEnv(BaseTextEnv):
             self.think_nonempty_msgs += 1
         if reasoned_in_open:
             self.empty_think_msgs += 1
-        if "<think>" in action and "</think>" in action:
+        if "</think>" in action:
             self.think_closed_msgs += 1
         if _leaks_values(visible):
             self.value_leak_msgs += 1
+        if _action_before_think_close(action):
+            self.action_before_think_msgs += 1
 
         if self.protocol == "dual":
             return await self._step_dual(action)
@@ -588,6 +688,9 @@ class NegotiationEnv(BaseTextEnv):
         # deception, applied to the final reward regardless of outcome.
         reward += self.empty_think_penalty * self.empty_think_msgs
         reward += self.value_leak_penalty * self.value_leak_msgs
+        # Action-before-close penalty (penalty arm / think-gate alternative): tax every
+        # turn that opened an action tag while <think> was still open.
+        reward += self.action_before_think_penalty * self.action_before_think_msgs
         self.final_reward = float(reward)
 
     def _terminal_output(self) -> BaseTextEnvStepOutput:
@@ -606,6 +709,11 @@ class NegotiationEnv(BaseTextEnv):
             "think_closed_rate": (self.think_closed_msgs / self.you_msgs) if self.you_msgs else 0.0,
             "empty_think_msgs": float(self.empty_think_msgs),
             "value_leak_msgs": float(self.value_leak_msgs),
+            # Penalty-arm signal: fraction of turns that opened an action tag before
+            # closing <think> (the behavior the penalty/think-gate targets). With the
+            # gate ON this should be ~0; in the penalty arm it should fall over training.
+            "action_before_think_rate": (self.action_before_think_msgs / self.you_msgs) if self.you_msgs else 0.0,
+            "action_before_think_msgs": float(self.action_before_think_msgs),
         }
         # Adversary (opponent LLM) token usage + cost for this episode. Aggregated
         # to mean/episode by default, plus per-step totals in aggregate_metrics().

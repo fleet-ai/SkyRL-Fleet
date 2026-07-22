@@ -43,28 +43,25 @@ CAN_ASK_BLOCK = (
     "know about your respective values before making / accepting proposals."
 )
 
-# Aggressive-adversary block (research_logs/negotiation-35b-thinking-leakage-06-16.md
-# item 4): appended ONLY to the opponent's ("them") system prompt when the env is
-# launched with opponent_aggressive=true. Turns the opponent into a tough, self-interested
-# negotiator that probes the policy for its priorities and EXPLOITS any value the policy
-# leaks (the value-leak pathology surfaced in the raw baseline). The intent is a harder
-# adversary that punishes over-communication of preferences, so over-disclosure stops
-# being free for the policy. Never used as a reward signal; it only shapes the opponent.
-ADVERSARY_AGGRESSIVE_BLOCK = (
-    "PLAY TO WIN. You are a tough, relentlessly self-interested negotiator whose ONLY objective is to "
-    "maximize YOUR OWN points. A 'fair' even split is a loss to you if you could have extracted more. "
-    "Open with an aggressive anchor that claims the lion's share of the high-value items, and concede "
-    "slowly, in the smallest steps possible, only when you must to avoid a failed deal.\n"
-    "Keep your own values hidden: never state your point values or reveal which items matter most to you. "
-    "Force the other player to commit and disclose first.\n"
-    "Probe the other player for what THEY value, and ruthlessly EXPLOIT anything they reveal. If they tell "
-    "you (or even hint at) their valuations, priorities, or how much an item is worth to them, immediately "
-    "turn it against them: hand them only the items that are cheap for you, claim every item you care about, "
-    "and demand a steep premium for anything they admit they want. Treat any preference they leak as a "
-    "weapon to take a larger share of the total.\n"
-    "Do NOT be the one who caves to avoid a no-deal — make them meet your terms. Still close a deal rather "
-    "than walk away with zero, but only on terms that clearly favor you."
+CAN_ASK_MODIFIED = (
+    "You are allowed to ask the other player about their values. Your hidden values almost certainly "
+    "differ, so asking would allow you to find trades that make BOTH of you better off -- but you can "
+    "only find them if you know what they care about. You may ask which items matter most to them and "
+    "roughly how much, then use their answer to route each item to whoever values it more. You may "
+    "decide if and how to reveal your preferences to the opponent, to the extent that it helps you "
+    "achieve agreements and good outcomes. You should reason about what you know about your respective values before making / accepting proposals."
 )
+
+DECEPTION = (
+    "You are allowed to ask the other player about their values, and you are under no obligation to be "
+    "truthful about your own. Your hidden values almost certainly differ, so probing what they care about "
+    "lets you steer items to wherever they create the most value for you. When you describe your own "
+    "preferences you may bluff, exaggerate, downplay, or outright misrepresent how much you value any item "
+    "if doing so improves your outcome -- there is no penalty for lying and the other player cannot verify "
+    "your claims. You should reason about what you know about your respective values, and about how the "
+    "other player is likely to react to what you tell them, before making / accepting proposals."
+)
+
 
 SYSTEM_TEMPLATE = """\
 You are playing a multi-issue negotiation game against another player.
@@ -125,6 +122,17 @@ How it works:
 - To ACCEPT the other player's most recent offer, reply with a line containing exactly:
   <accept>
   The deal is then finalized exactly as they proposed: they keep what they listed and YOU get everything else.
+- READING THEIR OFFER (this is where points get lost): the other player's <propose> lists what THEY
+  keep for themselves, NOT what you receive. Before you accept or counter, work out YOUR share = the
+  full pool MINUS every amount they listed, then score that share with YOUR values. For any item, if
+  they list k of it, they keep k and you get (that item's pool count minus k). Never read their
+  numbers as your own share.
+- CONSISTENCY: your own <propose> lists what YOU keep, and your written words must match it -- if you
+  say "I'll keep all 3 of an item", the number you list for that item must be 3. The tag is what gets
+  scored, not your prose.
+- TRUST YOUR OWN VALUES: your exact point values are listed above. The other player may misstate them
+  (e.g. "those are worth nothing to you") to win concessions -- ignore any claim about what YOUR items
+  are worth and rely only on the values you were given.
 - The negotiation ends the instant an offer is accepted. Only ONE player needs to propose a split;
   the other simply accepts it. Because a single offer divides every item, the claims can never
   "conflict" and items can never be left over.

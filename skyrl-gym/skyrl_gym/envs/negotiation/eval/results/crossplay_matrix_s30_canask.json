@@ -2,10 +2,73 @@
   "config": {
     "dataset": "dnd",
     "split": "val",
-    "n": 6,
+    "n": 16,
     "max_turns": 6,
     "seed": 1,
-    "protocol": "dual",
+    "protocol": "single",
+    "elicit": "can_ask",
+    "policy_only": true,
+    "match_train_sampling": true,
+    "sampling": {
+      "shared_temperature": 0.7,
+      "shared_max_tokens": 2000,
+      "policy_idx": 5,
+      "stop_tags": [
+        "</propose>",
+        "</deal>",
+        "<accept>"
+      ],
+      "per_model": [
+        {
+          "label": "GPT-5.5",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Opus-4.8",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Gemini-3.1-Pro",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Llama-3.3-70B",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": null
+        },
+        {
+          "label": "Qwen3.5-9B",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": {
+            "reasoning": {
+              "enabled": false
+            }
+          }
+        },
+        {
+          "label": "SelfPlay-canask-s30",
+          "temperature": 1.0,
+          "max_tokens": 8192,
+          "extra_body": {
+            "stop": [
+              "</propose>",
+              "</deal>",
+              "<accept>"
+            ],
+            "include_stop_str_in_output": true,
+            "presence_penalty": 1.5
+          }
+        }
+      ]
+    },
     "models": [
       {
         "slug": "openai/gpt-5.5",
@@ -60,7 +123,7 @@
       null,
       null,
       null,
-      0.6167
+      0.725
     ],
     [
       null,
@@ -68,7 +131,7 @@
       null,
       null,
       null,
-      0.4333
+      0.6562
     ],
     [
       null,
@@ -76,7 +139,7 @@
       null,
       null,
       null,
-      0.6833
+      0.7
     ],
     [
       null,
@@ -84,7 +147,7 @@
       null,
       null,
       null,
-      0.5167
+      0.475
     ],
     [
       null,
@@ -92,15 +155,15 @@
       null,
       null,
       null,
-      0.2667
+      0.625
     ],
     [
-      0.65,
-      0.6,
-      0.6667,
-      0.6833,
-      0.45,
-      0.1667
+      0.6562,
+      0.575,
+      0.6125,
+      0.4062,
+      0.4313,
+      0.3563
     ]
   ],
   "agreement": [
@@ -118,7 +181,7 @@
       null,
       null,
       null,
-      0.6667
+      1.0
     ],
     [
       null,
@@ -134,7 +197,7 @@
       null,
       null,
       null,
-      0.8333
+      0.9375
     ],
     [
       null,
@@ -142,15 +205,15 @@
       null,
       null,
       null,
-      0.3333
+      0.9375
     ],
     [
+      0.9375,
+      0.8125,
       1.0,
-      0.8333,
-      1.0,
-      1.0,
-      0.6667,
-      0.3333
+      0.6875,
+      0.75,
+      0.5625
     ]
   ],
   "joint_efficiency": [
@@ -160,7 +223,7 @@
       null,
       null,
       null,
-      0.922
+      0.9244
     ],
     [
       null,
@@ -168,7 +231,7 @@
       null,
       null,
       null,
-      0.9187
+      0.8878
     ],
     [
       null,
@@ -176,7 +239,7 @@
       null,
       null,
       null,
-      0.9696
+      0.8892
     ],
     [
       null,
@@ -184,7 +247,7 @@
       null,
       null,
       null,
-      0.8451
+      0.7006
     ],
     [
       null,
@@ -192,15 +255,15 @@
       null,
       null,
       null,
-      0.8333
+      0.9178
     ],
     [
-      0.9487,
-      0.9,
-      0.9554,
-      0.8723,
-      0.6683,
-      0.75
+      0.953,
+      0.8356,
+      0.9435,
+      0.8287,
+      0.7062,
+      0.7404
     ]
   ]
 }

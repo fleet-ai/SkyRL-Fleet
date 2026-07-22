@@ -1,0 +1,84 @@
+# Frontier cross-play matrix — exact config of the last eval run.
+# Recorded verbatim from results/crossplay_matrix_{base,s30}_canask.json ["config"].
+# Driver: run_crossplay.py  ·  one-liners: crossplay_rowonly.sh  ·  rationale: CROSSPLAY_REPRO.md
+#
+# Two row-only ("policy-only") runs share everything below except the policy seat.
+
+shared:
+  driver: run_crossplay.py
+  dataset: dnd
+  split: val                      # held out from training
+  n: 16                           # scenarios per cell
+  max_turns: 6
+  seed: 1
+  protocol: single                # single-proposer (<propose>/<accept>); matches training
+  elicit: can_ask                 # CAN_ASK_BLOCK injected into BOTH seats
+  policy_only: true               # play only the policy's row + column (skip frontier x frontier)
+  match_train_sampling: true
+  concurrency: 8
+  think_gate: off                 # eval is unconstrained decoding (intentional deviation)
+
+# Frontier opponent pool (one per vendor), all via OpenRouter.
+frontier_pool:
+  - {slug: openai/gpt-5.5,                    label: GPT-5.5,        no_think: false}
+  - {slug: anthropic/claude-opus-4.8,         label: Opus-4.8,       no_think: false}
+  - {slug: google/gemini-3.1-pro-preview,     label: Gemini-3.1-Pro, no_think: false}
+  - {slug: meta-llama/llama-3.3-70b-instruct, label: Llama-3.3-70B,  no_think: false}
+  - {slug: qwen/qwen3.5-9b,                   label: Qwen3.5-9B,     no_think: true}   # hybrid -> no-think
+
+# Sampling actually applied per seat (resolved by --match-train-sampling).
+# NOTE the asymmetry: action-tag stop sequences + include_stop_str_in_output are applied
+# ONLY to the locally-served (vLLM) policy. OpenRouter providers strip matched stop
+# strings and ignore include_stop_str_in_output, so OpenRouter seats run WITHOUT stop tags.
+sampling:
+  stop_tags: ["</propose>", "</deal>", "<accept>"]   # for single protocol
+  frontier_seats:                  # GPT-5.5 / Opus / Gemini / Llama (all OpenRouter)
+    temperature: 1.0
+    max_tokens: 8192
+    presence_penalty: null
+    stop: null                     # omitted on OpenRouter (would be stripped)
+  frontier_qwen9b_extra:           # Qwen3.5-9B additionally runs no-think
+    reasoning: {enabled: false}
+  policy_seat:
+    temperature: 1.0
+    max_tokens: 8192
+    presence_penalty: 1.5          # training rollout penalty (policy decoding artifact)
+    # stop + include_stop_str_in_output only take effect for the local vLLM policy (s30):
+    stop_if_local: ["</propose>", "</deal>", "<accept>"]
+    include_stop_str_in_output_if_local: true
+
+runs:
+  base:
+    out_prefix: crossplay_matrix_base_canask
+    policy:
+      slug: qwen/qwen3.5-35b-a3b
+      label: Base-qwen35-35b
+      base_url: https://openrouter.ai/api/v1      # OpenRouter -> NO stop tags applied
+      no_think: false                              # thinking ON
+      resolved_extra_body: {presence_penalty: 1.5}
+    command: >-
+      python run_crossplay.py
+      --policy-model qwen/qwen3.5-35b-a3b --policy-label Base-qwen35-35b
+      --policy-base-url https://openrouter.ai/api/v1 --policy-only
+      --protocol single --elicit can_ask --match-train-sampling
+      --n 16 --max-turns 6 --seed 1 --concurrency 8
+      --out-prefix crossplay_matrix_base_canask
+
+  s30:
+    out_prefix: crossplay_matrix_s30_canask
+    policy:
+      slug: qwen35-policy                          # selfplay-canask-0621 global_step_30
+      label: SelfPlay-canask-s30
+      base_url: http://10.66.0.6:6479/v1           # local vLLM -> stop tags applied
+      no_think: false                              # thinking ON
+      resolved_extra_body:
+        stop: ["</propose>", "</deal>", "<accept>"]
+        include_stop_str_in_output: true
+        presence_penalty: 1.5
+    command: >-
+      python run_crossplay.py
+      --policy-model qwen35-policy --policy-label SelfPlay-canask-s30
+      --policy-base-url http://10.66.0.6:6479/v1 --policy-only
+      --protocol single --elicit can_ask --match-train-sampling
+      --n 16 --max-turns 6 --seed 1 --concurrency 8
+      --out-prefix crossplay_matrix_s30_canask
