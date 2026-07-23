@@ -176,6 +176,7 @@ async def main(args: argparse.Namespace) -> None:
         model_name=args.model_name,
         lora_rank=args.lora_rank,
         max_sequence_length=args.max_sequence_length,
+        probe_token_id=tokenizer.eos_token_id or 0,
     )
     if cap is not None and cap < args.max_sequence_length:
         before = len(datums)
