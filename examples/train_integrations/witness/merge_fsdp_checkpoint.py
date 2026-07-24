@@ -1,18 +1,27 @@
 """
-Merge FSDP sharded checkpoint into a single HuggingFace model.
+DEPRECATED — do NOT use. Use arc-witness-agent/training/merge_fsdp_dtensor.py instead.
 
-FSDP saves one file per GPU rank: model_world_size_8_rank_0.pt ... rank_7.pt
-This script loads all shards, reconstructs the full state dict, and saves
-in standard HuggingFace format (model.safetensors + config.json + tokenizer).
+This script is broken in two ways:
+1. For FSDP2 SHARDED_STATE_DICT checkpoints (everything SkyRL saves): DTensor
+   `.shape` is the GLOBAL shape on every rank, so the replicated-vs-sharded
+   heuristic below sees identical shapes, concludes "replicated", and silently
+   keeps only rank 0 — discarding (W-1)/W of every weight.
+2. `sorted(glob.glob(...))` orders shards LEXICOGRAPHICALLY, so at
+   world_size >= 10 ranks concatenate as 0,1,10,11,...,2 — scrambled weights
+   even for plain-tensor shards.
 
-Usage:
-  python merge_fsdp_checkpoint.py \\
-    --checkpoint_dir ~/checkpoint_sharded/global_step_100/policy \\
-    --output_dir ~/checkpoint_merged/ \\
-    --model_name Qwen/Qwen3.5-9B
+merge_fsdp_dtensor.py fixes both (numeric rank order, DTensor-aware gather).
+This file is kept only so old references fail loudly instead of producing
+silently-corrupt models.
 """
 
 import argparse
+
+raise SystemExit(
+    "merge_fsdp_checkpoint.py is DEPRECATED and produces corrupt merges "
+    "(rank-0-only DTensor bug + lexicographic shard order). "
+    "Use arc-witness-agent/training/merge_fsdp_dtensor.py instead."
+)
 import glob
 import os
 import re
