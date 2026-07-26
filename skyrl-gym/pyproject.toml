@@ -16,9 +16,10 @@ requires-python = ">=3.10"
 
 dependencies = [
     "func_timeout",
-    "pandas", 
+    "pandas",
     "requests",
     "omegaconf",
+    "eval7",  # leaky_poker: exact hand-equity ground truth for bluff detection
 ]
 
 [project.urls]

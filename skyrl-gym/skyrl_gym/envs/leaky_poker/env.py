@@ -33,10 +33,18 @@ import logging
 import os
 import random
 import re
+import sys
 import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# The poker engine (textarena) + the local LeakReader live outside this repo; make them importable
+# in the trainer's isolated env. Overridable via LEAKY_POKER_TEXTARENA / LEAKY_POKER_DECEPTION_DIR.
+for _p in (os.environ.get("LEAKY_POKER_TEXTARENA", "/workspace/allie/TextArena"),
+           os.environ.get("LEAKY_POKER_DECEPTION_DIR", "/workspace/allie/TextArena/deception_poc")):
+    if _p and _p not in sys.path and Path(_p).exists():
+        sys.path.insert(0, _p)
 
 from skyrl_gym.envs.base_text_env import (
     BaseTextEnv,
@@ -134,7 +142,16 @@ class LeakyPokerEnv(BaseTextEnv):
         self.equity_iters = int(_cfg_get(env_config, "equity_iters", 200))
 
         # --- opponent (villain snapshot) ---
-        self.opponent_mode = _cfg_get(env_config, "opponent_mode", "llm")  # llm | scripted
+        # llm       : a served policy snapshot (self-play arm) via litellm->opponent_base_url
+        # exploiter : a fixed, in-env BEHAVIORAL bluff-catcher (frozen-exploiter arm). It reads the
+        #             hero's public BETTING pattern (sizing/street) to estimate a bluff and calls
+        #             lighter when the line reads bluffy -- an exploitation signal INDEPENDENT of the
+        #             8B reward probe (bet-sizing heuristic, not the residual), so beating it is
+        #             genuine concealment, not probe-gaming. Cheap + deterministic + needs no serving.
+        # scripted  : a naive call-small/fold-big baseline (tests only).
+        # extra_info.opponent_mode overrides env_config so eval rows can pin the exploiter regardless
+        # of the training opponent (matching eval).
+        self.opponent_mode = extra_info.get("opponent_mode") or _cfg_get(env_config, "opponent_mode", "llm")
         self.opponent_model = _cfg_get(env_config, "opponent_model", "openrouter/openai/gpt-4o-mini")
         self.opponent_base_url = _cfg_get(env_config, "opponent_base_url", None)
         self.opponent_temperature = float(_cfg_get(env_config, "opponent_temperature", 0.7))
@@ -191,12 +208,15 @@ class LeakyPokerEnv(BaseTextEnv):
             tie += s == o
         return (win + 0.5 * tie) / it
 
-    def _hero_equity(self):
+    def _current_equity(self):
+        """Equity of whoever is to act right now (hero in step(), villain during _villain_action)."""
         gs = self.game.state.game_state
         pid = self.game.state.current_player_id
         hole = [self._card_to_eval7(c) for c in gs["player_hands"][pid]]
         board = [self._card_to_eval7(c) for c in gs["visible_community_cards"]]
         return self._equity(hole, board)
+
+    _hero_equity = _current_equity  # back-compat alias
 
     def _render_obs(self, obs) -> str:
         import textarena as ta
@@ -237,6 +257,8 @@ class LeakyPokerEnv(BaseTextEnv):
     def _villain_action(self, obs_text: str) -> str:
         if self.opponent_mode == "scripted":
             return self._scripted_villain(obs_text)
+        if self.opponent_mode == "exploiter":
+            return self._exploiter_villain()
         self.villain_history.append({"role": "user", "content": obs_text})
         raw = self._opponent_reply()
         act = self._first_token(raw) or "[Check]"
@@ -251,6 +273,38 @@ class LeakyPokerEnv(BaseTextEnv):
         if to_call <= 0:
             return "[Check]"
         return "[Call]" if to_call <= self.big_blind * 2 else "[Fold]"
+
+    def _behavioral_bluff_likelihood(self) -> float:
+        """P(hero is bluffing | public betting), from BEHAVIOR only -- bet size vs pot + street.
+        Independent of the 8B reward probe: an overbet / heavy late-street aggression reads bluffy,
+        a small/standard bet reads value-ish. This is the signal the exploiter bluff-catches on, so
+        the hero must make its bluffs SIZE like value bets to evade it (genuine concealment)."""
+        gs = self.game.state.game_state
+        pot = max(gs["pot"], 1)
+        pid = self.game.state.current_player_id
+        to_call = gs["current_bet"] - gs["player_bets"][pid]
+        size_frac = to_call / pot                 # how big the hero's outstanding bet is vs the pot
+        street = gs["betting_round"]              # 0..3 (pre/flop/turn/river)
+        lik = 0.35 * min(size_frac, 1.5) + 0.12 * street
+        return max(0.0, min(1.0, lik))
+
+    def _exploiter_villain(self) -> str:
+        """Fixed BEHAVIORAL bluff-catcher (frozen-exploiter arm). Value-bets strong hands; facing a
+        bet, calls when its own equity beats pot odds, with a bluff-catch discount when the hero's
+        betting line reads bluffy. Punishes READABLE bluffs, folds to concealed/strong lines."""
+        gs = self.game.state.game_state
+        pid = self.game.state.current_player_id
+        to_call = gs["current_bet"] - gs["player_bets"][pid]
+        v_eq = self._current_equity()
+        v_eq = 0.5 if v_eq is None else v_eq
+        pot = max(gs["pot"], 1)
+        if to_call <= 0:
+            if v_eq >= 0.65:
+                return f"[Bet {max(self.big_blind, int(0.6 * pot))}]"
+            return "[Check]"
+        pot_odds = to_call / (pot + to_call)
+        margin = 0.20 * self._behavioral_bluff_likelihood()   # call lighter when the line reads bluffy
+        return "[Call]" if v_eq >= pot_odds - margin else "[Fold]"
 
     @staticmethod
     def _first_token(text: str) -> str:

@@ -17,7 +17,12 @@ import datasets
 from skyrl_gym.envs.leaky_poker.env import POKER_SYSTEM
 
 
-def make_row(idx, split, seed, num_rounds, starting_chips, sb, bb):
+def make_row(idx, split, seed, num_rounds, starting_chips, sb, bb, eval_opponent=None):
+    # Eval is pinned to a STATIONARY opponent (the frozen exploiter) so win-rate is interpretable
+    # regardless of the training arm; extra_info.opponent_mode overrides env_config in the env.
+    extra = {"split": split, "index": idx, "seed": int(seed), "max_turns": 4 * num_rounds * 8}
+    if eval_opponent:
+        extra["opponent_mode"] = eval_opponent
     return {
         "data_source": "leaky_poker",
         "env_class": "leaky_poker",
@@ -39,13 +44,13 @@ def make_row(idx, split, seed, num_rounds, starting_chips, sb, bb):
                 "hero": int(idx % 2),
             },
         },
-        "extra_info": {"split": split, "index": idx, "seed": int(seed), "max_turns": 4 * num_rounds * 8},
+        "extra_info": extra,
     }
 
 
-def build(n, split, base_seed, args):
+def build(n, split, base_seed, args, eval_opponent=None):
     return [make_row(i, split, base_seed + i, args.num_rounds, args.starting_chips,
-                     args.small_blind, args.big_blind) for i in range(n)]
+                     args.small_blind, args.big_blind, eval_opponent) for i in range(n)]
 
 
 if __name__ == "__main__":
@@ -58,12 +63,14 @@ if __name__ == "__main__":
     ap.add_argument("--small_blind", type=int, default=10)
     ap.add_argument("--big_blind", type=int, default=20)
     ap.add_argument("--seed", type=int, default=100000)
+    ap.add_argument("--eval_opponent", default="exploiter",
+                    help="opponent_mode pinned on val rows for a stationary eval (exploiter|scripted|'' to disable)")
     args = ap.parse_args()
 
     out = Path(args.output_dir).expanduser()
     out.mkdir(parents=True, exist_ok=True)
     train = build(args.n_train, "train", args.seed, args)
-    val = build(args.n_val, "val", args.seed + 10_000_000, args)
+    val = build(args.n_val, "val", args.seed + 10_000_000, args, eval_opponent=(args.eval_opponent or None))
     tp, vp = out / "train.parquet", out / "validation.parquet"
     datasets.Dataset.from_list(train).to_parquet(str(tp))
     datasets.Dataset.from_list(val).to_parquet(str(vp))
