@@ -1,0 +1,77 @@
+# Leaky-lies self-play poker GRPO — Qwen3.5-9B, 1 node x 8 H200.
+#
+# Launch via fleet-launch.sh so the setup: step runs FIRST (installs the Qwen3.5 GDN-MoE vLLM deps
+# transformers==5.3.0 + causal-conv1d + flash-attn + torch 2.10 — required for the qwen3_5_moe
+# engine; a bare run that skips setup dies with "Engine core initialization failed").
+#
+#   # sparse-exploiter arm (no reader needed):
+#   bash scripts/fleet-launch.sh tasks/leaky-poker-grpo-qwen3_5-9b-1node.yaml \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" --env OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+#     --env REWARD_MODE=sparse --env OPPONENT_MODE=exploiter
+#   # dense-exploiter arm (the run: block starts the reader service on GPU 7):
+#   bash scripts/fleet-launch.sh tasks/leaky-poker-grpo-qwen3_5-9b-1node.yaml \
+#     --env WANDB_API_KEY=... --env OPENROUTER_API_KEY=... \
+#     --env REWARD_MODE=dense --env OPPONENT_MODE=exploiter --env NEED_READER=1
+#
+# Self-play arm: serve a snapshot with scripts/fleet-negotiation-opponent-serve.sh on another node,
+# then launch with --env OPPONENT_MODE=llm --env OPPONENT_BASE_URL=http://<node>:6479/v1
+# --env OPPONENT_MODEL=openai/qwen35-opponent --env NEED_READER=1  (or use leaky-poker-selfplay-launch.sh).
+
+name: leaky-poker-grpo-qwen3-5-9b
+
+resources:
+  disk_size: 500
+  memory: 800+
+  ordered:
+    - accelerators: H200:8
+      cloud: slurm
+      region: runpod-cluster-y8puzql3juawue
+    - accelerators: H200-SXM:8
+      cloud: runpod
+      ports: 6479
+
+num_nodes: 1
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  HF_TOKEN: ""
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-9B"
+  MODEL_TAG: "qwen35"
+  MODALITY: "leaky_poker"
+  # --- arm knobs ---
+  REWARD_MODE: "sparse"         # sparse (realized chips, no reader) | dense (leakage feature)
+  OPPONENT_MODE: "exploiter"    # exploiter | llm (self-play) | scripted
+  LEAK_LAMBDA: "100.0"
+  NEED_READER: "0"              # 1 for dense/self-play arms (starts reader_service on GPU 7)
+  READER_BASE_URL: "http://127.0.0.1:8137"
+  OPPONENT_MODEL: "openai/qwen35-opponent"
+  OPPONENT_BASE_URL: ""
+  NUM_ROUNDS: "4"
+  NUM_EPOCHS: "3"
+  NUM_INFERENCE_ENGINES: 8
+  RUN_ID: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+
+setup: |
+  bash scripts/fleet-negotiation-setup.sh \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  set -euo pipefail
+  export LEAKY_POKER_TEXTARENA=/workspace/allie/TextArena
+  export LEAKY_POKER_DECEPTION_DIR=/workspace/allie/TextArena/deception_poc
+  if [ "${NEED_READER:-0}" = "1" ]; then
+    CUDA_VISIBLE_DEVICES=7 /workspace/allie/performative/.venv/bin/python \
+      /workspace/allie/TextArena/deception_poc/reader_service.py \
+      --probe /workspace/allie/TextArena/deception_poc/probes/probe_leakreader_qwen3_8b.npz \
+      --host 0.0.0.0 --port 8137 > "$HOME/leaky_poker_logs/reader_$(hostname).log" 2>&1 &
+    for i in $(seq 1 60); do curl -s http://127.0.0.1:8137/health 2>/dev/null | grep -q '"ok": true' && break; sleep 3; done
+    export READER_BASE_URL=http://127.0.0.1:8137 READER_MODE=endpoint
+    export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6 NUM_INFERENCE_ENGINES=7
+  fi
+  bash scripts/fleet-leaky-poker-9b-run.sh
