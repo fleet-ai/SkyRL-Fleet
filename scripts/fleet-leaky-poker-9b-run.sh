@@ -45,11 +45,10 @@ export MAX_GENERATE_LENGTH="${MAX_GENERATE_LENGTH:-64}"   # a bracket action is 
 DATA_ROOT="${DATA_ROOT:-$HOME}"
 DATA_DIR="${DATA_ROOT}/data/fleet/leaky_poker"
 echo "[leaky_poker] preparing dataset -> $DATA_DIR"
-uv run --isolated python skyrl-gym/skyrl_gym/envs/leaky_poker/prepare_dataset.py \
-  --output_dir "$DATA_DIR" --n_train "${N_TRAIN:-2048}" --n_val "${N_VAL:-128}" \
-  --num_rounds "$NUM_ROUNDS" || \
-  /workspace/allie/performative/.venv/bin/python skyrl-gym/skyrl_gym/envs/leaky_poker/prepare_dataset.py \
-    --output_dir "$DATA_DIR" --n_train "${N_TRAIN:-2048}" --n_val "${N_VAL:-128}" --num_rounds "$NUM_ROUNDS"
+# Self-contained prep (needs only `datasets`); use the light perf venv, NOT a slow uv isolated build.
+"${PREP_PYTHON:-/workspace/allie/performative/.venv/bin/python}" \
+  skyrl-gym/skyrl_gym/envs/leaky_poker/prepare_dataset.py \
+  --output_dir "$DATA_DIR" --n_train "${N_TRAIN:-2048}" --n_val "${N_VAL:-128}" --num_rounds "$NUM_ROUNDS"
 
 TRANSCRIPT_DIR="${TRANSCRIPT_DIR:-$HOME/leaky_poker_transcripts}"
 RUN_NAME="fleet_${MODEL_TAG}_9b_leakypoker_${OPPONENT_MODE}_${REWARD_MODE}_lam${LEAK_LAMBDA}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}"

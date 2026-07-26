@@ -14,7 +14,15 @@ from pathlib import Path
 
 import datasets
 
-from skyrl_gym.envs.leaky_poker.env import POKER_SYSTEM
+# Kept in sync with env.POKER_SYSTEM. Duplicated (not imported) so dataset prep needs only
+# `datasets` -- it runs in a light venv, NOT the trainer's isolated env where skyrl_gym lives.
+POKER_SYSTEM = (
+    "You are a world-class poker player competing heads-up in Texas Hold'em. Read your hole cards, "
+    "the board, the pot and stacks; reason about your opponent; play to maximize the chips you win "
+    "over the whole match. Bluff and value-bet when the situation is right, and fold when beaten. "
+    "Respond with EXACTLY ONE bracketed action token: '[Check]', '[Call]', '[Fold]', '[Bet N]', or "
+    "'[Raise N]' (N a whole number of chips)."
+)
 
 
 def make_row(idx, split, seed, num_rounds, starting_chips, sb, bb, eval_opponent=None):
