@@ -591,6 +591,7 @@ class SkyRLGymConfig(BaseConfig):
     fleet_task: Optional[Dict[str, Any]] = None
     task_gen: Optional[Dict[str, Any]] = None
     negotiation: Optional[Dict[str, Any]] = None
+    leaky_poker: Optional[Dict[str, Any]] = None
 
 
 @dataclass

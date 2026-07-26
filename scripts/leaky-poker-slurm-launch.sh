@@ -29,6 +29,7 @@ set -euo pipefail
 cd "$REPO"
 set -a; . /workspace/allie/.env; set +a          # WANDB / OPENROUTER / AWS / HF creds
 export SKYPILOT_NUM_NODES=1 SKYPILOT_NODE_RANK=0 SKYPILOT_NUM_GPUS_PER_NODE=$NENG
+export SKYPILOT_NODE_IPS="\$(hostname -I | awk '{print \$1}')"   # single-node Ray head ip (SkyPilot normally sets this)
 export LEAKY_POKER_TEXTARENA=/workspace/allie/TextArena
 export LEAKY_POKER_DECEPTION_DIR=/workspace/allie/TextArena/deception_poc
 if [ "$NEED_READER" = "1" ]; then

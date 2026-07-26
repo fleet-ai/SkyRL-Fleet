@@ -51,7 +51,8 @@ echo "[leaky_poker] preparing dataset -> $DATA_DIR"
   --output_dir "$DATA_DIR" --n_train "${N_TRAIN:-2048}" --n_val "${N_VAL:-128}" --num_rounds "$NUM_ROUNDS"
 
 TRANSCRIPT_DIR="${TRANSCRIPT_DIR:-$HOME/leaky_poker_transcripts}"
-RUN_NAME="fleet_${MODEL_TAG}_9b_leakypoker_${OPPONENT_MODE}_${REWARD_MODE}_lam${LEAK_LAMBDA}_${RUN_ID:-$(head -c 4 /dev/urandom | xxd -p)}"
+# portable run id (bare Slurm nodes lack `xxd`): $RANDOM is always available in bash
+RUN_NAME="fleet_${MODEL_TAG}_9b_leakypoker_${OPPONENT_MODE}_${REWARD_MODE}_lam${LEAK_LAMBDA}_${RUN_ID:-$(printf '%04x' $((RANDOM*RANDOM & 0xffff)))}"
 
 # New hydra section for a brand-new env: prefix every key with '+' so the leaky_poker config block
 # is CREATED (it is not in the base config schema).
@@ -63,16 +64,16 @@ bash scripts/fleet-common-run.sh \
   --data-dir-name leaky_poker -- \
   "data.train_data=['${DATA_DIR}/train.parquet']" \
   "data.val_data=['${DATA_DIR}/validation.parquet']" \
-  +environment.skyrl_gym.leaky_poker.reward_mode=$REWARD_MODE \
-  +environment.skyrl_gym.leaky_poker.opponent_mode=$OPPONENT_MODE \
-  +environment.skyrl_gym.leaky_poker.leak_lambda=$LEAK_LAMBDA \
-  +environment.skyrl_gym.leaky_poker.reader_mode=$READER_MODE \
-  +environment.skyrl_gym.leaky_poker.reader_base_url=$READER_BASE_URL \
-  +environment.skyrl_gym.leaky_poker.opponent_model=$OPPONENT_MODEL \
-  +environment.skyrl_gym.leaky_poker.opponent_base_url=$OPPONENT_BASE_URL \
-  +environment.skyrl_gym.leaky_poker.hold_lie_rate=$HOLD_LIE_RATE \
-  +environment.skyrl_gym.leaky_poker.num_rounds=$NUM_ROUNDS \
-  "+environment.skyrl_gym.leaky_poker.transcript_dir=$TRANSCRIPT_DIR/$RUN_NAME" \
+  environment.skyrl_gym.leaky_poker.reward_mode=$REWARD_MODE \
+  environment.skyrl_gym.leaky_poker.opponent_mode=$OPPONENT_MODE \
+  environment.skyrl_gym.leaky_poker.leak_lambda=$LEAK_LAMBDA \
+  environment.skyrl_gym.leaky_poker.reader_mode=$READER_MODE \
+  environment.skyrl_gym.leaky_poker.reader_base_url=$READER_BASE_URL \
+  environment.skyrl_gym.leaky_poker.opponent_model=$OPPONENT_MODEL \
+  environment.skyrl_gym.leaky_poker.opponent_base_url=$OPPONENT_BASE_URL \
+  environment.skyrl_gym.leaky_poker.hold_lie_rate=$HOLD_LIE_RATE \
+  environment.skyrl_gym.leaky_poker.num_rounds=$NUM_ROUNDS \
+  "environment.skyrl_gym.leaky_poker.transcript_dir=$TRANSCRIPT_DIR/$RUN_NAME" \
   trainer.algorithm.advantage_estimator=grpo \
   trainer.policy.model.path="$MODEL_PATH" \
   trainer.flash_attn=false \

@@ -54,6 +54,7 @@ set -euo pipefail
 cd "$REPO"
 set -a; . /workspace/allie/.env; set +a
 export SKYPILOT_NUM_NODES=1 SKYPILOT_NODE_RANK=0 SKYPILOT_NUM_GPUS_PER_NODE=7
+export SKYPILOT_NODE_IPS="\$(hostname -I | awk '{print \$1}')"
 export LEAKY_POKER_TEXTARENA=/workspace/allie/TextArena
 export LEAKY_POKER_DECEPTION_DIR=/workspace/allie/TextArena/deception_poc
 CUDA_VISIBLE_DEVICES=7 /workspace/allie/performative/.venv/bin/python \
