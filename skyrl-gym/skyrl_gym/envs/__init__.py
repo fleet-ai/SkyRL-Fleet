@@ -51,3 +51,8 @@ register(
     id="negotiation",
     entry_point="skyrl_gym.envs.negotiation.env:NegotiationEnv",
 )
+
+register(
+    id="leaky_poker",
+    entry_point="skyrl_gym.envs.leaky_poker.env:LeakyPokerEnv",
+)
