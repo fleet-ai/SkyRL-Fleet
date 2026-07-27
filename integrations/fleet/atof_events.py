@@ -49,7 +49,13 @@ ATOF_INIT_TIMEOUT_S = 10.0
 _nemo_module: Any = None
 
 
-def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEmitter"]:
+def init_atof(
+    *,
+    entrypoint: str,
+    run_name: str,
+    model: str,
+    agent_kind: Optional[str] = None,
+) -> Optional["AtofEmitter"]:
     """Start the NeMo runtime and return an emitter, or None (disabled/failed).
 
     Enabled unless NEMO_RELAY_ENABLED=0. Uses either the MSK env vars
@@ -101,7 +107,13 @@ def init_atof(*, entrypoint: str, run_name: str, model: str) -> Optional["AtofEm
 
     _nemo_module = nemo_relay
     logger.info(f"ATOF enabled: exporter={component['kind']} run={run_name}")
-    return AtofEmitter(nemo_relay, entrypoint=entrypoint, run_name=run_name, model=model)
+    return AtofEmitter(
+        nemo_relay,
+        entrypoint=entrypoint,
+        run_name=run_name,
+        model=model,
+        agent_kind=agent_kind,
+    )
 
 
 def drain_atof(timeout: float = 5.0) -> None:
@@ -114,14 +126,26 @@ def drain_atof(timeout: float = 5.0) -> None:
         logger.warning(f"ATOF drain failed ({type(exc).__name__}: {exc})")
 
 
-def install_atof(generator: Any, *, entrypoint: str, run_name: str, model: str) -> Optional["AtofEmitter"]:
+def install_atof(
+    generator: Any,
+    *,
+    entrypoint: str,
+    run_name: str,
+    model: str,
+    agent_kind: Optional[str] = None,
+) -> Optional["AtofEmitter"]:
     """Init the runtime and install the emitter on a SkyRLGymGenerator.
 
     Must be called with the inner generator, before any wrapper like
     FleetTraceWrappedGenerator: the wrapper only delegates attribute reads,
     so setting the attribute on it would install nothing.
     """
-    emitter = init_atof(entrypoint=entrypoint, run_name=run_name, model=model)
+    emitter = init_atof(
+        entrypoint=entrypoint,
+        run_name=run_name,
+        model=model,
+        agent_kind=agent_kind,
+    )
     if emitter is not None:
         generator.atof_emitter = emitter
     return emitter
@@ -140,11 +164,20 @@ class RolloutTrace:
 class AtofEmitter:
     """Emits one ATOF trace per rollout. Every method fails open."""
 
-    def __init__(self, nemo: Any, *, entrypoint: str, run_name: str, model: str):
+    def __init__(
+        self,
+        nemo: Any,
+        *,
+        entrypoint: str,
+        run_name: str,
+        model: str,
+        agent_kind: Optional[str] = None,
+    ):
         self._nemo = nemo
         self._entrypoint = entrypoint
         self._run_name = run_name
         self._model = model
+        self._agent_kind = agent_kind
         self._image_bucket = os.environ.get("SKYRL_ATOF_IMAGE_BUCKET", DEFAULT_IMAGE_BUCKET)
         self._image_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="atof-image")
         self._uploaded_shas: set = set()
@@ -182,6 +215,7 @@ class AtofEmitter:
                     "global_step": global_step,
                     "phase": phase,
                     "sample_idx": sample_idx,
+                    "agent_kind": self._agent_kind or self._model,
                 }
             )
             handle = self._nemo.scope.push(f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata)
@@ -194,16 +228,19 @@ class AtofEmitter:
         """Build metadata for an LLM call that has no rollout scope."""
         try:
             trace_id = uuid.uuid4().hex
-            return _drop_none(
-                {
-                    "producer_session_id": trace_id,
-                    "trace_id": trace_id,
-                    "run_name": self._run_name,
-                    "entrypoint": self._entrypoint,
-                    "model": self._model,
-                    **metadata,
-                }
-            )
+            values = {
+                "producer_session_id": trace_id,
+                "trace_id": trace_id,
+                "run_name": self._run_name,
+                "entrypoint": self._entrypoint,
+                "model": self._model,
+                **metadata,
+            }
+            if self._agent_kind is not None:
+                values["agent_kind"] = self._agent_kind
+            elif values.get("agent_kind") is None:
+                values["agent_kind"] = self._model
+            return _drop_none(values)
         except Exception as exc:
             self._warn_once("llm_call_metadata", exc)
             return {}

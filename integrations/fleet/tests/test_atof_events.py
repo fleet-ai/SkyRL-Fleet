@@ -115,8 +115,14 @@ def msk_env(monkeypatch):
     monkeypatch.setenv("THESEUS_ATOF_TENANT_ID", "skyrl")
 
 
-def make_emitter(fake_nemo):
-    return AtofEmitter(fake_nemo, entrypoint="main_fleet", run_name="run-1", model="Qwen/Qwen3.5-9B")
+def make_emitter(fake_nemo, *, agent_kind=None):
+    return AtofEmitter(
+        fake_nemo,
+        entrypoint="main_fleet",
+        run_name="run-1",
+        model="Qwen/Qwen3.5-9B",
+        agent_kind=agent_kind,
+    )
 
 
 def data_image_message(image_bytes=b"png-bytes"):
@@ -191,6 +197,7 @@ class TestEmit:
         assert metadata["phase"] == "train_step_7"
         assert metadata["entrypoint"] == "main_fleet"
         assert metadata["model"] == "Qwen/Qwen3.5-9B"
+        assert metadata["agent_kind"] == "Qwen/Qwen3.5-9B"
         assert len(metadata["trace_id"]) == 32
         assert trace.metadata is metadata
 
@@ -221,11 +228,12 @@ class TestEmit:
         assert len(trace_ids) == 8
 
     def test_standalone_llm_call_uses_its_own_session(self, fake_nemo):
-        metadata = make_emitter(fake_nemo).llm_call_metadata(call_site="judge")
+        metadata = make_emitter(fake_nemo).llm_call_metadata(call_site="judge", agent_kind="caller-value")
 
         assert metadata["producer_session_id"] == metadata["trace_id"]
         assert metadata["producer_session_id"] != "run-1"
         assert metadata["run_name"] == "run-1"
+        assert metadata["agent_kind"] == "caller-value"
 
     def test_llm_request_payload(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
@@ -243,6 +251,30 @@ class TestEmit:
         assert args == {"action": "<tool>ls</tool>"}
         assert result == {"observations": obs, "reward": 0.5, "done": True}
         assert kwargs["handle"] == "handle-1"
+        assert kwargs["metadata"]["agent_kind"] == "Qwen/Qwen3.5-9B"
+
+    def test_known_agent_kind_is_used_for_rollout_and_standalone_calls(self, fake_nemo):
+        agent_kind = "skyrl_agent.agents.react.ReActAgent"
+        emitter = make_emitter(fake_nemo, agent_kind=agent_kind)
+
+        trace = emitter.rollout_start(
+            task_key="t",
+            env_class="fleet_task",
+            global_step=1,
+            phase="p",
+            sample_idx=0,
+        )
+        emitter.env_step(trace, action="<tool>ls</tool>", observations=[], reward=0.0, done=False)
+
+        assert trace.metadata["agent_kind"] == agent_kind
+        ((_, _, _, _, tool_kwargs),) = fake_nemo.named("tool")
+        assert tool_kwargs["metadata"]["agent_kind"] == agent_kind
+        assert emitter.llm_call_metadata()["agent_kind"] == agent_kind
+
+    def test_model_is_used_when_standalone_call_has_no_harness(self, fake_nemo):
+        metadata = make_emitter(fake_nemo).llm_call_metadata(call_site="judge")
+
+        assert metadata["agent_kind"] == "Qwen/Qwen3.5-9B"
 
     def test_rollout_end_marks_and_pops(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
