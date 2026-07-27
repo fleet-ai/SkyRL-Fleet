@@ -197,7 +197,7 @@ class TestEmit:
         assert metadata["phase"] == "train_step_7"
         assert metadata["entrypoint"] == "main_fleet"
         assert metadata["model"] == "Qwen/Qwen3.5-9B"
-        assert "agent_kind" not in metadata
+        assert metadata["agent_kind"] == "Qwen/Qwen3.5-9B"
         assert len(metadata["trace_id"]) == 32
         assert trace.metadata is metadata
 
@@ -251,7 +251,7 @@ class TestEmit:
         assert args == {"action": "<tool>ls</tool>"}
         assert result == {"observations": obs, "reward": 0.5, "done": True}
         assert kwargs["handle"] == "handle-1"
-        assert "agent_kind" not in kwargs["metadata"]
+        assert kwargs["metadata"]["agent_kind"] == "Qwen/Qwen3.5-9B"
 
     def test_known_agent_kind_is_used_for_rollout_and_standalone_calls(self, fake_nemo):
         agent_kind = "skyrl_agent.agents.react.ReActAgent"
@@ -270,6 +270,11 @@ class TestEmit:
         ((_, _, _, _, tool_kwargs),) = fake_nemo.named("tool")
         assert tool_kwargs["metadata"]["agent_kind"] == agent_kind
         assert emitter.llm_call_metadata()["agent_kind"] == agent_kind
+
+    def test_model_is_used_when_standalone_call_has_no_harness(self, fake_nemo):
+        metadata = make_emitter(fake_nemo).llm_call_metadata(call_site="judge")
+
+        assert metadata["agent_kind"] == "Qwen/Qwen3.5-9B"
 
     def test_rollout_end_marks_and_pops(self, fake_nemo):
         emitter = make_emitter(fake_nemo)

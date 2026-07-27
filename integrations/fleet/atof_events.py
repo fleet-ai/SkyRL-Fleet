@@ -215,7 +215,7 @@ class AtofEmitter:
                     "global_step": global_step,
                     "phase": phase,
                     "sample_idx": sample_idx,
-                    "agent_kind": self._agent_kind,
+                    "agent_kind": self._agent_kind or self._model,
                 }
             )
             handle = self._nemo.scope.push(f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata)
@@ -238,6 +238,8 @@ class AtofEmitter:
             }
             if self._agent_kind is not None:
                 values["agent_kind"] = self._agent_kind
+            elif values.get("agent_kind") is None:
+                values["agent_kind"] = self._model
             return _drop_none(values)
         except Exception as exc:
             self._warn_once("llm_call_metadata", exc)
