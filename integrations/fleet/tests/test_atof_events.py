@@ -191,6 +191,7 @@ class TestEmit:
         assert metadata["phase"] == "train_step_7"
         assert metadata["entrypoint"] == "main_fleet"
         assert metadata["model"] == "Qwen/Qwen3.5-9B"
+        assert metadata["agent_kind"] == "skyrl"
         assert len(metadata["trace_id"]) == 32
         assert trace.metadata is metadata
 
@@ -221,11 +222,12 @@ class TestEmit:
         assert len(trace_ids) == 8
 
     def test_standalone_llm_call_uses_its_own_session(self, fake_nemo):
-        metadata = make_emitter(fake_nemo).llm_call_metadata(call_site="judge")
+        metadata = make_emitter(fake_nemo).llm_call_metadata(call_site="judge", agent_kind="caller-value")
 
         assert metadata["producer_session_id"] == metadata["trace_id"]
         assert metadata["producer_session_id"] != "run-1"
         assert metadata["run_name"] == "run-1"
+        assert metadata["agent_kind"] == "skyrl"
 
     def test_llm_request_payload(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
@@ -243,6 +245,7 @@ class TestEmit:
         assert args == {"action": "<tool>ls</tool>"}
         assert result == {"observations": obs, "reward": 0.5, "done": True}
         assert kwargs["handle"] == "handle-1"
+        assert kwargs["metadata"]["agent_kind"] == "skyrl"
 
     def test_rollout_end_marks_and_pops(self, fake_nemo):
         emitter = make_emitter(fake_nemo)

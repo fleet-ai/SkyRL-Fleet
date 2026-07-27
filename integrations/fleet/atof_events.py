@@ -39,6 +39,7 @@ DEFAULT_MSK_BROKERS = (
     "b-3-public.tracesmskprod.v2hopy.c14.kafka.us-east-1.amazonaws.com:9198"
 )
 DEFAULT_TENANT_ID = "skyrl"
+SKYRL_AGENT_KIND = "skyrl"
 IMAGE_KEY_PREFIX = "skyrl"
 # Broker cap is 20MB; leave headroom for the event envelope and metadata.
 MAX_PAYLOAD_BYTES = 19_000_000
@@ -182,6 +183,7 @@ class AtofEmitter:
                     "global_step": global_step,
                     "phase": phase,
                     "sample_idx": sample_idx,
+                    "agent_kind": SKYRL_AGENT_KIND,
                 }
             )
             handle = self._nemo.scope.push(f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata)
@@ -202,6 +204,7 @@ class AtofEmitter:
                     "entrypoint": self._entrypoint,
                     "model": self._model,
                     **metadata,
+                    "agent_kind": SKYRL_AGENT_KIND,
                 }
             )
         except Exception as exc:
