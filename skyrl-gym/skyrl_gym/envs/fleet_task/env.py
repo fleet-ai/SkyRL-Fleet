@@ -41,6 +41,81 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+_SKILL_INJECT_BLOCK = (
+    """## Working heuristics
+
+The following field-tested procedures materially improve outcomes in this environment. Apply them whenever their trigger conditions hold.
+
+## Search local source files before exhausting message/API search
+
+**When:** A task asks you to review, summarize, reconcile, or act on user-authored artifacts — notes, checklists, trackers, inventories, invoices, quotes, contracts, logs, drafts, reports, class/prep notes, repos — and the primary app search (email/chat/calendar/drive) returns empty, sparse, noisy, or only referenced-but-not-contained hits, while a bash/runner tool is available.
+
+**Do:**
+1. Run only one or two natural app/message searches for the core entities to catch obvious correspondence.
+2. Treat two empty or tangential results as evidence the content lives elsewhere; stop cycling synonym/keyword variants through the app search tool immediately.
+3. Pivot to the filesystem: run a broad recursive find by filename keywords AND a content grep, using distinctive task terms plus common extensions (.md/.txt/.csv/.pdf/.json/.xlsx), excluding system/library/cache/node_modules paths.
+4. Do not assume `$HOME` or the current working directory holds the documents; when the default home path is empty, locate workspace/memory markers or broaden the find to the actual seed/data mount and root-level paths.
+5. When a topical folder surfaces, enumerate it and read the source files directly (cat/grep), batching related files in one command rather than one file per turn.
+6. Use the documents as the primary evidence; use email/calendar/tasks afterward only to confirm recipients, threads, deadlines, and status.
+7. Avoid low-level app-database/SQLite probing unless normal search and filesystem discovery both fail.
+
+**This prevents:** Wasting 40–80 turns re-querying email or SQLite for content that sat in plain files on disk which risks never locating the sources and producing ungrounded deliverables.
+
+---
+
+## Fan out independent probes in parallel and stop once sources are found
+
+**When:** A task needs several independent pieces of context (multiple threads, source files, attachments, calendar constraints, todos, repo/git checks) before producing one deliverable, and the harness allows multiple tool calls per turn.
+
+**Do:**
+1. Before the first tool call, enumerate the distinct independent information buckets the task implies: authoritative documents, key people/entities, correspondence, calendar window, task/reminder context, policy/reference records.
+2. On the first turn, launch several independent read-only lookups together in one parallel batch — including at least one broad filesystem find/grep alongside email/calendar/attachment/repo probes — mixing exact and broad queries.
+3. Use short discriminative search terms, not one long over-constrained natural-language query.
+4. When a batch identifies a promising thread/file, read its full content and read same-folder files in one grouped command before searching further.
+5. Serialize a read only when its target (path, id, date range) is genuinely unknown until an earlier result returns.
+6. After each batch, summarize what remains missing and issue one focused follow-up batch for only the gaps.
+7. Stop broad discovery once each enumerated need is covered or the named source files are in hand; run at most a small fixed number of confirmatory negative searches, then stop — do not page the whole mailbox or re-run near-duplicate queries.
+8. Reserve side-effecting actions until discovery is sufficient, then batch independent final actions (replies, emails, reminders, file writes) in one round.
+9. If an action call is rejected, retry only the minimal corrected call rather than restarting the workflow.
+
+**This prevents:** Running dozens of serial single-keyword searches re-finding the same message and never batching, blowing 27–80 turns when 5–14 suffice.
+
+---
+
+## Read canonical source documents, not derived or lossy reconstructions
+
+**When:** Correctness of a requested summary, issue-spotting, metric, repo status, or handoff depends on details inside artifacts, and/or the needed content exists both as a hard-to-parse artifact (e.g., encoded/ASCII85 PDF) and as a clean source (markdown/text or the full email thread).
+
+**Do:**
+1. Identify the canonical source for each requested component: the actual conversation thread, document, attachment, repo, or project file.
+2. Open and read that source directly for verbatim figures and context, rather than relying on snippets, filenames, notification fragments, DB table rows, or memory.
+3. When an attachment resists decoding after one attempt, stop trying to decode it and check whether the same content exists as a plain source document or in the email thread body; read that instead.
+4. For repositories, inspect branch/status plus diffs and the contents of untracked files when uncommitted work is requested — do not declare repos unavailable after a shallow search.
+5. Exclude unrelated sources even if they contain tempting numbers; when a requested type of evidence is genuinely absent after reasonable inspection, state the gap explicitly rather than inventing or importing unrelated data.
+6. When a summary must go to someone who already emailed about the topic, reply on that existing thread to preserve context rather than composing a fresh message.
+
+**This prevents:** Wasting turns fighting PDF decodes and reconstructing figures from scattered snippets or DB tables importing unrelated report numbers, — reading the authoritative markdown/thread yields exact figures without backtracking.
+
+---
+
+## Reconcile conflicting records by source authority and flag discrepancies
+
+**When:** A task requires comparing or reconciling records that may disagree — multiple document versions, a quote vs. invoice, user-stated facts vs. an authoritative note, or figures spread across email and files — before drafting an output or taking a side effect.
+
+**Do:**
+1. Gather every relevant version and channel: parse the raw source artifacts rather than prose summaries scraped from email.
+2. Compute line-item totals and diffs with a short script before drafting any email or taking side effects.
+3. Establish source authority explicitly: prefer the user's own authored/working notes over correspondence, and when multiple versions conflict, prefer the most recent "last updated" timestamp as canonical.
+4. Cross-check user-stated facts (amounts, locations, dates) against the authoritative record.
+5. Surface every discrepancy explicitly in the deliverable — name the stale/conflicting versions and the differing figures — rather than silently choosing one value.
+6. Only after reconciliation is documented, compose the deliverable or perform the side effect.
+
+**This prevents:** Silently picking one figure or omitted mismatches (e.g., loan-amount/location conflicts, stale gift-note versions), producing deliverables that hid real discrepancies that must be flagged.
+
+"""
+)
+
+
 # Global task cache to avoid reloading JSON for each env instance
 _TASK_CACHE: Dict[str, Dict[str, Any]] = {}
 
@@ -392,8 +467,19 @@ def build_system_content(
                 f"{canonical}\n\n"
             )
 
+    # Optional: inject distilled cross-model skills directly into the rollout
+    # system prompt (SKILL_INJECT=1). Verbatim from the skillmine ablation
+    # where the same block lifted GPT-5.5 +0.21 / Kimi +0.18 on this task
+    # family. Kept as literal text (not a filesystem pointer) because the
+    # file-based path is unreliable — an agent told "~/claude/skills" reads
+    # /root and finds nothing.
+    skill_block = ""
+    if os.environ.get("SKILL_INJECT", "0") == "1":
+        skill_block = _SKILL_INJECT_BLOCK
+
     return (
         f"You are a helpful agent. Complete the task by calling tools.\n\n"
+        f"{skill_block}"
         f"## Current Date\n"
         f"Today's date is {current_date}. When dates are mentioned without "
         f"a year, assume the current year ({now.year}) or a "
