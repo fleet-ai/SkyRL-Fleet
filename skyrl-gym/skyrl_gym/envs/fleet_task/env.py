@@ -41,6 +41,15 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+_SKILL_NUDGE_BLOCK = (
+    "## Skill library (consult before acting)\n"
+    "Reusable skill guides live at /alloc/data/outlook/seed/home/user/claude/skills. "
+    "MANDATORY FIRST STEPS before beginning the task: (1) run "
+    "`ls /alloc/data/outlook/seed/home/user/claude/skills`; (2) `cat` each SKILL.md "
+    "that looks relevant to this task; (3) apply the relevant skills' procedures "
+    "throughout. If none apply after inspection, proceed normally.\n\n"
+)
+
 _SKILL_INJECT_BLOCK = (
     """## Working heuristics
 
@@ -466,7 +475,11 @@ def build_system_content(
                 f"{canonical}\n\n"
             )
 
-    skill_block = _SKILL_INJECT_BLOCK if os.environ.get("SKILL_INJECT", "0") == "1" else ""
+    skill_block = ""
+    if os.environ.get("SKILL_INJECT", "0") == "1":
+        skill_block = _SKILL_INJECT_BLOCK
+    elif os.environ.get("SKILL_NUDGE", "0") == "1":
+        skill_block = _SKILL_NUDGE_BLOCK
     return (
         f"You are a helpful agent. Complete the task by calling tools.\n\n"
         f"{skill_block}"
