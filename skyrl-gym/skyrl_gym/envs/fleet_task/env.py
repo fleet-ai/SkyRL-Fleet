@@ -42,12 +42,13 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 _SKILL_NUDGE_BLOCK = (
-    "## Skill library (consult before acting)\n"
+    "## Skill library (read all before acting)\n"
     "Reusable skill guides live at /alloc/data/outlook/seed/home/user/claude/skills. "
-    "MANDATORY FIRST STEPS before beginning the task: (1) run "
-    "`ls /alloc/data/outlook/seed/home/user/claude/skills`; (2) `cat` each SKILL.md "
-    "that looks relevant to this task; (3) apply the relevant skills' procedures "
-    "throughout. If none apply after inspection, proceed normally.\n\n"
+    "MANDATORY FIRST STEPS, before doing anything else: (1) run "
+    "`ls /alloc/data/outlook/seed/home/user/claude/skills`; (2) read every SKILL.md "
+    "file there in full with `cat`; (3) identify which skills apply to this task; "
+    "(4) follow their procedures throughout. Do not begin the task itself until you "
+    "have completed these steps.\n\n"
 )
 
 _SKILL_INJECT_BLOCK = (
