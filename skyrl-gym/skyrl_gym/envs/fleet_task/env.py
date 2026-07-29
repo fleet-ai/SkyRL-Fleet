@@ -478,7 +478,15 @@ def build_system_content(
 
     skill_block = ""
     if os.environ.get("SKILL_INJECT", "0") == "1":
-        skill_block = _SKILL_INJECT_BLOCK
+        # SKILL_BLOCK_FILE lets one image serve any injected block (generic /
+        # specific / both / external) without a rebuild; falls back to the
+        # baked external block when unset.
+        _bf = os.environ.get("SKILL_BLOCK_FILE")
+        if _bf and os.path.exists(_bf):
+            with open(_bf) as _f:
+                skill_block = _f.read().rstrip() + "\n\n"
+        else:
+            skill_block = _SKILL_INJECT_BLOCK
     elif os.environ.get("SKILL_NUDGE", "0") == "1":
         skill_block = _SKILL_NUDGE_BLOCK
     return (
