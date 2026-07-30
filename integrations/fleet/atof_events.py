@@ -267,13 +267,13 @@ class AtofEmitter:
                 trace,
                 {"observations": self._offload_images(trace, observations), "reward": reward, "done": done},
             )
-            self._nemo.tools.execute(
+            handle = self._nemo.tools.call(
                 "env_step",
                 args,
-                lambda _args: result,
                 handle=trace.handle,
                 metadata=trace.metadata,
             )
+            self._nemo.tools.call_end(handle, result, metadata=trace.metadata)
         except Exception as exc:
             trace.counters["emit_errors"] += 1
             self._warn_once("env_step", exc)
@@ -367,8 +367,18 @@ def _component_config() -> Optional[Dict[str, Any]]:
             "kind": "observability",
             "enabled": True,
             "config": {
-                "version": 1,
-                "atof": {"enabled": True, "output_directory": file_dir, "filename": "events.jsonl", "mode": "append"},
+                "version": 2,
+                "atof": {
+                    "enabled": True,
+                    "sinks": [
+                        {
+                            "type": "file",
+                            "output_directory": file_dir,
+                            "filename": "events.jsonl",
+                            "mode": "append",
+                        }
+                    ],
+                },
             },
         }
 

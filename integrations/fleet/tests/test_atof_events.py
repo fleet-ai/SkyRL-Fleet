@@ -68,8 +68,14 @@ class FakeNemo(types.ModuleType):
 
         class tools:
             @staticmethod
-            def execute(name, args, func, **kwargs):
-                fake.calls.append(("tool", name, args, func(args), kwargs))
+            def call(name, args, **kwargs):
+                handle = f"tool-handle-{len(fake.named('tool_start')) + 1}"
+                fake.calls.append(("tool_start", name, args, kwargs, handle))
+                return handle
+
+            @staticmethod
+            def call_end(handle, result, **kwargs):
+                fake.calls.append(("tool_end", handle, result, kwargs))
 
         self.ScopeType = ScopeType
         self.LLMRequest = LLMRequest
@@ -179,7 +185,20 @@ class TestInit:
         ((_, config),) = fake_nemo.named("initialize")
         (component,) = config["components"]
         assert component["kind"] == "observability"
-        assert component["config"]["atof"]["output_directory"] == str(tmp_path)
+        assert component["config"] == {
+            "version": 2,
+            "atof": {
+                "enabled": True,
+                "sinks": [
+                    {
+                        "type": "file",
+                        "output_directory": str(tmp_path),
+                        "filename": "events.jsonl",
+                        "mode": "append",
+                    }
+                ],
+            },
+        }
 
 
 class TestEmit:
@@ -246,12 +265,27 @@ class TestEmit:
         trace = emitter.rollout_start(task_key="t", env_class="fleet_task", global_step=1, phase="p", sample_idx=0)
         obs = [{"role": "user", "content": "tool output"}]
         emitter.env_step(trace, action="<tool>ls</tool>", observations=obs, reward=0.5, done=True)
-        ((_, name, args, result, kwargs),) = fake_nemo.named("tool")
+        ((_, name, args, kwargs, tool_handle),) = fake_nemo.named("tool_start")
+        ((_, end_handle, result, end_kwargs),) = fake_nemo.named("tool_end")
         assert name == "env_step"
         assert args == {"action": "<tool>ls</tool>"}
+        assert tool_handle == end_handle
         assert result == {"observations": obs, "reward": 0.5, "done": True}
         assert kwargs["handle"] == "handle-1"
         assert kwargs["metadata"]["agent_kind"] == "Qwen/Qwen3.5-9B"
+        assert end_kwargs["metadata"]["agent_kind"] == "Qwen/Qwen3.5-9B"
+
+    def test_env_step_finishes_before_rollout_end(self, fake_nemo):
+        emitter = make_emitter(fake_nemo)
+        trace = emitter.rollout_start(task_key="t", env_class="fleet_task", global_step=1, phase="p", sample_idx=0)
+
+        emitter.env_step(trace, action="act", observations=[], reward=0.0, done=False)
+        emitter.rollout_end(trace, reward=0.0, stop_reason="done", num_turns=1)
+
+        ordered_calls = [
+            call[0] for call in fake_nemo.calls if call[0] in {"tool_start", "tool_end", "event", "pop"}
+        ]
+        assert ordered_calls == ["tool_start", "tool_end", "event", "pop"]
 
     def test_known_agent_kind_is_used_for_rollout_and_standalone_calls(self, fake_nemo):
         agent_kind = "skyrl_agent.agents.react.ReActAgent"
@@ -267,7 +301,7 @@ class TestEmit:
         emitter.env_step(trace, action="<tool>ls</tool>", observations=[], reward=0.0, done=False)
 
         assert trace.metadata["agent_kind"] == agent_kind
-        ((_, _, _, _, tool_kwargs),) = fake_nemo.named("tool")
+        ((_, _, _, tool_kwargs, _),) = fake_nemo.named("tool_start")
         assert tool_kwargs["metadata"]["agent_kind"] == agent_kind
         assert emitter.llm_call_metadata()["agent_kind"] == agent_kind
 
