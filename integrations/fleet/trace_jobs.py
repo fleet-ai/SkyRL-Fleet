@@ -11,11 +11,13 @@ from __future__ import annotations
 import inspect
 import os
 import re
-from asyncio import Lock
+from asyncio import Lock, gather
+from collections import defaultdict
 from typing import Any, Optional
 
 from loguru import logger
 
+from integrations.fleet.session_bridge import upload_group_session
 from skyrl.train.generators.base import (
     GeneratorInput,
     GeneratorInterface,
@@ -171,14 +173,114 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
         # Keep rotate+generate atomic so overlapping eval/train generate calls
         # cannot move in-flight rollouts into another phase's dashboard job.
         async with self.lock:
-            await self.rotator.rotate(
+            job_id = await self.rotator.rotate(
                 trace_label_for_input(
                     input_batch,
                     force_eval_only=self.force_eval_only,
                     total_training_steps=self.total_training_steps,
                 )
             )
-            return await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
+            groups = self.prepare_group_sessions(input_batch, job_id)
+            output = await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
+            await self.upload_group_sessions(groups, output)
+            return output
+
+    def prepare_group_sessions(self, input_batch: GeneratorInput, job_id: Optional[str]) -> dict[str, dict[str, Any]]:
+        emitter = getattr(self.generator, "atof_emitter", None)
+        if not job_id or emitter is None:
+            return {}
+
+        batch_metadata = input_batch.get("batch_metadata")
+        global_step = batch_metadata.global_step if batch_metadata is not None else None
+        phase = (
+            f"{batch_metadata.training_phase}_step_{batch_metadata.global_step}" if batch_metadata is not None else None
+        )
+        groups: dict[str, dict[str, Any]] = {}
+        for env_class, env_extras in zip(input_batch.get("env_classes") or [], input_batch.get("env_extras") or []):
+            if env_class != "fleet_task":
+                continue
+            task_key = env_extras.get("task_key")
+            if not task_key:
+                continue
+            session_id = emitter.producer_session_id(
+                task_key=task_key,
+                global_step=global_step,
+                phase=phase,
+                job_id=job_id,
+            )
+            env_extras["skyrl_group_session_id"] = session_id
+            env_extras["skyrl_trace_job_id"] = job_id
+            group = groups.setdefault(
+                task_key,
+                {
+                    "session_id": session_id,
+                    "env_key": env_extras.get("env_key"),
+                    "global_step": global_step,
+                    "phase": phase,
+                    "expected_rollouts": 0,
+                },
+            )
+            group["expected_rollouts"] += 1
+        return groups
+
+    async def upload_group_sessions(
+        self,
+        groups: dict[str, dict[str, Any]],
+        output: GeneratorOutput,
+    ) -> None:
+        emitter = getattr(self.generator, "atof_emitter", None)
+        api_key = getattr(self.rotator, "api_key", None)
+        job_id = getattr(self.rotator, "current_job_id", None)
+        model = getattr(self.rotator, "model", None)
+        if not groups or emitter is None or not api_key or not job_id or not model:
+            return
+
+        scores_by_task: dict[str, list[float]] = defaultdict(list)
+        completed_by_task: dict[str, int] = defaultdict(int)
+        env_metrics = output.get("env_metrics") or []
+        is_last_step = output.get("is_last_step")
+        for index, metrics in enumerate(env_metrics):
+            if not isinstance(metrics, dict):
+                continue
+            if is_last_step is not None and not is_last_step[index]:
+                continue
+            task_key = metrics.get("task_key")
+            if task_key not in groups:
+                continue
+            completed_by_task[task_key] += 1
+            score = metrics.get("final_reward")
+            if isinstance(score, (int, float)):
+                scores_by_task[task_key].append(float(score))
+
+        uploads = []
+        for task_key, group in groups.items():
+            if not emitter.has_started_session(session_id=group["session_id"]):
+                continue
+            scores = scores_by_task[task_key]
+            uploads.append(
+                upload_group_session(
+                    api_key=api_key,
+                    session_id=group["session_id"],
+                    job_id=job_id,
+                    task_key=task_key,
+                    model=model,
+                    score=max(scores) if scores else None,
+                    metadata={
+                        "skyrl_session_kind": "group",
+                        "skyrl_expected_rollouts": group["expected_rollouts"],
+                        "skyrl_completed_rollouts": completed_by_task[task_key],
+                        "env_key": group["env_key"],
+                        "phase": group["phase"],
+                        "global_step": group["global_step"],
+                    },
+                )
+            )
+        if not uploads:
+            return
+        try:
+            await gather(*uploads)
+        except Exception as exc:
+            logger.warning(f"SkyRL group session uploads failed; training will continue: {exc}")
 
     def set_total_training_steps(self, total_training_steps: Optional[int]) -> None:
         self.total_training_steps = total_training_steps

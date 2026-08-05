@@ -1786,7 +1786,7 @@ async def test_agent_loop_atof_hooks_emit_sequence(
     output = await generator.agent_loop(
         [{"role": "user", "content": "What is 2 + 2?"}],
         mock_env_cfg.env_class,
-        {"task_key": "task-9"},
+        {"task_key": "task-9", "skyrl_trace_job_id": "job-7"},
         max_tokens=8,
         max_input_length=512,
         trajectory_id=TrajectoryID(instance_id="uid1", repetition_id=3),
@@ -1799,6 +1799,7 @@ async def test_agent_loop_atof_hooks_emit_sequence(
     assert start["global_step"] == 7
     assert start["phase"] == "train_step_7"
     assert start["sample_idx"] == 3
+    assert start["job_id"] == "job-7"
 
     requests = emitter.named("llm_request")
     assert len(requests) == 2

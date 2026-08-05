@@ -495,6 +495,7 @@ class SkyRLGymGenerator(GeneratorInterface):
                 else None
             ),
             sample_idx=trajectory_id.repetition_id if trajectory_id is not None else None,
+            job_id=env_extras.get("skyrl_trace_job_id"),
         )
         pending_atof_messages = chat_history
 

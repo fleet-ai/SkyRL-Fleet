@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from integrations.fleet import trace_jobs
 from integrations.fleet.trace_jobs import (
     FleetTraceJobRotator,
     FleetTraceWrappedGenerator,
@@ -182,6 +183,106 @@ async def test_wrapped_generator_can_force_eval_only_label():
     await wrapped.generate(batch("eval", 5))
 
     assert rotator.labels == ["eval_only"]
+
+
+class BridgeEmitter:
+    def __init__(self):
+        self.started_session_ids = set()
+
+    def producer_session_id(self, *, task_key, global_step, phase, job_id):
+        return f"{job_id}:{task_key}:{phase}:{global_step}"
+
+    def has_started_session(self, *, session_id):
+        return session_id in self.started_session_ids
+
+
+class BridgeGenerator:
+    def __init__(self):
+        self.atof_emitter = BridgeEmitter()
+
+    async def generate(self, input_batch, disable_tqdm: bool = False):
+        self.atof_emitter.started_session_ids.update(
+            env_extras["skyrl_group_session_id"] for env_extras in input_batch["env_extras"]
+        )
+        return {
+            "prompt_token_ids": [[1]] * len(input_batch["env_extras"]),
+            "response_ids": [[2]] * len(input_batch["env_extras"]),
+            "rewards": [1.0, 0.0],
+            "loss_masks": [[1]] * len(input_batch["env_extras"]),
+            "stop_reasons": ["stop"] * len(input_batch["env_extras"]),
+            "rollout_metrics": None,
+            "rollout_logprobs": None,
+            "trajectory_ids": None,
+            "env_metrics": [
+                {"task_key": "task-1", "final_reward": 1.0},
+                {"task_key": "task-1", "final_reward": 0.0},
+            ],
+            "is_last_step": None,
+            "is_hinted": None,
+            "rollout_expert_indices": None,
+        }
+
+
+class BridgeRotator:
+    api_key = "secret"
+    model = "model-1"
+    current_job_id = None
+
+    async def rotate(self, _label):
+        self.current_job_id = "job-1"
+        return self.current_job_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["train", "eval"])
+async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, phase):
+    uploads = []
+
+    async def fake_upload(**kwargs):
+        uploads.append(kwargs)
+        return True
+
+    monkeypatch.setattr(trace_jobs, "upload_group_session", fake_upload)
+    input_batch = {
+        "prompts": [
+            [{"role": "user", "content": "one"}],
+            [{"role": "user", "content": "two"}],
+        ],
+        "env_classes": ["fleet_task", "fleet_task"],
+        "env_extras": [
+            {"task_key": "task-1", "env_key": "env-1"},
+            {"task_key": "task-1", "env_key": "env-1"},
+        ],
+        "sampling_params": None,
+        "trajectory_ids": None,
+        "batch_metadata": BatchMetadata(global_step=7, training_phase=phase),
+    }
+    wrapped = FleetTraceWrappedGenerator(BridgeGenerator(), BridgeRotator())
+
+    await wrapped.generate(input_batch)
+
+    expected_session_id = f"job-1:task-1:{phase}_step_7:7"
+    assert input_batch["env_extras"][0]["skyrl_group_session_id"] == expected_session_id
+    assert input_batch["env_extras"][1]["skyrl_group_session_id"] == expected_session_id
+    assert input_batch["env_extras"][0]["skyrl_trace_job_id"] == "job-1"
+    assert uploads == [
+        {
+            "api_key": "secret",
+            "session_id": expected_session_id,
+            "job_id": "job-1",
+            "task_key": "task-1",
+            "model": "model-1",
+            "score": 1.0,
+            "metadata": {
+                "skyrl_session_kind": "group",
+                "skyrl_expected_rollouts": 2,
+                "skyrl_completed_rollouts": 2,
+                "env_key": "env-1",
+                "phase": f"{phase}_step_7",
+                "global_step": 7,
+            },
+        }
+    ]
 
 
 class BlockingGenerator:
