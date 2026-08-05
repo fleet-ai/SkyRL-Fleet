@@ -64,7 +64,6 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from integrations.fleet.atof_events import drain_atof, init_atof
-from integrations.fleet.session_bridge import upload_group_session
 
 # Import shared metrics module for consistent metric calculation with SkyRL trainer
 from integrations.fleet.reward_metrics import (
@@ -75,6 +74,7 @@ from integrations.fleet.reward_metrics import (
     compute_reward_metrics,
     sanitize_metric_key,
 )
+from integrations.fleet.session_bridge import upload_group_session
 
 # Import SkyRL's overlong filtering for parity
 from skyrl.train.generators.utils import (

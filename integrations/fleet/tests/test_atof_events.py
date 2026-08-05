@@ -300,9 +300,7 @@ class TestEmit:
         emitter.env_step(trace, action="act", observations=[], reward=0.0, done=False)
         emitter.rollout_end(trace, reward=0.0, stop_reason="done", num_turns=1)
 
-        ordered_calls = [
-            call[0] for call in fake_nemo.calls if call[0] in {"tool_start", "tool_end", "event", "pop"}
-        ]
+        ordered_calls = [call[0] for call in fake_nemo.calls if call[0] in {"tool_start", "tool_end", "event", "pop"}]
         assert ordered_calls == ["tool_start", "tool_end", "event", "pop"]
 
     def test_known_agent_kind_is_used_for_rollout_and_standalone_calls(self, fake_nemo):

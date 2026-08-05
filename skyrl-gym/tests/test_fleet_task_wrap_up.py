@@ -368,9 +368,7 @@ class TestForceDoneAtMaxTurns:
 
         env = _make_env(max_turns=1)
         env.extras["skyrl_group_session_id"] = "11111111-1111-5111-8111-111111111111"
-        env.openenv_task_env.step_async = AsyncMock(
-            return_value=({"observation": "ok"}, 1.0, True, {})
-        )
+        env.openenv_task_env.step_async = AsyncMock(return_value=({"observation": "ok"}, 1.0, True, {}))
 
         await env.step_async("Done. <done>")
 
