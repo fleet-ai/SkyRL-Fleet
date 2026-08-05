@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import types
+import uuid
 
 import pytest
 
@@ -17,6 +18,7 @@ from integrations.fleet.atof_events import (
     AtofEmitter,
     drain_atof,
     init_atof,
+    producer_session_id,
 )
 
 
@@ -211,6 +213,7 @@ class TestEmit:
         assert scope_type == "agent"
         metadata = kwargs["metadata"]
         assert metadata["producer_session_id"] != "run-1"
+        assert str(uuid.UUID(metadata["producer_session_id"])) == metadata["producer_session_id"]
         assert metadata["run_name"] == "run-1"
         assert metadata["global_step"] == 7
         assert metadata["phase"] == "train_step_7"
@@ -219,6 +222,23 @@ class TestEmit:
         assert metadata["agent_kind"] == "Qwen/Qwen3.5-9B"
         assert len(metadata["trace_id"]) == 32
         assert trace.metadata is metadata
+
+    def test_producer_session_id_is_stable_and_uses_uuid_text(self):
+        values = {
+            "run_name": "run-1",
+            "entrypoint": "main_fleet",
+            "task_key": "task-9",
+            "global_step": 7,
+            "phase": "train_step_7",
+            "job_id": "job-1",
+        }
+
+        session_id = producer_session_id(**values)
+
+        assert producer_session_id(**values) == session_id
+        assert str(uuid.UUID(session_id)) == session_id
+        assert "-" in session_id
+        assert producer_session_id(**{**values, "job_id": "job-2"}) != session_id
 
     def test_rollouts_group_samples_by_task_session(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
@@ -282,10 +302,8 @@ class TestEmit:
         emitter.env_step(trace, action="act", observations=[], reward=0.0, done=False)
         emitter.rollout_end(trace, reward=0.0, stop_reason="done", num_turns=1)
 
-        ordered_calls = [
-            call[0] for call in fake_nemo.calls if call[0] in {"tool_start", "tool_end", "event", "pop"}
-        ]
-        assert ordered_calls == ["tool_start", "tool_end", "event", "pop"]
+        ordered_calls = [call[0] for call in fake_nemo.calls if call[0] in {"tool_start", "tool_end", "event", "pop"}]
+        assert ordered_calls == ["tool_start", "tool_end", "event", "event", "pop"]
 
     def test_known_agent_kind_is_used_for_rollout_and_standalone_calls(self, fake_nemo):
         agent_kind = "skyrl_agent.agents.react.ReActAgent"
@@ -314,11 +332,20 @@ class TestEmit:
         emitter = make_emitter(fake_nemo)
         trace = emitter.rollout_start(task_key="t", env_class="fleet_task", global_step=1, phase="p", sample_idx=0)
         emitter.rollout_end(trace, reward=1.0, stop_reason="stop", num_turns=3)
-        ((_, name, kwargs),) = fake_nemo.named("event")
-        assert name == "rollout_end"
-        assert kwargs["data"]["reward"] == 1.0
-        assert kwargs["data"]["num_turns"] == 3
-        assert kwargs["data"]["counters"] == {"truncated": 0, "image_upload_failures": 0, "emit_errors": 0}
+        rollout_end, session_completed = fake_nemo.named("event")
+        assert rollout_end[1] == "rollout_end"
+        assert rollout_end[2]["data"]["reward"] == 1.0
+        assert rollout_end[2]["data"]["num_turns"] == 3
+        assert rollout_end[2]["data"]["counters"] == {
+            "truncated": 0,
+            "image_upload_failures": 0,
+            "emit_errors": 0,
+        }
+        assert session_completed[1] == "session.completed"
+        assert session_completed[2]["handle"] == trace.handle
+        assert session_completed[2]["metadata"] is trace.metadata
+        assert session_completed[2]["data"]["status"] == "completed"
+        assert session_completed[2]["data"]["metadata"] == {"verifier_score": 1.0}
         ((_, handle, pop_kwargs),) = fake_nemo.named("pop")
         assert handle == "handle-1"
         assert pop_kwargs["output"] == {"reward": 1.0}

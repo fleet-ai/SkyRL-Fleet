@@ -28,6 +28,7 @@ Mocks OpenEnv's FleetTaskEnv so step_async is testable without a live env.
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -342,6 +343,41 @@ class TestForceDoneAtMaxTurns:
         call = env.openenv_task_env.step_async.call_args
         # Agent done WITHOUT a tool call → openenv sees just {"done": True}
         assert call.args[0].get("done") is True
+
+    @pytest.mark.asyncio
+    async def test_legacy_upload_links_to_group_session(self, monkeypatch):
+        uploads = []
+        trace_module = types.ModuleType("envs.fleet_env.trace")
+
+        async def upload_trace(**kwargs):
+            uploads.append(kwargs)
+
+        trace_module.upload_trace = upload_trace
+        fleet_env_module = types.ModuleType("envs.fleet_env")
+        fleet_env_module.trace = trace_module
+        envs_module = types.ModuleType("envs")
+        envs_module.fleet_env = fleet_env_module
+        monkeypatch.setitem(sys.modules, "envs", envs_module)
+        monkeypatch.setitem(sys.modules, "envs.fleet_env", fleet_env_module)
+        monkeypatch.setitem(sys.modules, "envs.fleet_env.trace", trace_module)
+        monkeypatch.setattr(
+            FleetTaskEnv,
+            "_trace_config",
+            {"job_id": "job-1", "model": "model-1"},
+        )
+
+        env = _make_env(max_turns=1)
+        env.extras["skyrl_group_session_id"] = "11111111-1111-5111-8111-111111111111"
+        env.openenv_task_env.step_async = AsyncMock(return_value=({"observation": "ok"}, 1.0, True, {}))
+
+        await env.step_async("Done. <done>")
+
+        assert uploads[0]["metadata"] == {
+            "env_key": "data-eng",
+            "turns": 1,
+            "skyrl_session_kind": "legacy_rollout",
+            "skyrl_group_session_id": "11111111-1111-5111-8111-111111111111",
+        }
 
 
 # --------------------------------------------------------------------------- #

@@ -989,6 +989,18 @@ class FleetTaskEnv(BaseTextEnv):
                     if fleet_env:
                         inst_id = getattr(fleet_env, "instance_id", None)
                 exec_id = getattr(self.openenv_task_env, "_last_verifier_execution_id", None)
+                trace_metadata = {
+                    "env_key": self.task_config.get("env_key"),
+                    "turns": self.turns,
+                }
+                group_session_id = self.extras.get("skyrl_group_session_id")
+                if group_session_id:
+                    trace_metadata.update(
+                        {
+                            "skyrl_session_kind": "legacy_rollout",
+                            "skyrl_group_session_id": group_session_id,
+                        }
+                    )
                 logger.info(
                     f"[{self.task_key}] upload_trace exec_id={exec_id} reward={reward} agent_done={agent_done} max_turns_reached={max_turns_reached}"
                 )
@@ -1004,10 +1016,7 @@ class FleetTaskEnv(BaseTextEnv):
                     chat_history=self.chat_history_for_trace(),
                     reward=reward,
                     instance_id=inst_id,
-                    metadata={
-                        "env_key": self.task_config.get("env_key"),
-                        "turns": self.turns,
-                    },
+                    metadata=trace_metadata,
                     verifier_execution_id=exec_id,
                 )
             except Exception as e:

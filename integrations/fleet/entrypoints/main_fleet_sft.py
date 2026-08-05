@@ -34,12 +34,11 @@ import random
 import time
 from typing import Any, Dict, List, Optional
 
-import torch
-from transformers import AutoTokenizer
-
 import tinker
+import torch
 from tinker import types
 from tinker.types.tensor_data import TensorData
+from transformers import AutoTokenizer
 
 from integrations.fleet.entrypoints.main_fleet_tinker import discover_trainer_seqlen_cap
 
@@ -90,7 +89,7 @@ def build_turn_datums(
         turn_text = render(messages[: i + 1], False)
         if not turn_text.startswith(prompt_text):
             continue
-        completion_text = turn_text[len(prompt_text):]
+        completion_text = turn_text[len(prompt_text) :]
         prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
         completion_ids = tokenizer(completion_text, add_special_tokens=False)["input_ids"]
         tokens = list(prompt_ids) + list(completion_ids)
@@ -126,8 +125,7 @@ def prepare_datums(
     """Tokenize every record into per-turn datums; return (datums, stats)."""
     rng = random.Random(seed)
     datums: List[types.Datum] = []
-    stats = {"trajectories": 0, "trajectories_empty": 0, "turn_datums": 0,
-             "tokens_total": 0, "loss_tokens_total": 0}
+    stats = {"trajectories": 0, "trajectories_empty": 0, "turn_datums": 0, "tokens_total": 0, "loss_tokens_total": 0}
     for rec in records:
         ds = build_turn_datums(tokenizer, rec["messages"], tools, max_sequence_length, rng, max_turns_per_traj)
         if not ds:
@@ -275,7 +273,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--load-state", default=None, help="tinker:// state to SFT on top of (default: fresh LoRA)")
     p.add_argument("--save-state-every", type=int, default=20)
     p.add_argument("--seed", type=int, default=7)
-    p.add_argument("--max-turns-per-traj", type=int, default=6, help="assistant turns sampled per trajectory (0 = all; final turn always kept)")
+    p.add_argument(
+        "--max-turns-per-traj",
+        type=int,
+        default=6,
+        help="assistant turns sampled per trajectory (0 = all; final turn always kept)",
+    )
     p.add_argument("--wandb-project", default="fleet-tinker-grpo")
     p.add_argument("--wandb-name", default="fleet-sft")
     p.add_argument("--results-out", default=None)

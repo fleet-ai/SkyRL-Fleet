@@ -134,12 +134,20 @@ class FakeTrace:
 class RecordingEmitter:
     def __init__(self):
         self.calls = []
+        self.producer_session_id_calls = []
         self.requests = []
         self.trace = FakeTrace()
 
     def rollout_start(self, **kwargs):
         self.calls.append(("rollout_start", kwargs))
         return self.trace
+
+    def producer_session_id(self, **kwargs):
+        self.producer_session_id_calls.append(kwargs)
+        return "11111111-1111-5111-8111-111111111111"
+
+    def has_started_session(self, **_kwargs):
+        return True
 
     def llm_request(self, trace, *, new_messages):
         request = {"messages": new_messages}
@@ -214,6 +222,7 @@ def test_provider_calls_are_orchestrated_with_rollout_metadata(monkeypatch):
         "global_step": 7,
         "phase": "train_step_7",
         "sample_idx": 3,
+        "job_id": None,
     }
 
     assert [call["request"]["messages"] for call in orchestrated_calls] == [
@@ -256,6 +265,23 @@ def test_raising_emitter_never_breaks_the_rollout(monkeypatch):
     assert rollout.reward == 1.0
     assert rollout.turns == 2
     assert rollout.stop_reason == "stop"
+
+
+def test_rollout_scopes_session_to_trace_job(monkeypatch):
+    monkeypatch.setattr(FakeEnv, "_trace_config", {"job_id": "job-1"}, raising=False)
+    emitter = RecordingEmitter()
+
+    run_rollout(monkeypatch, atof_emitter=emitter, global_step=7, phase="train_step_7", sample_idx=3)
+
+    assert emitter.producer_session_id_calls == [
+        {
+            "task_key": "fira/t1",
+            "global_step": 7,
+            "phase": "train_step_7",
+            "job_id": "job-1",
+        }
+    ]
+    assert emitter.calls[0][1]["job_id"] == "job-1"
 
 
 # --------------------------------------------------------------------------- #
@@ -304,6 +330,72 @@ def test_batch_forwards_emitter_metadata_and_sample_idx(monkeypatch):
         assert kwargs["atof_emitter"] is emitter
         assert kwargs["global_step"] == 7
         assert kwargs["phase"] == "eval_step_7"
+
+
+def test_batch_uploads_one_group_session_per_task(monkeypatch):
+    async def fake_collect(**kwargs):
+        return mft.RolloutOutput(
+            prompt_ids=[],
+            response_ids=[1],
+            logprobs=[],
+            loss_mask=[],
+            reward=float(kwargs["sample_idx"]),
+            task_key=kwargs["task_config"]["task_key"],
+            env_key="fira",
+            turns=1,
+            tool_calls=0,
+            tool_errors=0,
+            stop_reason="stop",
+            duration=0.0,
+        )
+
+    uploads = []
+
+    async def fake_upload(**kwargs):
+        uploads.append(kwargs)
+        return True
+
+    monkeypatch.setattr(mft, "collect_fleet_rollout", fake_collect)
+    monkeypatch.setattr(mft, "upload_group_session", fake_upload)
+    monkeypatch.setattr(
+        mft.FleetTaskEnv,
+        "_trace_config",
+        {"job_id": "job-1", "model": "model-1"},
+    )
+    monkeypatch.setenv("FLEET_API_KEY", "secret")
+
+    emitter = RecordingEmitter()
+    asyncio.run(
+        mft.collect_batch_rollouts(
+            batch=[{"task_key": "fira/t1", "env_key": "fira"}],
+            tasks_file="tasks.json",
+            sampling_client=None,
+            tokenizer=None,
+            n_samples_per_prompt=2,
+            atof_emitter=emitter,
+            global_step=7,
+            phase="eval_step_7",
+        )
+    )
+
+    assert len(uploads) == 1
+    assert emitter.producer_session_id_calls == [
+        {
+            "task_key": "fira/t1",
+            "global_step": 7,
+            "phase": "eval_step_7",
+            "job_id": "job-1",
+        }
+    ]
+    assert uploads[0]["score"] == 1.0
+    assert uploads[0]["metadata"] == {
+        "skyrl_session_kind": "group",
+        "skyrl_expected_rollouts": 2,
+        "skyrl_completed_rollouts": 2,
+        "env_key": "fira",
+        "phase": "eval_step_7",
+        "global_step": 7,
+    }
 
 
 # --------------------------------------------------------------------------- #

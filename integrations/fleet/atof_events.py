@@ -23,6 +23,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -47,6 +48,26 @@ MAX_PAYLOAD_BYTES = 19_000_000
 ATOF_INIT_TIMEOUT_S = 10.0
 
 _nemo_module: Any = None
+
+
+def producer_session_id(
+    *,
+    run_name: str,
+    entrypoint: str,
+    task_key: str,
+    global_step: Optional[int],
+    phase: Optional[str],
+    job_id: Optional[str] = None,
+) -> str:
+    parts = (
+        run_name,
+        entrypoint,
+        str(task_key or ""),
+        str(phase or ""),
+        "" if global_step is None else str(global_step),
+    )
+    session_key = "\x1f".join(((job_id,) if job_id else ()) + parts)
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, session_key))
 
 
 def init_atof(
@@ -181,8 +202,29 @@ class AtofEmitter:
         self._image_bucket = os.environ.get("SKYRL_ATOF_IMAGE_BUCKET", DEFAULT_IMAGE_BUCKET)
         self._image_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="atof-image")
         self._uploaded_shas: set = set()
+        self._started_session_ids: set[str] = set()
         self._s3 = None
         self._warned: set = set()
+
+    def producer_session_id(
+        self,
+        *,
+        task_key: str,
+        global_step: Optional[int],
+        phase: Optional[str],
+        job_id: Optional[str] = None,
+    ) -> str:
+        return producer_session_id(
+            run_name=self._run_name,
+            entrypoint=self._entrypoint,
+            task_key=task_key,
+            global_step=global_step,
+            phase=phase,
+            job_id=job_id,
+        )
+
+    def has_started_session(self, *, session_id: str) -> bool:
+        return session_id in self._started_session_ids
 
     def rollout_start(
         self,
@@ -192,20 +234,18 @@ class AtofEmitter:
         global_step: Optional[int],
         phase: Optional[str],
         sample_idx: Optional[int],
+        job_id: Optional[str] = None,
     ) -> Optional[RolloutTrace]:
         try:
-            session_key = "\x1f".join(
-                (
-                    self._run_name,
-                    self._entrypoint,
-                    str(task_key or ""),
-                    str(phase or ""),
-                    "" if global_step is None else str(global_step),
-                )
+            session_id = self.producer_session_id(
+                task_key=task_key,
+                global_step=global_step,
+                phase=phase,
+                job_id=job_id,
             )
             metadata = _drop_none(
                 {
-                    "producer_session_id": uuid.uuid5(uuid.NAMESPACE_URL, session_key).hex,
+                    "producer_session_id": session_id,
                     "trace_id": uuid.uuid4().hex,
                     "run_name": self._run_name,
                     "entrypoint": self._entrypoint,
@@ -219,6 +259,7 @@ class AtofEmitter:
                 }
             )
             handle = self._nemo.scope.push(f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata)
+            self._started_session_ids.add(session_id)
             return RolloutTrace(handle=handle, metadata=metadata)
         except Exception as exc:
             self._warn_once("rollout_start", exc)
@@ -294,6 +335,16 @@ class AtofEmitter:
                 }
             )
             self._nemo.scope.event("rollout_end", handle=trace.handle, data=data, metadata=trace.metadata)
+            self._nemo.scope.event(
+                "session.completed",
+                handle=trace.handle,
+                data={
+                    "status": "completed",
+                    "ended_at": datetime.now(timezone.utc).isoformat(),
+                    "metadata": {"verifier_score": reward},
+                },
+                metadata=trace.metadata,
+            )
             self._nemo.scope.pop(trace.handle, output={"reward": reward})
         except Exception as exc:
             self._warn_once("rollout_end", exc)
