@@ -174,6 +174,7 @@ class AgentRolloutWrapper:
         vllm_base_url: str = "http://localhost:8000/v1",
         max_levels: int = 5,
         mode: str = "standalone",  # "standalone" | "bridged"
+        trace_dir: Optional[str] = None,  # persist this rollout's trace here (default: ephemeral, discarded)
     ):
         if mode not in ("standalone", "bridged"):
             raise ValueError(f"mode must be 'standalone' or 'bridged', got {mode!r}")
@@ -215,8 +216,22 @@ class AgentRolloutWrapper:
         self._memory_cleanup = cleanup
         self.memory_dir = memory_dir
 
-        # Trace collector for ORAI / step record.
-        self.trace = TraceCollector(output_dir=memory_dir, game_id=game_id)
+        # Trace collector for ORAI / step record. A collector has ALWAYS been wired
+        # into every RL rollout — but it writes into the ephemeral memory_dir, which
+        # is auto-cleaned at process exit, so traces were collected and then thrown
+        # away. `trace_dir` redirects the OUTPUT PATH only (arc_visualizer-compatible
+        # leaf dir) — zero behavioral change either way: the collector is a pure
+        # observer (reward/metadata paths read its IN-MEMORY lists, never the files),
+        # and files are only written by AgentCore.run's single end-of-run flush.
+        trace_out = memory_dir
+        if trace_dir:
+            try:
+                os.makedirs(trace_dir, exist_ok=True)
+                trace_out = trace_dir
+            except OSError as e:  # disk trouble must never take down a training rollout
+                print(f"[agent_wrapper] trace_dir {trace_dir!r} not writable ({e}); "
+                      f"trace stays ephemeral", flush=True)
+        self.trace = TraceCollector(output_dir=trace_out, game_id=game_id)
 
         # Construct agent. base_dir points to the agent repo so prompt files
         # (core_knowledge.txt etc.) resolve correctly.

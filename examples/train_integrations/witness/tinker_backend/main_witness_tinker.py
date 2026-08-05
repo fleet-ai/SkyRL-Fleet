@@ -199,7 +199,7 @@ async def collect_witness_rollout(
     max_levels: int = 5, max_generate_length: int = 2048, max_input_length: int = 16384,
     temperature: float = 1.0, top_p: float = 1.0, stop_sequences: List[str] = None,
     max_orai_steps: int = 30, inject_mode: str = "off", inject_p: float = 0.0,
-    frontier=None, start_snapshot=None,
+    frontier=None, start_snapshot=None, trace_dir: Optional[str] = None,
 ) -> WitnessTrajectory:
     """Drive the witness ORAI bridge; sample each call via tinker. Per-call records.
 
@@ -208,7 +208,8 @@ async def collect_witness_rollout(
     for future seeding. Both default off → identical to the plain T1 path."""
     t0 = time.time()
     wrapper = AgentRolloutWrapper(game_id=game_id, seed=seed, agent_config=agent_config,
-                                  vllm_base_url="http://unused-bridged", max_levels=max_levels, mode="bridged")
+                                  vllm_base_url="http://unused-bridged", max_levels=max_levels, mode="bridged",
+                                  trace_dir=trace_dir)
     # T1 curriculum injection (training-only; tainted 'oracle_injected')
     if inject_mode != "off" and inject_p > 0 and random.random() < inject_p:
         from agent.oversight import inject_rules
@@ -292,17 +293,21 @@ async def collect_witness_rollout(
 
 async def collect_batch(game_ids, agent_config, sampling_client, tokenizer, n_samples_per_prompt,
                         seed_base, max_concurrent=8, inject_mode="off", inject_p=0.0,
-                        frontier=None, seed_frac=0.0, **kw) -> List[WitnessTrajectory]:
+                        frontier=None, seed_frac=0.0, trace_root=None, trace_tag="", **kw) -> List[WitnessTrajectory]:
     sem = asyncio.Semaphore(max_concurrent)
     seeded_k = round(seed_frac * n_samples_per_prompt)   # Go-Explore: # of N rollouts that start from a frontier snapshot
 
     async def one(game_id, idx, start_snap):
         async with sem:
+            # trace persistence (opt-in, --rollout-trace-dir): arc_visualizer-compatible leaf
+            # per rollout; None (default) keeps today's behavior (ephemeral trace, discarded).
+            leaf = os.path.join(trace_root, trace_tag, game_id, f"seed{seed_base + idx}") \
+                if trace_root else None
             t = await collect_witness_rollout(
                 game_id=game_id, seed=seed_base + idx, agent_config=agent_config,
                 sampling_client=sampling_client, tokenizer=tokenizer,
                 inject_mode=inject_mode, inject_p=inject_p,
-                frontier=frontier, start_snapshot=start_snap, **kw)
+                frontier=frontier, start_snapshot=start_snap, trace_dir=leaf, **kw)
             print(f"  [rollout {game_id} #{idx}{'*GE' if start_snap is not None else ''}] calls={len(t.calls)} "
                   f"reward={t.reward:.3f} stop={t.stop_reason} dur={t.duration:.0f}s gen={t.total_gen_time:.0f}s "
                   f"agent={(t.duration - t.total_gen_time):.0f}s" + (f" ERR={t.error}" if t.error else ""), flush=True)
@@ -473,8 +478,9 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
                temperature, top_p, stop_sequences, loss_fn, inject_mode, agent_config_path,
                max_orai_steps, seed_mode="off", seed_frac=0.0, max_concurrent=8, save_every=5,
                eval_groups="", wandb_run_id="", start_step=0, eval_n_samples=5, eval_seed_base=7_000_000,
-               eval_greedy=True, eval_max_orai_steps=250):
+               eval_greedy=True, eval_max_orai_steps=250, rollout_trace_dir=""):
     set_seed(seed)
+    trace_root = rollout_trace_dir or None   # "" (default) -> traces stay ephemeral (pre-hook behavior)
     games = [g.strip() for g in game_ids.split(",") if g.strip()]
     vals = [g.strip() for g in val_game_ids.split(",") if g.strip()]
     # named held-out subgroups → respective eval aggregates, e.g. "composites=tw08,tw11;variants=tw09,tw10"
@@ -528,6 +534,7 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
 
         trajs = await collect_batch(games, agent_config, sampling_client, tokenizer,
                                     n_samples_per_prompt, seed_base=1000 * (step + 1),
+                                    trace_root=trace_root, trace_tag=f"train_s{step:03d}",
                                     max_concurrent=max_concurrent,
                                     inject_mode=inject_mode, inject_p=inject_p,
                                     frontier=frontier, seed_frac=seed_frac, **common)
@@ -594,6 +601,7 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
         eval_str = ""
         if eval_every > 0 and vals and step % eval_every == 0:
             ev = await collect_batch(vals, agent_config, sampling_client, tokenizer, eval_n_samples,
+                                     trace_root=trace_root, trace_tag=f"eval_s{step:03d}",
                                      seed_base=eval_seed_base, max_concurrent=max_concurrent,
                                      inject_mode="off", inject_p=0.0, **{**common, "max_orai_steps": eval_max_orai_steps})
             ev = [t for t in ev if t.calls and not t.error]
@@ -605,6 +613,7 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
             # tracking signal — complements the noisy 5-seed sampled mean/Bo5. Logged under eval/greedy/*.
             if eval_greedy:
                 evg = await collect_batch(vals, agent_config, sampling_client, tokenizer, 1,
+                                          trace_root=trace_root, trace_tag=f"eval_s{step:03d}_greedy",
                                           seed_base=eval_seed_base, max_concurrent=max_concurrent,
                                           inject_mode="off", inject_p=0.0, **{**common, "temperature": 0.0, "max_orai_steps": eval_max_orai_steps})
                 evg = [t for t in evg if t.calls and not t.error]
@@ -627,6 +636,7 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
         final_path = training_client.save_weights_for_sampler(name=f"step_{final_step:06d}").result().path
         final_sampling = service_client.create_sampling_client(model_path=final_path)
         ev = await collect_batch(vals, agent_config, final_sampling, tokenizer, eval_n_samples,
+                                 trace_root=trace_root, trace_tag=f"eval_s{final_step:03d}_final",
                                  seed_base=eval_seed_base, max_concurrent=max_concurrent,
                                  inject_mode="off", inject_p=0.0, **{**common, "max_orai_steps": eval_max_orai_steps})
         ev = [t for t in ev if t.calls and not t.error]
@@ -635,6 +645,7 @@ async def main(model_name, game_ids, val_game_ids, load_checkpoint_path, batch_s
             evg = []
             if eval_greedy:      # greedy (temp 0, 1 rollout/game) → eval/greedy/* in the dumped JSON too
                 evg = await collect_batch(vals, agent_config, final_sampling, tokenizer, 1,
+                                          trace_root=trace_root, trace_tag=f"eval_s{final_step:03d}_final_greedy",
                                           seed_base=eval_seed_base, max_concurrent=max_concurrent,
                                           inject_mode="off", inject_p=0.0, **{**common, "temperature": 0.0, "max_orai_steps": eval_max_orai_steps})
                 evg = [t for t in evg if t.calls and not t.error]
@@ -696,6 +707,11 @@ if __name__ == "__main__":
                    help="ORAI-call cap for EVAL rollouts (in-loop, final, greedy) — decoupled from the "
                         "training rollout cap (--max-orai-steps, recipe 150). 250 = the unified eval "
                         "budget, matched by evaluate.py --max-orai-calls for API models (2026-07-02).")
+    p.add_argument("--rollout-trace-dir", default="",
+                   help="persist EVERY rollout's TraceCollector output under this dir "
+                        "(<dir>/<tag>/<game>/seed<seed>/; tags train_sNNN / eval_sNNN[_greedy] / "
+                        "eval_sNNN_final[_greedy]) for arc_visualizer replay. Default '' = traces stay "
+                        "in the ephemeral per-rollout memory dir and are discarded (pre-hook behavior).")
     p.add_argument("--eval-greedy", type=int, default=1,
                    help="also run a greedy (temperature 0) 1-rollout/game eval each cadence + final, logged "
                         "under eval/greedy/* — a near-deterministic low-variance tracking signal alongside "
@@ -736,4 +752,4 @@ if __name__ == "__main__":
         save_every=a.save_every, eval_groups=a.eval_groups,
         wandb_run_id=a.wandb_run_id, start_step=a.start_step, eval_n_samples=a.eval_n_samples,
         eval_seed_base=a.eval_seed_base, eval_greedy=bool(a.eval_greedy),
-        eval_max_orai_steps=a.eval_max_orai_steps))
+        eval_max_orai_steps=a.eval_max_orai_steps, rollout_trace_dir=a.rollout_trace_dir))
