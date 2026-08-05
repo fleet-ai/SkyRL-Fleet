@@ -230,6 +230,7 @@ class TestEmit:
             "task_key": "task-9",
             "global_step": 7,
             "phase": "train_step_7",
+            "job_id": "job-1",
         }
 
         session_id = producer_session_id(**values)
@@ -237,6 +238,7 @@ class TestEmit:
         assert producer_session_id(**values) == session_id
         assert str(uuid.UUID(session_id)) == session_id
         assert "-" in session_id
+        assert producer_session_id(**{**values, "job_id": "job-2"}) != session_id
 
     def test_rollouts_group_samples_by_task_session(self, fake_nemo):
         emitter = make_emitter(fake_nemo)

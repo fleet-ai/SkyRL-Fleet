@@ -969,12 +969,14 @@ async def collect_fleet_rollout(
         "model_family": model_family,
         "screenshot_max_dim": screenshot_max_dim,
     }
+    trace_job_id = (getattr(FleetTaskEnv, "_trace_config", None) or {}).get("job_id")
     group_session_id = _atof_emit(
         atof_emitter,
         "producer_session_id",
         task_key=task_key,
         global_step=global_step,
         phase=phase,
+        job_id=trace_job_id,
     )
     if group_session_id:
         extras["skyrl_group_session_id"] = group_session_id
@@ -1000,6 +1002,7 @@ async def collect_fleet_rollout(
             global_step=global_step,
             phase=phase,
             sample_idx=sample_idx,
+            job_id=trace_job_id,
         )
         pending_atof_messages = chat_history
 
@@ -1449,6 +1452,7 @@ async def collect_batch_rollouts(
                 task_key=task_key,
                 global_step=global_step,
                 phase=phase,
+                job_id=trace_config["job_id"],
             )
             if not group_session_id or not _atof_emit(
                 atof_emitter,

@@ -56,16 +56,16 @@ def producer_session_id(
     task_key: str,
     global_step: Optional[int],
     phase: Optional[str],
+    job_id: Optional[str] = None,
 ) -> str:
-    session_key = "\x1f".join(
-        (
-            run_name,
-            entrypoint,
-            str(task_key or ""),
-            str(phase or ""),
-            "" if global_step is None else str(global_step),
-        )
+    parts = (
+        run_name,
+        entrypoint,
+        str(task_key or ""),
+        str(phase or ""),
+        "" if global_step is None else str(global_step),
     )
+    session_key = "\x1f".join(((job_id,) if job_id else ()) + parts)
     return str(uuid.uuid5(uuid.NAMESPACE_URL, session_key))
 
 
@@ -211,6 +211,7 @@ class AtofEmitter:
         task_key: str,
         global_step: Optional[int],
         phase: Optional[str],
+        job_id: Optional[str] = None,
     ) -> str:
         return producer_session_id(
             run_name=self._run_name,
@@ -218,6 +219,7 @@ class AtofEmitter:
             task_key=task_key,
             global_step=global_step,
             phase=phase,
+            job_id=job_id,
         )
 
     def has_started_session(self, *, session_id: str) -> bool:
@@ -231,12 +233,14 @@ class AtofEmitter:
         global_step: Optional[int],
         phase: Optional[str],
         sample_idx: Optional[int],
+        job_id: Optional[str] = None,
     ) -> Optional[RolloutTrace]:
         try:
             session_id = self.producer_session_id(
                 task_key=task_key,
                 global_step=global_step,
                 phase=phase,
+                job_id=job_id,
             )
             metadata = _drop_none(
                 {

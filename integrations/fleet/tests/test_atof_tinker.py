@@ -134,6 +134,7 @@ class FakeTrace:
 class RecordingEmitter:
     def __init__(self):
         self.calls = []
+        self.producer_session_id_calls = []
         self.requests = []
         self.trace = FakeTrace()
 
@@ -141,7 +142,8 @@ class RecordingEmitter:
         self.calls.append(("rollout_start", kwargs))
         return self.trace
 
-    def producer_session_id(self, **_kwargs):
+    def producer_session_id(self, **kwargs):
+        self.producer_session_id_calls.append(kwargs)
         return "11111111-1111-5111-8111-111111111111"
 
     def has_started_session(self, **_kwargs):
@@ -220,6 +222,7 @@ def test_provider_calls_are_orchestrated_with_rollout_metadata(monkeypatch):
         "global_step": 7,
         "phase": "train_step_7",
         "sample_idx": 3,
+        "job_id": None,
     }
 
     assert [call["request"]["messages"] for call in orchestrated_calls] == [
@@ -262,6 +265,23 @@ def test_raising_emitter_never_breaks_the_rollout(monkeypatch):
     assert rollout.reward == 1.0
     assert rollout.turns == 2
     assert rollout.stop_reason == "stop"
+
+
+def test_rollout_scopes_session_to_trace_job(monkeypatch):
+    monkeypatch.setattr(FakeEnv, "_trace_config", {"job_id": "job-1"}, raising=False)
+    emitter = RecordingEmitter()
+
+    run_rollout(monkeypatch, atof_emitter=emitter, global_step=7, phase="train_step_7", sample_idx=3)
+
+    assert emitter.producer_session_id_calls == [
+        {
+            "task_key": "fira/t1",
+            "global_step": 7,
+            "phase": "train_step_7",
+            "job_id": "job-1",
+        }
+    ]
+    assert emitter.calls[0][1]["job_id"] == "job-1"
 
 
 # --------------------------------------------------------------------------- #
@@ -344,6 +364,7 @@ def test_batch_uploads_one_group_session_per_task(monkeypatch):
     )
     monkeypatch.setenv("FLEET_API_KEY", "secret")
 
+    emitter = RecordingEmitter()
     asyncio.run(
         mft.collect_batch_rollouts(
             batch=[{"task_key": "fira/t1", "env_key": "fira"}],
@@ -351,13 +372,21 @@ def test_batch_uploads_one_group_session_per_task(monkeypatch):
             sampling_client=None,
             tokenizer=None,
             n_samples_per_prompt=2,
-            atof_emitter=RecordingEmitter(),
+            atof_emitter=emitter,
             global_step=7,
             phase="eval_step_7",
         )
     )
 
     assert len(uploads) == 1
+    assert emitter.producer_session_id_calls == [
+        {
+            "task_key": "fira/t1",
+            "global_step": 7,
+            "phase": "eval_step_7",
+            "job_id": "job-1",
+        }
+    ]
     assert uploads[0]["score"] == 1.0
     assert uploads[0]["metadata"] == {
         "skyrl_session_kind": "group",
