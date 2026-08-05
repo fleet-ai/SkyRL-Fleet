@@ -49,6 +49,26 @@ ATOF_INIT_TIMEOUT_S = 10.0
 _nemo_module: Any = None
 
 
+def producer_session_id(
+    *,
+    run_name: str,
+    entrypoint: str,
+    task_key: str,
+    global_step: Optional[int],
+    phase: Optional[str],
+) -> str:
+    session_key = "\x1f".join(
+        (
+            run_name,
+            entrypoint,
+            str(task_key or ""),
+            str(phase or ""),
+            "" if global_step is None else str(global_step),
+        )
+    )
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, session_key))
+
+
 def init_atof(
     *,
     entrypoint: str,
@@ -181,8 +201,27 @@ class AtofEmitter:
         self._image_bucket = os.environ.get("SKYRL_ATOF_IMAGE_BUCKET", DEFAULT_IMAGE_BUCKET)
         self._image_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="atof-image")
         self._uploaded_shas: set = set()
+        self._started_session_ids: set[str] = set()
         self._s3 = None
         self._warned: set = set()
+
+    def producer_session_id(
+        self,
+        *,
+        task_key: str,
+        global_step: Optional[int],
+        phase: Optional[str],
+    ) -> str:
+        return producer_session_id(
+            run_name=self._run_name,
+            entrypoint=self._entrypoint,
+            task_key=task_key,
+            global_step=global_step,
+            phase=phase,
+        )
+
+    def has_started_session(self, *, session_id: str) -> bool:
+        return session_id in self._started_session_ids
 
     def rollout_start(
         self,
@@ -194,18 +233,14 @@ class AtofEmitter:
         sample_idx: Optional[int],
     ) -> Optional[RolloutTrace]:
         try:
-            session_key = "\x1f".join(
-                (
-                    self._run_name,
-                    self._entrypoint,
-                    str(task_key or ""),
-                    str(phase or ""),
-                    "" if global_step is None else str(global_step),
-                )
+            session_id = self.producer_session_id(
+                task_key=task_key,
+                global_step=global_step,
+                phase=phase,
             )
             metadata = _drop_none(
                 {
-                    "producer_session_id": uuid.uuid5(uuid.NAMESPACE_URL, session_key).hex,
+                    "producer_session_id": session_id,
                     "trace_id": uuid.uuid4().hex,
                     "run_name": self._run_name,
                     "entrypoint": self._entrypoint,
@@ -219,6 +254,7 @@ class AtofEmitter:
                 }
             )
             handle = self._nemo.scope.push(f"rollout:{task_key}", self._nemo.ScopeType.Agent, metadata=metadata)
+            self._started_session_ids.add(session_id)
             return RolloutTrace(handle=handle, metadata=metadata)
         except Exception as exc:
             self._warn_once("rollout_start", exc)

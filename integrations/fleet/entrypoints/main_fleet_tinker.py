@@ -64,6 +64,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 from integrations.fleet.atof_events import drain_atof, init_atof
+from integrations.fleet.session_bridge import upload_group_session
 
 # Import shared metrics module for consistent metric calculation with SkyRL trainer
 from integrations.fleet.reward_metrics import (
@@ -968,6 +969,15 @@ async def collect_fleet_rollout(
         "model_family": model_family,
         "screenshot_max_dim": screenshot_max_dim,
     }
+    group_session_id = _atof_emit(
+        atof_emitter,
+        "producer_session_id",
+        task_key=task_key,
+        global_step=global_step,
+        phase=phase,
+    )
+    if group_session_id:
+        extras["skyrl_group_session_id"] = group_session_id
 
     env = FleetTaskEnv(env_config=env_config, extras=extras)
 
@@ -1414,6 +1424,62 @@ async def collect_batch_rollouts(
         if completed - last_logged >= log_interval or completed == total:
             logger.info(f"  Progress: {completed}/{total} rollouts completed")
             last_logged = completed
+
+    trace_config = FleetTaskEnv._trace_config
+    fleet_api_key = os.environ.get("FLEET_API_KEY")
+    if atof_emitter is not None and trace_config and fleet_api_key:
+        task_configs: dict[str, Dict[str, Any]] = {}
+        expected_by_task: dict[str, int] = defaultdict(int)
+        rollouts_by_task: dict[str, list[RolloutOutput]] = defaultdict(list)
+        for task_config in batch:
+            task_key = task_config.get("task_key") or task_config.get("key")
+            if not task_key:
+                continue
+            task_configs[task_key] = task_config
+            expected_by_task[task_key] += n_samples_per_prompt
+        for rollout in rollouts:
+            if rollout is not None:
+                rollouts_by_task[rollout.task_key].append(rollout)
+
+        group_uploads = []
+        for task_key, expected_rollouts in expected_by_task.items():
+            group_session_id = _atof_emit(
+                atof_emitter,
+                "producer_session_id",
+                task_key=task_key,
+                global_step=global_step,
+                phase=phase,
+            )
+            if not group_session_id or not _atof_emit(
+                atof_emitter,
+                "has_started_session",
+                session_id=group_session_id,
+            ):
+                continue
+
+            task_rollouts = rollouts_by_task.get(task_key, [])
+            scores = [rollout.reward for rollout in task_rollouts if rollout.reward is not None]
+            task_config = task_configs[task_key]
+            group_uploads.append(
+                upload_group_session(
+                    api_key=fleet_api_key,
+                    session_id=group_session_id,
+                    job_id=trace_config["job_id"],
+                    task_key=task_key,
+                    model=trace_config["model"],
+                    score=max(scores) if scores else None,
+                    metadata={
+                        "skyrl_session_kind": "group",
+                        "skyrl_expected_rollouts": expected_rollouts,
+                        "skyrl_completed_rollouts": len(task_rollouts),
+                        "env_key": task_config.get("env_key"),
+                        "phase": phase,
+                        "global_step": global_step,
+                    },
+                )
+            )
+        if group_uploads:
+            await asyncio.gather(*group_uploads)
 
     return rollouts
 

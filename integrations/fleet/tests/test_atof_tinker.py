@@ -141,6 +141,12 @@ class RecordingEmitter:
         self.calls.append(("rollout_start", kwargs))
         return self.trace
 
+    def producer_session_id(self, **_kwargs):
+        return "11111111-1111-5111-8111-111111111111"
+
+    def has_started_session(self, **_kwargs):
+        return True
+
     def llm_request(self, trace, *, new_messages):
         request = {"messages": new_messages}
         self.requests.append(request)
@@ -304,6 +310,63 @@ def test_batch_forwards_emitter_metadata_and_sample_idx(monkeypatch):
         assert kwargs["atof_emitter"] is emitter
         assert kwargs["global_step"] == 7
         assert kwargs["phase"] == "eval_step_7"
+
+
+def test_batch_uploads_one_group_session_per_task(monkeypatch):
+    async def fake_collect(**kwargs):
+        return mft.RolloutOutput(
+            prompt_ids=[],
+            response_ids=[1],
+            logprobs=[],
+            loss_mask=[],
+            reward=float(kwargs["sample_idx"]),
+            task_key=kwargs["task_config"]["task_key"],
+            env_key="fira",
+            turns=1,
+            tool_calls=0,
+            tool_errors=0,
+            stop_reason="stop",
+            duration=0.0,
+        )
+
+    uploads = []
+
+    async def fake_upload(**kwargs):
+        uploads.append(kwargs)
+        return True
+
+    monkeypatch.setattr(mft, "collect_fleet_rollout", fake_collect)
+    monkeypatch.setattr(mft, "upload_group_session", fake_upload)
+    monkeypatch.setattr(
+        mft.FleetTaskEnv,
+        "_trace_config",
+        {"job_id": "job-1", "model": "model-1"},
+    )
+    monkeypatch.setenv("FLEET_API_KEY", "secret")
+
+    asyncio.run(
+        mft.collect_batch_rollouts(
+            batch=[{"task_key": "fira/t1", "env_key": "fira"}],
+            tasks_file="tasks.json",
+            sampling_client=None,
+            tokenizer=None,
+            n_samples_per_prompt=2,
+            atof_emitter=RecordingEmitter(),
+            global_step=7,
+            phase="eval_step_7",
+        )
+    )
+
+    assert len(uploads) == 1
+    assert uploads[0]["score"] == 1.0
+    assert uploads[0]["metadata"] == {
+        "skyrl_session_kind": "group",
+        "skyrl_expected_rollouts": 2,
+        "skyrl_completed_rollouts": 2,
+        "env_key": "fira",
+        "phase": "eval_step_7",
+        "global_step": 7,
+    }
 
 
 # --------------------------------------------------------------------------- #

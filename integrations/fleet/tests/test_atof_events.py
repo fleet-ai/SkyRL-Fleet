@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import types
+import uuid
 
 import pytest
 
@@ -17,6 +18,7 @@ from integrations.fleet.atof_events import (
     AtofEmitter,
     drain_atof,
     init_atof,
+    producer_session_id,
 )
 
 
@@ -211,6 +213,7 @@ class TestEmit:
         assert scope_type == "agent"
         metadata = kwargs["metadata"]
         assert metadata["producer_session_id"] != "run-1"
+        assert str(uuid.UUID(metadata["producer_session_id"])) == metadata["producer_session_id"]
         assert metadata["run_name"] == "run-1"
         assert metadata["global_step"] == 7
         assert metadata["phase"] == "train_step_7"
@@ -219,6 +222,21 @@ class TestEmit:
         assert metadata["agent_kind"] == "Qwen/Qwen3.5-9B"
         assert len(metadata["trace_id"]) == 32
         assert trace.metadata is metadata
+
+    def test_producer_session_id_is_stable_and_uses_uuid_text(self):
+        values = {
+            "run_name": "run-1",
+            "entrypoint": "main_fleet",
+            "task_key": "task-9",
+            "global_step": 7,
+            "phase": "train_step_7",
+        }
+
+        session_id = producer_session_id(**values)
+
+        assert producer_session_id(**values) == session_id
+        assert str(uuid.UUID(session_id)) == session_id
+        assert "-" in session_id
 
     def test_rollouts_group_samples_by_task_session(self, fake_nemo):
         emitter = make_emitter(fake_nemo)
