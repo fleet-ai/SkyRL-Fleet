@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 import os
 import re
-from asyncio import Lock, gather
+from asyncio import Lock, create_task, gather
 from collections import defaultdict
 from typing import Any, Optional
 
@@ -181,7 +181,11 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
                 )
             )
             groups = self.prepare_group_sessions(input_batch, job_id)
-            output = await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
+            pending_group_upload = create_task(self.upload_group_sessions(groups))
+            try:
+                output = await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
+            finally:
+                await pending_group_upload
             await self.upload_group_sessions(groups, output)
             return output
 
@@ -214,7 +218,7 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
                 task_key,
                 {
                     "session_id": session_id,
-                    "env_key": env_extras.get("env_key"),
+                    "env_key": env_extras.get("env_key") or env_extras.get("data_source"),
                     "global_step": global_step,
                     "phase": phase,
                     "expected_rollouts": 0,
@@ -226,7 +230,7 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
     async def upload_group_sessions(
         self,
         groups: dict[str, dict[str, Any]],
-        output: GeneratorOutput,
+        output: Optional[GeneratorOutput] = None,
     ) -> None:
         emitter = getattr(self.generator, "atof_emitter", None)
         api_key = getattr(self.rotator, "api_key", None)
@@ -237,26 +241,34 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
 
         scores_by_task: dict[str, list[float]] = defaultdict(list)
         completed_by_task: dict[str, int] = defaultdict(int)
-        env_metrics = output.get("env_metrics") or []
-        is_last_step = output.get("is_last_step")
-        for index, metrics in enumerate(env_metrics):
-            if not isinstance(metrics, dict):
-                continue
-            if is_last_step is not None and not is_last_step[index]:
-                continue
-            task_key = metrics.get("task_key")
-            if task_key not in groups:
-                continue
-            completed_by_task[task_key] += 1
-            score = metrics.get("final_reward")
-            if isinstance(score, (int, float)):
-                scores_by_task[task_key].append(float(score))
+        if output is not None:
+            env_metrics = output.get("env_metrics") or []
+            is_last_step = output.get("is_last_step")
+            for index, metrics in enumerate(env_metrics):
+                if not isinstance(metrics, dict):
+                    continue
+                if is_last_step is not None and not is_last_step[index]:
+                    continue
+                task_key = metrics.get("task_key")
+                if task_key not in groups:
+                    continue
+                completed_by_task[task_key] += 1
+                score = metrics.get("final_reward")
+                if isinstance(score, (int, float)):
+                    scores_by_task[task_key].append(float(score))
 
         uploads = []
         for task_key, group in groups.items():
-            if not emitter.has_started_session(session_id=group["session_id"]):
-                continue
             scores = scores_by_task[task_key]
+            metadata = {
+                "skyrl_session_kind": "group",
+                "skyrl_expected_rollouts": group["expected_rollouts"],
+                "env_key": group["env_key"],
+                "phase": group["phase"],
+                "global_step": group["global_step"],
+            }
+            if output is not None:
+                metadata["skyrl_completed_rollouts"] = completed_by_task[task_key]
             uploads.append(
                 upload_group_session(
                     api_key=api_key,
@@ -265,14 +277,8 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
                     task_key=task_key,
                     model=model,
                     score=max(scores) if scores else None,
-                    metadata={
-                        "skyrl_session_kind": "group",
-                        "skyrl_expected_rollouts": group["expected_rollouts"],
-                        "skyrl_completed_rollouts": completed_by_task[task_key],
-                        "env_key": group["env_key"],
-                        "phase": group["phase"],
-                        "global_step": group["global_step"],
-                    },
+                    metadata=metadata,
+                    status="completed" if output is not None else None,
                 )
             )
         if not uploads:

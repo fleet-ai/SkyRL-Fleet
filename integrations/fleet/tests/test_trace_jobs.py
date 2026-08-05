@@ -250,8 +250,8 @@ async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, pha
         ],
         "env_classes": ["fleet_task", "fleet_task"],
         "env_extras": [
-            {"task_key": "task-1", "env_key": "env-1"},
-            {"task_key": "task-1", "env_key": "env-1"},
+            {"task_key": "task-1", "data_source": "env-1"},
+            {"task_key": "task-1", "data_source": "env-1"},
         ],
         "sampling_params": None,
         "trajectory_ids": None,
@@ -272,6 +272,22 @@ async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, pha
             "job_id": "job-1",
             "task_key": "task-1",
             "model": "model-1",
+            "score": None,
+            "metadata": {
+                "skyrl_session_kind": "group",
+                "skyrl_expected_rollouts": 2,
+                "env_key": "env-1",
+                "phase": f"{phase}_step_7",
+                "global_step": 7,
+            },
+            "status": None,
+        },
+        {
+            "api_key": "secret",
+            "session_id": expected_session_id,
+            "job_id": "job-1",
+            "task_key": "task-1",
+            "model": "model-1",
             "score": 1.0,
             "metadata": {
                 "skyrl_session_kind": "group",
@@ -281,6 +297,7 @@ async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, pha
                 "phase": f"{phase}_step_7",
                 "global_step": 7,
             },
+            "status": "completed",
         }
     ]
 

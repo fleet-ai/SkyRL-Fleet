@@ -1389,6 +1389,55 @@ async def collect_batch_rollouts(
                     sample=sample_idx,
                 )
 
+    trace_config = FleetTaskEnv._trace_config
+    fleet_api_key = os.environ.get("FLEET_API_KEY")
+    group_sessions: dict[str, dict[str, Any]] = {}
+    pending_group_upload = None
+    if atof_emitter is not None and trace_config and fleet_api_key:
+        for task_config in batch:
+            task_key = task_config.get("task_key") or task_config.get("key")
+            if not task_key:
+                continue
+            group = group_sessions.setdefault(
+                task_key,
+                {
+                    "session_id": _atof_emit(
+                        atof_emitter,
+                        "producer_session_id",
+                        task_key=task_key,
+                        global_step=global_step,
+                        phase=phase,
+                        job_id=trace_config["job_id"],
+                    ),
+                    "env_key": task_config.get("env_key") or task_config.get("data_source"),
+                    "expected_rollouts": 0,
+                },
+            )
+            group["expected_rollouts"] += n_samples_per_prompt
+
+        pending_uploads = [
+            upload_group_session(
+                api_key=fleet_api_key,
+                session_id=group["session_id"],
+                job_id=trace_config["job_id"],
+                task_key=task_key,
+                model=trace_config["model"],
+                score=None,
+                metadata={
+                    "skyrl_session_kind": "group",
+                    "skyrl_expected_rollouts": group["expected_rollouts"],
+                    "env_key": group["env_key"],
+                    "phase": phase,
+                    "global_step": global_step,
+                },
+                status=None,
+            )
+            for task_key, group in group_sessions.items()
+            if group["session_id"]
+        ]
+        if pending_uploads:
+            pending_group_upload = asyncio.gather(*pending_uploads)
+
     # Create all rollout tasks (batch_size * n_samples_per_prompt). sample_idx
     # is 0..n_samples_per_prompt-1 within each task so the dumper can write
     # deterministic per-rollout filenames (task_key__sN.json).
@@ -1428,42 +1477,23 @@ async def collect_batch_rollouts(
             logger.info(f"  Progress: {completed}/{total} rollouts completed")
             last_logged = completed
 
-    trace_config = FleetTaskEnv._trace_config
-    fleet_api_key = os.environ.get("FLEET_API_KEY")
-    if atof_emitter is not None and trace_config and fleet_api_key:
-        task_configs: dict[str, Dict[str, Any]] = {}
-        expected_by_task: dict[str, int] = defaultdict(int)
+    if pending_group_upload is not None:
+        await pending_group_upload
+
+    if group_sessions and trace_config and fleet_api_key:
         rollouts_by_task: dict[str, list[RolloutOutput]] = defaultdict(list)
-        for task_config in batch:
-            task_key = task_config.get("task_key") or task_config.get("key")
-            if not task_key:
-                continue
-            task_configs[task_key] = task_config
-            expected_by_task[task_key] += n_samples_per_prompt
         for rollout in rollouts:
             if rollout is not None:
                 rollouts_by_task[rollout.task_key].append(rollout)
 
         group_uploads = []
-        for task_key, expected_rollouts in expected_by_task.items():
-            group_session_id = _atof_emit(
-                atof_emitter,
-                "producer_session_id",
-                task_key=task_key,
-                global_step=global_step,
-                phase=phase,
-                job_id=trace_config["job_id"],
-            )
-            if not group_session_id or not _atof_emit(
-                atof_emitter,
-                "has_started_session",
-                session_id=group_session_id,
-            ):
+        for task_key, group in group_sessions.items():
+            group_session_id = group["session_id"]
+            if not group_session_id:
                 continue
 
             task_rollouts = rollouts_by_task.get(task_key, [])
             scores = [rollout.reward for rollout in task_rollouts if rollout.reward is not None]
-            task_config = task_configs[task_key]
             group_uploads.append(
                 upload_group_session(
                     api_key=fleet_api_key,
@@ -1474,9 +1504,9 @@ async def collect_batch_rollouts(
                     score=max(scores) if scores else None,
                     metadata={
                         "skyrl_session_kind": "group",
-                        "skyrl_expected_rollouts": expected_rollouts,
+                        "skyrl_expected_rollouts": group["expected_rollouts"],
                         "skyrl_completed_rollouts": len(task_rollouts),
-                        "env_key": task_config.get("env_key"),
+                        "env_key": group["env_key"],
                         "phase": phase,
                         "global_step": global_step,
                     },
