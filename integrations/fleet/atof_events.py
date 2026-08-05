@@ -23,6 +23,7 @@ import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -334,6 +335,16 @@ class AtofEmitter:
                 }
             )
             self._nemo.scope.event("rollout_end", handle=trace.handle, data=data, metadata=trace.metadata)
+            self._nemo.scope.event(
+                "session.completed",
+                handle=trace.handle,
+                data={
+                    "status": "completed",
+                    "ended_at": datetime.now(timezone.utc).isoformat(),
+                    "metadata": {"verifier_score": reward},
+                },
+                metadata=trace.metadata,
+            )
             self._nemo.scope.pop(trace.handle, output={"reward": reward})
         except Exception as exc:
             self._warn_once("rollout_end", exc)
