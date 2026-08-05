@@ -160,6 +160,9 @@ class RecordingEmitter:
     def rollout_end(self, **kwargs):
         self.calls.append(("rollout_end", kwargs))
 
+    def session_completed(self, **kwargs):
+        self.calls.append(("session_completed", kwargs))
+
 
 class RaisingEmitter:
     def rollout_start(self, **kwargs):
@@ -387,6 +390,7 @@ def test_batch_uploads_one_group_session_per_task(monkeypatch):
             "job_id": "job-1",
         }
     ]
+    assert ("session_completed", {"session_id": "11111111-1111-5111-8111-111111111111", "score": 1.0}) in emitter.calls
     assert uploads[0]["score"] is None
     assert uploads[0]["status"] is None
     assert uploads[0]["metadata"] == {
