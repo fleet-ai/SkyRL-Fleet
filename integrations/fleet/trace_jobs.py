@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 import os
 import re
-from asyncio import Lock, create_task, gather
+from asyncio import Lock, gather
 from collections import defaultdict
 from typing import Any, Optional
 
@@ -181,11 +181,8 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
                 )
             )
             groups = self.prepare_group_sessions(input_batch, job_id)
-            pending_group_upload = create_task(self.upload_group_sessions(groups))
-            try:
-                output = await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
-            finally:
-                await pending_group_upload
+            await self.upload_group_sessions(groups)
+            output = await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
             await self.upload_group_sessions(groups, output)
             return output
 

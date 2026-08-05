@@ -1392,7 +1392,6 @@ async def collect_batch_rollouts(
     trace_config = FleetTaskEnv._trace_config
     fleet_api_key = os.environ.get("FLEET_API_KEY")
     group_sessions: dict[str, dict[str, Any]] = {}
-    pending_group_upload = None
     if atof_emitter is not None and trace_config and fleet_api_key:
         for task_config in batch:
             task_key = task_config.get("task_key") or task_config.get("key")
@@ -1436,7 +1435,7 @@ async def collect_batch_rollouts(
             if group["session_id"]
         ]
         if pending_uploads:
-            pending_group_upload = asyncio.gather(*pending_uploads)
+            await asyncio.gather(*pending_uploads)
 
     # Create all rollout tasks (batch_size * n_samples_per_prompt). sample_idx
     # is 0..n_samples_per_prompt-1 within each task so the dumper can write
@@ -1476,9 +1475,6 @@ async def collect_batch_rollouts(
         if completed - last_logged >= log_interval or completed == total:
             logger.info(f"  Progress: {completed}/{total} rollouts completed")
             last_logged = completed
-
-    if pending_group_upload is not None:
-        await pending_group_upload
 
     if group_sessions and trace_config and fleet_api_key:
         rollouts_by_task: dict[str, list[RolloutOutput]] = defaultdict(list)
