@@ -92,3 +92,27 @@ async def test_group_upload_is_a_soft_failure(monkeypatch):
     )
 
     assert uploaded is False
+
+
+@pytest.mark.asyncio
+async def test_group_upload_can_create_an_active_session(monkeypatch):
+    calls: list[dict] = []
+    _install_httpx(monkeypatch, _Response(), calls)
+
+    uploaded = await upload_group_session(
+        api_key="secret",
+        session_id="11111111-1111-5111-8111-111111111111",
+        job_id="22222222-2222-4222-8222-222222222222",
+        task_key="task-1",
+        model="model-1",
+        score=None,
+        metadata={
+            "skyrl_session_kind": "group",
+            "skyrl_expected_rollouts": 8,
+        },
+        status=None,
+    )
+
+    assert uploaded is True
+    assert "status" not in calls[0]["json"]
+    assert "score" not in calls[0]["json"]

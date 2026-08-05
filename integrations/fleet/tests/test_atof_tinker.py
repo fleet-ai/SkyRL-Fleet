@@ -367,7 +367,7 @@ def test_batch_uploads_one_group_session_per_task(monkeypatch):
     emitter = RecordingEmitter()
     asyncio.run(
         mft.collect_batch_rollouts(
-            batch=[{"task_key": "fira/t1", "env_key": "fira"}],
+            batch=[{"task_key": "fira/t1", "data_source": "fira"}],
             tasks_file="tasks.json",
             sampling_client=None,
             tokenizer=None,
@@ -378,7 +378,7 @@ def test_batch_uploads_one_group_session_per_task(monkeypatch):
         )
     )
 
-    assert len(uploads) == 1
+    assert len(uploads) == 2
     assert emitter.producer_session_id_calls == [
         {
             "task_key": "fira/t1",
@@ -387,8 +387,17 @@ def test_batch_uploads_one_group_session_per_task(monkeypatch):
             "job_id": "job-1",
         }
     ]
-    assert uploads[0]["score"] == 1.0
+    assert uploads[0]["score"] is None
+    assert uploads[0]["status"] is None
     assert uploads[0]["metadata"] == {
+        "skyrl_session_kind": "group",
+        "skyrl_expected_rollouts": 2,
+        "env_key": "fira",
+        "phase": "eval_step_7",
+        "global_step": 7,
+    }
+    assert uploads[1]["score"] == 1.0
+    assert uploads[1]["metadata"] == {
         "skyrl_session_kind": "group",
         "skyrl_expected_rollouts": 2,
         "skyrl_completed_rollouts": 2,
