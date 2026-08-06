@@ -1490,6 +1490,18 @@ async def collect_batch_rollouts(
 
             task_rollouts = rollouts_by_task.get(task_key, [])
             scores = [rollout.reward for rollout in task_rollouts if rollout.reward is not None]
+            group_score = max(scores) if scores else None
+            if _atof_emit(
+                atof_emitter,
+                "has_started_session",
+                session_id=group_session_id,
+            ):
+                _atof_emit(
+                    atof_emitter,
+                    "session_completed",
+                    session_id=group_session_id,
+                    score=group_score,
+                )
             group_uploads.append(
                 upload_group_session(
                     api_key=fleet_api_key,
@@ -1497,7 +1509,7 @@ async def collect_batch_rollouts(
                     job_id=trace_config["job_id"],
                     task_key=task_key,
                     model=trace_config["model"],
-                    score=max(scores) if scores else None,
+                    score=group_score,
                     metadata={
                         "skyrl_session_kind": "group",
                         "skyrl_expected_rollouts": group["expected_rollouts"],

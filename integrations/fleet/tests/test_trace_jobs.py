@@ -188,12 +188,16 @@ async def test_wrapped_generator_can_force_eval_only_label():
 class BridgeEmitter:
     def __init__(self):
         self.started_session_ids = set()
+        self.completed_sessions = []
 
     def producer_session_id(self, *, task_key, global_step, phase, job_id):
         return f"{job_id}:{task_key}:{phase}:{global_step}"
 
     def has_started_session(self, *, session_id):
         return session_id in self.started_session_ids
+
+    def session_completed(self, *, session_id, score):
+        self.completed_sessions.append({"session_id": session_id, "score": score})
 
 
 class BridgeGenerator:
@@ -265,6 +269,9 @@ async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, pha
     assert input_batch["env_extras"][0]["skyrl_group_session_id"] == expected_session_id
     assert input_batch["env_extras"][1]["skyrl_group_session_id"] == expected_session_id
     assert input_batch["env_extras"][0]["skyrl_trace_job_id"] == "job-1"
+    assert wrapped.generator.atof_emitter.completed_sessions == [
+        {"session_id": expected_session_id, "score": 1.0}
+    ]
     assert uploads == [
         {
             "api_key": "secret",

@@ -328,6 +328,7 @@ class AtofEmitter:
             data = _drop_none(
                 {
                     "reward": reward,
+                    "metadata": {"verifier_score": reward} if reward is not None else None,
                     "stop_reason": stop_reason,
                     "num_turns": num_turns,
                     "image_urls": trace.image_urls or None,
@@ -335,19 +336,25 @@ class AtofEmitter:
                 }
             )
             self._nemo.scope.event("rollout_end", handle=trace.handle, data=data, metadata=trace.metadata)
-            self._nemo.scope.event(
-                "session.completed",
-                handle=trace.handle,
-                data={
-                    "status": "completed",
-                    "ended_at": datetime.now(timezone.utc).isoformat(),
-                    "metadata": {"verifier_score": reward},
-                },
-                metadata=trace.metadata,
-            )
             self._nemo.scope.pop(trace.handle, output={"reward": reward})
         except Exception as exc:
             self._warn_once("rollout_end", exc)
+
+    def session_completed(self, *, session_id: str, score: Optional[float]) -> None:
+        try:
+            data: Dict[str, Any] = {
+                "status": "completed",
+                "ended_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if score is not None:
+                data["metadata"] = {"verifier_score": score}
+            self._nemo.scope.event(
+                "session.completed",
+                data=data,
+                metadata={"session_id": session_id},
+            )
+        except Exception as exc:
+            self._warn_once("session_completed", exc)
 
     def _offload_images(self, trace: RolloutTrace, messages: List[dict]) -> List[dict]:
         """Replace base64 image data URLs with content-addressed S3 URLs.

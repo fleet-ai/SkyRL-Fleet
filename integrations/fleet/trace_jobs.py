@@ -257,6 +257,7 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
         uploads = []
         for task_key, group in groups.items():
             scores = scores_by_task[task_key]
+            group_score = max(scores) if scores else None
             metadata = {
                 "skyrl_session_kind": "group",
                 "skyrl_expected_rollouts": group["expected_rollouts"],
@@ -266,6 +267,8 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
             }
             if output is not None:
                 metadata["skyrl_completed_rollouts"] = completed_by_task[task_key]
+                if emitter.has_started_session(session_id=group["session_id"]):
+                    emitter.session_completed(session_id=group["session_id"], score=group_score)
             uploads.append(
                 upload_group_session(
                     api_key=api_key,
@@ -273,7 +276,7 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
                     job_id=job_id,
                     task_key=task_key,
                     model=model,
-                    score=max(scores) if scores else None,
+                    score=group_score,
                     metadata=metadata,
                     status="completed" if output is not None else None,
                 )
