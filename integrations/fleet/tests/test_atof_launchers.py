@@ -31,7 +31,8 @@ def test_launchers_enable_atof_by_default(script):
 def test_setup_paths_install_nemo_relay(script):
     source = (REPO_ROOT / script).read_text()
     assert "fleet-nemo-relay-artifacts/wheels/latest" in source
-    assert '"$NEMO_WHEEL_DIR"/nemo_relay-*.whl' in source
+    assert 'NEMO_RELAY_ARCH="$(uname -m)"' in source
+    assert '"$NEMO_WHEEL_DIR"/nemo_relay-*-"$NEMO_RELAY_ARCH".whl' in source
     assert '"$NEMO_WHEEL_DIR"/nemo_relay_runtime-*.whl' in source
 
 
@@ -50,3 +51,8 @@ def test_task_configs_inherit_shared_atof_default():
     task_files = [*tasks_root.rglob("*.yaml"), *tasks_root.rglob("*.yml")]
     overrides = [str(path.relative_to(REPO_ROOT)) for path in task_files if "NEMO_RELAY_ENABLED" in path.read_text()]
     assert overrides == []
+
+
+def test_standard_auto_train_installs_datasets():
+    source = (REPO_ROOT / ".github/workflows/auto-train.yaml").read_text()
+    assert '"datasets>=2.20"' in source

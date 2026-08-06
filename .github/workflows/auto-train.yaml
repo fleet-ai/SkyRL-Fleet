@@ -61,6 +61,7 @@ jobs:
             "botocore>=1.34" \
             "httpx>=0.27" \
             "fleet-python<=0.2.119" \
+            "datasets>=2.20" \
             "skypilot[gcp,runpod,kubernetes]==0.12.2"
 
       - name: Authenticate to Google Cloud

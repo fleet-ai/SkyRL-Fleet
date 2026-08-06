@@ -74,9 +74,10 @@ export AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 if ! python -c 'import nemo_relay, nemo_relay_runtime' 2>/dev/null; then
     echo "Installing NeMo wheels for ATOF event emission..."
     NEMO_WHEEL_DIR="$(mktemp -d)"
+    NEMO_RELAY_ARCH="$(uname -m)"
     if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
         && pip install --no-cache-dir \
-            "$NEMO_WHEEL_DIR"/nemo_relay-*.whl \
+            "$NEMO_WHEEL_DIR"/nemo_relay-*-"$NEMO_RELAY_ARCH".whl \
             "$NEMO_WHEEL_DIR"/nemo_relay_runtime-*.whl; then
         echo "nemo-relay and nemo-relay-runtime installed."
     else

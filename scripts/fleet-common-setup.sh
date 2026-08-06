@@ -124,9 +124,10 @@ uv pip install "litellm>=1.75.5" "fleet-python<=0.2.119" logfire "mcp>=1.0.0"
 # --- ATOF: nemo-relay wheel (rollout observability, enabled by default) ---
 echo "Installing nemo-relay wheel for ATOF event emission..."
 NEMO_WHEEL_DIR="$(mktemp -d)"
+NEMO_RELAY_ARCH="$(uname -m)"
 if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
   && uv pip install \
-    "$NEMO_WHEEL_DIR"/nemo_relay-*.whl \
+    "$NEMO_WHEEL_DIR"/nemo_relay-*-"$NEMO_RELAY_ARCH".whl \
     "$NEMO_WHEEL_DIR"/nemo_relay_runtime-*.whl; then
   echo "nemo-relay and nemo-relay-runtime installed."
 else
