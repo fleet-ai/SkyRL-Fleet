@@ -104,3 +104,30 @@ class TestPhaseBoundaryRotation:
                 ), f"first stmt should be `if not fleet_api_key: return`, got {ast.dump(first)}"
                 return
         raise AssertionError("_rotate_trace_job not found in main_fleet_tinker.py")
+
+    def test_trace_job_stem_no_duplicate_timestamp(self):
+        """The trace-job stem must not call datetime.now().strftime(...)
+        AFTER using wandb_name (which already carries a %m%d_%H%M suffix
+        from the wandb_name default assignment ~line 1139). Doing so
+        produced the prior double-stamped name
+        `tinker_<model>_0622_0307_0622_0307_<phase>`."""
+        src = SRC.read_text()
+        for line in src.split("\n"):
+            if "_trace_job_stem" in line and "=" in line and not line.strip().startswith("#"):
+                assert "datetime.now()" not in line, (
+                    f"_trace_job_stem must not re-stamp the timestamp; wandb_name already carries one. "
+                    f"Offending line: {line!r}"
+                )
+
+    def test_trace_job_stem_reads_dataset_key_env(self):
+        """The stem must read DATASET_KEY from the trainer env (plumbed
+        by fleet-research-api's job_env, e.g. JUNE16-PSI-HEALTH) so the
+        trace viewer's job list is filterable by dataset. When the env
+        var is unset (smoke/local), the prefix is omitted gracefully."""
+        src = SRC.read_text()
+        stem_block_start = src.find("_trace_job_stem")
+        assert stem_block_start > 0, "_trace_job_stem not found"
+        block_window = src[max(0, stem_block_start - 600): stem_block_start + 400]
+        assert "DATASET_KEY" in block_window, (
+            "_trace_job_stem block must read DATASET_KEY from the trainer env."
+        )
