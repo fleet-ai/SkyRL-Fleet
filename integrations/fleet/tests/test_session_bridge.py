@@ -56,6 +56,7 @@ async def test_group_upload_sends_metadata_only_session(monkeypatch):
             "skyrl_expected_rollouts": 8,
             "skyrl_completed_rollouts": 8,
         },
+        status="completed",
     )
 
     assert uploaded is True
@@ -110,7 +111,6 @@ async def test_group_upload_can_create_an_active_session(monkeypatch):
             "skyrl_session_kind": "group",
             "skyrl_expected_rollouts": 8,
         },
-        status=None,
     )
 
     assert uploaded is True

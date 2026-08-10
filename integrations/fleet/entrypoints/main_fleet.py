@@ -120,9 +120,14 @@ class FleetPPOExp(BasePPOExp):
             logger.warning(f"Failed to setup checkpoint management: {e}")
 
         from integrations.fleet.atof_events import drain_atof
+        from integrations.fleet.trace_jobs import finalize_fleet_trace_groups
+
+        async def train_and_finalize_groups():
+            await trainer.train()
+            await finalize_fleet_trace_groups(trainer.generator)
 
         try:
-            asyncio.run(trainer.train())
+            asyncio.run(train_and_finalize_groups())
         finally:
             drain_atof()
 

@@ -17,7 +17,7 @@ async def upload_group_session(
     model: str,
     score: Optional[float],
     metadata: dict[str, Any],
-    status: Optional[str] = "completed",
+    status: Optional[str] = None,
 ) -> bool:
     payload: dict[str, Any] = {
         "session_id": session_id,

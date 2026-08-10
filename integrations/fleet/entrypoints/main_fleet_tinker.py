@@ -1518,6 +1518,7 @@ async def collect_batch_rollouts(
                         "phase": phase,
                         "global_step": global_step,
                     },
+                    status="completed",
                 )
             )
         if group_uploads:
