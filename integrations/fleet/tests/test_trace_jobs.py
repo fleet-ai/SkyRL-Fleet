@@ -230,24 +230,19 @@ class BridgeGenerator:
 class BridgeRotator:
     api_key = "secret"
     model = "model-1"
-    current_job_id = None
 
-    async def rotate(self, _label):
+    def __init__(self):
+        self.current_job_id = None
+        self.current_label = None
+
+    async def rotate(self, label):
+        self.current_label = label
         self.current_job_id = "job-1"
         return self.current_job_id
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("phase", ["train", "eval"])
-async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, phase):
-    uploads = []
-
-    async def fake_upload(**kwargs):
-        uploads.append(kwargs)
-        return True
-
-    monkeypatch.setattr(trace_jobs, "upload_group_session", fake_upload)
-    input_batch = {
+def bridge_batch(phase: str):
+    return {
         "prompts": [
             [{"role": "user", "content": "one"}],
             [{"role": "user", "content": "two"}],
@@ -261,6 +256,19 @@ async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, pha
         "trajectory_ids": None,
         "batch_metadata": BatchMetadata(global_step=7, training_phase=phase),
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["train", "eval"])
+async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, phase):
+    uploads = []
+
+    async def fake_upload(**kwargs):
+        uploads.append(kwargs)
+        return True
+
+    monkeypatch.setattr(trace_jobs, "upload_group_session", fake_upload)
+    input_batch = bridge_batch(phase)
     wrapped = FleetTraceWrappedGenerator(BridgeGenerator(), BridgeRotator())
 
     await wrapped.generate(input_batch)
@@ -269,9 +277,7 @@ async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, pha
     assert input_batch["env_extras"][0]["skyrl_group_session_id"] == expected_session_id
     assert input_batch["env_extras"][1]["skyrl_group_session_id"] == expected_session_id
     assert input_batch["env_extras"][0]["skyrl_trace_job_id"] == "job-1"
-    assert wrapped.generator.atof_emitter.completed_sessions == [
-        {"session_id": expected_session_id, "score": 1.0}
-    ]
+    assert wrapped.generator.atof_emitter.completed_sessions == []
     assert uploads == [
         {
             "api_key": "secret",
@@ -288,25 +294,59 @@ async def test_wrapped_generator_bridges_standard_fleet_batches(monkeypatch, pha
                 "global_step": 7,
             },
             "status": None,
-        },
-        {
-            "api_key": "secret",
-            "session_id": expected_session_id,
-            "job_id": "job-1",
-            "task_key": "task-1",
-            "model": "model-1",
-            "score": 1.0,
-            "metadata": {
-                "skyrl_session_kind": "group",
-                "skyrl_expected_rollouts": 2,
-                "skyrl_completed_rollouts": 2,
-                "env_key": "env-1",
-                "phase": f"{phase}_step_7",
-                "global_step": 7,
-            },
-            "status": "completed",
         }
     ]
+
+    await wrapped.finalize_group_sessions()
+
+    assert wrapped.generator.atof_emitter.completed_sessions == [
+        {"session_id": expected_session_id, "score": 1.0}
+    ]
+    assert uploads[-1] == {
+        "api_key": "secret",
+        "session_id": expected_session_id,
+        "job_id": "job-1",
+        "task_key": "task-1",
+        "model": "model-1",
+        "score": 1.0,
+        "metadata": {
+            "skyrl_session_kind": "group",
+            "skyrl_expected_rollouts": 2,
+            "skyrl_completed_rollouts": 2,
+            "env_key": "env-1",
+            "phase": f"{phase}_step_7",
+            "global_step": 7,
+        },
+        "status": "completed",
+    }
+
+
+@pytest.mark.asyncio
+async def test_wrapped_generator_completes_group_at_phase_boundary(monkeypatch):
+    uploads = []
+
+    async def fake_upload(**kwargs):
+        uploads.append(kwargs)
+        return True
+
+    monkeypatch.setattr(trace_jobs, "upload_group_session", fake_upload)
+    wrapped = FleetTraceWrappedGenerator(BridgeGenerator(), BridgeRotator())
+
+    await wrapped.generate(bridge_batch("train"))
+    await wrapped.generate(bridge_batch("train"))
+
+    assert wrapped.generator.atof_emitter.completed_sessions == []
+
+    await wrapped.generate(bridge_batch("eval"))
+
+    train_session_id = "job-1:task-1:train_step_7:7"
+    assert wrapped.generator.atof_emitter.completed_sessions == [
+        {"session_id": train_session_id, "score": 1.0}
+    ]
+    completed_upload = next(upload for upload in uploads if upload["status"] == "completed")
+    assert completed_upload["session_id"] == train_session_id
+    assert completed_upload["metadata"]["skyrl_expected_rollouts"] == 4
+    assert completed_upload["metadata"]["skyrl_completed_rollouts"] == 4
 
 
 class BlockingGenerator:

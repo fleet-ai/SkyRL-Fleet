@@ -150,6 +150,9 @@ class FleetEvalExp(BasePPOExp):
         # `dump_eval_results=true`. The S3 prefix uses `trainer.global_step`,
         # which `_load_policy_only` sets from the resumed checkpoint.
         eval_metrics = await trainer.eval()
+        from integrations.fleet.trace_jobs import finalize_fleet_trace_groups
+
+        await finalize_fleet_trace_groups(trainer.generator)
         trainer.tracker.log(eval_metrics, step=trainer.global_step, commit=True)
         trainer.tracker.finish()
         logger.info(f"Eval-only metrics: {eval_metrics}")

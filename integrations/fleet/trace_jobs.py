@@ -12,7 +12,6 @@ import inspect
 import os
 import re
 from asyncio import Lock, gather
-from collections import defaultdict
 from typing import Any, Optional
 
 from loguru import logger
@@ -161,6 +160,7 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
         self.force_eval_only = force_eval_only
         self.total_training_steps = total_training_steps
         self.lock = Lock()
+        self.pending_groups: dict[str, dict[str, Any]] = {}
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.generator, name)
@@ -173,17 +173,22 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
         # Keep rotate+generate atomic so overlapping eval/train generate calls
         # cannot move in-flight rollouts into another phase's dashboard job.
         async with self.lock:
+            label = trace_label_for_input(
+                input_batch,
+                force_eval_only=self.force_eval_only,
+                total_training_steps=self.total_training_steps,
+            )
+            current_label = getattr(self.rotator, "current_label", None)
+            if current_label is not None and label != current_label:
+                await self.complete_pending_groups()
             job_id = await self.rotator.rotate(
-                trace_label_for_input(
-                    input_batch,
-                    force_eval_only=self.force_eval_only,
-                    total_training_steps=self.total_training_steps,
-                )
+                label
             )
             groups = self.prepare_group_sessions(input_batch, job_id)
-            await self.upload_group_sessions(groups)
+            active_groups = self.register_groups(groups, job_id)
+            await self.publish_groups(active_groups)
             output = await self.generate_inner(input_batch, disable_tqdm=disable_tqdm)
-            await self.upload_group_sessions(groups, output)
+            self.record_group_output(active_groups, output)
             return output
 
     def prepare_group_sessions(self, input_batch: GeneratorInput, job_id: Optional[str]) -> dict[str, dict[str, Any]]:
@@ -224,39 +229,64 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
             group["expected_rollouts"] += 1
         return groups
 
-    async def upload_group_sessions(
+    def register_groups(
         self,
         groups: dict[str, dict[str, Any]],
-        output: Optional[GeneratorOutput] = None,
+        job_id: Optional[str],
+    ) -> list[dict[str, Any]]:
+        active_groups = []
+        if not job_id:
+            return active_groups
+        for task_key, group in groups.items():
+            session_id = group["session_id"]
+            pending = self.pending_groups.setdefault(
+                session_id,
+                {
+                    **group,
+                    "job_id": job_id,
+                    "task_key": task_key,
+                    "expected_rollouts": 0,
+                    "completed_rollouts": 0,
+                    "scores": [],
+                },
+            )
+            pending["expected_rollouts"] += group["expected_rollouts"]
+            active_groups.append(pending)
+        return active_groups
+
+    @staticmethod
+    def record_group_output(groups: list[dict[str, Any]], output: GeneratorOutput) -> None:
+        groups_by_task = {group["task_key"]: group for group in groups}
+        env_metrics = output.get("env_metrics") or []
+        is_last_step = output.get("is_last_step")
+        for index, metrics in enumerate(env_metrics):
+            if not isinstance(metrics, dict):
+                continue
+            if is_last_step is not None and not is_last_step[index]:
+                continue
+            group = groups_by_task.get(metrics.get("task_key"))
+            if group is None:
+                continue
+            group["completed_rollouts"] += 1
+            score = metrics.get("final_reward")
+            if isinstance(score, (int, float)):
+                group["scores"].append(float(score))
+
+    async def publish_groups(
+        self,
+        groups: list[dict[str, Any]],
+        *,
+        completed: bool = False,
     ) -> None:
         emitter = getattr(self.generator, "atof_emitter", None)
         api_key = getattr(self.rotator, "api_key", None)
-        job_id = getattr(self.rotator, "current_job_id", None)
         model = getattr(self.rotator, "model", None)
-        if not groups or emitter is None or not api_key or not job_id or not model:
+        if not groups or emitter is None or not api_key or not model:
             return
 
-        scores_by_task: dict[str, list[float]] = defaultdict(list)
-        completed_by_task: dict[str, int] = defaultdict(int)
-        if output is not None:
-            env_metrics = output.get("env_metrics") or []
-            is_last_step = output.get("is_last_step")
-            for index, metrics in enumerate(env_metrics):
-                if not isinstance(metrics, dict):
-                    continue
-                if is_last_step is not None and not is_last_step[index]:
-                    continue
-                task_key = metrics.get("task_key")
-                if task_key not in groups:
-                    continue
-                completed_by_task[task_key] += 1
-                score = metrics.get("final_reward")
-                if isinstance(score, (int, float)):
-                    scores_by_task[task_key].append(float(score))
-
         uploads = []
-        for task_key, group in groups.items():
-            scores = scores_by_task[task_key]
+        for group in groups:
+            scores = group["scores"]
             group_score = max(scores) if scores else None
             metadata = {
                 "skyrl_session_kind": "group",
@@ -265,20 +295,21 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
                 "phase": group["phase"],
                 "global_step": group["global_step"],
             }
-            if output is not None:
-                metadata["skyrl_completed_rollouts"] = completed_by_task[task_key]
+            if completed:
+                metadata["skyrl_completed_rollouts"] = group["completed_rollouts"]
+            if completed:
                 if emitter.has_started_session(session_id=group["session_id"]):
                     emitter.session_completed(session_id=group["session_id"], score=group_score)
             uploads.append(
                 upload_group_session(
                     api_key=api_key,
                     session_id=group["session_id"],
-                    job_id=job_id,
-                    task_key=task_key,
+                    job_id=group["job_id"],
+                    task_key=group["task_key"],
                     model=model,
-                    score=group_score,
+                    score=group_score if completed else None,
                     metadata=metadata,
-                    status="completed" if output is not None else None,
+                    status="completed" if completed else None,
                 )
             )
         if not uploads:
@@ -287,6 +318,15 @@ class FleetTraceWrappedGenerator(GeneratorInterface):
             await gather(*uploads)
         except Exception as exc:
             logger.warning(f"SkyRL group session uploads failed; training will continue: {exc}")
+
+    async def complete_pending_groups(self) -> None:
+        groups = list(self.pending_groups.values())
+        await self.publish_groups(groups, completed=True)
+        self.pending_groups.clear()
+
+    async def finalize_group_sessions(self) -> None:
+        async with self.lock:
+            await self.complete_pending_groups()
 
     def set_total_training_steps(self, total_training_steps: Optional[int]) -> None:
         self.total_training_steps = total_training_steps
@@ -327,3 +367,9 @@ def set_fleet_trace_total_training_steps(
     setter = getattr(generator, "set_total_training_steps", None)
     if setter is not None:
         setter(total_training_steps)
+
+
+async def finalize_fleet_trace_groups(generator: GeneratorInterface) -> None:
+    finalize = getattr(generator, "finalize_group_sessions", None)
+    if finalize is not None:
+        await finalize()
