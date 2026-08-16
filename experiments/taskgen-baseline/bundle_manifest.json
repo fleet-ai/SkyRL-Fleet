@@ -1,0 +1,8 @@
+{
+  "source_report": "all-env-supported-solvers-live-20260520-135632/reports/high-verifier-solver-performance",
+  "source_run": "all-env-supported-solvers-live-20260520-135632",
+  "entrypoint": "index.html",
+  "copied_html_link_count": 27,
+  "copied_sample_rollout_count": 14,
+  "notes": "HTML href/src links are relative. report_sample_tasks.json paths were rewritten relative to the JSON file and sample rollout JSONL files were bundled."
+}

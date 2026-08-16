@@ -1,0 +1,9 @@
+generator_model,solver_model,n_completed_3_rollout_jobs,all_3_success_count,mixed_count,all_3_failure_count,all_3_success_rate,mixed_rate,all_3_failure_rate,mean_pass_count,mean_rollout_pass_rate,solver,generator
+anthropic/claude-opus-4.7,openai/gpt-5.5,22,12,0,10,0.5454545454545454,0.0,0.45454545454545453,1.6363636363636365,0.5454545454545454,GPT-5.5,Opus 4.7
+anthropic/claude-opus-4.7,anthropic/claude-opus-4.7,21,11,1,9,0.5238095238095238,0.047619047619047616,0.42857142857142855,1.619047619047619,0.5396825396825397,Opus 4.7,Opus 4.7
+anthropic/claude-opus-4.7,anthropic/claude-sonnet-4.6,21,11,1,9,0.5238095238095238,0.047619047619047616,0.42857142857142855,1.619047619047619,0.5396825396825397,Sonnet 4.6,Opus 4.7
+anthropic/claude-opus-4.7,openai/gpt-4o-mini,22,7,2,13,0.3181818181818182,0.09090909090909091,0.5909090909090909,1.0909090909090908,0.36363636363636365,GPT-4o-mini,Opus 4.7
+openai/gpt-5.5,anthropic/claude-sonnet-4.6,32,17,1,14,0.53125,0.03125,0.4375,1.625,0.5416666666666666,Sonnet 4.6,GPT-5.5
+openai/gpt-5.5,openai/gpt-5.5,32,15,3,14,0.46875,0.09375,0.4375,1.53125,0.5104166666666667,GPT-5.5,GPT-5.5
+openai/gpt-5.5,anthropic/claude-opus-4.7,32,12,6,14,0.375,0.1875,0.4375,1.4375,0.47916666666666663,Opus 4.7,GPT-5.5
+openai/gpt-5.5,openai/gpt-4o-mini,32,5,6,21,0.15625,0.1875,0.65625,0.78125,0.26041666666666663,GPT-4o-mini,GPT-5.5

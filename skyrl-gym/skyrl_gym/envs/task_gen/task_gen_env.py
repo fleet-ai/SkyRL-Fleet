@@ -45,6 +45,122 @@ from skyrl_gym.envs.task_gen.verifier_sandbox import (
 logger = logging.getLogger(__name__)
 
 
+class FleetHarnessJobError(RuntimeError):
+    """Error raised after a Fleet harness job may have been created."""
+
+    def __init__(self, message: str, *, job_id: str = "", task_key: str = "", status: str = ""):
+        super().__init__(message)
+        self.job_id = job_id
+        self.task_key = task_key
+        self.status = status
+
+
+def _json_safe(value: Any, *, max_depth: int = 4) -> Any:
+    if max_depth <= 0:
+        return repr(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item, max_depth=max_depth - 1) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item, max_depth=max_depth - 1) for item in value]
+    if hasattr(value, "model_dump"):
+        try:
+            return _json_safe(value.model_dump(), max_depth=max_depth - 1)
+        except Exception:
+            pass
+    if hasattr(value, "dict"):
+        try:
+            return _json_safe(value.dict(), max_depth=max_depth - 1)
+        except Exception:
+            pass
+    if hasattr(value, "__dict__"):
+        try:
+            return _json_safe(vars(value), max_depth=max_depth - 1)
+        except Exception:
+            pass
+    return repr(value)
+
+
+def _first_present_mapping_value(mapping: Dict[str, Any], keys: List[str]) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if value:
+            return value
+    return None
+
+
+_SESSION_TRAJECTORY_KEYS = [
+    "trajectory",
+    "trajectories",
+    "rollout",
+    "rollouts",
+    "transcript",
+    "messages",
+    "steps",
+    "actions",
+    "events",
+]
+_SESSION_TRANSCRIPT_KEYS = ["session_transcript", "transcript_payload", *_SESSION_TRAJECTORY_KEYS]
+_TRANSCRIPT_CONTAINER_KEYS = ["session_transcript", "transcript_payload", "transcript", "payload", "data", "result"]
+_TRANSCRIPT_MESSAGE_KEYS = ["messages", "conversation", "chat_history"]
+
+
+def _looks_like_messages(value: Any) -> bool:
+    return isinstance(value, list) and any(
+        isinstance(item, dict) and ("role" in item or "content" in item) for item in value
+    )
+
+
+def _extract_transcript_fields(payload: Any) -> Dict[str, Any]:
+    """Pull common trajectory fields from Fleet transcript payload shapes."""
+    if not payload:
+        return {}
+    if isinstance(payload, list):
+        fields = {"transcript": payload, "trajectory": payload}
+        if _looks_like_messages(payload):
+            fields["messages"] = payload
+        return fields
+    if not isinstance(payload, dict):
+        return {}
+
+    fields: Dict[str, Any] = {}
+    containers = [payload]
+    for key in _TRANSCRIPT_CONTAINER_KEYS:
+        value = payload.get(key)
+        if isinstance(value, dict) and value not in containers:
+            containers.append(value)
+        elif isinstance(value, list) and value:
+            fields.setdefault("transcript", value)
+            fields.setdefault("trajectory", value)
+            if _looks_like_messages(value):
+                fields.setdefault("messages", value)
+
+    for container in containers:
+        messages = _first_present_mapping_value(container, _TRANSCRIPT_MESSAGE_KEYS)
+        if messages:
+            fields.setdefault("messages", messages)
+        for key in ("steps", "actions", "events"):
+            value = container.get(key)
+            if value:
+                fields.setdefault(key, value)
+        trajectory = _first_present_mapping_value(container, _SESSION_TRAJECTORY_KEYS)
+        if trajectory:
+            fields.setdefault("trajectory", trajectory)
+        transcript = _first_present_mapping_value(
+            container,
+            ["transcript", "session_transcript", "transcript_payload"],
+        )
+        if transcript:
+            fields.setdefault("transcript", transcript)
+
+    if "messages" in fields and "trajectory" not in fields:
+        fields["trajectory"] = fields["messages"]
+    if any(key in fields for key in ("trajectory", "messages", "steps", "actions", "events")):
+        fields.setdefault("transcript", payload)
+    return fields
+
+
 def _format_compact_schema(describe_result: Any) -> str:
     """Convert a DescribeResponse dict to compact 'table: col (type), ...' format."""
     if not isinstance(describe_result, dict):
@@ -764,36 +880,142 @@ class TaskGenEnv(BaseTextEnv):
         if self._fleet_client is None:
             from fleet import Fleet
 
-            self._fleet_client = Fleet(api_key=self.fleet_api_key)
+            timeout = float(os.environ.get("FLEET_CLIENT_TIMEOUT", "60"))
+            self._fleet_client = Fleet(api_key=self.fleet_api_key, timeout=timeout)
         return self._fleet_client
 
-    async def _poll_job(self, fleet, job_id: str, poll_interval: int = 10, timeout: int = 600) -> str:
+    def _record_fleet_job_event(
+        self,
+        *,
+        job_id: str,
+        task_key: str,
+        rollout_label: str,
+        pass_k: int,
+        event: str,
+        status: str = "",
+        elapsed: Optional[float] = None,
+        error: str = "",
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Persist Fleet job status while the remote harness is still running."""
+        try:
+            run_name = os.environ.get("RUN_NAME", "unknown")
+            record: Dict[str, Any] = {
+                "timestamp": time.time(),
+                "run_name": run_name,
+                "event": event,
+                "job_id": job_id,
+                "task_key": task_key,
+                "rollout_label": rollout_label,
+                "status": status,
+                "elapsed_seconds": elapsed,
+                "pass_k": pass_k,
+                "max_eval_steps": self.max_eval_steps,
+                "env_key": self.env_key,
+                "data_key": self.data_key,
+                "data_version": self.data_version,
+                "evaluator_model": self.evaluator_model,
+                "error": error,
+            }
+            if extra:
+                record.update(extra)
+
+            os.makedirs(self._rollout_dir, exist_ok=True)
+            status_path = os.path.join(self._rollout_dir, "fleet_job_status.jsonl")
+            with open(status_path, "a") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+            if job_id:
+                jobs_dir = os.path.join(self._rollout_dir, "fleet_jobs")
+                os.makedirs(jobs_dir, exist_ok=True)
+                snapshot_path = os.path.join(jobs_dir, f"{job_id}.json")
+                with open(snapshot_path, "w") as f:
+                    json.dump(record, f, ensure_ascii=False, indent=2)
+                    f.write("\n")
+        except Exception as e:
+            logger.warning(f"Failed to record Fleet job event for {job_id}: {e}")
+
+    async def _poll_job(
+        self,
+        fleet,
+        job_id: str,
+        *,
+        task_key: str,
+        rollout_label: str,
+        pass_k: int,
+        poll_interval: Optional[int] = None,
+        timeout: Optional[int] = None,
+    ) -> str:
         """Poll Fleet job until completion or timeout.
 
         Returns:
             Final job status string.
         """
+        poll_interval = poll_interval or int(os.environ.get("FLEET_JOB_POLL_INTERVAL", "10"))
+        timeout = timeout or int(os.environ.get("FLEET_JOB_POLL_TIMEOUT", "600"))
         start = time.time()
-        last_status = None
+        poll_count = 0
         while time.time() - start < timeout:
+            elapsed = time.time() - start
+            poll_count += 1
             try:
+                request_start = time.time()
                 job = fleet.get_job(job_id)
+                request_seconds = time.time() - request_start
                 status = job.status
-                if status != last_status:
-                    print(
-                        f"[task-gen eval] Job {job_id} status={status} elapsed={time.time() - start:.0f}s",
-                        flush=True,
-                    )
-                    last_status = status
+                self._record_fleet_job_event(
+                    job_id=job_id,
+                    task_key=task_key,
+                    rollout_label=rollout_label,
+                    pass_k=pass_k,
+                    event="poll",
+                    status=status,
+                    elapsed=elapsed,
+                    extra={"poll_count": poll_count, "request_seconds": round(request_seconds, 3)},
+                )
+                print(
+                    f"[task-gen eval] Job {job_id} status={status} "
+                    f"elapsed={elapsed:.0f}s poll={poll_count}",
+                    flush=True,
+                )
                 if status in ("completed", "cancelled", "errored"):
+                    self._record_fleet_job_event(
+                        job_id=job_id,
+                        task_key=task_key,
+                        rollout_label=rollout_label,
+                        pass_k=pass_k,
+                        event="terminal",
+                        status=status,
+                        elapsed=time.time() - start,
+                        extra={"poll_count": poll_count},
+                    )
                     return status
             except Exception as e:
+                self._record_fleet_job_event(
+                    job_id=job_id,
+                    task_key=task_key,
+                    rollout_label=rollout_label,
+                    pass_k=pass_k,
+                    event="poll_error",
+                    elapsed=elapsed,
+                    error=str(e),
+                    extra={"poll_count": poll_count},
+                )
                 logger.warning(f"Error polling job {job_id}: {e}")
                 print(f"[task-gen eval] Error polling job {job_id}: {e}", flush=True)
             await asyncio.sleep(poll_interval)
 
         logger.error(f"Job {job_id} timed out after {timeout}s")
         print(f"[task-gen eval] Job {job_id} timed out after {timeout}s", flush=True)
+        self._record_fleet_job_event(
+            job_id=job_id,
+            task_key=task_key,
+            rollout_label=rollout_label,
+            pass_k=pass_k,
+            event="timeout",
+            status="timeout",
+            elapsed=time.time() - start,
+        )
         return "timeout"
 
     def _query_supabase_scores(self, job_id: str) -> Dict[str, float]:
@@ -837,19 +1059,43 @@ class TaskGenEnv(BaseTextEnv):
             return {}
 
     def _extract_job_results(
-        self, fleet, job_id: str, rollout_label: str = "raw"
-    ) -> List[Tuple[float, Optional[str], Optional[str]]]:
-        """Extract (score, verifier_stdout, verifier_error) from completed job sessions.
+        self,
+        fleet,
+        job_id: str,
+        *,
+        task_key: str,
+        rollout_label: str = "raw",
+        pass_k: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Extract per-session solver results from completed job sessions.
 
         Primary path: read from session.verifier_execution (Fleet SDK).
         Fallback: query Supabase for metadata.verifier_score when VE is null
         (Fleet backend regression since 2026-03-23 stopped populating VE FK).
 
         Returns:
-            List of (score, stdout, error) tuples per session.
+            List of JSON-serializable session records.
         """
-        results: List[Tuple[float, Optional[str], Optional[str]]] = []
+        results: List[Dict[str, Any]] = []
+        self._record_fleet_job_event(
+            job_id=job_id,
+            task_key=task_key,
+            rollout_label=rollout_label,
+            pass_k=pass_k,
+            event="fetch_sessions_start",
+            status="completed",
+        )
         sessions_response = fleet.list_job_sessions(job_id)
+        session_count = sum(len(tg.sessions) for tg in sessions_response.tasks)
+        self._record_fleet_job_event(
+            job_id=job_id,
+            task_key=task_key,
+            rollout_label=rollout_label,
+            pass_k=pass_k,
+            event="fetch_sessions_done",
+            status="completed",
+            extra={"session_count": session_count},
+        )
 
         # Check if any session has verifier_execution populated
         all_ve_null = all(s.verifier_execution is None for tg in sessions_response.tasks for s in tg.sessions)
@@ -863,14 +1109,52 @@ class TaskGenEnv(BaseTextEnv):
 
         for task_group in sessions_response.tasks:
             for session in task_group.sessions:
+                raw_session = _json_safe(session, max_depth=8)
+                session_payload = raw_session if isinstance(raw_session, dict) else {}
+                session_id = (
+                    getattr(session, "session_id", "")
+                    or getattr(session, "id", "")
+                    or str(session_payload.get("session_id") or session_payload.get("id") or "")
+                )
+                existing_transcript_payload = _first_present_mapping_value(session_payload, _SESSION_TRANSCRIPT_KEYS)
+                session_transcript = None
+                session_transcript_error = ""
+                if session_id and not existing_transcript_payload:
+                    try:
+                        session_transcript = _json_safe(fleet.get_session_transcript(session_id), max_depth=8)
+                    except Exception as e:
+                        session_transcript_error = str(e)
+                        logger.warning(
+                            f"Failed to fetch Fleet transcript for session {session_id} in job {job_id}: {e}"
+                        )
+                elif existing_transcript_payload:
+                    session_transcript = existing_transcript_payload
+
+                transcript_fields = _extract_transcript_fields(session_transcript)
+                trajectory = _first_present_mapping_value(
+                    session_payload,
+                    _SESSION_TRAJECTORY_KEYS,
+                ) or transcript_fields.get("trajectory")
+                messages = session_payload.get("messages") or transcript_fields.get("messages")
+                steps = session_payload.get("steps") or transcript_fields.get("steps")
+                actions = session_payload.get("actions") or transcript_fields.get("actions")
+                events = session_payload.get("events") or transcript_fields.get("events")
+                transcript = session_payload.get("transcript") or transcript_fields.get("transcript")
                 score = 0.0
                 stdout = None
                 error = None
+                verifier_success = None
+                verifier_execution_id = ""
                 if session.verifier_execution:
+                    verifier_execution_id = (
+                        getattr(session.verifier_execution, "id", "")
+                        or getattr(session.verifier_execution, "verifier_execution_id", "")
+                    )
                     if session.verifier_execution.score is not None:
                         score = float(session.verifier_execution.score)
                     elif session.verifier_execution.success:
                         score = 1.0
+                    verifier_success = bool(session.verifier_execution.success)
                     stdout = session.verifier_execution.stdout
                     # Capture error from verifier crashes — error is nested in result.error
                     ve_result = session.verifier_execution.result
@@ -884,20 +1168,54 @@ class TaskGenEnv(BaseTextEnv):
                             if traceback_str:
                                 # Extract just the last line of traceback (the actual error)
                                 error = traceback_str.strip().split("\n")[-1] if traceback_str else error
-                elif session.session_id in supabase_scores:
+                elif session_id in supabase_scores:
                     # Fallback: use Supabase metadata.verifier_score
-                    score = supabase_scores[session.session_id]
-                results.append((score, stdout, error))
+                    score = supabase_scores[session_id]
+                session_result = {
+                    "session_id": session_id,
+                    "task_key": getattr(task_group, "task_key", "") or getattr(task_group, "key", "") or task_key,
+                    "score": score,
+                    "verifier_stdout": stdout,
+                    "verifier_error": error,
+                    "verifier_success": verifier_success,
+                    "verifier_execution_id": verifier_execution_id,
+                    "transcript": transcript,
+                    "trajectory": trajectory,
+                    "messages": messages,
+                    "steps": steps,
+                    "actions": actions,
+                    "events": events,
+                    "session_payload": session_payload,
+                    "raw_session": raw_session,
+                }
+                if session_transcript:
+                    session_result["session_transcript"] = session_transcript
+                if session_transcript_error:
+                    session_result["session_transcript_error"] = session_transcript_error
+                results.append(session_result)
                 print(
                     f"[task-gen eval] Finished {rollout_label} solver rollout {len(results)} "
                     f"for job {job_id}: score={score}",
                     flush=True,
                 )
+        self._record_fleet_job_event(
+            job_id=job_id,
+            task_key=task_key,
+            rollout_label=rollout_label,
+            pass_k=pass_k,
+            event="results_extracted",
+            status="completed",
+            extra={
+                "scores": [result["score"] for result in results],
+                "session_ids": [result.get("session_id", "") for result in results],
+                "session_count": len(results),
+            },
+        )
         return results
 
     async def _run_harness_job(
         self, prompt: str, verifier: str, k: int, rollout_label: str = "raw"
-    ) -> List[Tuple[float, Optional[str], Optional[str]]]:
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         """Run a single Fleet harness job and return per-session results + job ID.
 
         1. Import task to Fleet
@@ -906,9 +1224,7 @@ class TaskGenEnv(BaseTextEnv):
         4. Extract results
 
         Returns:
-            Tuple of (job_id, results) where results is a list of
-            (score, verifier_stdout, verifier_error) tuples.
-            job_id is None on failure.
+            Tuple of (job_id, results) where results is a list of per-session records.
         """
         from fleet.tasks import Task
 
@@ -942,40 +1258,90 @@ class TaskGenEnv(BaseTextEnv):
         except Exception as e:
             logger.error(f"[{task_key}] Failed to import task to Fleet: {e}")
             print(f"[task-gen eval] Failed to import task {task_key}: {e}", flush=True)
-            return (None, [(0.0, None, None)] * k)
+            raise RuntimeError(f"Failed to import task {task_key} to Fleet: {e}") from e
         if import_response is None:
             logger.error(
                 f"[{task_key}] Failed to import task to Fleet (returned None, api_key set: {bool(self.fleet_api_key)})"
             )
             print(f"[task-gen eval] Failed to import task {task_key}: Fleet returned None", flush=True)
-            return (None, [(0.0, None, None)] * k)
+            raise RuntimeError(f"Failed to import task {task_key} to Fleet: import returned None")
 
         print(
             f"[task-gen eval] Creating {rollout_label} Fleet harness job for task {task_key} "
             f"with pass_k={k}, max_steps={self.max_eval_steps}",
             flush=True,
         )
-        job_response = fleet.create_job(
-            models=[self.evaluator_model],
-            task_keys=[task_key],
-            pass_k=k,
-            max_steps=self.max_eval_steps,
-            mode="tool-use",
-            name=f"taskgen-eval-{task_key}",
-        )
+        try:
+            job_response = fleet.create_job(
+                models=[self.evaluator_model],
+                task_keys=[task_key],
+                pass_k=k,
+                max_steps=self.max_eval_steps,
+                mode="tool-use",
+                name=f"taskgen-eval-{task_key}",
+            )
+        except Exception as e:
+            logger.error(f"[{task_key}] Failed to create Fleet harness job: {e}")
+            print(f"[task-gen eval] Failed to create Fleet harness job for task {task_key}: {e}", flush=True)
+            raise RuntimeError(f"Failed to create Fleet harness job for task {task_key}: {e}") from e
+        if job_response is None or not getattr(job_response, "job_id", None):
+            raise RuntimeError(f"Failed to create Fleet harness job for task {task_key}: missing job_id")
         job_id = job_response.job_id
         logger.info(f"[{task_key}] Harness job created: {job_id} (model={self.evaluator_model}, k={k})")
         print(f"[task-gen eval] Harness job created: {job_id} for task {task_key}", flush=True)
+        self._record_fleet_job_event(
+            job_id=job_id,
+            task_key=task_key,
+            rollout_label=rollout_label,
+            pass_k=k,
+            event="created",
+            status="created",
+        )
 
-        status = await self._poll_job(fleet, job_id)
-        if status != "completed":
-            logger.warning(f"[{task_key}] Job {job_id} ended with status: {status}")
-            print(f"[task-gen eval] Job {job_id} ended with status={status}; returning zero scores", flush=True)
-            return (job_id, [(0.0, None, None)] * k)
+        try:
+            status = await self._poll_job(
+                fleet,
+                job_id,
+                task_key=task_key,
+                rollout_label=rollout_label,
+                pass_k=k,
+            )
+            if status != "completed":
+                logger.warning(f"[{task_key}] Job {job_id} ended with status: {status}")
+                print(f"[task-gen eval] Job {job_id} ended with status={status}; failing evaluation", flush=True)
+                raise FleetHarnessJobError(
+                    f"Fleet harness job {job_id} ended with status={status}",
+                    job_id=job_id,
+                    task_key=task_key,
+                    status=status,
+                )
 
-        results = self._extract_job_results(fleet, job_id, rollout_label=rollout_label)
+            results = self._extract_job_results(
+                fleet,
+                job_id,
+                task_key=task_key,
+                rollout_label=rollout_label,
+                pass_k=k,
+            )
+            if len(results) != k:
+                raise FleetHarnessJobError(
+                    f"Fleet harness job {job_id} returned {len(results)} session(s), expected {k}",
+                    job_id=job_id,
+                    task_key=task_key,
+                    status="incomplete_sessions",
+                )
+        except FleetHarnessJobError:
+            raise
+        except Exception as e:
+            raise FleetHarnessJobError(
+                f"Fleet harness job {job_id} failed while collecting results: {e}",
+                job_id=job_id,
+                task_key=task_key,
+                status="result_collection_failed",
+            ) from e
         print(
-            f"[task-gen eval] Completed {rollout_label} job {job_id}: " f"scores={[score for score, _, _ in results]}",
+            f"[task-gen eval] Completed {rollout_label} job {job_id}: "
+            f"scores={[result['score'] for result in results]}",
             flush=True,
         )
         return (job_id, results)
@@ -996,10 +1362,17 @@ class TaskGenEnv(BaseTextEnv):
         zero_result = compute_task_reward([], [], validity=1.0)
 
         if not self.fleet_api_key:
-            return zero_result
+            raise RuntimeError("FLEET_API_KEY is required for task-generation solver evaluation.")
 
         task_id = f"taskgen_{uuid.uuid4().hex[:8]}"
         start = time.time()
+        raw_job_id = None
+        hinted_job_id = None
+        raw_scores: List[float] = []
+        hinted_scores: List[float] = []
+        raw_results: List[Dict[str, Any]] = []
+        hinted_results: List[Dict[str, Any]] = []
+        hint_text = ""
 
         try:
             # Eval: k=eval_k_rollouts for pass rate; Train: k=k_rollouts
@@ -1012,8 +1385,12 @@ class TaskGenEnv(BaseTextEnv):
             )
 
             # 1. Raw job: k rollouts without hints
-            raw_job_id, raw_results = await self._run_harness_job(prompt, verifier, k=eval_k, rollout_label="raw")
-            raw_scores = [r[0] for r in raw_results]
+            try:
+                raw_job_id, raw_results = await self._run_harness_job(prompt, verifier, k=eval_k, rollout_label="raw")
+            except FleetHarnessJobError as e:
+                raw_job_id = e.job_id or raw_job_id
+                raise
+            raw_scores = [float(result.get("score", 0.0)) for result in raw_results]
             print(f"[task-gen eval] Raw rollout scores: {raw_scores}", flush=True)
 
             if self.enable_hints and not self.is_eval:
@@ -1021,8 +1398,11 @@ class TaskGenEnv(BaseTextEnv):
                 # 2. Build hint from first failing session's stdout/error
                 hint_stdout = None
                 hint_error = None
-                for score, stdout, error in raw_results:
+                for result in raw_results:
+                    score = float(result.get("score", 0.0))
                     if score < 1.0:
+                        stdout = result.get("verifier_stdout")
+                        error = result.get("verifier_error")
                         if stdout:
                             hint_stdout = stdout
                         if error:
@@ -1045,19 +1425,21 @@ class TaskGenEnv(BaseTextEnv):
 
                 # 3. Hinted job: k rollouts with hint
                 hinted_prompt = f"{prompt}\n\nHere is feedback from a previous attempt to help you:\n{hint_text}"
-                hinted_job_id, hinted_results = await self._run_harness_job(
-                    hinted_prompt, verifier, k=self.k_rollouts, rollout_label="hinted"
-                )
-                hinted_scores = [r[0] for r in hinted_results]
+                try:
+                    hinted_job_id, hinted_results = await self._run_harness_job(
+                        hinted_prompt, verifier, k=self.k_rollouts, rollout_label="hinted"
+                    )
+                except FleetHarnessJobError as e:
+                    hinted_job_id = e.job_id or hinted_job_id
+                    raise
+                hinted_scores = [float(result.get("score", 0.0)) for result in hinted_results]
                 print(f"[task-gen eval] Hinted rollout scores: {hinted_scores}", flush=True)
 
                 # 4. Compute reward
                 result = compute_task_reward(raw_scores, hinted_scores, validity=1.0)
             else:
                 # No hints — reward based on raw variance only
-                hinted_scores = []
                 hinted_job_id = None
-                hint_text = ""
                 result = compute_task_reward(raw_scores, raw_scores, validity=1.0)
 
             duration = time.time() - start
@@ -1096,6 +1478,8 @@ class TaskGenEnv(BaseTextEnv):
                 hinted_scores=hinted_scores,
                 raw_job_id=raw_job_id,
                 hinted_job_id=hinted_job_id,
+                raw_sessions=raw_results,
+                hinted_sessions=hinted_results,
                 result=result,
                 duration=duration,
             )
@@ -1103,8 +1487,37 @@ class TaskGenEnv(BaseTextEnv):
             return result
 
         except Exception as e:
-            logger.error(f"[{task_id}] Evaluation failed: {e}")
-            return zero_result
+            duration = time.time() - start
+            logger.exception(f"[{task_id}] Evaluation failed: {e}")
+            print(f"[task-gen eval] Evaluation failed for {task_id}: {e}", flush=True)
+            self._save_rollout(
+                task_id=task_id,
+                env_key=self.env_key,
+                data_key=self.data_key,
+                prompt=prompt,
+                verifier=verifier,
+                hint=hint_text,
+                raw_scores=raw_scores,
+                hinted_scores=hinted_scores,
+                raw_job_id=raw_job_id,
+                hinted_job_id=hinted_job_id,
+                raw_sessions=raw_results,
+                hinted_sessions=hinted_results,
+                result=zero_result,
+                duration=duration,
+                error=str(e),
+            )
+            self._record_fleet_job_event(
+                job_id=raw_job_id or "",
+                task_key=task_id,
+                rollout_label="eval",
+                pass_k=self.eval_k_rollouts if self.is_eval else self.k_rollouts,
+                event="evaluation_failed",
+                status="failed",
+                elapsed=duration,
+                error=str(e),
+            )
+            raise
 
     def _save_rollout(
         self,
@@ -1118,14 +1531,18 @@ class TaskGenEnv(BaseTextEnv):
         hinted_scores,
         raw_job_id,
         hinted_job_id,
+        raw_sessions,
+        hinted_sessions,
         result,
         duration,
+        error="",
     ):
         """Append full rollout data to a local JSONL file."""
         try:
             run_name = os.environ.get("RUN_NAME", "unknown")
             path = os.path.join(self._rollout_dir, f"{run_name}.jsonl")
             record = {
+                "status": "failed" if error else "completed",
                 "task_id": task_id,
                 "env_key": env_key,
                 "data_key": data_key,
@@ -1134,6 +1551,8 @@ class TaskGenEnv(BaseTextEnv):
                 "hint": hint,
                 "raw_scores": raw_scores,
                 "hinted_scores": hinted_scores,
+                "raw_sessions": raw_sessions,
+                "hinted_sessions": hinted_sessions,
                 "raw_job_id": raw_job_id,
                 "hinted_job_id": hinted_job_id,
                 "var_raw": result["var_raw"],
@@ -1141,6 +1560,7 @@ class TaskGenEnv(BaseTextEnv):
                 "total": result["total"],
                 "duration": duration,
                 "timestamp": time.time(),
+                "error": error,
             }
             with open(path, "a") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
