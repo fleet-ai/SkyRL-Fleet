@@ -174,6 +174,7 @@ async def main(args: argparse.Namespace) -> None:
         model_name=args.model_name,
         lora_rank=args.lora_rank,
         max_sequence_length=args.max_sequence_length,
+        probe_token_id=tokenizer.eos_token_id or 0,
     )
     if cap is not None and cap < args.max_sequence_length:
         before = len(datums)
@@ -210,8 +211,12 @@ async def main(args: argparse.Namespace) -> None:
         rng.shuffle(order)
         for i in range(0, len(order), args.batch_size):
             batch = [datums[j] for j in order[i : i + args.batch_size]]
-            fb = await training_client.forward_backward_async(batch, loss_fn="cross_entropy")
-            await training_client.optim_step_async(adam_params)
+            # Submit both, then consume results — the same pipelined pattern
+            # as the GRPO trainer; the futures require an explicit .result().
+            fb_future = training_client.forward_backward(batch, loss_fn="cross_entropy")
+            optim_future = training_client.optim_step(adam_params)
+            fb = fb_future.result()
+            optim_future.result()
             step += 1
 
             loss_sum, w_sum = 0.0, 0.0
@@ -230,14 +235,14 @@ async def main(args: argparse.Namespace) -> None:
                 wandb_run.log({"sft/loss_per_token": mean_loss, "sft/epoch": epoch + 1}, step=step)
 
             if args.save_state_every and step % args.save_state_every == 0:
-                state = await training_client.save_state_async(f"sft_step_{step:06d}")
-                saved_states.append({"step": step, "path": state.path})
-                logger.info(f"saved state: {state.path}")
+                state_path = training_client.save_state(name=f"sft_step_{step:06d}").result().path
+                saved_states.append({"step": step, "path": state_path})
+                logger.info(f"saved state: {state_path}")
 
-    final_state = await training_client.save_state_async("sft_final")
-    sampler = await training_client.save_weights_for_sampler_async("sft_final_sampler")
-    logger.info(f"final state: {final_state.path}")
-    logger.info(f"final sampler: {sampler.path}")
+    final_state_path = training_client.save_state(name="sft_final").result().path
+    final_sampler_path = training_client.save_weights_for_sampler(name="sft_final_sampler").result().path
+    logger.info(f"final state: {final_state_path}")
+    logger.info(f"final sampler: {final_sampler_path}")
 
     if args.results_out:
         with open(args.results_out, "w") as f:
@@ -249,8 +254,8 @@ async def main(args: argparse.Namespace) -> None:
                     "n_turn_datums": stats["turn_datums"],
                     "loss_tokens": stats["loss_tokens_total"],
                     "steps": step,
-                    "final_state": final_state.path,
-                    "final_sampler": sampler.path,
+                    "final_state": final_state_path,
+                    "final_sampler": final_sampler_path,
                     "intermediate_states": saved_states,
                 },
                 f,
