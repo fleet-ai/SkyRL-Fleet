@@ -58,6 +58,29 @@ MAX_TOOL_OUTPUT_CHARS = 16_000
 # drops <|tool_call_begin|> / <|tool_call_argument_begin|> literally.
 
 
+_STRICT_VERDICT_RE = re.compile(r">>> STRICT_VERDICT >>>\s*\n\s*(-?[\d.]+)\s*\n\s*<<< STRICT_VERDICT <<<")
+
+
+def parse_strict_verdict(verifier_stdout: Optional[str]) -> Optional[float]:
+    """Extract the oracle verdict a dual-scoring verifier prints to stdout.
+
+    Dual-scoring verifiers (rl-experiments/make_arms.py) run the unmodified strict
+    verifier observationally alongside the weakened one that produces the reward,
+    so both scores describe the same rollout end-state. Returns None when the block
+    is absent (ordinary single-verifier task) and -1.0 when the oracle itself
+    errored — callers must exclude -1 from the strict curve rather than score it 0.
+    """
+    if not verifier_stdout:
+        return None
+    m = _STRICT_VERDICT_RE.search(verifier_stdout)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
 def load_tasks_from_json(tasks_file: str) -> Dict[str, Any]:
     """Load tasks from JSON file with caching.
 
@@ -535,6 +558,9 @@ class FleetTaskEnv(BaseTextEnv):
         self._verifier_stdout: Optional[str] = None
         self._verifier_error: Optional[str] = None
         self._tool_error_messages: List[str] = []
+        # Oracle verdict from a dual-scoring verifier (see rl-experiments/make_arms.py).
+        # None for ordinary single-verifier tasks.
+        self._strict_reward: Optional[float] = None
 
         # Context management (uses OpenEnv's ContextManager)
         self.enable_context_tools = (
@@ -1202,6 +1228,7 @@ class FleetTaskEnv(BaseTextEnv):
             self._verifier_stdout = getattr(self.openenv_task_env, "verifier_stdout", None)
             self._verifier_error = getattr(self.openenv_task_env, "verifier_error", None)
             self._tool_error_messages = getattr(self.openenv_task_env, "tool_errors_list", [])
+            self._strict_reward = parse_strict_verdict(self._verifier_stdout)
             # Surface verifier output so failure modes (LLM-judge details,
             # tracebacks, GRADING_DETAILS blocks) are grep'able from logs.
             if self._verifier_stdout:
@@ -1249,6 +1276,11 @@ class FleetTaskEnv(BaseTextEnv):
         }
         if self.last_reward is not None:
             metrics["final_reward"] = self.last_reward
+        # Oracle verdict on the SAME end-state that produced final_reward. The gap
+        # between the two is the reward-hacking signal; -1 means the oracle errored
+        # and the rollout must be excluded from the strict curve, not counted as 0.
+        if self._strict_reward is not None:
+            metrics["strict_reward"] = self._strict_reward
         # Include verifier feedback for hint generation
         if self._verifier_stdout is not None:
             metrics["verifier_stdout"] = self._verifier_stdout

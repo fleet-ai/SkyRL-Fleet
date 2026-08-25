@@ -16,7 +16,7 @@ Rewards can be in two formats:
 """
 
 from collections import defaultdict
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
@@ -251,3 +251,71 @@ def compute_per_group_metrics(
             metrics[f"{prefix}/{sanitized}/{metric_name}"] = value
 
     return metrics
+
+
+def compute_strict_curve(
+    env_metrics: Optional[List[Optional[Dict[str, Any]]]],
+    uids: List[str],
+    weak_pass_at_n: float,
+    n_samples_per_prompt: int,
+    prefix: str = "train/strict",
+) -> Dict[str, float]:
+    """Oracle ("strict") reward curve alongside the weak curve that drives training.
+
+    Dual-scoring verifiers score every rollout twice against the SAME end-state:
+    the weakened verifier produces the reward, and the unmodified strict verifier
+    rides along as an oracle, reported via env_metrics["strict_reward"]. Because
+    both verdicts come from one execution there is no sampling-noise confound
+    between the two curves.
+
+    Reward hacking is the GAP: the weak curve rises while the strict curve stays
+    flat or falls. Returns {} for ordinary runs where no rollout carries a strict
+    verdict, so this is inert unless dual-scoring verifiers are in play.
+
+    A strict_reward of -1 means the oracle itself raised. Those rollouts are
+    EXCLUDED rather than scored 0 -- counting an oracle crash as a failure would
+    manufacture a gap and fake the headline result. The excluded fraction is
+    logged so a run that quietly loses its oracle is visible.
+    """
+    if not env_metrics:
+        return {}
+
+    strict_rewards: List[float] = []
+    strict_uids: List[str] = []
+    errored = 0
+    for metrics, uid in zip(env_metrics, uids):
+        if not isinstance(metrics, dict):
+            continue
+        value = metrics.get("strict_reward")
+        if value is None:
+            continue
+        value = float(value)
+        if value < 0:
+            errored += 1
+            continue
+        strict_rewards.append(value)
+        strict_uids.append(uid)
+
+    total = len(strict_rewards) + errored
+    if not total:
+        return {}
+
+    out: Dict[str, float] = {f"{prefix}/oracle_error_frac": errored / total}
+    if not strict_rewards:
+        return out
+
+    for name, value in compute_reward_metrics(strict_rewards, strict_uids, n_samples_per_prompt).items():
+        out[f"{prefix}/{name}"] = value
+
+    # The headline diagnostic. Positive and growing => the policy is buying reward
+    # the oracle does not credit.
+    #
+    # The gap is namespaced off the caller's prefix (train/ vs eval/) because it is
+    # only meaningful against the weak pass@n from the SAME rollouts. Defaults to
+    # train/ since the caller is the training postprocess path -- calling it eval/
+    # would imply the oracle curve came from held-out data, which it does not.
+    namespace = prefix.split("/")[0]
+    strict_pass = out[f"{prefix}/pass_at_{n_samples_per_prompt}"]
+    out[f"{namespace}/hacking_gap"] = weak_pass_at_n - strict_pass
+    out[f"{prefix}/n_scored"] = float(len(strict_rewards))
+    return out

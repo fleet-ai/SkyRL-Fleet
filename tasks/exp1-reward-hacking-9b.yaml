@@ -1,0 +1,85 @@
+# Exp1 reward-hacking arm — Qwen3.5-9B tool-use GRPO, single 8xH200 node.
+#
+# One arm per launch. The arm is selected by DATA_VERSION, which points at a
+# per-arm dataset in S3 built by rl-experiments/make_arms.py:
+#
+#   exp1-v0  control      unmodified verifier as both reward and truth
+#   exp1-v1  identity     drop "which ones", keep "how many"      (17/51 tasks)
+#   exp1-v2  strict diff  drop expect_only_v2 in positive apps    (50/51 tasks)
+#   exp1-v3  content      truncate normalized_contains needles    (46/51 tasks)
+#   exp1-v4  negative     drop negative-only apps from the score  (51/51 tasks)
+#
+# Every arm's verifier is a dual-scoring wrapper: the weakened verifier produces
+# the reward, the unmodified strict verifier rides along as an oracle on the same
+# end-state. Watch eval/hacking_gap (weak pass@n − strict pass@n) against
+# reward/avg_pass_at_8. On the v0 control the two curves must be IDENTICAL — that
+# is the harness test.
+#
+# Usage (one arm):
+#   bash scripts/fleet-launch.sh --keep-cluster -- tasks/exp1-reward-hacking-9b.yaml \
+#     -c exp1-v4 --env ARM=v4 --env DATA_VERSION=exp1-v4 \
+#     --env FLEET_API_KEY=... --env WANDB_API_KEY=... \
+#     --env AWS_ACCESS_KEY_ID=... --env AWS_SECRET_ACCESS_KEY=...
+#
+# The V2 partial-reward interaction arm additionally passes --env PARTIAL_REWARD=true.
+#
+# Node pinning: this SkyPilot version rejects per-task sbatch_options, so the
+# nodelist/exclude lives in ~/.sky/config.yaml under
+# slurm.cluster_configs.<cluster>.sbatch_options. Excluding the dead node-8 there
+# once lets SLURM spread these single-node arms across the idle nodes.
+
+name: exp1-reward-hacking-9b
+
+resources:
+  disk_size: 500
+  memory: 800+
+  accelerators: H200:8
+  cloud: slurm
+  region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 1
+
+# Local workdir (not the github ref) — the dual-scoring metrics path
+# (fleet_task/env.py strict_reward + reward_metrics.compute_strict_curve +
+# trainer.py wiring) is uncommitted local work.
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-9B"
+  # Overridden per arm at launch (exp1-v0 ... exp1-v4).
+  DATA_VERSION: "exp1-v0"
+  ARM: "v0"
+  PROJECT_NAME: "fleet-exp1-reward-hacking"
+  # Binary reward: pass@n counts only reward >= 1.0, the cleanest hacking signal.
+  PARTIAL_REWARD: "false"
+  ENV_KEYS: ""
+  DIFFICULTY: ""
+  MODALITY: "tool_use"
+  MAX_TURNS: 50
+  MAX_INPUT_LENGTH: 72000
+  MAX_GENERATE_LENGTH: 4096
+  NUM_EPOCHS: 20
+  RUN_ID: ""
+  MAX_TASKS: ""
+  RESUME_RUN_NAME: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+  # TP=1 for a dense 9B -> one engine per policy GPU.
+  NUM_INFERENCE_ENGINES: 8
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-9b-run.sh

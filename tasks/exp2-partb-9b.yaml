@@ -1,0 +1,69 @@
+# exp2 Part B (variance reduction) — Qwen3.5-9B tool-use, single 8xH200 node.
+#
+# One arm per launch. Reuses the exp1-v4 tool_use dataset bed (DATA_VERSION);
+# the ONLY thing that varies across arms is EXTRA_HYDRA, which appends
+# algorithm overrides AFTER fleet-9b-run.sh's defaults (hydra: last wins):
+#
+#   B0-equiv  advantage_estimator=grpo  grpo_norm_by_std=true   (baseline)
+#   B1        advantage_estimator=grpo  grpo_norm_by_std=false  (adv-norm OFF)
+#   B4        advantage_estimator=gae + critic (value head)     (learned critic)
+#
+# loss_reduction=sequence_mean is held fixed across all arms so the Part-A
+# token_mean landmine doesn't confound the Part-B variance comparison.
+#
+# B4 note: colocate_all=true asserts num_policy_gpus == num_critic_gpus, and
+# fleet-common-run.sh only scales policy/ref to 8 (leaves critic at default 1),
+# so B4's EXTRA_HYDRA MUST include critic_num_gpus_per_node=8.
+
+name: exp2-partb-9b
+
+resources:
+  disk_size: 500
+  memory: 800+
+  accelerators: H200:8
+  cloud: slurm
+  region: runpod-cluster-y8puzql3juawue
+
+num_nodes: 1
+
+workdir: .
+
+envs:
+  WANDB_API_KEY: ""
+  FLEET_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  LOGGER: "wandb"
+  INFERENCE_BACKEND: "vllm"
+  MODEL_PATH: "Qwen/Qwen3.5-9B"
+  # Reuse exp1-v4's staged tool_use bed.
+  DATA_VERSION: "exp1-v4"
+  ARM: "b0eq"
+  PROJECT_NAME: "fleet-exp2-variance"
+  # Per-arm algorithm overrides, appended to fleet-9b-run.sh's hydra list.
+  EXTRA_HYDRA: ""
+  PARTIAL_REWARD: "false"
+  ENV_KEYS: ""
+  DIFFICULTY: ""
+  MODALITY: "tool_use"
+  MAX_TURNS: 50
+  MAX_INPUT_LENGTH: 72000
+  MAX_GENERATE_LENGTH: 4096
+  NUM_EPOCHS: 20
+  RUN_ID: ""
+  MAX_TASKS: ""
+  RESUME_RUN_NAME: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+  AWS_REGION: "us-east-1"
+  S3_DATASET_BUCKET: "fleet-internal-datasets"
+  S3_CHECKPOINT_BUCKET: "skyrl-checkpoints"
+  S3_TRAJECTORY_BUCKET: "skyrl-trajectories"
+  NUM_INFERENCE_ENGINES: 8
+
+setup: |
+  bash scripts/fleet-common-setup.sh \
+    --openenv-branch deniz/fleet_client \
+    --extra-setup scripts/fleet-qwen35-extra-setup.sh
+
+run: |
+  bash scripts/fleet-9b-run.sh ${EXTRA_HYDRA}

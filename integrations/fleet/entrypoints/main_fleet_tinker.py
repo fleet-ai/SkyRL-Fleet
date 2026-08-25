@@ -72,6 +72,7 @@ from integrations.fleet.reward_metrics import (
 from integrations.fleet.reward_metrics import (
     compute_per_group_metrics,
     compute_reward_metrics,
+    compute_strict_curve,
     sanitize_metric_key,
 )
 
@@ -187,6 +188,10 @@ class RolloutOutput(BaseModel):
     total_tokens: int = 0  # Total tokens generated
     verifier_stdout: Optional[str] = None  # Truncated; full output is in env log
     verifier_error: Optional[str] = None
+    # Oracle verdict from a dual-scoring verifier (rl-experiments/make_arms.py).
+    # Taken from the env's parsed value rather than re-parsed from
+    # verifier_stdout above, which is truncated. None for ordinary tasks.
+    strict_reward: Optional[float] = None
     error: Optional[str] = None
     # Full conversation transcript (role/content per turn, including tool_calls
     # and tool results). Populated only when collect_fleet_rollout is invoked
@@ -362,6 +367,18 @@ def compute_rollout_metrics(
     metrics["reward/avg_raw_reward"] = np.mean(rewards)
     metrics["reward/variance_per_prompt"] = core_metrics["variance_per_prompt"]
     metrics["reward/mean_positive_reward"] = core_metrics["mean_positive_reward"]
+
+    # Reward-hacking diagnostic (exp1). With a dual-scoring verifier each rollout
+    # also carries the strict oracle's verdict on the same end-state, so the oracle
+    # curve and train/hacking_gap come free. Returns {} for ordinary runs.
+    metrics.update(
+        compute_strict_curve(
+            valid_rollouts,
+            uids,
+            core_metrics[f"pass_at_{n_samples_per_prompt}"],
+            n_samples_per_prompt,
+        )
+    )
 
     # Advantage metrics (Tinker-specific)
     metrics["advantage/mean"] = np.mean(advantages)
@@ -950,7 +967,13 @@ async def collect_fleet_rollout(
             # on rollouts with visible per-app progress. Single-flag opt-in;
             # tasks whose stdout has no accumulator emit None and fall back to
             # the binary score.
-            "partial_reward": True,
+            #
+            # Overridable via FLEET_PARTIAL_REWARD=0 (default stays True). The
+            # exp1 reward-hacking arms need it off: they compare the weak reward
+            # against a strict oracle that returns the verifier's raw 0/1, and an
+            # accumulator-derived fraction is a different unit — the mismatch
+            # alone would open a weak-vs-strict gap that isn't reward hacking.
+            "partial_reward": os.environ.get("FLEET_PARTIAL_REWARD", "1").lower() not in ("0", "false", "no"),
         }
     )
     # model_family picks the per-family YAML scaffold + canonical-format
@@ -1267,6 +1290,7 @@ async def collect_fleet_rollout(
             total_tokens=total_tokens,
             verifier_stdout=(env._verifier_stdout or None),
             verifier_error=(env._verifier_error or None),
+            strict_reward=getattr(env, "_strict_reward", None),
             messages=messages_snapshot,
         )
 
@@ -1462,6 +1486,7 @@ async def main(
     max_train_sequence_length: Optional[int] = None,
     binary_reward: bool = False,
     judge_model: Optional[str] = None,
+    grpo_norm_by_std: bool = True,
 ):
     """
     Main training loop using Tinker for training/inference and Fleet for environments.
@@ -1908,7 +1933,7 @@ async def main(
             metrics["reward/raw_partial_mean"] = float(np.mean(rewards))
             rewards = [1.0 if x >= 0.999 else 0.0 for x in rewards]
         task_keys = [r.task_key for r in valid_rollouts]
-        advantages = compute_advantages_grpo_by_task(rewards, task_keys, normalize=True)
+        advantages = compute_advantages_grpo_by_task(rewards, task_keys, normalize=grpo_norm_by_std)
 
         # Compute all rollout metrics (convert to dicts for metrics functions)
         rollout_metrics = compute_rollout_metrics(
@@ -2172,6 +2197,16 @@ if __name__ == "__main__":
         "computing advantages. Held-out evals stay unshaped.",
     )
     parser.add_argument(
+        "--grpo-norm-by-std",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Divide GRPO group-relative advantages by their batch std "
+        "(standardize to unit variance) before the policy loss. On by "
+        "default (matches historical behavior). Pass --no-grpo-norm-by-std "
+        "to keep raw mean-centered advantages — the advantage-normalization "
+        "ablation (exp2 Part B, arm B1).",
+    )
+    parser.add_argument(
         "--max-train-sequence-length",
         type=int,
         default=None,
@@ -2329,6 +2364,7 @@ if __name__ == "__main__":
             max_train_sequence_length=args.max_train_sequence_length,
             binary_reward=args.binary_reward,
             judge_model=args.judge_model,
+            grpo_norm_by_std=args.grpo_norm_by_std,
             eval_before_train=args.eval_before_train,
             results_out=args.results_out,
             save_state_every=args.save_state_every,

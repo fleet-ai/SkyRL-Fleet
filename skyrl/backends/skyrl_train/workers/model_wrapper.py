@@ -385,7 +385,12 @@ class HFModelWrapper(nn.Module):
                 sequences_rolled, None, None, self.sequence_parallel_size
             )
 
-        use_chunked = self.loss_chunk_size > 0
+        # ppo_base_config.yaml defaults loss_chunk_size to `null`, so a run that
+        # doesn't set it explicitly arrives here with None and a bare `> 0` raises
+        # TypeError on the first ref-model forward -- i.e. after rollouts and reward
+        # logging have already succeeded, which makes it look like a data bug.
+        # Treat unset as "no chunking", which is what null is meant to express.
+        use_chunked = bool(self.loss_chunk_size) and self.loss_chunk_size > 0
 
         if use_chunked:
             # Chunked lm_head: avoid materializing full (B, S, vocab_size) logits tensor.
@@ -633,7 +638,11 @@ def _get_critic_model(
             setattr(self, self.base_model_prefix, base_llm_model(config))
 
             self.value_head_prefix = value_head_prefix
-            setattr(self, value_head_prefix, nn.Linear(config.hidden_size, 1, bias=False))
+            # Qwen3.5 (and other wrapped configs) expose hidden_size under a
+            # nested text_config, not at the top level. Short-circuits to the
+            # top-level attr for standard configs.
+            _hs = getattr(config, "hidden_size", None) or config.text_config.hidden_size
+            setattr(self, value_head_prefix, nn.Linear(_hs, 1, bias=False))
 
             self.sequence_parallel_size = sequence_parallel_size
             self.use_sample_packing = use_sample_packing
@@ -644,6 +653,13 @@ def _get_critic_model(
 
             if self.sequence_parallel_size > 1:
                 logger.info("Critic model using sequence parallelism with size: ", self.sequence_parallel_size)
+
+            # transformers >=5 registers all_tied_weights_keys (+ other load-time
+            # bookkeeping attrs) in post_init(); from_pretrained's finalize step
+            # (mark_tied_weights_as_initialized) reads it for custom-code classes.
+            # The hand-rolled __init__ omitted post_init(), so the critic load
+            # crashed with AttributeError('all_tied_weights_keys'). Add it.
+            self.post_init()
 
         def forward(
             self,
@@ -834,6 +850,7 @@ def get_llm_for_sequence_regression(
     # TODO: Find a better way to clarify reward model training.
     if init_value_head:
         value_head = getattr(model, value_head_prefix)
-        value_head.weight.data.normal_(mean=0.0, std=1 / (config.hidden_size + 1))
+        _hs = getattr(config, "hidden_size", None) or config.text_config.hidden_size
+        value_head.weight.data.normal_(mean=0.0, std=1 / (_hs + 1))
 
     return model

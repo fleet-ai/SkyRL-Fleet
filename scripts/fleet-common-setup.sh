@@ -175,7 +175,23 @@ fi
 # instead of each node downloading independently (460 GB+ for large models).
 if [ -n "${MODEL_PATH:-}" ]; then
   echo "Pre-downloading model: $MODEL_PATH"
-  HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet
+  # huggingface_hub >= 1.0 removed `huggingface-cli` — it now prints
+  # "deprecated and no longer works" and exits nonzero, which under `set -e`
+  # killed setup outright (hit on all six exp1 arms, 2026-08-02). Prefer the new
+  # `hf` CLI, fall back to the old one for older images.
+  #
+  # This is only a cache warm-up so all nodes read weights from shared NFS
+  # instead of each pulling its own copy; training re-downloads on demand if it
+  # is missing. So a failure here must never abort setup.
+  if command -v hf >/dev/null 2>&1; then
+    HF_HOME=/workspace/hf_cache hf download "$MODEL_PATH" >/dev/null \
+      || echo "WARNING: hf download failed; nodes will fetch weights at runtime." >&2
+  elif command -v huggingface-cli >/dev/null 2>&1; then
+    HF_HOME=/workspace/hf_cache huggingface-cli download "$MODEL_PATH" --quiet \
+      || echo "WARNING: huggingface-cli download failed; nodes will fetch weights at runtime." >&2
+  else
+    echo "WARNING: no hf CLI found; nodes will fetch weights at runtime." >&2
+  fi
   # Make cache readable/writable by all users. Use || true because other
   # users' files in the shared cache may not be chown-able.
   chmod -R a+rwX /workspace/hf_cache 2>/dev/null || true

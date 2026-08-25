@@ -187,3 +187,28 @@ code { font-family: var(--mono); background: var(--panel-2); padding: 1px 5px; b
   .scrubber { flex-wrap: wrap; }
   .step-label { min-width: 0; }
 }
+
+/* ---------------------------------------------------- matched-arm diff pane */
+/* Side-by-side transcript diff for trajectories carrying `pair` (hole vs nohole
+   in the hole atlas). Monospace and line-aligned: the point is to see that the
+   pre-action text is byte-identical and where the two arms first diverge. */
+.diffpane { padding: 8px 15px 16px; }
+.diffhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px; font-size: 12px; }
+.diffok { color: var(--good); font-weight: 600; }
+.diffcount { color: var(--warn); font-weight: 600; }
+.diffgrid { border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  font-family: var(--mono); font-size: 12px; }
+.drow { display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--border); }
+.drow > div { padding: 1px 8px; white-space: pre-wrap; word-break: break-word;
+  background: var(--panel); min-height: 1.5em; }
+.drow.same > div { color: var(--muted); }
+.drow.change > div, .drow.del .dl, .drow.add .dr { background: rgba(210,153,34,.10);
+  color: var(--text); }
+.drow.del .dl { background: rgba(248,81,73,.14); }
+.drow.add .dr { background: rgba(63,185,80,.14); }
+.drow > div.empty { background: var(--panel-2); }
+.drow.first { box-shadow: inset 0 2px 0 var(--accent); }
+.diffgrid mark { background: rgba(210,153,34,.42); color: var(--text);
+  border-radius: 2px; padding: 0 1px; }

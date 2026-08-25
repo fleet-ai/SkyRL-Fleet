@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SkyRL Trace Viewer — training trajectories over steps</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="styles.css?v=1787609189" />
 </head>
 <body>
 <div id="app">
@@ -80,6 +80,7 @@
       <div class="controls">
         <input type="search" id="searchBox" placeholder="Search prompt / response text…" />
         <select id="envFilter"><option value="all">All envs</option></select>
+        <select id="oppFilter"><option value="all">All opponents</option></select>
         <select id="stopFilter"><option value="all">All stop reasons</option></select>
         <select id="sortBy">
           <option value="reward_desc">Sort: highest reward</option>
@@ -111,6 +112,6 @@
   </main>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=1787609189"></script>
 </body>
 </html>

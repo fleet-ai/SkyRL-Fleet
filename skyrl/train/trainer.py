@@ -854,6 +854,26 @@ class RayPPOTrainer:
         logger.info(
             f"reward/avg_pass_at_{n_samples_per_prompt}: {overall_metrics['pass_at_n']}, reward/avg_raw_reward: {overall_metrics['avg_score']}, reward/mean_positive_reward: {overall_metrics['mean_positive_reward']}"
         )
+
+        # Reward-hacking diagnostic. With a dual-scoring verifier each rollout also
+        # carries the strict oracle's verdict on the same end-state, so the oracle
+        # curve and the weak-minus-strict gap come free. Inert ({}) otherwise.
+        from integrations.fleet.reward_metrics import compute_strict_curve
+
+        strict_metrics = compute_strict_curve(
+            generator_output_for_metrics.get("env_metrics"),
+            uids_for_metrics,
+            overall_metrics["pass_at_n"],
+            n_samples_per_prompt,
+        )
+        if strict_metrics:
+            self.all_metrics.update(strict_metrics)
+            logger.info(
+                f"train/strict/pass_at_{n_samples_per_prompt}: "
+                f"{strict_metrics.get(f'train/strict/pass_at_{n_samples_per_prompt}')}, "
+                f"train/hacking_gap: {strict_metrics.get('train/hacking_gap')}, "
+                f"train/strict/oracle_error_frac: {strict_metrics.get('train/strict/oracle_error_frac')}"
+            )
         # re-assign reward but now it's per token rewards
         generator_output["rewards"] = per_token_rewards
         return generator_output

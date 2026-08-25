@@ -103,6 +103,99 @@ function renderConversation(prompt, text) {
   }).join("");
 }
 
+/* ------------------------------------------------------- matched-arm diff */
+// A trajectory may carry `pair: {a_label, b_label, a, b}` -- the SAME scenario
+// replayed under two conditions (hole vs nohole in the hole atlas). The claim
+// those experiments rest on is that everything the model sees BEFORE it acts is
+// byte-identical across the pair, and that the two transcripts diverge only
+// after a decision. That is a claim about text, so it gets shown as text rather
+// than asserted in a caption.
+
+// Line-level LCS. Transcripts are a few hundred lines, so the O(n*m) table is
+// cheap and gives a stable alignment -- a greedy scan would mis-pair a block
+// that shifted by one line and report the whole tail as changed.
+function lcsRows(a, b) {
+  const n = a.length, m = b.length;
+  const T = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      T[i][j] = a[i] === b[j] ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
+  const rows = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { rows.push({ l: a[i], r: b[j], t: "same" }); i++; j++; }
+    else if (T[i + 1][j] >= T[i][j + 1]) { rows.push({ l: a[i], r: null, t: "del" }); i++; }
+    else { rows.push({ l: null, r: b[j], t: "add" }); j++; }
+  }
+  while (i < n) rows.push({ l: a[i++], r: null, t: "del" });
+  while (j < m) rows.push({ l: null, r: b[j++], t: "add" });
+  // Pair adjacent del/add runs into change rows, so a modified line shows its
+  // two versions on one row instead of as a delete far above an insert.
+  const out = [];
+  for (let k = 0; k < rows.length; k++) {
+    if (rows[k].t === "del") {
+      const dels = []; while (k < rows.length && rows[k].t === "del") dels.push(rows[k++].l);
+      const adds = []; while (k < rows.length && rows[k].t === "add") adds.push(rows[k++].r);
+      k--;
+      const len = Math.max(dels.length, adds.length);
+      for (let q = 0; q < len; q++) {
+        const l = dels[q] ?? null, r = adds[q] ?? null;
+        out.push({ l, r, t: l !== null && r !== null ? "change" : (l !== null ? "del" : "add") });
+      }
+    } else out.push(rows[k]);
+  }
+  return out;
+}
+
+// Word-level highlight inside a changed pair -- this is what makes "exactly
+// what differs" legible when a line changes by one number.
+function wordMark(l, r) {
+  const A = String(l).split(/(\s+)/), B = String(r).split(/(\s+)/);
+  let p = 0; while (p < A.length && p < B.length && A[p] === B[p]) p++;
+  let s = 0; while (s < A.length - p && s < B.length - p &&
+    A[A.length - 1 - s] === B[B.length - 1 - s]) s++;
+  const wrap = (arr) => esc(arr.slice(0, p).join("")) +
+    `<mark>${esc(arr.slice(p, arr.length - s).join(""))}</mark>` +
+    esc(arr.slice(arr.length - s).join(""));
+  return [wrap(A), wrap(B)];
+}
+
+function renderArmDiff(pair) {
+  if (!pair || (pair.a == null && pair.b == null)) return "";
+  const a = String(pair.a ?? "").split("\n");
+  const b = String(pair.b ?? "").split("\n");
+  const rows = lcsRows(a, b);
+  const nDiff = rows.filter((r) => r.t !== "same").length;
+  const firstIdx = rows.findIndex((r) => r.t !== "same");
+  const head =
+    `<div class="diffhead">` +
+    `<span class="badge">${esc(pair.a_label || "A")}</span>` +
+    `<span class="badge">${esc(pair.b_label || "B")}</span>` +
+    (nDiff === 0
+      ? `<span class="diffok">identical — 0 differing lines</span>`
+      : `<span class="diffcount">${nDiff} differing line${nDiff === 1 ? "" : "s"}` +
+        `, first at line ${firstIdx + 1}</span>`) +
+    (pair.note ? `<span class="muted">${esc(pair.note)}</span>` : "") +
+    `</div>`;
+  const body = rows.map((r, k) => {
+    const first = k === firstIdx && r.t !== "same" ? " first" : "";
+    if (r.t === "same")
+      return `<div class="drow same"><div class="dl">${esc(r.l)}</div>` +
+        `<div class="dr">${esc(r.r)}</div></div>`;
+    if (r.t === "change") {
+      const [lh, rh] = wordMark(r.l, r.r);
+      return `<div class="drow change${first}"><div class="dl">${lh}</div>` +
+        `<div class="dr">${rh}</div></div>`;
+    }
+    if (r.t === "del")
+      return `<div class="drow del${first}"><div class="dl">${esc(r.l)}</div>` +
+        `<div class="dr empty"></div></div>`;
+    return `<div class="drow add${first}"><div class="dl empty"></div>` +
+      `<div class="dr">${esc(r.r)}</div></div>`;
+  }).join("");
+  return head + `<div class="diffgrid">${body}</div>`;
+}
+
 function renderRaw(prompt, text) {
   const hi = (s) => esc(s)
     .replace(/(&lt;\|[^&]*?\|&gt;)/g, '<span class="ctrl">$1</span>')
@@ -337,24 +430,59 @@ function renderStatsGrid(a) {
 }
 
 /* ------------------------------------------------------------------ filters */
+/* `env_key` is "<env>:<consequence>[:<opponent>][:seat1]". Splitting it into
+   two dropdowns keeps a roster of 8 games x 3 opponents from becoming one
+   24-entry list where you cannot ask "ipd, all opponents" or "grim, all
+   games". Pages whose key has no opponent segment are unaffected: `envOf`
+   returns the leading env:consequence, `oppOf` returns null, and the opponent
+   dropdown shows only "All opponents". */
+const SEAT_RE = /^seat\d+$/;
+function envOf(t) {
+  const k = t.env_key || "unknown";
+  const p = k.split(":");
+  return p.length >= 2 ? p.slice(0, 2).join(":") : k;
+}
+function oppOf(t) {
+  const p = (t.env_key || "").split(":");
+  const rest = p.slice(2).filter((x) => x && !SEAT_RE.test(x));
+  return rest.length ? rest.join(":") : null;
+}
+
 function renderFilterOptions() {
   const all = state.run.steps.flatMap((s) => s.trajectories);
-  const envs = Array.from(new Set(all.map((t) => t.env_key || "unknown"))).sort();
+  const envs = Array.from(new Set(all.map(envOf))).sort();
+  const opps = Array.from(new Set(all.map(oppOf).filter(Boolean))).sort();
   const stops = Array.from(new Set(all.map((t) => t.stop_reason || "unknown"))).sort();
   $("#envFilter").innerHTML = `<option value="all">All envs</option>` +
     envs.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
-  $("#stopFilter").innerHTML = `<option value="all">All stop reasons</option>` +
-    stops.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
+  const opp = $("#oppFilter");
+  // ALWAYS VISIBLE, even with nothing to offer. Hiding it on pages that
+  // predate opponent-split keys made the control look like it was never added
+  // -- an absent dropdown and an unimplemented feature are indistinguishable
+  // to whoever is looking. Disabled-and-labelled says which one it is.
+  if (opps.length) {
+    opp.innerHTML = `<option value="all">All opponents (${opps.length})</option>` +
+      opps.map((e) => `<option value="${esc(e)}">${esc(e)}</option>`).join("");
+    opp.disabled = false;
+    opp.title = "Filter by opponent population member";
+  } else {
+    opp.innerHTML = `<option value="all">No opponent split on this page</option>`;
+    opp.disabled = true;
+    opp.title = "This page's env_key carries no opponent segment. Re-sample it "
+      + "with traces_over_training.py to split by opponent.";
+  }
 }
 
 function currentFiltered() {
   const st = state.run.steps[state.stepIdx];
   const q = $("#searchBox").value.trim().toLowerCase();
   const envF = $("#envFilter").value;
+  const oppF = $("#oppFilter") ? $("#oppFilter").value : "all";
   const stopF = $("#stopFilter").value;
   const minR = parseFloat($("#minReward").value);
   let rows = st.trajectories.map((t, i) => ({ t, i }));
-  if (envF !== "all") rows = rows.filter((r) => (r.t.env_key || "unknown") === envF);
+  if (envF !== "all") rows = rows.filter((r) => envOf(r.t) === envF);
+  if (oppF !== "all") rows = rows.filter((r) => oppOf(r.t) === oppF);
   if (stopF !== "all") rows = rows.filter((r) => (r.t.stop_reason || "unknown") === stopF);
   if (Number.isFinite(minR)) rows = rows.filter((r) => Number(r.t.reward) >= minR);
   if (q) rows = rows.filter((r) =>
@@ -401,9 +529,11 @@ function trajCard(t, idx) {
       <div class="tcol-head">
         <span class="seg active" data-seg="convo">Conversation</span>
         <span class="seg" data-seg="raw">Raw</span>
+        ${t.pair ? `<span class="seg" data-seg="diff">Arm diff</span>` : ""}
       </div>
       <div class="convo" data-pane="convo">${renderConversation(t.prompt || "", t.text || "")}</div>
       <div data-pane="raw" hidden>${renderRaw(t.prompt || "", t.text || "")}</div>
+      ${t.pair ? `<div class="diffpane" data-pane="diff" hidden>${renderArmDiff(t.pair)}</div>` : ""}
     </div>
   </div>`;
 }
@@ -539,7 +669,7 @@ function wireEvents() {
   });
 
   // filters
-  ["searchBox", "envFilter", "stopFilter", "sortBy", "minReward"].forEach((id) =>
+  ["searchBox", "envFilter", "oppFilter", "stopFilter", "sortBy", "minReward"].forEach((id) =>
     $("#" + id).addEventListener("input", () => { state.page = 0; renderList(); }));
 
   // list interactions (delegated)
@@ -548,8 +678,11 @@ function wireEvents() {
     if (seg) {
       const body = seg.closest(".traj-body");
       body.querySelectorAll(".seg").forEach((s) => s.classList.toggle("active", s === seg));
-      body.querySelector('[data-pane="convo"]').hidden = seg.dataset.seg !== "convo";
-      body.querySelector('[data-pane="raw"]').hidden = seg.dataset.seg !== "raw";
+      // Generalised over panes: the diff pane is only present on paired rows, so
+      // hardcoding the two original names would leave it stuck open or missing.
+      body.querySelectorAll("[data-pane]").forEach((p) => {
+        p.hidden = p.dataset.pane !== seg.dataset.seg;
+      });
       return;
     }
     const head = e.target.closest("[data-toggle]");
