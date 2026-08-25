@@ -1,0 +1,207 @@
+{
+  "config": {
+    "dataset": "dnd",
+    "split": "val",
+    "n": 6,
+    "max_turns": 6,
+    "seed": 1,
+    "protocol": "dual",
+    "elicit": "can_ask",
+    "models": [
+      {
+        "slug": "openai/gpt-5.5",
+        "label": "GPT-5.5",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "anthropic/claude-opus-4.8",
+        "label": "Opus-4.8",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "google/gemini-3.1-pro-preview",
+        "label": "Gemini-3.1-Pro",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "meta-llama/llama-3.3-70b-instruct",
+        "label": "Llama-3.3-70B",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "qwen/qwen3.5-9b",
+        "label": "Qwen3.5-9B",
+        "no_think": true,
+        "base_url": "https://openrouter.ai/api/v1"
+      },
+      {
+        "slug": "qwen35-policy",
+        "label": "SelfPlay-canask-s30",
+        "no_think": false,
+        "base_url": "http://10.66.0.6:6479/v1"
+      }
+    ]
+  },
+  "labels": [
+    "GPT-5.5",
+    "Opus-4.8",
+    "Gemini-3.1-Pro",
+    "Llama-3.3-70B",
+    "Qwen3.5-9B",
+    "SelfPlay-canask-s30"
+  ],
+  "seatA_outcome": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.7333
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.4333
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.5667
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.4833
+    ],
+    [
+      0.6,
+      0.3,
+      0.6667,
+      0.4833,
+      0.0667,
+      0.0
+    ]
+  ],
+  "agreement": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      1.0
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6667
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8333
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.8333
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.6667
+    ],
+    [
+      1.0,
+      0.5,
+      1.0,
+      0.6667,
+      0.1667,
+      0.0
+    ]
+  ],
+  "joint_efficiency": [
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9762
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.7946
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      1.0
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9333
+    ],
+    [
+      null,
+      null,
+      null,
+      null,
+      null,
+      0.9643
+    ],
+    [
+      0.9524,
+      0.7354,
+      0.9881,
+      0.9821,
+      0.2222,
+      0.0
+    ]
+  ]
+}

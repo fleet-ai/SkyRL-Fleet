@@ -1,0 +1,6200 @@
+{
+  "config": {
+    "dataset": "dnd",
+    "split": "val",
+    "n": 16,
+    "max_turns": 6,
+    "seed": 1,
+    "protocol": "dual",
+    "opponent": {
+      "slug": "openai/gpt-5.5",
+      "label": "GPT-5.5",
+      "no_think": false,
+      "base_url": "https://openrouter.ai/api/v1",
+      "role": "opponent"
+    },
+    "opp_proactive": false,
+    "participants": [
+      {
+        "slug": "qwen35-policy",
+        "label": "rawbase0616-s30",
+        "no_think": true,
+        "base_url": "http://10.66.0.4:6479/v1",
+        "role": "policy"
+      },
+      {
+        "slug": "anthropic/claude-opus-4.8",
+        "label": "Opus-4.8",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      },
+      {
+        "slug": "google/gemini-3.1-pro-preview",
+        "label": "Gemini-3.1-Pro",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      },
+      {
+        "slug": "meta-llama/llama-3.3-70b-instruct",
+        "label": "Llama-3.3-70B",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      },
+      {
+        "slug": "qwen/qwen3.5-9b",
+        "label": "Qwen3.5-9B",
+        "no_think": true,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      }
+    ]
+  },
+  "policy_label": "rawbase0616-s30",
+  "base_label": null,
+  "per_model": {
+    "rawbase0616-s30": {
+      "config": {
+        "slug": "qwen35-policy",
+        "label": "rawbase0616-s30",
+        "no_think": true,
+        "base_url": "http://10.66.0.4:6479/v1",
+        "role": "policy"
+      },
+      "aggregate": {
+        "n": 16,
+        "agreement_rate": 0.9375,
+        "avg_turns": 3.62,
+        "prior_parse_rate": 1.0,
+        "post_parse_rate": 1.0,
+        "prior_spearman": 0.1667,
+        "post_spearman": 0.257,
+        "delta_spearman": 0.0903,
+        "prior_cosine": 0.7564,
+        "post_cosine": 0.7732,
+        "delta_cosine": 0.0168,
+        "prior_top1": 0.625,
+        "post_top1": 0.5625,
+        "delta_top1": -0.0625,
+        "prior_norm_mae": 0.2502,
+        "post_norm_mae": 0.2512,
+        "delta_norm_mae": 0.001
+      }
+    },
+    "Opus-4.8": {
+      "config": {
+        "slug": "anthropic/claude-opus-4.8",
+        "label": "Opus-4.8",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      },
+      "aggregate": {
+        "n": 16,
+        "agreement_rate": 1.0,
+        "avg_turns": 3.25,
+        "prior_parse_rate": 1.0,
+        "post_parse_rate": 1.0,
+        "prior_spearman": 0.2958,
+        "post_spearman": 0.5082,
+        "delta_spearman": 0.2124,
+        "prior_cosine": 0.7933,
+        "post_cosine": 0.8418,
+        "delta_cosine": 0.0485,
+        "prior_top1": 0.5,
+        "post_top1": 0.5625,
+        "delta_top1": 0.0625,
+        "prior_norm_mae": 0.2246,
+        "post_norm_mae": 0.1837,
+        "delta_norm_mae": -0.0409
+      }
+    },
+    "Gemini-3.1-Pro": {
+      "config": {
+        "slug": "google/gemini-3.1-pro-preview",
+        "label": "Gemini-3.1-Pro",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      },
+      "aggregate": {
+        "n": 16,
+        "agreement_rate": 1.0,
+        "avg_turns": 3.88,
+        "prior_parse_rate": 1.0,
+        "post_parse_rate": 1.0,
+        "prior_spearman": 0.4777,
+        "post_spearman": 0.5065,
+        "delta_spearman": 0.0289,
+        "prior_cosine": 0.7798,
+        "post_cosine": 0.7569,
+        "delta_cosine": -0.0229,
+        "prior_top1": 0.625,
+        "post_top1": 0.6875,
+        "delta_top1": 0.0625,
+        "prior_norm_mae": 0.2333,
+        "post_norm_mae": 0.2227,
+        "delta_norm_mae": -0.0106
+      }
+    },
+    "Llama-3.3-70B": {
+      "config": {
+        "slug": "meta-llama/llama-3.3-70b-instruct",
+        "label": "Llama-3.3-70B",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      },
+      "aggregate": {
+        "n": 16,
+        "agreement_rate": 1.0,
+        "avg_turns": 4.12,
+        "prior_parse_rate": 1.0,
+        "post_parse_rate": 1.0,
+        "prior_spearman": -0.0333,
+        "post_spearman": 0.4244,
+        "delta_spearman": 0.4577,
+        "prior_cosine": 0.7295,
+        "post_cosine": 0.7966,
+        "delta_cosine": 0.0671,
+        "prior_top1": 0.375,
+        "post_top1": 0.6875,
+        "delta_top1": 0.3125,
+        "prior_norm_mae": 0.263,
+        "post_norm_mae": 0.2419,
+        "delta_norm_mae": -0.0211
+      }
+    },
+    "Qwen3.5-9B": {
+      "config": {
+        "slug": "qwen/qwen3.5-9b",
+        "label": "Qwen3.5-9B",
+        "no_think": true,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "reference"
+      },
+      "aggregate": {
+        "n": 16,
+        "agreement_rate": 1.0,
+        "avg_turns": 2.75,
+        "prior_parse_rate": 0.8125,
+        "post_parse_rate": 1.0,
+        "prior_spearman": 0.1642,
+        "post_spearman": 0.2399,
+        "delta_spearman": 0.0757,
+        "prior_cosine": 0.6947,
+        "post_cosine": 0.715,
+        "delta_cosine": 0.0202,
+        "prior_top1": 0.5385,
+        "post_top1": 0.5,
+        "delta_top1": -0.0385,
+        "prior_norm_mae": 0.2863,
+        "post_norm_mae": 0.2706,
+        "delta_norm_mae": -0.0157
+      }
+    }
+  },
+  "deltas_policy_minus_base": null,
+  "per_model_runs": {
+    "rawbase0616-s30": [
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 9,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.9,
+          "them_norm": 0.8,
+          "joint_score": 17,
+          "pareto_optimal": true,
+          "max_joint": 17,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.7200000000000001
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ],
+        "prior_estimate": [
+          5,
+          3,
+          1
+        ],
+        "post_estimate": [
+          5,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8783100656536799,
+          "top1": 1.0,
+          "norm_mae": 0.14814814814814817
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8432740427115678,
+          "top1": 1.0,
+          "norm_mae": 0.19444444444444442
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 3, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 5, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          3
+        ],
+        "post_estimate": [
+          1,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.9999999999999998,
+          "cosine": 0.4225771273642583,
+          "top1": 0.0,
+          "norm_mae": 0.3888888888888889
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.903696114115064,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            2,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            2
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ],
+        "prior_estimate": [
+          1,
+          1,
+          2
+        ],
+        "post_estimate": [
+          3,
+          2,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 0.984731927834662,
+          "top1": 1.0,
+          "norm_mae": 0.06666666666666665
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.8043996665398437,
+          "top1": 0.0,
+          "norm_mae": 0.20952380952380953
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ],
+        "prior_estimate": [
+          5,
+          4,
+          2
+        ],
+        "post_estimate": [
+          5,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.775170232199927,
+          "top1": 1.0,
+          "norm_mae": 0.24242424242424243
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8398412548412547,
+          "top1": 1.0,
+          "norm_mae": 0.2023809523809524
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 4, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 5, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ],
+        "prior_estimate": [
+          3,
+          2,
+          1
+        ],
+        "post_estimate": [
+          1,
+          1,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.5669467095138409,
+          "top1": 0.0,
+          "norm_mae": 0.36111111111111116
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.6531972647421809,
+          "top1": 0.0,
+          "norm_mae": 0.36111111111111116
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 1}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 8,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 1.0,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ],
+        "prior_estimate": [
+          2,
+          3,
+          2
+        ],
+        "post_estimate": [
+          3,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.48507125007266594,
+          "top1": 0.0,
+          "norm_mae": 0.4761904761904762
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.8660254037844387,
+          "cosine": 0.2672612419124244,
+          "top1": 0.0,
+          "norm_mae": 0.5555555555555556
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            2,
+            3,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.8,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.875,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          3
+        ],
+        "post_estimate": [
+          1,
+          1,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.8660254037844387,
+          "cosine": 0.7637626158259734,
+          "top1": 0.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.8333333333333335,
+          "top1": 0.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            2,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          5,
+          2,
+          3
+        ],
+        "post_estimate": [
+          2,
+          1,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.5848976518656018,
+          "top1": 0.0,
+          "norm_mae": 0.3333333333333333
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.7396002616336389,
+          "top1": 0.0,
+          "norm_mae": 0.26666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 2, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 2}</estimate>",
+        "num_turns": 6
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            3,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": false,
+          "max_joint": 19,
+          "joint_efficiency": 0.8421052631578947,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          3
+        ],
+        "post_estimate": [
+          2,
+          1,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.5345224838248488,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.5345224838248488,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 3}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": false,
+          "reason": "conflict",
+          "you_take": [
+            1,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            1
+          ],
+          "you_score": 0,
+          "them_score": 0,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.0,
+          "them_norm": 0.0,
+          "joint_score": 0,
+          "pareto_optimal": false,
+          "max_joint": 0,
+          "joint_efficiency": 0.0,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.0
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ],
+        "prior_estimate": [
+          2,
+          3,
+          1
+        ],
+        "post_estimate": [
+          2,
+          3,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8426648406178138,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8426648406178138,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 1}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.6,
+          "joint_score": 12,
+          "pareto_optimal": true,
+          "max_joint": 12,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.36
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          3
+        ],
+        "post_estimate": [
+          1,
+          1,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9561828874675149,
+          "top1": 1.0,
+          "norm_mae": 0.11111111111111109
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9438798074485389,
+          "top1": 1.0,
+          "norm_mae": 0.13333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 3}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ],
+        "prior_estimate": [
+          2,
+          3,
+          4
+        ],
+        "post_estimate": [
+          2,
+          1,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7878385971583353,
+          "top1": 1.0,
+          "norm_mae": 0.28703703703703703
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.8693182879212227,
+          "top1": 1.0,
+          "norm_mae": 0.25
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 4}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 3}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            1,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          1,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          4,
+          3
+        ],
+        "prior_estimate": [
+          2,
+          3,
+          1
+        ],
+        "post_estimate": [
+          2,
+          3,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8017837257372731,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222218
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.8731282501307986,
+          "top1": 1.0,
+          "norm_mae": 0.19047619047619047
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            1,
+            1
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 5,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.5,
+          "them_norm": 0.7,
+          "joint_score": 12,
+          "pareto_optimal": false,
+          "max_joint": 13,
+          "joint_efficiency": 0.9230769230769231,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.35
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          5,
+          0,
+          5
+        ],
+        "them_values": [
+          5,
+          1,
+          2
+        ],
+        "prior_estimate": [
+          5,
+          0,
+          5
+        ],
+        "post_estimate": [
+          5,
+          0,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9036961141150639,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9036961141150639,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 0, \"ball\": 5}</estimate>",
+        "post_raw": "<estimate>{\"book\": 5, \"hat\": 0, \"ball\": 5}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            4,
+            0,
+            0
+          ],
+          "you_score": 10,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 1.0,
+          "them_norm": 0.8,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          0,
+          4,
+          2
+        ],
+        "them_values": [
+          2,
+          1,
+          0
+        ],
+        "prior_estimate": [
+          5,
+          2,
+          3
+        ],
+        "post_estimate": [
+          10,
+          1,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.870571500132014,
+          "top1": 1.0,
+          "norm_mae": 0.19999999999999996
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8366600265340755,
+          "top1": 1.0,
+          "norm_mae": 0.20833333333333334
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 2, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 10, \"hat\": 1, \"ball\": 5}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            3,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.6,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 13,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          1,
+          5
+        ],
+        "them_values": [
+          1,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          3,
+          2,
+          4
+        ],
+        "post_estimate": [
+          10,
+          2,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.9429541672723838,
+          "top1": 1.0,
+          "norm_mae": 0.11111111111111112
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.682400167735767,
+          "top1": 0.0,
+          "norm_mae": 0.28104575163398693
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 4}</estimate>",
+        "post_raw": "<estimate>{\"book\": 10, \"hat\": 2, \"ball\": 5}</estimate>",
+        "num_turns": 4
+      }
+    ],
+    "Opus-4.8": [
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 9,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.9,
+          "them_norm": 0.8,
+          "joint_score": 17,
+          "pareto_optimal": true,
+          "max_joint": 17,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.7200000000000001
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          2,
+          2,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 1.0000000000000002,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 1.0000000000000002,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            3,
+            2,
+            0
+          ],
+          "you_score": 5,
+          "them_score": 9,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.5,
+          "them_norm": 0.9,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.45
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ],
+        "prior_estimate": [
+          1,
+          2,
+          1
+        ],
+        "post_estimate": [
+          2,
+          1,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.903696114115064,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.6454972243679029,
+          "top1": 0.0,
+          "norm_mae": 0.3333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 1}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            2,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            2
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          1
+        ],
+        "post_estimate": [
+          2,
+          2,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -1.0000000000000002,
+          "cosine": 0.7035264706814485,
+          "top1": 0.0,
+          "norm_mae": 0.26666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8703882797784892,
+          "top1": 0.0,
+          "norm_mae": 0.17777777777777773
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ],
+        "prior_estimate": [
+          4,
+          1,
+          1
+        ],
+        "post_estimate": [
+          4,
+          1,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.8956685895029604,
+          "top1": 1.0,
+          "norm_mae": 0.17460317460317457
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9601587170383665,
+          "top1": 1.0,
+          "norm_mae": 0.09523809523809523
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 1, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 1, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            2
+          ],
+          "them_take": [
+            0,
+            1,
+            1
+          ],
+          "you_score": 8,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.8,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6400000000000001
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          1,
+          4,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.6531972647421809,
+          "top1": 0.0,
+          "norm_mae": 0.36111111111111116
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9258200997725515,
+          "top1": 1.0,
+          "norm_mae": 0.2023809523809524
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 4, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            2
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": false,
+          "max_joint": 18,
+          "joint_efficiency": 0.8888888888888888,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          2,
+          3,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.5773502691896258,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.48507125007266594,
+          "top1": 0.0,
+          "norm_mae": 0.4761904761904762
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            2,
+            3,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.8,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.875,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          0
+        ],
+        "post_estimate": [
+          1,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.5000000000000001,
+          "cosine": 0.8660254037844387,
+          "top1": 0.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 1.0000000000000002,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            2,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          1
+        ],
+        "post_estimate": [
+          1,
+          3,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.8660254037844387,
+          "cosine": 0.6471502289294341,
+          "top1": 0.0,
+          "norm_mae": 0.26666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9544271444636666,
+          "top1": 0.0,
+          "norm_mae": 0.11428571428571427
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 3, \"ball\": 3}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            3,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": false,
+          "max_joint": 19,
+          "joint_efficiency": 0.8421052631578947,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          2,
+          2,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.5773502691896258,
+          "top1": 1.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.5773502691896258,
+          "top1": 1.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            1,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.8,
+          "joint_score": 15,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.9375,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.5599999999999999
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ],
+        "prior_estimate": [
+          2,
+          3,
+          1
+        ],
+        "post_estimate": [
+          1,
+          5,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8426648406178138,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9801960588196069,
+          "top1": 1.0,
+          "norm_mae": 0.09523809523809525
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 5, \"ball\": 1}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.6,
+          "joint_score": 12,
+          "pareto_optimal": true,
+          "max_joint": 12,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.36
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          4,
+          1,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.7745966692414834,
+          "top1": 0.0,
+          "norm_mae": 0.2222222222222222
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8770580193070293,
+          "top1": 0.0,
+          "norm_mae": 0.19444444444444442
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 1, \"ball\": 3}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          1,
+          2,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.6531972647421809,
+          "top1": 0.0,
+          "norm_mae": 0.36111111111111116
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.9295160030897801,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 5}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            0,
+            2
+          ],
+          "them_take": [
+            2,
+            1,
+            0
+          ],
+          "you_score": 8,
+          "them_score": 4,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.4,
+          "joint_score": 12,
+          "pareto_optimal": false,
+          "max_joint": 14,
+          "joint_efficiency": 0.8571428571428571,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.32000000000000006
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          1,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          4,
+          3
+        ],
+        "prior_estimate": [
+          2,
+          4,
+          1
+        ],
+        "post_estimate": [
+          2,
+          2,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8292279828967711,
+          "top1": 1.0,
+          "norm_mae": 0.19047619047619047
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8082903768654761,
+          "top1": 0.0,
+          "norm_mae": 0.2222222222222222
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 4, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            1,
+            0
+          ],
+          "you_score": 5,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.5,
+          "them_norm": 0.6,
+          "joint_score": 11,
+          "pareto_optimal": false,
+          "max_joint": 13,
+          "joint_efficiency": 0.8461538461538461,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.3
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          5,
+          0,
+          5
+        ],
+        "them_values": [
+          5,
+          1,
+          2
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          6,
+          1,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8432740427115678,
+          "top1": 1.0,
+          "norm_mae": 0.19444444444444442
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9773756483025025,
+          "top1": 1.0,
+          "norm_mae": 0.08333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 6, \"hat\": 1, \"ball\": 1}</estimate>",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            4,
+            0,
+            0
+          ],
+          "you_score": 10,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 1.0,
+          "them_norm": 0.8,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          0,
+          4,
+          2
+        ],
+        "them_values": [
+          2,
+          1,
+          0
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          0
+        ],
+        "post_estimate": [
+          2,
+          1,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9999999999999998,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9999999999999998,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 0}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            1,
+            1
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 5,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.5,
+          "joint_score": 11,
+          "pareto_optimal": false,
+          "max_joint": 13,
+          "joint_efficiency": 0.8461538461538461,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.3
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          1,
+          5
+        ],
+        "them_values": [
+          1,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          4,
+          2,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.9258200997725515,
+          "top1": 0.0,
+          "norm_mae": 0.11111111111111112
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.9999999999999998,
+          "cosine": 0.47809144373375745,
+          "top1": 0.0,
+          "norm_mae": 0.3333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\": 0}</estimate>",
+        "num_turns": 2
+      }
+    ],
+    "Gemini-3.1-Pro": [
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 9,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.9,
+          "them_norm": 0.8,
+          "joint_score": 17,
+          "pareto_optimal": true,
+          "max_joint": 17,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.7200000000000001
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ],
+        "prior_estimate": [
+          3,
+          4,
+          1
+        ],
+        "post_estimate": [
+          0,
+          4,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.9058216273156767,
+          "top1": 1.0,
+          "norm_mae": 0.1388888888888889
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.5773502691896258,
+          "top1": 1.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 4, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 4, \"ball\":",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          0
+        ],
+        "post_estimate": [
+          1,
+          3,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7071067811865475,
+          "top1": 0.0,
+          "norm_mae": 0.27777777777777773
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9999999999999998,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 3, \"ball\": 0}</",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            3,
+            0
+          ],
+          "them_take": [
+            1,
+            0,
+            2
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ],
+        "prior_estimate": [
+          3,
+          1,
+          2
+        ],
+        "post_estimate": [
+          4,
+          0,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.8058229640253802,
+          "top1": 0.0,
+          "norm_mae": 0.19999999999999998
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.30151134457776363,
+          "top1": 0.0,
+          "norm_mae": 0.5333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 1, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 0, \"ball\":",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ],
+        "prior_estimate": [
+          4,
+          2,
+          0
+        ],
+        "post_estimate": [
+          4,
+          0,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7155417527999327,
+          "top1": 1.0,
+          "norm_mae": 0.2857142857142857
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.8,
+          "top1": 1.0,
+          "norm_mae": 0.28571428571428575
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\":",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 0, \"ball\":",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ],
+        "prior_estimate": [
+          1,
+          4,
+          1
+        ],
+        "post_estimate": [
+          0,
+          4,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9666666666666667,
+          "top1": 1.0,
+          "norm_mae": 0.1388888888888889
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9486832980505138,
+          "top1": 1.0,
+          "norm_mae": 0.1388888888888889
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 4, \"ball\": 1",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 4, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 8,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 1.0,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          0,
+          0,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.5773502691896258,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 1.0,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 0, \"ball\": 5}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            3,
+            0
+          ],
+          "you_score": 8,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.7,
+          "joint_score": 15,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.9375,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.5599999999999999
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ],
+        "prior_estimate": [
+          1,
+          2,
+          1
+        ],
+        "post_estimate": [
+          1,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 1.0000000000000002,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 1.0000000000000002,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            0,
+            2
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 8,
+          "them_score": 4,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.4,
+          "joint_score": 12,
+          "pareto_optimal": false,
+          "max_joint": 14,
+          "joint_efficiency": 0.8571428571428571,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.32000000000000006
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          2,
+          4,
+          0
+        ],
+        "post_estimate": [
+          4,
+          2,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.49613893835683387,
+          "top1": 0.0,
+          "norm_mae": 0.39999999999999997
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.9999999999999998,
+          "cosine": 0.24806946917841693,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444444
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 4, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\":",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            1,
+            1
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 1.0,
+          "joint_score": 17,
+          "pareto_optimal": false,
+          "max_joint": 19,
+          "joint_efficiency": 0.8947368421052632,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.7
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ],
+        "prior_estimate": [
+          4,
+          2,
+          0
+        ],
+        "post_estimate": [
+          4,
+          2,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.8944271909999159,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.8944271909999159,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\": 0}</",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            1,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.8,
+          "joint_score": 15,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.9375,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.5599999999999999
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ],
+        "prior_estimate": [
+          1,
+          4,
+          3
+        ],
+        "post_estimate": [
+          0,
+          10,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9037378388935389,
+          "top1": 1.0,
+          "norm_mae": 0.20000000000000004
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9701425001453319,
+          "top1": 1.0,
+          "norm_mae": 0.13333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 4, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 10, \"ball\": 0",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.6,
+          "joint_score": 12,
+          "pareto_optimal": true,
+          "max_joint": 12,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.36
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ],
+        "prior_estimate": [
+          4,
+          3,
+          0
+        ],
+        "post_estimate": [
+          6,
+          0,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.35777087639996635,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444444
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7071067811865475,
+          "top1": 0.0,
+          "norm_mae": 0.27777777777777773
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 3, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 6, \"hat\": 0, \"ball\": 2}</",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          1,
+          0,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.6531972647421809,
+          "top1": 0.0,
+          "norm_mae": 0.36111111111111116
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.1414213562373095,
+          "top1": 0.0,
+          "norm_mae": 0.5833333333333334
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1,",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            1,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          1,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          4,
+          3
+        ],
+        "prior_estimate": [
+          2,
+          6,
+          0
+        ],
+        "post_estimate": [
+          0,
+          4,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.758946638440411,
+          "top1": 1.0,
+          "norm_mae": 0.28571428571428575
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 1.0,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 6, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 4, \"ball\": 3}</",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            3,
+            0
+          ],
+          "you_score": 5,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.5,
+          "them_norm": 0.8,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 13,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.4
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          5,
+          0,
+          5
+        ],
+        "them_values": [
+          5,
+          1,
+          2
+        ],
+        "prior_estimate": [
+          2,
+          2,
+          2
+        ],
+        "post_estimate": [
+          7,
+          1,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8432740427115678,
+          "top1": 1.0,
+          "norm_mae": 0.19444444444444442
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.9295160030897801,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 7, \"hat\": 1, \"ball\":",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            4,
+            0,
+            0
+          ],
+          "you_score": 10,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 1.0,
+          "them_norm": 0.8,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          0,
+          4,
+          2
+        ],
+        "them_values": [
+          2,
+          1,
+          0
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          0
+        ],
+        "post_estimate": [
+          2,
+          1,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9999999999999998,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9999999999999998,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 0}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            3,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.6,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 13,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          1,
+          5
+        ],
+        "them_values": [
+          1,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          3,
+          1,
+          4
+        ],
+        "post_estimate": [
+          1,
+          3,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8910421112136306,
+          "top1": 1.0,
+          "norm_mae": 0.13888888888888887
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.5916079783099616,
+          "top1": 0.0,
+          "norm_mae": 0.3333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 1, \"ball\": 4}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 3, \"ball\":",
+        "num_turns": 5
+      }
+    ],
+    "Llama-3.3-70B": [
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 9,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.9,
+          "them_norm": 0.8,
+          "joint_score": 17,
+          "pareto_optimal": true,
+          "max_joint": 17,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.7200000000000001
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ],
+        "prior_estimate": [
+          5,
+          8,
+          2
+        ],
+        "post_estimate": [
+          0,
+          0,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8980265101338746,
+          "top1": 1.0,
+          "norm_mae": 0.13333333333333333
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.5773502691896258,
+          "top1": 1.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 8, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book: 1, hat\": 9, \"ball\": 5}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            2,
+            2,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.8,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ],
+        "prior_estimate": [
+          2,
+          3,
+          1
+        ],
+        "post_estimate": [
+          2,
+          3,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9296696802013682,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9296696802013682,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 1}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            2,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            2
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ],
+        "prior_estimate": [
+          3,
+          1,
+          2
+        ],
+        "post_estimate": [
+          4,
+          1,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.8058229640253802,
+          "top1": 0.0,
+          "norm_mae": 0.19999999999999998
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.8278373543847156,
+          "top1": 0.0,
+          "norm_mae": 0.19999999999999998
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 1, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 1, \"ball\": 3}</estimate>",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ],
+        "prior_estimate": [
+          5,
+          1,
+          2
+        ],
+        "post_estimate": [
+          5,
+          1,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9493857663422879,
+          "top1": 1.0,
+          "norm_mae": 0.11904761904761905
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9493857663422879,
+          "top1": 1.0,
+          "norm_mae": 0.11904761904761905
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 1, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 5, \"hat\": 1, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ],
+        "prior_estimate": [
+          4,
+          3,
+          2
+        ],
+        "post_estimate": [
+          1,
+          3,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.6040095911547237,
+          "top1": 0.0,
+          "norm_mae": 0.36111111111111116
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.8693182879212227,
+          "top1": 1.0,
+          "norm_mae": 0.25
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 3, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 3, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 8,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 1.0,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ],
+        "prior_estimate": [
+          2,
+          4,
+          3
+        ],
+        "post_estimate": [
+          1,
+          3,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.5570860145311556,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.5345224838248488,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 4, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 3, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            3,
+            0
+          ],
+          "you_score": 8,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.7,
+          "joint_score": 15,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.9375,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.5599999999999999
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ],
+        "prior_estimate": [
+          3,
+          2,
+          1
+        ],
+        "post_estimate": [
+          1,
+          4,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.8728715609439696,
+          "top1": 0.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9799578870122229,
+          "top1": 1.0,
+          "norm_mae": 0.07142857142857141
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 4, \"ball\": 2}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            2,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          4,
+          3,
+          1
+        ],
+        "post_estimate": [
+          1,
+          4,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.9999999999999998,
+          "cosine": 0.4895354638983791,
+          "top1": 0.0,
+          "norm_mae": 0.3333333333333333
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.5381382351970501,
+          "top1": 0.0,
+          "norm_mae": 0.39999999999999997
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 3, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 4, \"ball\": 0}</estimate>",
+        "num_turns": 3
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            3,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            0
+          ],
+          "you_score": 9,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.9,
+          "them_norm": 1.0,
+          "joint_score": 19,
+          "pareto_optimal": true,
+          "max_joint": 19,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.9
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ],
+        "prior_estimate": [
+          3,
+          2,
+          4
+        ],
+        "post_estimate": [
+          6,
+          1,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.5570860145311556,
+          "top1": 0.0,
+          "norm_mae": 0.4444444444444445
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 0.9733285267845754,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 4}</estimate>",
+        "post_raw": "<estimate>{\"book\": 6, \"hat\": 1, \"ball\": 1}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ],
+        "prior_estimate": [
+          4,
+          2,
+          3
+        ],
+        "post_estimate": [
+          1,
+          2,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.9999999999999998,
+          "cosine": 0.49541508402214957,
+          "top1": 0.0,
+          "norm_mae": 0.38518518518518513
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7130240959073808,
+          "top1": 0.0,
+          "norm_mae": 0.3111111111111111
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\": 3}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 3}</estimate>",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            2,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 2,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.2,
+          "them_norm": 0.8,
+          "joint_score": 10,
+          "pareto_optimal": false,
+          "max_joint": 12,
+          "joint_efficiency": 0.8333333333333334,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.16000000000000003
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ],
+        "prior_estimate": [
+          5,
+          3,
+          1
+        ],
+        "post_estimate": [
+          0,
+          3,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.529150262212918,
+          "top1": 0.0,
+          "norm_mae": 0.3703703703703704
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7669649888473704,
+          "top1": 1.0,
+          "norm_mae": 0.25
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 3, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 3, \"ball\": 5}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            1,
+            0
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.8,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          5
+        ],
+        "post_estimate": [
+          2,
+          1,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9553358920644962,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9553358920644962,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 5}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 5}</estimate>",
+        "num_turns": 6
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            1,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          1,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          4,
+          3
+        ],
+        "prior_estimate": [
+          3,
+          5,
+          1
+        ],
+        "post_estimate": [
+          3,
+          5,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7775419143502352,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222218
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8435513898799653,
+          "top1": 1.0,
+          "norm_mae": 0.19999999999999996
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 5, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 3, \"hat\": 5, \"ball\": 2}</estimate>",
+        "num_turns": 5
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            3,
+            1
+          ],
+          "you_score": 5,
+          "them_score": 5,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.5,
+          "them_norm": 0.5,
+          "joint_score": 10,
+          "pareto_optimal": false,
+          "max_joint": 13,
+          "joint_efficiency": 0.7692307692307693,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.25
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          5,
+          0,
+          5
+        ],
+        "them_values": [
+          5,
+          1,
+          2
+        ],
+        "prior_estimate": [
+          3,
+          2,
+          1
+        ],
+        "post_estimate": [
+          4,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.9271050693011066,
+          "top1": 1.0,
+          "norm_mae": 0.13888888888888887
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.956182887467515,
+          "top1": 1.0,
+          "norm_mae": 0.10714285714285715
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 6
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            0
+          ],
+          "them_take": [
+            4,
+            0,
+            1
+          ],
+          "you_score": 8,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.8,
+          "joint_score": 16,
+          "pareto_optimal": false,
+          "max_joint": 18,
+          "joint_efficiency": 0.8888888888888888,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.6400000000000001
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          0,
+          4,
+          2
+        ],
+        "them_values": [
+          2,
+          1,
+          0
+        ],
+        "prior_estimate": [
+          3,
+          1,
+          5
+        ],
+        "post_estimate": [
+          5,
+          1,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.529150262212918,
+          "top1": 0.0,
+          "norm_mae": 0.3703703703703704
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.6888467201936644,
+          "top1": 1.0,
+          "norm_mae": 0.30303030303030304
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 1, \"ball\": 5}</estimate>",
+        "post_raw": "<estimate>{\"book\": 5, \"hat\": 1, \"ball\": 5}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            1,
+            1
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 5,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.5,
+          "joint_score": 11,
+          "pareto_optimal": false,
+          "max_joint": 13,
+          "joint_efficiency": 0.8461538461538461,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.3
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          1,
+          5
+        ],
+        "them_values": [
+          1,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          4,
+          3,
+          2
+        ],
+        "post_estimate": [
+          4,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.9999999999999998,
+          "cosine": 0.7940666671767442,
+          "top1": 0.0,
+          "norm_mae": 0.1851851851851852
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.9999999999999998,
+          "cosine": 0.6415330278717848,
+          "top1": 0.0,
+          "norm_mae": 0.2698412698412698
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 3, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 3
+      }
+    ],
+    "Qwen3.5-9B": [
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 9,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.9,
+          "them_norm": 0.8,
+          "joint_score": 17,
+          "pareto_optimal": true,
+          "max_joint": 17,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.7200000000000001
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ],
+        "prior_estimate": null,
+        "post_estimate": [
+          2,
+          5,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.9428090415820634,
+          "top1": 1.0,
+          "norm_mae": 0.11111111111111112
+        },
+        "prior_raw": "<estimate>{\"book\": 0, \"hat\": 0, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 5, \"ball\": 5}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            2,
+            2,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.8,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ],
+        "prior_estimate": [
+          0,
+          0,
+          1
+        ],
+        "post_estimate": [
+          1,
+          1,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.8660254037844387,
+          "cosine": 0.0,
+          "top1": 0.0,
+          "norm_mae": 0.6666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.8660254037844387,
+          "cosine": 0.24343224778007377,
+          "top1": 0.0,
+          "norm_mae": 0.4761904761904762
+        },
+        "prior_raw": "<estimate>{\"book\": 0.5, \"hat\": 0.5, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 5}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            3,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 8,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.6,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ],
+        "prior_estimate": [
+          3,
+          1,
+          2
+        ],
+        "post_estimate": [
+          1,
+          0,
+          10
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.8058229640253802,
+          "top1": 0.0,
+          "norm_mae": 0.19999999999999998
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9300465034877907,
+          "top1": 1.0,
+          "norm_mae": 0.20606060606060606
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 1, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 0, \"ball\": 10}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ],
+        "prior_estimate": [
+          10,
+          1,
+          0
+        ],
+        "post_estimate": [
+          0,
+          1,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7960297521679913,
+          "top1": 1.0,
+          "norm_mae": 0.2857142857142857
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.5366563145999494,
+          "top1": 0.0,
+          "norm_mae": 0.38095238095238093
+        },
+        "prior_raw": "<estimate>{\"book\": 10, \"hat\": 1, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 1, \"ball\": 2}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ],
+        "prior_estimate": [
+          1,
+          5,
+          2
+        ],
+        "post_estimate": [
+          1,
+          3,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9553358920644962,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.7786628214276601,
+          "top1": 1.0,
+          "norm_mae": 0.2976190476190476
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 5, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 3, \"ball\": 3}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 8,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 1.0,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ],
+        "prior_estimate": null,
+        "post_estimate": [
+          1,
+          5,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.3651483716701107,
+          "top1": 0.0,
+          "norm_mae": 0.5
+        },
+        "prior_raw": "<estimate>{\"book\": 0, \"hat\": 0, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 5, \"ball\": 2}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            2,
+            3,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.8,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.875,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ],
+        "prior_estimate": [
+          1,
+          1,
+          5
+        ],
+        "post_estimate": [
+          1,
+          2,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.6285393610547089,
+          "top1": 0.0,
+          "norm_mae": 0.30952380952380953
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 1.0000000000000002,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 5}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            2,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ],
+        "prior_estimate": [
+          1,
+          2,
+          1
+        ],
+        "post_estimate": [
+          3,
+          5,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.7925939239012171,
+          "top1": 0.0,
+          "norm_mae": 0.2333333333333333
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.609449400220044,
+          "top1": 0.0,
+          "norm_mae": 0.3259259259259259
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 3, \"hat\": 5, \"ball\": 1}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            3,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": false,
+          "max_joint": 19,
+          "joint_efficiency": 0.8421052631578947,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ],
+        "prior_estimate": [
+          10,
+          10,
+          100
+        ],
+        "post_estimate": [
+          1,
+          1,
+          10
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.09901475429766743,
+          "top1": 0.0,
+          "norm_mae": 0.611111111111111
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.09901475429766744,
+          "top1": 0.0,
+          "norm_mae": 0.611111111111111
+        },
+        "prior_raw": "<estimate>{\"book\": 10, \"hat\": 10, \"ball\": 100}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 10}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            1,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.8,
+          "joint_score": 15,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.9375,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.5599999999999999
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ],
+        "prior_estimate": [
+          1,
+          2,
+          1
+        ],
+        "post_estimate": [
+          0,
+          4,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.8911327886790069,
+          "top1": 1.0,
+          "norm_mae": 0.20000000000000004
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9216353751380653,
+          "top1": 1.0,
+          "norm_mae": 0.1523809523809524
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 0.5, \"hat\": 4, \"ball\": 3}</estimate>",
+        "num_turns": 6
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.6,
+          "joint_score": 12,
+          "pareto_optimal": true,
+          "max_joint": 12,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.36
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ],
+        "prior_estimate": [
+          1,
+          2,
+          1
+        ],
+        "post_estimate": [
+          3,
+          1,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.8660254037844387,
+          "cosine": 0.5477225575051661,
+          "top1": 0.0,
+          "norm_mae": 0.3333333333333333
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8366600265340756,
+          "top1": 0.0,
+          "norm_mae": 0.2222222222222222
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 3, \"hat\": 1, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            1,
+            0
+          ],
+          "them_take": [
+            2,
+            0,
+            1
+          ],
+          "you_score": 5,
+          "them_score": 9,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.5,
+          "them_norm": 0.9,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.45
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ],
+        "prior_estimate": [
+          2,
+          1,
+          5
+        ],
+        "post_estimate": [
+          1,
+          2,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9553358920644962,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.7071067811865475,
+          "top1": 0.0,
+          "norm_mae": 0.31666666666666665
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 5}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 2, \"ball\": 2}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            2
+          ],
+          "you_score": 2,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.2,
+          "them_norm": 1.0,
+          "joint_score": 12,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.8571428571428571,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.2
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          1,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          4,
+          3
+        ],
+        "prior_estimate": [
+          1,
+          5,
+          2
+        ],
+        "post_estimate": [
+          2,
+          5,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9493857663422879,
+          "top1": 1.0,
+          "norm_mae": 0.11904761904761905
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.8398412548412547,
+          "top1": 1.0,
+          "norm_mae": 0.2023809523809524
+        },
+        "prior_raw": "<estimate>{\"book\": 1, \"hat\": 5, \"ball\": 2</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 5, \"ball\": 1}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            3,
+            1
+          ],
+          "you_score": 5,
+          "them_score": 5,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.5,
+          "them_norm": 0.5,
+          "joint_score": 10,
+          "pareto_optimal": false,
+          "max_joint": 13,
+          "joint_efficiency": 0.7692307692307693,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.25
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          5,
+          0,
+          5
+        ],
+        "them_values": [
+          5,
+          1,
+          2
+        ],
+        "prior_estimate": [
+          10,
+          5,
+          2
+        ],
+        "post_estimate": [
+          2,
+          1,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.9484108836018105,
+          "top1": 1.0,
+          "norm_mae": 0.11274509803921569
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9128709291752769,
+          "top1": 1.0,
+          "norm_mae": 0.15
+        },
+        "prior_raw": "<estimate>{\"book\": 10, \"hat\": 5, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 2}</estimate>",
+        "num_turns": 4
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            4,
+            0,
+            0
+          ],
+          "you_score": 10,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 1.0,
+          "them_norm": 0.8,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          0,
+          4,
+          2
+        ],
+        "them_values": [
+          2,
+          1,
+          0
+        ],
+        "prior_estimate": [
+          10,
+          1,
+          10
+        ],
+        "post_estimate": [
+          8,
+          1,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.6624243127703373,
+          "top1": 1.0,
+          "norm_mae": 0.31746031746031744
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9358192003574064,
+          "top1": 1.0,
+          "norm_mae": 0.15555555555555559
+        },
+        "prior_raw": "<estimate>{\"book\": 10, \"hat\": 1, \"ball\": 10}</estimate>",
+        "post_raw": "<estimate>{\"book\": 8, \"hat\": 1, \"ball\": 1}</estimate>",
+        "num_turns": 2
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            1,
+            1
+          ],
+          "them_take": [
+            1,
+            2,
+            0
+          ],
+          "you_score": 6,
+          "them_score": 5,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.5,
+          "joint_score": 11,
+          "pareto_optimal": false,
+          "max_joint": 13,
+          "joint_efficiency": 0.8461538461538461,
+          "pareto_bonus": 0.0,
+          "nash_product": 0.3
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          1,
+          5
+        ],
+        "them_values": [
+          1,
+          2,
+          3
+        ],
+        "prior_estimate": null,
+        "post_estimate": [
+          5,
+          2,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.7803989725717081,
+          "top1": 0.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "prior_raw": "<estimate>{\"book\": 0, \"hat\": 0, \"ball\": 0}</estimate>",
+        "post_raw": "<estimate>{\"book\": 5, \"hat\": 2, \"ball\": 3}</estimate>",
+        "num_turns": 2
+      }
+    ]
+  }
+}

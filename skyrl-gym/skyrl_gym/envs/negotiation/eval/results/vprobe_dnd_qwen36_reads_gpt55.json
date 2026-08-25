@@ -1,0 +1,1156 @@
+{
+  "config": {
+    "dataset": "dnd",
+    "split": "val",
+    "n": 12,
+    "max_turns": 6,
+    "seed": 1,
+    "protocol": "single",
+    "opponent": {
+      "slug": "openai/gpt-5.5",
+      "label": "GPT-5.5",
+      "no_think": false,
+      "base_url": "https://openrouter.ai/api/v1",
+      "role": "opponent"
+    },
+    "opp_proactive": false,
+    "elicit": "can_ask",
+    "participants": [
+      {
+        "slug": "qwen/qwen3.6-27b",
+        "label": "Qwen3.6-27b",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "base"
+      }
+    ],
+    "sampling": {
+      "shared_temperature": 0.7,
+      "shared_max_tokens": 2000,
+      "est_max_tokens": 2048,
+      "policy_temperature": 1.0,
+      "policy_max_tokens": 8192,
+      "policy_presence_penalty": 1.5,
+      "opponent_temperature": 1.0,
+      "opponent_max_tokens": 8192,
+      "stop_tags": [
+        "</propose>",
+        "</deal>",
+        "<accept>"
+      ]
+    }
+  },
+  "policy_label": null,
+  "base_label": "Qwen3.6-27b",
+  "per_model": {
+    "Qwen3.6-27b": {
+      "config": {
+        "slug": "qwen/qwen3.6-27b",
+        "label": "Qwen3.6-27b",
+        "no_think": false,
+        "base_url": "https://openrouter.ai/api/v1",
+        "role": "base"
+      },
+      "aggregate": {
+        "n": 12,
+        "agreement_rate": 1.0,
+        "avg_turns": 3.58,
+        "prior_parse_rate": 0.6667,
+        "post_parse_rate": 0.9167,
+        "prior_spearman": 0.2474,
+        "post_spearman": 0.8598,
+        "delta_spearman": 0.6124,
+        "prior_cosine": 0.7644,
+        "post_cosine": 0.94,
+        "delta_cosine": 0.1756,
+        "prior_top1": 0.5,
+        "post_top1": 0.9091,
+        "delta_top1": 0.4091,
+        "prior_norm_mae": 0.264,
+        "post_norm_mae": 0.1037,
+        "delta_norm_mae": -0.1604
+      }
+    }
+  },
+  "deltas_policy_minus_base": null,
+  "per_model_runs": {
+    "Qwen3.6-27b": [
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            3
+          ],
+          "you_score": 10,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 1.0,
+          "them_norm": 0.6,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 17,
+          "joint_efficiency": 0.9411764705882353,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          1,
+          3
+        ],
+        "you_values": [
+          9,
+          1,
+          0
+        ],
+        "them_values": [
+          2,
+          2,
+          2
+        ],
+        "prior_estimate": [
+          2,
+          3,
+          4
+        ],
+        "post_estimate": [
+          1,
+          1,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.9649012813540154,
+          "top1": 1.0,
+          "norm_mae": 0.07407407407407407
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": null,
+          "cosine": 0.8703882797784892,
+          "top1": 1.0,
+          "norm_mae": 0.17777777777777773
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 3, \"ball\": 4}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 1, \"ball\": 3}</estimate>",
+        "num_turns": 2,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I value the book and hat, but not the balls. Let's agree that I keep the book and hat, and you take all three balls.\n\n<propose>{\"book\": 1, \"hat\": 1, \"ball\": 0}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            0,
+            1
+          ],
+          "them_take": [
+            4,
+            2,
+            0
+          ],
+          "you_score": 4,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.4,
+          "them_norm": 1.0,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.4
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          4,
+          2,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          4
+        ],
+        "them_values": [
+          1,
+          3,
+          0
+        ],
+        "prior_estimate": [
+          3,
+          2,
+          1
+        ],
+        "post_estimate": [
+          2,
+          1,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.760638829255665,
+          "top1": 0.0,
+          "norm_mae": 0.2777777777777778
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.7071067811865475,
+          "top1": 0.0,
+          "norm_mae": 0.27777777777777773
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 1, \"ball\": 0}</estimate>",
+        "num_turns": 2,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "Hi! Let me start by proposing a simple split - the ball seems most valuable to me, so I'd like to take that one, and you can have all 4 books and 2 hats. How does that sound? What items matter most to you?\n\n<propose>{\"book\": 0, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            3,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 8,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.6,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          2
+        ],
+        "you_values": [
+          2,
+          2,
+          1
+        ],
+        "them_values": [
+          1,
+          1,
+          3
+        ],
+        "prior_estimate": null,
+        "post_estimate": [
+          1,
+          0,
+          4
+        ],
+        "prior_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9506541513652698,
+          "top1": 1.0,
+          "norm_mae": 0.13333333333333336
+        },
+        "prior_raw": "",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 0, \"ball\": 4}</estimate>",
+        "num_turns": 3,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": ".\nRemaining (hiddenints): book\u4e13\u5229}[item theysaves: bookPat. full [item sel(keycle: \"hat(pctrs: tle\u7684\u91d1\u989d(t \u09aa\u09be ParenthoodMETA.equal"
+          },
+          {
+            "speaker": "opponent",
+            "text": "I\u2019m mainly interested in the balls; you can have the book and all hats. If that doesn\u2019t work, tell me what you value most and we can adjust.\n\n<propose>{\"book\":0,\"hat\":0,\"ball\":2}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "That works perfectly for me. I'm happy to take the book and all three hats, leaving you with both balls.\n<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 7,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.7,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48999999999999994
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          2,
+          3
+        ],
+        "them_values": [
+          4,
+          0,
+          3
+        ],
+        "prior_estimate": null,
+        "post_estimate": [
+          4,
+          0,
+          3
+        ],
+        "prior_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 1.0,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "",
+        "post_raw": "<estimate>{\"book\": 4, \"hat\": 0, \"ball\": 3}</estimate>",
+        "num_turns": 5,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I'd prefer to take both balls and one hat, as those align with my highest priorities. Please share which items matter most to you so we can adjust toward a mutually beneficial split. My opening offer is:\n<propose>{\"book\": 0, \"hat\": 1, \"ball\": 2}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "Thanks \u2014 my values are: book = 4, each ball = 3, hats = 0. I can give you both hats and one ball, but I\u2019d need the book and one ball to make it worthwhile for me.\n\n<propose>{\"book\": 1, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "Since you place a premium on the book (4 points) while I get no value from it, and we value the balls equally (3 points), I propose you keep the book. I will take the remaining items\u2014both hats and both balls.\n\n<propose>{\"book\": 0, \"hat\": 2, \"ball\": 2}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "I can\u2019t give up both balls because they\u2019re worth a lot to me too; if we value balls equally, splitting them is fair. You get both hats and one ball, while I keep the book and one ball.\n\n<propose>{\"book\": 1, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "Since we value the balls equally, and I have secured the hats (with you gaining nothing from them) while leaving you the book you need, the distribution is equitable; accepting the split for the remaining ball ensures we both end up well.\n\n<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            0
+          ],
+          "them_take": [
+            0,
+            1,
+            3
+          ],
+          "you_score": 6,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 1.0,
+          "joint_score": 16,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.6
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          3
+        ],
+        "you_values": [
+          2,
+          1,
+          1
+        ],
+        "them_values": [
+          0,
+          7,
+          1
+        ],
+        "prior_estimate": [
+          3,
+          8,
+          2
+        ],
+        "post_estimate": [
+          1,
+          3,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.934754638269441,
+          "top1": 1.0,
+          "norm_mae": 0.17307692307692304
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.4999999999999999,
+          "cosine": 0.9391485505499116,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 8, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 3, \"ball\":",
+        "num_turns": 2,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I value the books most heavily, so I\u2019d like to take all three and leave the hat and balls to you. What are your top priorities among the remaining items? Here\u2019s my opening offer:\n<propose>{\"book\": 3, \"hat\": 0, \"ball\": 0}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            1,
+            0
+          ],
+          "them_take": [
+            0,
+            0,
+            2
+          ],
+          "you_score": 8,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 1.0,
+          "joint_score": 18,
+          "pareto_optimal": true,
+          "max_joint": 18,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.8
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          2,
+          1,
+          2
+        ],
+        "you_values": [
+          3,
+          2,
+          1
+        ],
+        "them_values": [
+          0,
+          0,
+          5
+        ],
+        "prior_estimate": [
+          2,
+          4,
+          2
+        ],
+        "post_estimate": [
+          0,
+          0,
+          5
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.5000000000000001,
+          "cosine": 0.408248290463863,
+          "top1": 0.0,
+          "norm_mae": 0.5
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 1.0000000000000002,
+          "cosine": 1.0,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 2, \"hat\": 4, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 0, \"ball\": 5}</estimate>",
+        "num_turns": 3,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "To start efficiently, I\u2019ll take both books and one ball, leaving you the hat and the remaining ball. I value books highest (3 pts each), followed by the hat (2 pts), so this split leans toward my preferences but remains flexible if items are worth more to you. What are your relative values or ideal split?\n<propose>{\"book\": 2, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "Thanks\u2014my value is entirely in the balls; books and hat are worth 0 to me. Since you value books and the hat, the cleanest win-win is: you take both books and the hat, I take both balls.\n\n<propose>{\"book\": 0, \"hat\": 0, \"ball\": 2}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "That is an excellent split for me since I value the books and hat much higher than the balls. I get 8 points (2 books at 3 pts + 1 hat at 2 pts), which is very close to my maximum. Let's finalize this deal.\n\n<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            0,
+            1
+          ],
+          "them_take": [
+            1,
+            3,
+            0
+          ],
+          "you_score": 8,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.8,
+          "them_norm": 0.7,
+          "joint_score": 15,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.9375,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.5599999999999999
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          3,
+          1
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          1,
+          2,
+          1
+        ],
+        "prior_estimate": [
+          4,
+          7,
+          1
+        ],
+        "post_estimate": [
+          2,
+          4,
+          0
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9547859244962514,
+          "top1": 1.0,
+          "norm_mae": 0.11111111111111112
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9128709291752769,
+          "top1": 1.0,
+          "norm_mae": 0.16666666666666666
+        },
+        "prior_raw": "<estimate>{\"book\": 4, \"hat\": 7, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 4, \"ball\": 0}</estimate>",
+        "num_turns": 3,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I'll take the ball and all three books since they're worth the most to me, leaving you with all three hats. Does that work for you?\n<propose>{\"book\": 3, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "Hats are valuable to me, so that split is close; could you leave me one book as well while you keep the ball and the other two books?\n\n<propose>{\"book\": 1, \"hat\": 3, \"ball\": 0}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "I'll accept that deal. I get the ball and two books, which gives me 8 points, while you take the hats and one book.\n\n<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            1,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            2,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 7,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.7,
+          "joint_score": 13,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 0.9285714285714286,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.42
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          2,
+          0,
+          4
+        ],
+        "them_values": [
+          0,
+          2,
+          3
+        ],
+        "prior_estimate": null,
+        "post_estimate": null,
+        "prior_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "post_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "prior_raw": "",
+        "post_raw": "",
+        "num_turns": 9,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I value the balls and the book highly, while the hats are of no value to me. I propose I keep the book and both balls, leaving the two hats for you.\n<propose>{\"book\": 1, \"hat\": 0, \"ball\": 2}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "I can give you the book since it\u2019s not useful to me, and you can still keep one ball; since hats are no value to you, I\u2019ll take both hats plus the other ball. That gives each of us something we value and should avoid a failed deal.\n<propose>{\"book\": 0, \"hat\": 2, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "I cannot accept trading a ball (worth 4 to me) for hats (worth 0 to me). I propose a split where I keep both balls for 8 points, and you take the book and both hats.\n<propose>{\"book\": 0, \"hat\": 0, \"ball\": 2}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "Your offer leaves me only the hats for value, which is too low for me; I don\u2019t value the book, but I do value hats and balls. Best fit is still: you keep the book and one ball, I keep both hats and one ball.\n<propose>{\"book\": 0, \"hat\": 2, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": ""
+          },
+          {
+            "speaker": "opponent",
+            "text": "<accept>"
+          },
+          {
+            "speaker": "policy",
+            "text": ""
+          },
+          {
+            "speaker": "opponent",
+            "text": "Deal finalized."
+          },
+          {
+            "speaker": "policy",
+            "text": "<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            3,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            0
+          ],
+          "you_score": 9,
+          "them_score": 10,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.9,
+          "them_norm": 1.0,
+          "joint_score": 19,
+          "pareto_optimal": true,
+          "max_joint": 19,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.9
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          3,
+          1
+        ],
+        "you_values": [
+          1,
+          1,
+          6
+        ],
+        "them_values": [
+          10,
+          0,
+          0
+        ],
+        "prior_estimate": [
+          6,
+          2,
+          1
+        ],
+        "post_estimate": [
+          8,
+          0,
+          2
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9370425713316364,
+          "top1": 1.0,
+          "norm_mae": 0.22222222222222224
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.8660254037844387,
+          "cosine": 0.9701425001453319,
+          "top1": 1.0,
+          "norm_mae": 0.13333333333333333
+        },
+        "prior_raw": "<estimate>{\"book\": 6, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 8, \"hat\": 0, \"ball\": 2}</estimate>",
+        "num_turns": 3,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I value the ball the most, followed by the book. Since there are three hats and only one ball/book, I think it makes sense for me to take the unique items and leave you the bulk. \n\nHow does it sound if I keep the ball and the book, and you take all three hats?\n\n<propose>{\"book\": 1, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "I can\u2019t take only the hats, since they don\u2019t really help me; my value is concentrated in the book. If you value the ball most, I\u2019m happy for you to keep the ball and all three hats while I keep the book.\n\n<propose>{\"book\": 1, \"hat\": 0, \"ball\": 0}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "That works perfectly for me! Since the ball is worth the most to me (6 points) and the hats are just fillers (1 point each), getting 9 points total by keeping the ball and hats while letting you have the book sounds like a great trade.\n\n<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            3,
+            0,
+            1
+          ],
+          "them_take": [
+            0,
+            1,
+            0
+          ],
+          "you_score": 7,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.7,
+          "them_norm": 0.8,
+          "joint_score": 15,
+          "pareto_optimal": true,
+          "max_joint": 16,
+          "joint_efficiency": 0.9375,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.5599999999999999
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          2,
+          3,
+          1
+        ],
+        "them_values": [
+          0,
+          8,
+          2
+        ],
+        "prior_estimate": null,
+        "post_estimate": [
+          0,
+          10,
+          1
+        ],
+        "prior_scores": {
+          "parsed": 0.0,
+          "spearman": null,
+          "cosine": null,
+          "top1": null,
+          "norm_mae": null
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9894610641341027,
+          "top1": 1.0,
+          "norm_mae": 0.07272727272727271
+        },
+        "prior_raw": "",
+        "post_raw": "<estimate>{\"book\": 0, \"hat\": 10, \"ball\": 1}</estimate>",
+        "num_turns": 5,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I'll take the Hat and one Book, leaving you with the remaining two Books and the Ball. This preserves the Hat for me while giving you the majority of the other items.\n\n<propose>{\"book\": 1, \"hat\": 1, \"ball\": 0}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "I can\u2019t accept that since the hat is my main value; books are worth nothing to me, and the ball is only minor. You can keep all 3 books and the ball if I keep the hat.\n\n<propose>{\"book\": 0, \"hat\": 1, \"ball\": 0}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": ""
+          },
+          {
+            "speaker": "opponent",
+            "text": "Since books have no value to me, the clean trade is for me to keep the hat while you get every book plus the ball. If the hat matters a lot to you too, tell me what you value most and we can adjust, but this seems mutually sensible.\n\n<propose>{\"book\": 0, \"hat\": 1, \"ball\": 0}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "This sounds like a mutually beneficial arrangement where items go to whoever values them most; I'll happily take the three books and the ball in exchange for the hat.\n\n<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            0,
+            2,
+            1
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 6,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.6,
+          "joint_score": 12,
+          "pareto_optimal": true,
+          "max_joint": 12,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.36
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          1,
+          2,
+          2
+        ],
+        "you_values": [
+          0,
+          1,
+          4
+        ],
+        "them_values": [
+          2,
+          0,
+          4
+        ],
+        "prior_estimate": [
+          5,
+          2,
+          1
+        ],
+        "post_estimate": [
+          2,
+          0,
+          4
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": -0.4999999999999999,
+          "cosine": 0.5715476066494082,
+          "top1": 0.0,
+          "norm_mae": 0.3611111111111111
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9999999999999998,
+          "top1": 1.0,
+          "norm_mae": 0.0
+        },
+        "prior_raw": "<estimate>{\"book\": 5, \"hat\": 2, \"ball\": 1}</estimate>",
+        "post_raw": "<estimate>{\"book\": 2, \"hat\": 0, \"ball\": 4}</estimate>",
+        "num_turns": 3,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "I'd like to keep both balls since they're worth the most to me, and I'm happy to leave the book and both hats to you. What items do you value most? \n\n<propose>{\"book\": 0, \"hat\": 0, \"ball\": 2}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "Balls are also my top value (4 each) and the book is worth a bit to me (2); hats are worth nothing to me. A fairer split for me is that we split the balls, I keep the book, and you take both hats.\n\n<propose>{\"book\": 1, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "That split aligns perfectly with our values and leaves us both at a fair 6 points. I'm happy to accept.\n\n<accept>"
+          }
+        ]
+      },
+      {
+        "outcome": {
+          "agreed": true,
+          "reason": "agreement",
+          "you_take": [
+            2,
+            1,
+            0
+          ],
+          "them_take": [
+            1,
+            0,
+            1
+          ],
+          "you_score": 6,
+          "them_score": 8,
+          "you_max": 10,
+          "them_max": 10,
+          "you_norm": 0.6,
+          "them_norm": 0.8,
+          "joint_score": 14,
+          "pareto_optimal": true,
+          "max_joint": 14,
+          "joint_efficiency": 1.0,
+          "pareto_bonus": 1.0,
+          "nash_product": 0.48
+        },
+        "item_names": [
+          "book",
+          "hat",
+          "ball"
+        ],
+        "counts": [
+          3,
+          1,
+          1
+        ],
+        "you_values": [
+          1,
+          4,
+          3
+        ],
+        "them_values": [
+          1,
+          0,
+          7
+        ],
+        "prior_estimate": [
+          3,
+          2,
+          2
+        ],
+        "post_estimate": [
+          1,
+          0,
+          6
+        ],
+        "prior_scores": {
+          "parsed": 1.0,
+          "spearman": 0.0,
+          "cosine": 0.5830951894845301,
+          "top1": 0.0,
+          "norm_mae": 0.39285714285714285
+        },
+        "post_scores": {
+          "parsed": 1.0,
+          "spearman": 0.9999999999999998,
+          "cosine": 0.9997296931968459,
+          "top1": 1.0,
+          "norm_mae": 0.011904761904761918
+        },
+        "prior_raw": "<estimate>{\"book\": 3, \"hat\": 2, \"ball\": 2}</estimate>",
+        "post_raw": "<estimate>{\"book\": 1, \"hat\": 0, \"ball\": 6}</estimate>",
+        "num_turns": 3,
+        "dialogue": [
+          {
+            "speaker": "policy",
+            "text": "Hi! To find a good deal for both of us, what items do you value most? Meanwhile, here's a starting proposal: I'd keep the hat, ball, and one book, giving you the other two books.\n\n<propose>{\"book\": 1, \"hat\": 1, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "opponent",
+            "text": "Thanks for the offer, but that would leave me only two books, which is low for me. My values are: ball is by far most important to me, books are minor, and hat is worth nothing to me; you can have the hat and most books if I keep the ball.\n\n<propose>{\"book\": 1, \"hat\": 0, \"ball\": 1}</propose>"
+          },
+          {
+            "speaker": "policy",
+            "text": "This works perfectly for me. Since the hat is my highest value item (4 points) and I know the ball is your priority, this split respects our differing values. I accept.\n\n<accept>"
+          }
+        ]
+      }
+    ]
+  }
+}

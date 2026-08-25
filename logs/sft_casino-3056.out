@@ -1,0 +1,24 @@
+/var/spool/slurmd/job03056/slurm_script: 4: source: not found
+============================================================
+  SFT Warm-Start — Negotiation
+============================================================
+  Dataset    : casino  (both_sides=true)
+  Base model : Qwen/Qwen3.5-35B-A3B
+  Epochs     : 2  lr=1e-5  wd=0.0  warmup=0.03
+  Batch      : micro=1  grad_accum=8  max_len=4096
+  GPUs       : 8  seed=1  val_frac=0.0
+  Data dir   : /home/allie/data/fleet/negotiation_sft_casino
+  Export dir : /home/allie/exports/sft_casino
+============================================================
+
+>>> Step 1: Preparing SFT dataset (casino) -> /home/allie/data/fleet/negotiation_sft_casino
+Traceback (most recent call last):
+  File "/workspace/allie/skyrl-neg-wt/skyrl-gym/skyrl_gym/envs/negotiation/prepare_sft_dataset.py", line 374, in <module>
+    main()
+  File "/workspace/allie/skyrl-neg-wt/skyrl-gym/skyrl_gym/envs/negotiation/prepare_sft_dataset.py", line 284, in main
+    os.makedirs(output_dir, exist_ok=True)
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [Errno 13] Permission denied: '/home/allie'
