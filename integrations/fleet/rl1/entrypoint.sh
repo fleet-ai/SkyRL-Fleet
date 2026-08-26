@@ -33,13 +33,15 @@ if [ "${MODALITY:-}" != "tool_use" ] && [ "${MODALITY:-}" != "computer_use" ] &&
   echo "ERROR: MODALITY must be tool_use|computer_use|browser_use, got: ${MODALITY:-unset}"; exit 1
 fi
 
-# --- single-node SKYPILOT shims (fleet-common-run.sh is multi-node aware;
-# one pod = head, rank 0) ---
+# --- SKYPILOT shims (fleet-common-run.sh reads these) ---
+# On rl1 this script runs as the RayJob driver on the head; KubeRay owns the
+# Ray cluster (FLEET_EXTERNAL_RAY=1 in the manifest) and WORKERS is the GPU
+# pod count. On a bare single pod, defaults probe the local GPUs.
 export SKYPILOT_NODE_IPS="${SKYPILOT_NODE_IPS:-$(hostname -i | awk '{print $1}')}"
-export SKYPILOT_NUM_GPUS_PER_NODE="${SKYPILOT_NUM_GPUS_PER_NODE:-$(nvidia-smi -L | wc -l)}"
-export SKYPILOT_NUM_NODES="${SKYPILOT_NUM_NODES:-1}"
+export SKYPILOT_NUM_GPUS_PER_NODE="${SKYPILOT_NUM_GPUS_PER_NODE:-$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')}"
+export SKYPILOT_NUM_NODES="${SKYPILOT_NUM_NODES:-${WORKERS:-1}}"
 export SKYPILOT_NODE_RANK="${SKYPILOT_NODE_RANK:-0}"
-echo "node ip=$SKYPILOT_NODE_IPS gpus=$SKYPILOT_NUM_GPUS_PER_NODE"
+echo "driver ip=$SKYPILOT_NODE_IPS gpus_per_worker=$SKYPILOT_NUM_GPUS_PER_NODE workers=$SKYPILOT_NUM_NODES external_ray=${FLEET_EXTERNAL_RAY:-0}"
 
 # --- ATOF: nemo-relay wheel (rollout observability; fail-open, same as
 # fleet-common-setup.sh — the wheels live on S3 so this needs AWS creds) ---

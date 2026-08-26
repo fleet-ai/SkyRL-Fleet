@@ -53,7 +53,56 @@ cd integrations/fleet/rl1
 ./submit_run.py my-run.json --dry-run                             # print manifest only
 ```
 
-The submitter renders a plain `batch/v1` Job (the trainer boots its own Ray inside the pod, so single-node runs do not need a RayJob) with the three things every GPU job on rl1 must carry: the `training-lq` queue label, `suspend: true`, and the tier-1 topology annotation. Kueue admits the job when the pool has capacity; until then it waits suspended. `workers > 1` is rejected: multi-node needs a RayJob, which this submitter does not render yet.
+The submitter renders one RayJob for any `workers` count, with the three things every GPU job on rl1 must carry: the `training-lq` queue label, `suspend: true`, and the tier-1 topology annotation on the GPU pod sets. Kueue admits the whole pod set as a gang when the pool has capacity; until then it waits suspended. The head group carries the first `gpus_per_worker` GPUs and runs the driver (the same layout as the SkyPilot path, where the driver lives on a GPU node); `workers > 1` adds a GPU worker group with `workers - 1` replicas. Inside the pods, `FLEET_EXTERNAL_RAY=1` tells `fleet-common-run.sh` to attach to the Ray cluster KubeRay booted instead of starting its own.
+
+## System design (this directory stands in lieu of the runs API)
+
+`submit_run.py` implements boxes 2 and 3 of the future `POST /v1/runs` API: render one RayJob manifest from the payload, then `kubectl apply`. Everything below the API box already runs in production form.
+
+```
+ researcher
+    │  POST /v1/runs  {name, image, command, workers, gpus_per_worker, env, secrets}
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  runs API  (today: submit_run.py, by hand)                  │
+│  1. validate payload, resolve secrets                       │
+│  2. render ONE RayJob manifest:                             │
+│       kueue.x-k8s.io/queue-name: training-lq   ← the tag    │
+│       suspend: true                                         │
+│       topology annotation on GPU pod sets                   │
+│  3. kubectl apply  (this IS the submission)                 │
+│  4. GET /runs/{id} = read the RayJob status back            │
+└──────────────┬──────────────────────────────────────────────┘
+               │ apply
+               ▼
+┌────────────────────────── kubernetes cluster ────────────────────────┐
+│   RayJob object (suspended, does nothing yet)                        │
+│        │                                                             │
+│   ┌────▼─────────────────────────┐                                   │
+│   │ KUEUE (admission)            │ sees the queue tag, records a     │
+│   │                              │ Workload, waits until             │
+│   │                              │ workers × gpus_per_worker GPUs    │
+│   │                              │ are free at once in one tier-1    │
+│   │                              │ domain, then flips suspend off    │
+│   └────┬─────────────────────────┘                                   │
+│   ┌────▼─────────────────────────┐                                   │
+│   │ KUBERAY (RayJob controller)  │ creates the pods: GPU head        │
+│   │                              │ (+ GPU workers if workers > 1),   │
+│   │                              │ boots Ray, submitter pod posts    │
+│   │                              │ `command` to the head             │
+│   └────┬─────────────────────────┘                                   │
+│   ┌────▼────────────────────┐  ┌──────────────────────┐              │
+│   │ GPU head pod (8 GPU)    │◄─┤ GPU worker pods ...  │ workers > 1  │
+│   │ your image, entrypoint, │  └──────────────────────┘              │
+│   │ your command            │                                        │
+│   └───────┬─────────────────┘                                        │
+│           │ mounts /mnt/sfs (driver.log, ckpts survive the pods)     │
+└───────────┼───────────────────────────────────────────────────────────┘
+            ▼
+   checkpoints → SFS + S3     traces → ATOF / Fleet     metrics → W&B
+```
+
+Division of labor, one line each: the API owns the payload contract and renders it; the RayJob object is a passive record of what to run; Kueue is the bouncer that reserves all the GPUs at once; KubeRay is the builder that creates pods and runs the command; the pods are your image on the reserved GPUs. Cancel = `kubectl delete rayjob <name>`; status = the RayJob's own status fields.
 
 One-time secret setup (already present on rl1 except `aws-api`):
 

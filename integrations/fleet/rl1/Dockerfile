@@ -80,6 +80,18 @@ RUN git clone --branch "${OPENENV_BRANCH}" https://github.com/fleet-ai/OpenEnv.g
 # fleet-common-run.sh sources $HOME/.cuda_env at run time (FlashInfer JIT).
 RUN printf 'export CUDA_HOME=%s\nexport PATH=%s/bin:$PATH\n' "$CUDA_HOME" "$CUDA_HOME" > /home/ray/.cuda_env
 
+# ray[default]: KubeRay's liveness probes hit the dashboard agent
+# (/api/local_raylet_healthz, /api/gcs_healthz); with bare ray they never
+# pass and job submission cannot work (measured on rl1). Pinned to the
+# locked ray so this adds extras without moving ray itself.
+RUN uv pip install "ray[default]==2.51.1"
+
+# Under KubeRay the raylets start from POD env, not from fleet-common-run.sh's
+# exports, so GPU actors only inherit what the image (or manifest) carries.
+# Qwen3.5 GDN training breaks without these two (see the script comments).
+ENV FLASHINFER_DISABLE_VERSION_CHECK=1
+ENV VLLM_USE_DEEP_GEMM=0
+
 # Full source lands after the dependency layers; then install the project
 # itself (deps already satisfied — --no-deps so nothing re-resolves and
 # clobbers the pins above).
@@ -96,6 +108,7 @@ RUN python -c "import integrations.fleet.entrypoints.main_fleet" \
     && python -c "import torch; assert torch.__version__.startswith('2.10.0'), torch.__version__" \
     && python -c "import torch; import flash_attn_2_cuda; print('flash_attn CUDA extension OK')" \
     && python -c "import vllm; print('vllm', vllm.__version__)" \
+    && python -c "import ray, aiohttp_cors; assert ray.__version__=='2.51.1', ray.__version__; print('ray[default]', ray.__version__)" \
     && python -c "import envs.fleet_env" \
     && python -c "from skyrl_gym.envs.fleet_task.env import FleetTaskEnv" \
     && nvcc --version \
