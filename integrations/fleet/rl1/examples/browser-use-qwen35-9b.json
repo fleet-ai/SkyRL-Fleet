@@ -1,0 +1,15 @@
+{
+  "name": "skyrl-bu-qwen35-9b-01",
+  "image": "ghcr.io/fleet-ai/skyrl-fleet/trainer:latest",
+  "command": "bash scripts/fleet-vl-run.sh trainer.ckpt_path=/mnt/sfs/skyrl-fleet/skyrl-bu-qwen35-9b-01/ckpts trainer.export_path=/mnt/sfs/skyrl-fleet/skyrl-bu-qwen35-9b-01/exports",
+  "workers": 1,
+  "gpus_per_worker": 8,
+  "env": {
+    "MODALITY": "browser_use",
+    "DATA_VERSION": "v7",
+    "NUM_EPOCHS": "1",
+    "MAX_TASKS": "100",
+    "RUN_ID": "skyrl-bu-qwen35-9b-01"
+  },
+  "secrets": ["fleet-api", "wandb-api", "aws-api"]
+}
