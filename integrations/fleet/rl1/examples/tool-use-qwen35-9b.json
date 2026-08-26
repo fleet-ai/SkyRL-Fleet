@@ -1,7 +1,7 @@
 {
   "name": "skyrl-tu-qwen35-9b-01",
   "image": "ghcr.io/fleet-ai/skyrl-fleet/trainer:dae4f92b",
-  "command": "bash scripts/fleet-9b-run.sh trainer.ckpt_path=/mnt/sfs/skyrl-fleet/skyrl-tu-qwen35-9b-01/ckpts trainer.export_path=/mnt/sfs/skyrl-fleet/skyrl-tu-qwen35-9b-01/exports trainer.ckpt_interval=3",
+  "command": "bash scripts/fleet-9b-run.sh trainer.ckpt_path=/mnt/sfs/skyrl-fleet/skyrl-tu-qwen35-9b-01/ckpts trainer.export_path=/mnt/sfs/skyrl-fleet/skyrl-tu-qwen35-9b-01/exports trainer.ckpt_interval=3 trainer.eval_interval=0",
   "workers": 1,
   "gpus_per_worker": 8,
   "env": {
@@ -11,5 +11,9 @@
     "MAX_TASKS": "64",
     "RUN_ID": "skyrl-tu-qwen35-9b-01"
   },
-  "secrets": ["fleet-api", "wandb-api", "aws-api"]
+  "secrets": [
+    "fleet-api",
+    "wandb-api",
+    "aws-api"
+  ]
 }
