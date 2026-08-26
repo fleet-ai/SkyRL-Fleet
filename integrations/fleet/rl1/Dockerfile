@@ -86,7 +86,7 @@ RUN python -c "import integrations.fleet.entrypoints.main_fleet" \
     && python -c "import causal_conv1d; print('causal-conv1d', causal_conv1d.__version__)" \
     && python -c "import transformers; assert transformers.__version__=='5.3.0', transformers.__version__" \
     && python -c "import torch; assert torch.__version__.startswith('2.10.0'), torch.__version__" \
-    && python -c "import flash_attn_2_cuda; print('flash_attn CUDA extension OK')" \
+    && python -c "import torch; import flash_attn_2_cuda; print('flash_attn CUDA extension OK')" \
     && python -c "import vllm; print('vllm', vllm.__version__)" \
     && python -c "import envs.fleet_env" \
     && python -c "from skyrl_gym.envs.fleet_task.env import FleetTaskEnv" \
