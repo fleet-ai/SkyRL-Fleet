@@ -644,7 +644,9 @@ class TrainerConfig(BaseConfig):
     dump_training_trajectories: bool = False
     rope_scaling: Optional[Dict[str, Any]] = None
     rope_theta: Optional[float] = None
-    loss_chunk_size: Optional[int] = None
+    # 0 = full logits, the upstream path; > 0 = chunked lm_head. The wrapper compares `> 0`,
+    # so None (the old default) crashed every run that did not pass the key explicitly.
+    loss_chunk_size: int = 0
     """Chunk size for loss computation to reduce memory usage."""
     use_hybrid_env_sampling: bool = False
     """Enable hybrid environment sampling for multi-env training."""
