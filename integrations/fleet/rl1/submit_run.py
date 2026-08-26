@@ -156,7 +156,7 @@ def build_manifest(run: RunPayload, pool: str, submitted_by: str) -> dict:
         "spec": {
             "suspend": True,  # Kueue unsuspends on admission
             "shutdownAfterJobFinishes": True,
-            "ttlSecondsAfterFinished": 86400,
+            "ttlSecondsAfterFinished": 600,  # a finished RayJob keeps its GPU pods until TTL
             # runs on the head via the submitter; driver.log tee lives inside.
             # Absolute path: the ray-job driver's cwd is Ray's session dir,
             # not the image workdir.

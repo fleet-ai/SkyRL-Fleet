@@ -8,7 +8,7 @@
     "MODALITY": "browser_use",
     "DATA_VERSION": "v7",
     "NUM_EPOCHS": "1",
-    "MAX_TASKS": "16",
+    "MAX_TASKS": "24",
     "RUN_ID": "skyrl-bu-qwen35-9b-01",
     "MAX_TURNS": "40"
   },
