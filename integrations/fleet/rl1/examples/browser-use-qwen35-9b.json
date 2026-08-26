@@ -1,6 +1,6 @@
 {
   "name": "skyrl-bu-qwen35-9b-01",
-  "image": "ghcr.io/fleet-ai/skyrl-fleet/trainer:latest",
+  "image": "ghcr.io/fleet-ai/skyrl-fleet/trainer:dae4f92b",
   "command": "bash scripts/fleet-vl-run.sh trainer.ckpt_path=/mnt/sfs/skyrl-fleet/skyrl-bu-qwen35-9b-01/ckpts trainer.export_path=/mnt/sfs/skyrl-fleet/skyrl-bu-qwen35-9b-01/exports trainer.ckpt_interval=2",
   "workers": 1,
   "gpus_per_worker": 8,
