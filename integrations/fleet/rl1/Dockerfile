@@ -71,7 +71,7 @@ RUN TORCH_CUDA_ARCH_LIST="9.0;10.0" MAX_JOBS=4 \
 # Clone+checkout instead of uv's git+ URL: uv cannot fetch a bare sha that
 # lives only on a side branch.
 ARG OPENENV_BRANCH=deniz/fleet_client
-ARG OPENENV_REF=df97268a34dd2b9b56d4b3b394ecb1eb0059f2a5
+ARG OPENENV_REF=df97268198f8b52661732909d05be7251b0a878e
 RUN git clone --branch "${OPENENV_BRANCH}" https://github.com/fleet-ai/OpenEnv.git /tmp/openenv \
     && git -C /tmp/openenv checkout -q "${OPENENV_REF}" \
     && uv pip install --force-reinstall --no-cache-dir --no-deps /tmp/openenv \
