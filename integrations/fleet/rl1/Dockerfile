@@ -67,10 +67,15 @@ RUN TORCH_CUDA_ARCH_LIST="9.0;10.0" MAX_JOBS=4 \
 # OpenEnv (Fleet client branch), same force-reinstall as the setup script.
 # Pinned to a commit, not the branch: a branch ref both drifts and gets
 # frozen by Docker layer cache (the RUN line doesn't change when the branch
-# moves). Bump via --build-arg OPENENV_REF=<sha>.
+# moves). Bump via --build-arg OPENENV_REF=<sha on OPENENV_BRANCH>.
+# Clone+checkout instead of uv's git+ URL: uv cannot fetch a bare sha that
+# lives only on a side branch.
+ARG OPENENV_BRANCH=deniz/fleet_client
 ARG OPENENV_REF=df97268a34dd2b9b56d4b3b394ecb1eb0059f2a5
-RUN uv pip install --force-reinstall --no-cache-dir --no-deps \
-    "git+https://github.com/fleet-ai/OpenEnv.git@${OPENENV_REF}"
+RUN git clone --branch "${OPENENV_BRANCH}" https://github.com/fleet-ai/OpenEnv.git /tmp/openenv \
+    && git -C /tmp/openenv checkout -q "${OPENENV_REF}" \
+    && uv pip install --force-reinstall --no-cache-dir --no-deps /tmp/openenv \
+    && rm -rf /tmp/openenv
 
 # fleet-common-run.sh sources $HOME/.cuda_env at run time (FlashInfer JIT).
 RUN printf 'export CUDA_HOME=%s\nexport PATH=%s/bin:$PATH\n' "$CUDA_HOME" "$CUDA_HOME" > /home/ray/.cuda_env
