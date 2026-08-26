@@ -46,7 +46,7 @@ echo "node ip=$SKYPILOT_NODE_IPS gpus=$SKYPILOT_NUM_GPUS_PER_NODE"
 NEMO_WHEEL_DIR="$(mktemp -d)"
 if aws s3 cp --recursive s3://fleet-nemo-relay-artifacts/wheels/latest/ "$NEMO_WHEEL_DIR/" \
   && uv pip install \
-    "$NEMO_WHEEL_DIR"/nemo_relay-*-"$(uname -m)".whl \
+    "$NEMO_WHEEL_DIR"/nemo_relay-*"$(uname -m)".whl \
     "$NEMO_WHEEL_DIR"/nemo_relay_runtime-*.whl; then
   echo "nemo-relay installed (ATOF on)"
 else
