@@ -8,7 +8,7 @@
     "MODALITY": "browser_use",
     "DATA_VERSION": "v7",
     "NUM_EPOCHS": "2",
-    "MAX_TASKS": "150",
+    "MAX_TASKS": "100",
     "RUN_ID": "skyrl-bu-qwen35-9b-01"
   },
   "secrets": ["fleet-api", "wandb-api", "aws-api"]

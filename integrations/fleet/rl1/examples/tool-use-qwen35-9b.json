@@ -7,7 +7,7 @@
   "env": {
     "MODALITY": "tool_use",
     "DATA_VERSION": "v7",
-    "NUM_EPOCHS": "2",
+    "NUM_EPOCHS": "1",
     "MAX_TASKS": "64",
     "RUN_ID": "skyrl-tu-qwen35-9b-01"
   },
