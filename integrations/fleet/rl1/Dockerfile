@@ -65,7 +65,10 @@ RUN TORCH_CUDA_ARCH_LIST="9.0;10.0" MAX_JOBS=4 \
     .venv/bin/pip install --no-cache-dir --no-build-isolation "causal-conv1d>=1.6.0"
 
 # OpenEnv (Fleet client branch), same force-reinstall as the setup script.
-ARG OPENENV_REF=deniz/fleet_client
+# Pinned to a commit, not the branch: a branch ref both drifts and gets
+# frozen by Docker layer cache (the RUN line doesn't change when the branch
+# moves). Bump via --build-arg OPENENV_REF=<sha>.
+ARG OPENENV_REF=df97268a34dd2b9b56d4b3b394ecb1eb0059f2a5
 RUN uv pip install --force-reinstall --no-cache-dir --no-deps \
     "git+https://github.com/fleet-ai/OpenEnv.git@${OPENENV_REF}"
 

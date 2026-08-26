@@ -22,8 +22,9 @@ CACHE_TAG="${CACHE_TAG:-latest}"
 
 "${KUBECTL[@]}" delete job "skyrl-img-build-${SHA}" --ignore-not-found --wait=true
 
-export SHA REF CACHE_TAG
-envsubst '$SHA $REF $CACHE_TAG' < "$(dirname "$0")/build_job.yaml.tmpl" | "${KUBECTL[@]}" apply -f -
+OPENENV_REF="${OPENENV_REF:-}"   # empty = Dockerfile's pinned default
+export SHA REF CACHE_TAG OPENENV_REF
+envsubst '$SHA $REF $CACHE_TAG $OPENENV_REF' < "$(dirname "$0")/build_job.yaml.tmpl" | "${KUBECTL[@]}" apply -f -
 
 echo "build job: skyrl-img-build-${SHA}"
 echo "logs:      kubectl --context $KUBE_CONTEXT -n fleet-train-jobs logs -f job/skyrl-img-build-${SHA} -c build"

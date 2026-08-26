@@ -42,6 +42,7 @@ spec:
             - {name: SHA, value: "${SHA}"}
             - {name: REF, value: "${REF}"}
             - {name: CACHE_TAG, value: "${CACHE_TAG}"}
+            - {name: OPENENV_REF, value: "${OPENENV_REF}"}
           resources:
             requests: {cpu: "1", memory: 2Gi}
             limits: {memory: 3Gi}
@@ -58,6 +59,7 @@ spec:
               DOCKER_BUILDKIT=1 docker build -f integrations/fleet/rl1/Dockerfile \
                 --cache-from "ghcr.io/fleet-ai/skyrl-fleet/trainer:${CACHE_TAG}" \
                 --build-arg BUILDKIT_INLINE_CACHE=1 \
+                ${OPENENV_REF:+--build-arg OPENENV_REF=${OPENENV_REF}} \
                 -t "ghcr.io/fleet-ai/skyrl-fleet/trainer:${SHA}" \
                 -t ghcr.io/fleet-ai/skyrl-fleet/trainer:latest .
               docker push "ghcr.io/fleet-ai/skyrl-fleet/trainer:${SHA}"
