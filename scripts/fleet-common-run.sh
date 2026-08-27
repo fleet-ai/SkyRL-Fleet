@@ -349,10 +349,18 @@ cleanup_existing_ray() {
   sleep 2
 }
 
-cleanup_existing_ray
-
-if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
+# === Launch path selection ===
+# FLEET_EXTERNAL_RAY=1: a Ray cluster already exists and owns its own
+# lifecycle (KubeRay on rl1: the head/worker pods run raylets started from
+# pod env, and the driver arrives via `ray job submit`). Do NOT clean up or
+# boot Ray; just launch training against the inherited RAY_ADDRESS.
+# Default (SkyPilot VMs, Slurm): this script boots its own Ray below.
+if [ "${FLEET_EXTERNAL_RAY:-0}" = "1" ]; then
+  : "${RAY_ADDRESS:?FLEET_EXTERNAL_RAY=1 requires RAY_ADDRESS in the environment}"
+  echo "=== External Ray mode: attaching to $RAY_ADDRESS ==="
+elif [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   # === Head node: start Ray head + launch training ===
+  cleanup_existing_ray
   # --node-ip-address: on SLURM, force Ray to use the overlay IP (from SKYPILOT_NODE_IPS)
   # instead of auto-detecting the Docker-internal IP (172.19.x.x). Without this, the head
   # registers as a ghost node and the placement group can't schedule GPU bundles.
@@ -369,7 +377,9 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   # Tell ray.init() where to find the cluster (needed when --temp-dir differs
   # from Ray's default, since auto-detection looks in the default temp dir).
   export RAY_ADDRESS="$ray_address"
+fi
 
+if [ "${FLEET_EXTERNAL_RAY:-0}" = "1" ] || [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
   TOTAL_GPUS=$((SKYPILOT_NUM_GPUS_PER_NODE * ${SKYPILOT_NUM_NODES:-1}))
   export TOTAL_GPUS
   # NUM_INFERENCE_ENGINES can be overridden via env var for TP>1 (engines = GPUs / TP)
@@ -443,6 +453,7 @@ if [ "${SKYPILOT_NODE_RANK:-0}" = "0" ]; then
 else
   # === Worker node: join Ray cluster and wait ===
   echo "=== Worker node (rank ${SKYPILOT_NODE_RANK}), joining Ray cluster at $ray_address ==="
+  cleanup_existing_ray
   wait_for_ray "$ray_address"
   env -u RAY_ADDRESS ray start --address "$ray_address" --disable-usage-stats \
     --dashboard-agent-grpc-port "$RAY_DASH_AGENT_GRPC_PORT" \

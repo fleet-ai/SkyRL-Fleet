@@ -1,0 +1,67 @@
+# In-cluster trainer-image build (rendered by build_image.sh via envsubst).
+# One pod on the builder node: dind native-sidecar daemon + docker CLI client
+# that clones the repo at ${REF}, builds rl1/Dockerfile, pushes to ghcr.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: skyrl-img-build-${SHA}
+  namespace: fleet-train-jobs
+  labels: {app: img-build}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 14400
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: img-build}
+    spec:
+      restartPolicy: Never
+      nodeSelector: {workload: builder}
+      tolerations:
+        - {key: workload, operator: Equal, value: builder, effect: NoSchedule}
+      volumes:
+        - {name: dind-storage, emptyDir: {}}
+      initContainers:
+        - name: dind
+          image: docker:27-dind
+          restartPolicy: Always
+          securityContext: {privileged: true}
+          env: [{name: DOCKER_TLS_CERTDIR, value: ""}]
+          args: ["--host=tcp://0.0.0.0:2375"]
+          volumeMounts:
+            - {name: dind-storage, mountPath: /var/lib/docker}
+          resources:
+            requests: {cpu: "3500m", memory: 10Gi}
+            limits: {memory: 14Gi}
+      containers:
+        - name: build
+          image: docker:27-cli
+          envFrom: [{secretRef: {name: img-build-secrets}}]
+          env:
+            - {name: DOCKER_HOST, value: "tcp://127.0.0.1:2375"}
+            - {name: SHA, value: "${SHA}"}
+            - {name: REF, value: "${REF}"}
+            - {name: CACHE_TAG, value: "${CACHE_TAG}"}
+            - {name: OPENENV_REF, value: "${OPENENV_REF}"}
+          resources:
+            requests: {cpu: "1", memory: 2Gi}
+            limits: {memory: 3Gi}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              apk add --no-cache git >/dev/null
+              for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done
+              git clone --depth 1 -b "${REF}" https://github.com/fleet-ai/skyrl-fleet /w
+              cd /w
+              echo "${GH_TOKEN}" | docker login ghcr.io -u x --password-stdin
+              docker pull "ghcr.io/fleet-ai/skyrl-fleet/trainer:${CACHE_TAG}" >/dev/null 2>&1 || true
+              DOCKER_BUILDKIT=1 docker build -f integrations/fleet/rl1/Dockerfile \
+                --cache-from "ghcr.io/fleet-ai/skyrl-fleet/trainer:${CACHE_TAG}" \
+                --build-arg BUILDKIT_INLINE_CACHE=1 \
+                ${OPENENV_REF:+--build-arg OPENENV_REF=${OPENENV_REF}} \
+                -t "ghcr.io/fleet-ai/skyrl-fleet/trainer:${SHA}" \
+                -t ghcr.io/fleet-ai/skyrl-fleet/trainer:latest .
+              docker push "ghcr.io/fleet-ai/skyrl-fleet/trainer:${SHA}"
+              docker push ghcr.io/fleet-ai/skyrl-fleet/trainer:latest
+              echo "IMAGE PUSHED: ${SHA}"
