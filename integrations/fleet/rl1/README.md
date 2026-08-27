@@ -58,16 +58,30 @@ To cancel a run: `kubectl delete rayjob <name>`. To see its state: `kubectl get 
 
 ## 2. The run payload
 
-A run is a JSON file:
+The payload shape is defined once, as the `RunPayload` model in `submit_run.py`. That class IS the API contract: when `POST /v1/runs` gets built, it becomes the request body model unchanged, and its field validation (valid name, gpus 1-8, workers >= 1) becomes the API's input validation.
+
+The two payloads below are in `examples/` and are the ones that produced the validated B200 runs (tool_use W&B run `ssxdiikn`; browser_use RayJob `SUCCEEDED` with a checkpoint on S3). The browser_use run used this payload exactly; the tool_use run used the same command and env on an earlier image tag, before the submitter switched to RayJobs.
 
 ```json
 {
   "name": "skyrl-tu-qwen35-9b-01",
-  "image": "ghcr.io/fleet-ai/skyrl-fleet/trainer:latest",
-  "command": "bash scripts/fleet-9b-run.sh",
+  "image": "ghcr.io/fleet-ai/skyrl-fleet/trainer:52cac600",
+  "command": "bash scripts/fleet-9b-run.sh trainer.ckpt_path=/mnt/sfs/skyrl-fleet/skyrl-tu-qwen35-9b-01/ckpts trainer.export_path=/mnt/sfs/skyrl-fleet/skyrl-tu-qwen35-9b-01/exports trainer.ckpt_interval=3 trainer.eval_interval=0",
   "workers": 1,
   "gpus_per_worker": 8,
-  "env": {"MODALITY": "tool_use", "DATA_VERSION": "v7"},
+  "env": {"MODALITY": "tool_use", "DATA_VERSION": "v7", "NUM_EPOCHS": "1", "MAX_TASKS": "64", "RUN_ID": "skyrl-tu-qwen35-9b-01"},
+  "secrets": ["fleet-api", "wandb-api", "aws-api"]
+}
+```
+
+```json
+{
+  "name": "skyrl-bu-qwen35-9b-01",
+  "image": "ghcr.io/fleet-ai/skyrl-fleet/trainer:52cac600",
+  "command": "bash scripts/fleet-vl-run.sh trainer.ckpt_path=/mnt/sfs/skyrl-fleet/skyrl-bu-qwen35-9b-01/ckpts trainer.export_path=/mnt/sfs/skyrl-fleet/skyrl-bu-qwen35-9b-01/exports trainer.ckpt_interval=2 trainer.eval_interval=0 trainer.use_hybrid_env_sampling=false trainer.train_batch_size=16 trainer.policy_mini_batch_size=16",
+  "workers": 1,
+  "gpus_per_worker": 8,
+  "env": {"MODALITY": "browser_use", "DATA_VERSION": "v7", "NUM_EPOCHS": "1", "MAX_TASKS": "24", "RUN_ID": "skyrl-bu-qwen35-9b-01", "MAX_TURNS": "40"},
   "secrets": ["fleet-api", "wandb-api", "aws-api"]
 }
 ```
@@ -76,12 +90,7 @@ A run is a JSON file:
 - `workers` is how many 8-GPU machines the run uses. Raise it only when the model does not fit or train fast enough on one machine.
 - `secrets` are names of Kubernetes secrets; every key in them becomes an env var in the container. The three above provide `FLEET_API_KEY`, `WANDB_API_KEY`, and the AWS keys.
 
-Two ready payloads are in `examples/`:
-
-- `tool-use-qwen35-9b.json`: Qwen3.5-9B GRPO on the v7 tool_use dataset (`scripts/fleet-9b-run.sh`).
-- `browser-use-qwen35-9b.json`: Qwen3.5-9B GRPO on the v7 browser_use dataset with screenshots (`scripts/fleet-vl-run.sh`).
-
-Both are cut down (`MAX_TASKS`, one epoch) so a test run produces a training step and a checkpoint in about an hour. Remove those env vars for a full run. Qwen3.5-35B is not offered here: it needs 16 GPUs and the B200 node has 8, and 35B crashed on B200 before (Xid 31 GPU fault in the reference-model forward pass). 35B stays on its existing 2-machine H200 SkyPilot setup.
+Both payloads are cut down (`MAX_TASKS`, one epoch, browser turns capped at 40) so a test run produces a training step and a checkpoint in about an hour. Remove those knobs for a full run. Qwen3.5-35B is not offered here: it needs 16 GPUs and the B200 node has 8, and 35B crashed on B200 before (Xid 31 GPU fault in the reference-model forward pass). 35B stays on its existing 2-machine H200 SkyPilot setup.
 
 What your code can rely on:
 
