@@ -20,7 +20,6 @@ head + workers as a gang on one tier-1 topology domain.
 
 Usage:
     ./submit_run.py examples/tool-use-qwen35-9b.json
-    ./submit_run.py examples/browser-use-qwen35-9b.json --pool gpu-h200
     ./submit_run.py payload.json --dry-run        # print manifest, don't apply
 """
 

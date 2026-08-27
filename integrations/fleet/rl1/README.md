@@ -1,61 +1,64 @@
 # SkyRL-Fleet jobs on rl1 — runbook
 
-Run SkyRL-Fleet training on the rl1 cluster (`fleet-training-rl1-us-east-1`) as submitted jobs: an image, a command, a GPU count, env vars, and secret names. The image does everything (all dependencies baked, dataset pulled at start); the cluster side (queueing, placement, log capture, checkpoint location) is handled by the submitter.
+This directory lets you run SkyRL-Fleet training on the rl1 cluster (`fleet-training-rl1-us-east-1`) by submitting a job. A job is five things: a name, a Docker image, a command, a GPU count, and env vars (plus the names of the secrets it needs). The image contains everything the training needs. The submitter handles the cluster side: queueing, node placement, log capture, and where checkpoints go.
 
-Sections are in execution order: system design → payload → one-time setup → build → submit → monitor.
+The sections below are in the order you would do them: design, payload, one-time setup, build, submit, monitor.
 
-## 1. System design (this directory stands in lieu of the runs API)
+## 1. How it works
 
-`submit_run.py` implements boxes 2 and 3 of the future `POST /v1/runs` API: render one RayJob manifest from the payload, then `kubectl apply`. Everything below the API box already runs in production form.
+There is no jobs API yet. `submit_run.py` does by hand what the API will do later: it turns your payload into one Kubernetes manifest and applies it. Everything after that step is already the real production path.
 
 ```
  researcher
     │  POST /v1/runs  {name, image, command, workers, gpus_per_worker, env, secrets}
     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  runs API  (today: submit_run.py, by hand)                  │
-│  1. validate payload, resolve secrets                       │
+│  runs API  (today: submit_run.py, run by hand)              │
+│  1. validate the payload, check the secrets exist           │
 │  2. render ONE RayJob manifest:                             │
 │       kueue.x-k8s.io/queue-name: training-lq   ← the tag    │
 │       suspend: true                                         │
-│       topology annotation on GPU pod sets                   │
+│       topology annotation on the GPU pods                   │
 │  3. kubectl apply  (this IS the submission)                 │
 │  4. GET /runs/{id} = read the RayJob status back            │
 └──────────────┬──────────────────────────────────────────────┘
                │ apply
                ▼
 ┌────────────────────────── kubernetes cluster ────────────────────────┐
-│   RayJob object (suspended, does nothing yet)                        │
+│   RayJob object (suspended: it exists but starts nothing)            │
 │        │                                                             │
 │   ┌────▼─────────────────────────┐                                   │
-│   │ KUEUE (admission)            │ sees the queue tag, records a     │
-│   │                              │ Workload, waits until             │
-│   │                              │ workers × gpus_per_worker GPUs    │
-│   │                              │ are free at once in one tier-1    │
-│   │                              │ domain, then flips suspend off    │
+│   │ KUEUE (the cluster's queue)  │ sees the tag, puts the job in     │
+│   │                              │ line, and waits until ALL the     │
+│   │                              │ GPUs the job needs are free at    │
+│   │                              │ the same time on nearby machines. │
+│   │                              │ Then it lifts the suspend.        │
 │   └────┬─────────────────────────┘                                   │
 │   ┌────▼─────────────────────────┐                                   │
-│   │ KUBERAY (RayJob controller)  │ creates the pods: GPU head        │
-│   │                              │ (+ GPU workers if workers > 1),   │
-│   │                              │ boots Ray, submitter pod posts    │
-│   │                              │ `command` to the head             │
+│   │ KUBERAY (pod builder)        │ now creates the actual pods,      │
+│   │                              │ starts Ray in them, and a small   │
+│   │                              │ helper pod sends your command     │
+│   │                              │ to the head pod                   │
 │   └────┬─────────────────────────┘                                   │
 │   ┌────▼────────────────────┐  ┌──────────────────────┐              │
-│   │ GPU head pod (8 GPU)    │◄─┤ GPU worker pods ...  │ workers > 1  │
-│   │ your image, entrypoint, │  └──────────────────────┘              │
-│   │ your command            │                                        │
+│   │ head pod (8 GPUs)       │◄─┤ more GPU pods ...    │ workers > 1  │
+│   │ your image, your        │  └──────────────────────┘              │
+│   │ command                 │                                        │
 │   └───────┬─────────────────┘                                        │
-│           │ mounts /mnt/sfs (driver.log, ckpts survive the pods)     │
+│           │ /mnt/sfs is a shared disk: logs and checkpoints          │
+│           │ written there survive after the pods are gone            │
 └───────────┼───────────────────────────────────────────────────────────┘
             ▼
-   checkpoints → SFS + S3     traces → ATOF / Fleet     metrics → W&B
+   checkpoints → shared disk + S3     traces → ATOF / Fleet     metrics → W&B
 ```
 
-Division of labor, one line each: the API owns the payload contract and renders it; the RayJob object is a passive record of what to run; Kueue is the bouncer that reserves all the GPUs at once; KubeRay is the builder that creates pods and runs the command; the pods are your image on the reserved GPUs. Cancel = `kubectl delete rayjob <name>`; status = the RayJob's own status fields.
+Why the queue matters: the cluster has more demand than GPUs. A job that skips the queue can be killed mid-run when a queued job is granted the same GPUs (this happened on rl1 and was measured). The queue tag is how your job's GPUs get reserved for you.
+
+To cancel a run: `kubectl delete rayjob <name>`. To see its state: `kubectl get rayjob <name>`.
 
 ## 2. The run payload
 
-A run is a JSON payload in the jobs-API shape:
+A run is a JSON file:
 
 ```json
 {
@@ -69,27 +72,29 @@ A run is a JSON payload in the jobs-API shape:
 }
 ```
 
-`secrets` are names of Kubernetes secrets in `fleet-train-jobs`; each is injected into the container env wholesale. The three above provide `FLEET_API_KEY`, `WANDB_API_KEY`, and `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`.
+- `command` runs inside the image from the repo root (`/opt/skyrl`), after the startup script has downloaded the dataset from S3 and built the train files. Anything after the script name is passed through to the trainer as config overrides.
+- `workers` is how many 8-GPU machines the run uses. Raise it only when the model does not fit or train fast enough on one machine.
+- `secrets` are names of Kubernetes secrets; every key in them becomes an env var in the container. The three above provide `FLEET_API_KEY`, `WANDB_API_KEY`, and the AWS keys.
 
 Two ready payloads are in `examples/`:
 
-- `tool-use-qwen35-9b.json`: Qwen3.5-9B GRPO on the v7 tool_use taskset (`scripts/fleet-9b-run.sh`).
-- `browser-use-qwen35-9b.json`: Qwen3.5-9B GRPO on the v7 browser_use taskset with screenshots (`scripts/fleet-vl-run.sh`).
+- `tool-use-qwen35-9b.json`: Qwen3.5-9B GRPO on the v7 tool_use dataset (`scripts/fleet-9b-run.sh`).
+- `browser-use-qwen35-9b.json`: Qwen3.5-9B GRPO on the v7 browser_use dataset with screenshots (`scripts/fleet-vl-run.sh`).
 
-Both cap the dataset (`MAX_TASKS`) and the run length so a validation run produces a training step and a checkpoint in about an hour of node time. Drop those env vars for a full run. Qwen3.5-35B is not offered here: the single B200 node has 8 GPUs and the 35B recipe needs 16, and 35B previously crashed on B200 (Xid 31 in the FSDP2 ref-model forward). 35B stays on the 2-node H200 SkyPilot path.
+Both are cut down (`MAX_TASKS`, one epoch) so a test run produces a training step and a checkpoint in about an hour. Remove those env vars for a full run. Qwen3.5-35B is not offered here: it needs 16 GPUs and the B200 node has 8, and 35B crashed on B200 before (Xid 31 GPU fault in the reference-model forward pass). 35B stays on its existing 2-machine H200 SkyPilot setup.
 
-What the platform guarantees to the code inside the image:
+What your code can rely on:
 
-- **Run entry**: the `command` string runs from the repo root (`/opt/skyrl`) inside the image, after `entrypoint.sh` has downloaded `s3://fleet-internal-datasets/$DATA_VERSION/openenv/all_$MODALITY.json` and built the train/validation parquet files. Any trailing tokens are Hydra overrides passed through to the trainer.
-- **Trace**: rollout events go to ATOF via nemo-relay (installed at container start, fail-open); training trajectories are dumped by `trainer.dump_data_batch=true`; each rollout uploads a Fleet platform trace.
-- **Checkpoints**: pass `trainer.ckpt_path=/mnt/sfs/skyrl-fleet/<name>/ckpts` in the command (the examples do). The pod filesystem is ephemeral; only `/mnt/sfs` survives the job. S3 checkpoint upload works as on SkyPilot (`S3_CHECKPOINT_BUCKET`).
-- **Observability**: W&B (entity `thefleet`, project `fleet-tool-use-grpo` or `fleet-browser-use-grpo`), plus a full driver log at `/mnt/sfs/skyrl-fleet/<name>/driver.log` that survives pod deletion.
+- **Logs**: everything the run prints is saved to `/mnt/sfs/skyrl-fleet/<name>/driver.log` and survives after the pods are deleted.
+- **Checkpoints**: write them under `/mnt/sfs/skyrl-fleet/<name>/` (the examples pass `trainer.ckpt_path=...` for this). The pod's own disk is wiped when the job ends; only `/mnt/sfs` survives. S3 checkpoint upload works the same as on SkyPilot (`S3_CHECKPOINT_BUCKET`).
+- **Traces**: every rollout is uploaded as a Fleet trace; training batches are dumped as JSONL (`trainer.dump_data_batch=true`); ATOF events are emitted if the nemo-relay install at startup succeeds (if it fails, the run continues without it).
+- **Metrics**: W&B, entity `thefleet`, project `fleet-tool-use-grpo` or `fleet-browser-use-grpo`.
 
 ## 3. One-time setup
 
-You need: kubeconfig access to `fleet-training-rl1-us-east-1`, and (for image builds only) a GitHub PAT with `write:packages`.
+You need kubeconfig access to `fleet-training-rl1-us-east-1`. For image builds you also need a GitHub token that can push packages (`write:packages`).
 
-Cluster secrets referenced by the example payloads. `fleet-api`, `wandb-api`, and the image-pull/build secrets (`ghcr-pull`, `img-build-secrets`) already exist on rl1; `aws-api` was created 2026-08-26 and only needs re-creating on a fresh cluster:
+The secrets the examples use (`fleet-api`, `wandb-api`, `ghcr-pull`, `img-build-secrets`) already exist on rl1. `aws-api` was created 2026-08-26; on a fresh cluster, recreate it:
 
 ```bash
 kubectl --context fleet-training-rl1-us-east-1 -n fleet-train-jobs \
@@ -100,31 +105,33 @@ kubectl --context fleet-training-rl1-us-east-1 -n fleet-train-jobs \
 ## 4. Build the image
 
 ```bash
-export GH_TOKEN=<PAT with write:packages>
+export GH_TOKEN=<token with write:packages>
 bash integrations/fleet/rl1/build_image.sh main
 # -> ghcr.io/fleet-ai/skyrl-fleet/trainer:<8-char commit sha> and :latest
 ```
 
-The build runs on the cluster's builder node and clones the ref from GitHub, so uncommitted local changes never reach an image. The image bakes everything `scripts/fleet-common-setup.sh` and `scripts/fleet-qwen35-extra-setup.sh` install on a fresh VM: the locked dependency set (`uv sync --frozen --extra fsdp`), `ray[default]` (KubeRay's health probes need the dashboard agent), transformers 5.3.0, the flash-attn 2.8.3 wheel, causal-conv1d compiled for sm_90 and sm_100 (H200 and B200), OpenEnv pinned by commit, and the CUDA 12.8 toolkit for the GDN JIT kernels. The build fails unless the training entrypoint imports.
+The build runs on the cluster's builder machine and clones the branch from GitHub, so uncommitted local changes never end up in an image. The image contains everything the setup scripts would install on a fresh VM: the locked Python dependencies, transformers 5.3.0, the flash-attn wheel, causal-conv1d compiled for both our GPU generations (sm_90 and sm_100, so one image runs on either pool), OpenEnv pinned to a specific commit, the CUDA 12.8 compiler (Qwen3.5 compiles some GPU kernels at training time), and `ray[default]` (KubeRay's health checks need it; without it jobs cannot start). The build fails unless the training code imports cleanly.
 
 ## 5. Submit a run
 
 ```bash
 cd integrations/fleet/rl1
-./submit_run.py examples/tool-use-qwen35-9b.json                  # B200 pool (default)
-./submit_run.py examples/browser-use-qwen35-9b.json --pool gpu-h200
-./submit_run.py my-run.json --dry-run                             # print manifest only
+./submit_run.py examples/tool-use-qwen35-9b.json
+./submit_run.py examples/browser-use-qwen35-9b.json
+./submit_run.py my-run.json --dry-run     # print the manifest without applying it
 ```
 
-The submitter renders one RayJob for any `workers` count, with the three things every GPU job on rl1 must carry: the `training-lq` queue label, `suspend: true`, and the tier-1 topology annotation on the GPU pod sets. Kueue admits the whole pod set as a gang when the pool has capacity; until then it waits suspended. The head group carries the first `gpus_per_worker` GPUs and runs the driver (the same layout as the SkyPilot path, where the driver lives on a GPU node); `workers > 1` adds a GPU worker group with `workers - 1` replicas. Inside the pods, `FLEET_EXTERNAL_RAY=1` tells `fleet-common-run.sh` to attach to the Ray cluster KubeRay booted instead of starting its own.
+The submitter always produces a RayJob, whatever the `workers` count. The manifest carries the three things every GPU job on this cluster must have: the queue tag, `suspend: true`, and the topology annotation (it tells the queue the pods must land on machines wired close together, so GPU-to-GPU traffic is fast). The head pod gets the first 8 GPUs and runs the training driver; `workers > 1` adds more 8-GPU pods, and the queue only starts the job when all of them can start together. Inside the pods, `FLEET_EXTERNAL_RAY=1` tells `fleet-common-run.sh` that Ray is already running and it should connect to it instead of starting its own.
+
+Jobs land on the B200 node by default (`--pool` switches the node group if that ever changes).
 
 ## 6. Monitor
 
 ```bash
-kubectl --context fleet-training-rl1-us-east-1 -n fleet-train-jobs get workloads          # queue: ADMITTED=True is running
+kubectl --context fleet-training-rl1-us-east-1 -n fleet-train-jobs get workloads   # the queue; ADMITTED=True means running
 kubectl --context fleet-training-rl1-us-east-1 -n fleet-train-jobs get rayjobs
-kubectl --context fleet-training-rl1-us-east-1 -n fleet-train-jobs logs -f job/<name>     # submitter relays the driver log
-tail -f /mnt/sfs/skyrl-fleet/<name>/driver.log   # from any pod with the SFS mount
+kubectl --context fleet-training-rl1-us-east-1 -n fleet-train-jobs logs -f job/<name>
+tail -f /mnt/sfs/skyrl-fleet/<name>/driver.log   # from any pod that mounts the shared disk
 ```
 
-In the first 15 minutes confirm: the pods are Running on the intended pool, the dataset downloaded and prepared (task counts in the log), the vLLM engines came up, and the first rollout is progressing. Checkpoints appear under `/mnt/sfs/skyrl-fleet/<name>/ckpts/` at `trainer.ckpt_interval` steps.
+In the first 15 minutes, confirm four things: the pods are running on the intended node, the dataset downloaded and the task count printed, the vLLM engines started, and the first rollout is making progress. Checkpoints appear under `/mnt/sfs/skyrl-fleet/<name>/ckpts/` every `trainer.ckpt_interval` steps and at the end of the run.
